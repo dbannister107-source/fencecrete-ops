@@ -198,33 +198,113 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
       </div>
       {/* Fields */}
       <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-        {sec && sec.fields.map(f => (
-          <div key={f} style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 11, color: '#64748B', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{f.replace(/_/g, ' ')}</label>
-            {f === 'notes' ? (
-              <textarea value={form[f] || ''} onChange={e => set(f, e.target.value)} rows={6} style={{ ...inputS, resize: 'vertical' }} />
-            ) : f === 'status' ? (
-              <select value={form[f] || ''} onChange={e => set(f, e.target.value)} style={inputS}>{STATUSES.map(s => <option key={s} value={s}>{S_LABEL[s]}</option>)}</select>
-            ) : (
-              <input value={form[f] ?? ''} onChange={e => set(f, e.target.value)} style={inputS} />
-            )}
-          </div>
-        ))}
+        {sec && sec.fields.map(f => {
+          const colDef = ALL_COLS.find(c => c.key === f);
+          const friendlyLabel = colDef ? colDef.label : f.replace(/_/g, ' ');
+          const dd = DROPDOWN_FIELDS[f];
+          return (
+            <div key={f} style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 11, color: '#64748B', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{friendlyLabel}</label>
+              {f === 'notes' ? (
+                <textarea value={form[f] || ''} onChange={e => set(f, e.target.value)} rows={6} style={{ ...inputS, resize: 'vertical' }} />
+              ) : dd ? (
+                <select value={form[f] || ''} onChange={e => set(f, e.target.value)} style={inputS}>
+                  <option value="">— Select —</option>
+                  {dd.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              ) : (
+                <input value={form[f] ?? ''} onChange={e => set(f, e.target.value)} style={inputS} />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
+/* ═══ DROPDOWN OPTIONS ═══ */
+const OPT_FENCE = ['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'];
+const OPT_STYLE = ['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
+const OPT_COLOR = ['LAC','Painted','10#61078','Café','Adobe','8#860','Regular Brown','Outback','Silversmoke 8085','Green','Stain','10#860','8#677','3.5#860','1.5#860','Dune 6058','Sandstone 5237','Pebble 641','No Color','Other'];
+const OPT_BILLING = ['Progress','Lump Sum','Milestone','T&M'];
+const OPT_JOB_TYPE = ['Commercial','Residential','Government','Industrial','Private','Public'];
+const DROPDOWN_FIELDS = { status: STATUSES.map(s => ({ v: s, l: S_LABEL[s] })), market: MKTS.map(m => ({ v: m, l: m })), fence_type: OPT_FENCE.map(v => ({ v, l: v })), style: OPT_STYLE.map(v => ({ v, l: v })), style_single_wythe: OPT_STYLE.map(v => ({ v, l: v })), color: OPT_COLOR.map(v => ({ v, l: v })), billing_method: OPT_BILLING.map(v => ({ v, l: v })), job_type: OPT_JOB_TYPE.map(v => ({ v, l: v })) };
+
 /* ═══ JOBS PAGE ═══ */
 const ALL_COLS = [
-  { key: 'job_number', label: 'Job #', w: 80 }, { key: 'job_name', label: 'Job Name', w: 200 }, { key: 'customer_name', label: 'Customer', w: 160 },
-  { key: 'market', label: 'Market', w: 100 }, { key: 'status', label: 'Status', w: 120 }, { key: 'fence_type', label: 'Fence Type', w: 100 },
-  { key: 'product', label: 'Product', w: 100 }, { key: 'style', label: 'Style', w: 100 }, { key: 'color', label: 'Color', w: 80 },
-  { key: 'total_lf', label: 'Total LF', w: 80 }, { key: 'adj_contract_value', label: 'Adj Contract', w: 120 }, { key: 'left_to_bill', label: 'Left to Bill', w: 110 },
-  { key: 'pct_billed', label: '% Billed', w: 80 }, { key: 'ytd_invoiced', label: 'YTD Invoiced', w: 110 }, { key: 'last_billed', label: 'Last Billed', w: 100 },
-  { key: 'sales_rep', label: 'Sales Rep', w: 120 }, { key: 'contract_date', label: 'Contract Date', w: 110 }, { key: 'contract_age', label: 'Age', w: 60 },
-  { key: 'city', label: 'City', w: 100 }, { key: 'state', label: 'State', w: 50 }, { key: 'billing_method', label: 'Billing', w: 90 },
+  { key: 'status', label: 'Status', w: 120 },
+  { key: 'market', label: 'Location', w: 110 },
+  { key: 'job_number', label: 'Job Code', w: 90 },
+  { key: 'included_on_billing_schedule', label: 'On Billing Sched', w: 120 },
+  { key: 'included_on_lf_schedule', label: 'On LF Sched', w: 100 },
+  { key: 'job_name', label: 'Job Name', w: 220 },
+  { key: 'customer_name', label: 'Customer', w: 160 },
+  { key: 'cust_number', label: 'Cust #', w: 70 },
+  { key: 'fence_type', label: 'Fence Type', w: 110 },
+  { key: 'documents_needed', label: 'Docs Needed', w: 120 },
+  { key: 'file_location', label: 'File Location', w: 120 },
+  { key: 'billing_method', label: 'Billing Method', w: 110 },
+  { key: 'billing_date', label: 'Billing Date', w: 90 },
+  { key: 'sales_rep', label: 'Sales Rep', w: 120 },
+  { key: 'job_type', label: 'Job Type', w: 100 },
+  { key: 'address', label: 'Address', w: 160 },
+  { key: 'city', label: 'City', w: 100 },
+  { key: 'state', label: 'State', w: 50 },
+  { key: 'zip', label: 'Zip', w: 70 },
+  { key: 'lf_precast', label: 'LF - Precast', w: 90 },
+  { key: 'height_precast', label: 'Height - Precast', w: 100 },
+  { key: 'style', label: 'Style', w: 130 },
+  { key: 'color', label: 'Color', w: 110 },
+  { key: 'contract_rate_precast', label: 'Contract Rate - Precast', w: 140 },
+  { key: 'lf_single_wythe', label: 'LF - Single Wythe', w: 110 },
+  { key: 'height_single_wythe', label: 'Height - Single Wythe', w: 120 },
+  { key: 'contract_rate_single_wythe', label: 'Contract Rate - SW', w: 130 },
+  { key: 'style_single_wythe', label: 'Style - Single Wythe', w: 130 },
+  { key: 'lf_wrought_iron', label: 'LF - Wrought Iron', w: 110 },
+  { key: 'height_wrought_iron', label: 'Height - Wrought Iron', w: 120 },
+  { key: 'contract_rate_wrought_iron', label: 'Contract Rate - WI', w: 130 },
+  { key: 'lf_removal', label: 'LF - Removal', w: 100 },
+  { key: 'height_removal', label: 'Height - Removal', w: 110 },
+  { key: 'removal_material_type', label: 'Removal Material', w: 120 },
+  { key: 'contract_rate_removal', label: 'Contract Rate - Removal', w: 140 },
+  { key: 'lf_other', label: 'LF - Other', w: 90 },
+  { key: 'height_other', label: 'Height - Other', w: 100 },
+  { key: 'other_material_type', label: 'Other Material', w: 120 },
+  { key: 'contract_rate_other', label: 'Contract Rate - Other', w: 140 },
+  { key: 'number_of_gates', label: '# of Gates', w: 80 },
+  { key: 'gate_height', label: 'Gate Height', w: 90 },
+  { key: 'gate_description', label: 'Gate Description', w: 130 },
+  { key: 'gate_rate', label: 'Gate Rate', w: 90 },
+  { key: 'lump_sum_amount', label: 'Lump Sum Amount', w: 120 },
+  { key: 'lump_sum_description', label: 'Lump Sum Desc', w: 130 },
+  { key: 'total_lf', label: 'Total LF', w: 80 },
+  { key: 'average_height_installed', label: 'Avg Height Installed', w: 130 },
+  { key: 'total_lf_removed', label: 'Total LF Removed', w: 110 },
+  { key: 'average_height_removed', label: 'Avg Height Removed', w: 130 },
+  { key: 'net_contract_value', label: 'Net Contract Value', w: 120 },
+  { key: 'sales_tax', label: 'Sales Tax', w: 80 },
+  { key: 'contract_value', label: 'Contract Value', w: 120 },
+  { key: 'change_orders', label: 'Change Orders', w: 110 },
+  { key: 'adj_contract_value', label: 'Adj Contract Value', w: 130 },
+  { key: 'contract_value_recalculation', label: 'Contract Recalc', w: 120 },
+  { key: 'contract_value_recalc_diff', label: 'Recalc Diff', w: 100 },
+  { key: 'ytd_invoiced', label: 'YTD Invoiced', w: 110 },
+  { key: 'pct_billed', label: '% Billed', w: 80 },
+  { key: 'left_to_bill', label: 'Left to Bill', w: 110 },
+  { key: 'last_billed', label: 'Last Billed', w: 100 },
+  { key: 'contract_date', label: 'Contract Date', w: 110 },
+  { key: 'contract_month', label: 'Contract Month', w: 110 },
+  { key: 'est_start_date', label: 'Est Start Date', w: 110 },
+  { key: 'start_month', label: 'Start Month', w: 100 },
+  { key: 'contract_age', label: 'Contract Age', w: 90 },
+  { key: 'active_entry_date', label: 'Active Entry Date', w: 120 },
+  { key: 'complete_date', label: 'Complete Date', w: 110 },
+  { key: 'complete_month', label: 'Complete Month', w: 110 },
+  { key: 'notes', label: 'Notes', w: 200 },
 ];
+
+const DEFAULT_VIS = ['status','job_number','job_name','customer_name','market','fence_type','sales_rep','adj_contract_value','left_to_bill','pct_billed','total_lf','contract_date','est_start_date','last_billed','notes'];
 
 function JobsPage({ jobs, onRefresh }) {
   const [search, setSearch] = useState('');
@@ -232,7 +312,7 @@ function JobsPage({ jobs, onRefresh }) {
   const [mktF, setMktF] = useState(null);
   const [sortCol, setSortCol] = useState('left_to_bill');
   const [sortDir, setSortDir] = useState('desc');
-  const [visCols, setVisCols] = useState(() => ALL_COLS.slice(0, 15).map(c => c.key));
+  const [visCols, setVisCols] = useState(() => DEFAULT_VIS);
   const [showCols, setShowCols] = useState(false);
   const [editJob, setEditJob] = useState(null);
   const [isNewJob, setIsNewJob] = useState(false);
