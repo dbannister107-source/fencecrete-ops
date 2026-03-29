@@ -140,7 +140,7 @@ function Dashboard({ jobs }) {
 
 /* ═══ EDIT PANEL (slide from right) ═══ */
 const SECTIONS = [
-  { key: 'contract', label: 'Contract & Billing', fields: ['net_contract_value', 'sales_tax', 'contract_value', 'change_orders', 'adj_contract_value', 'ytd_invoiced', 'pct_billed', 'left_to_bill', 'last_billed', 'billing_method', 'billing_date'] },
+  { key: 'contract', label: 'Contract & Billing', fields: ['net_contract_value', 'sales_tax', 'contract_value', 'change_orders', 'adj_contract_value', 'ytd_invoiced', 'last_billed', 'billing_method', 'billing_date'], computed: ['pct_billed', 'left_to_bill'] },
   { key: 'precast', label: 'Precast Fence', fields: ['lf_precast', 'height_precast', 'style', 'color', 'contract_rate_precast'] },
   { key: 'wythe', label: 'Single Wythe', fields: ['lf_single_wythe', 'height_single_wythe', 'style_single_wythe', 'contract_rate_single_wythe'] },
   { key: 'iron', label: 'Wrought Iron', fields: ['lf_wrought_iron', 'height_wrought_iron', 'contract_rate_wrought_iron'] },
@@ -220,6 +220,22 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
             </div>
           );
         })}
+        {sec && sec.computed && sec.computed.length > 0 && (
+          <div style={{ marginTop: 16, padding: 14, background: '#F4F4F2', borderRadius: 8, border: '1px solid #E5E3E0' }}>
+            <div style={{ fontSize: 10, color: '#9E9B96', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Auto-calculated from YTD Invoiced &divide; Adj. Contract Value</div>
+            {sec.computed.map(f => {
+              const colDef = ALL_COLS.find(c => c.key === f);
+              const label = colDef ? colDef.label : f.replace(/_/g, ' ');
+              const val = f === 'pct_billed' ? `${n(form.pct_billed)}%` : f === 'left_to_bill' ? $(form.left_to_bill) : (form[f] ?? '—');
+              return (
+                <div key={f} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #E5E3E0' }}>
+                  <span style={{ fontSize: 12, color: '#6B6056', textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 14, color: '#1A1A1A' }}>{val}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -476,6 +492,13 @@ function BillingPage({ jobs, onRefresh }) {
   const saveEdit = async (j) => {
     const updates = {};
     updates[editField] = editVal;
+    // If ytd_invoiced changed, recalculate pct_billed and left_to_bill
+    if (editField === 'ytd_invoiced') {
+      const adjVal = n(j.adj_contract_value || j.contract_value);
+      const newYtd = n(editVal);
+      updates.pct_billed = adjVal > 0 ? Math.round(newYtd / adjVal * 10000) / 100 : 0;
+      updates.left_to_bill = adjVal - newYtd;
+    }
     await patch('jobs', j.id, updates);
     alert_('billing_logged', { ...j, ...updates });
     setEditId(null); setEditField(null);
