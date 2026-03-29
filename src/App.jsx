@@ -584,47 +584,153 @@ function BillingPage({ jobs, onRefresh }) {
   );
 }
 
-/* ═══ PRODUCTION PAGE (Kanban) ═══ */
+/* ═══ PRODUCTION PAGE (Kanban + Grouping) ═══ */
+const GROUP_OPTIONS = [
+  { key: 'status', label: 'Status' },
+  { key: 'customer_name', label: 'Customer' },
+  { key: 'style', label: 'Style' },
+  { key: 'color', label: 'Color' },
+];
+
+function ProdJobCard({ j, move }) {
+  return (
+    <div style={{ ...card, padding: 12, marginBottom: 6 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.job_name}</div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+        <span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span>
+        <span style={pill(S_COLOR[j.status] || '#6B6056', S_BG[j.status] || '#F4F4F2')}>{S_SHORT[j.status]}</span>
+        {j.fence_type && <span style={pill('#6B6056', '#F4F4F2')}>{j.fence_type}</span>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B6056', marginBottom: 4 }}>
+        <span>{n(j.total_lf).toLocaleString()} LF</span>
+        <span style={{ fontFamily: 'Syne', fontWeight: 700, color: '#8B2020' }}>{$(j.adj_contract_value || j.contract_value)}</span>
+      </div>
+      {n(j.left_to_bill) > 0 && <div style={{ fontSize: 10, color: '#B45309', marginBottom: 6 }}>LTB {$(j.left_to_bill)}</div>}
+      <div style={{ display: 'flex', gap: 4 }}>
+        {STATUSES.filter(ns => ns !== j.status).map(ns => (
+          <button key={ns} onClick={() => move(j, ns)} style={{ flex: 1, padding: '4px 2px', borderRadius: 6, border: `1px solid ${S_COLOR[ns]}30`, background: S_BG[ns], color: S_COLOR[ns], fontSize: 9, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>→ {S_SHORT[ns]}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProductionPage({ jobs, onRefresh }) {
+  const [groupBy, setGroupBy] = useState('status');
+  const [mktF, setMktF] = useState(null);
+  const [statusF, setStatusF] = useState(null);
+  const [search, setSearch] = useState('');
+
   const move = async (job, newStatus) => {
     await patch('jobs', job.id, { status: newStatus });
     alert_('job_updated', { ...job, status: newStatus });
     onRefresh();
   };
 
+  const filtered = useMemo(() => {
+    let f = jobs;
+    if (mktF) f = f.filter(j => j.market === mktF);
+    if (statusF) f = f.filter(j => j.status === statusF);
+    if (search) { const q = search.toLowerCase(); f = f.filter(j => `${j.job_name} ${j.customer_name}`.toLowerCase().includes(q)); }
+    return f;
+  }, [jobs, mktF, statusF, search]);
+
+  const columns = useMemo(() => {
+    if (groupBy === 'status') {
+      return STATUSES.map(s => ({
+        key: s,
+        label: S_LABEL[s],
+        color: S_COLOR[s],
+        bg: S_BG[s],
+        jobs: filtered.filter(j => j.status === s),
+      }));
+    }
+    const groups = {};
+    filtered.forEach(j => {
+      const val = j[groupBy] || '';
+      const key = val || '__unspecified__';
+      if (!groups[key]) groups[key] = { label: val || 'Unspecified', jobs: [] };
+      groups[key].jobs.push(j);
+    });
+    let cols = Object.entries(groups).map(([key, g]) => ({
+      key,
+      label: g.label,
+      color: '#8B2020',
+      bg: '#FDF4F4',
+      jobs: g.jobs,
+      totalVal: g.jobs.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0),
+    }));
+    cols.sort((a, b) => {
+      if (a.key === '__unspecified__') return 1;
+      if (b.key === '__unspecified__') return -1;
+      return b.totalVal - a.totalVal;
+    });
+    const capped = cols.length > 12;
+    if (capped) cols = cols.slice(0, 12);
+    return { cols, capped };
+  }, [filtered, groupBy]);
+
+  const isStatusView = groupBy === 'status';
+  const colArray = isStatusView ? columns : columns.cols;
+  const isCapped = !isStatusView && columns.capped;
+
+  const gpill = (k) => ({
+    padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    border: groupBy === k ? '1px solid #8B2020' : '1px solid #E5E3E0',
+    background: groupBy === k ? '#FDF4F4' : '#FFFFFF',
+    color: groupBy === k ? '#8B2020' : '#6B6056',
+  });
+
+  const fpill = (active) => ({
+    padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+    border: active ? '1px solid #8B2020' : '1px solid #E5E3E0',
+    background: active ? '#FDF4F4' : '#FFFFFF',
+    color: active ? '#8B2020' : '#9E9B96',
+  });
+
   return (
     <div>
-      <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900, marginBottom: 20 }}>Production</h1>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, alignItems: 'flex-start' }}>
-        {STATUSES.map(s => {
-          const col = jobs.filter(j => j.status === s);
-          const colVal = col.reduce((x, j) => x + n(j.adj_contract_value || j.contract_value), 0);
-          const colLf = col.reduce((x, j) => x + n(j.total_lf), 0);
+      <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900, marginBottom: 16 }}>Production</h1>
+
+      {/* Group By toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 11, color: '#9E9B96', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Group By:</span>
+        {GROUP_OPTIONS.map(g => (
+          <button key={g.key} onClick={() => setGroupBy(g.key)} style={gpill(g.key)}>{g.label}</button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 180, padding: '6px 10px', fontSize: 12 }} />
+        <button onClick={() => setMktF(null)} style={fpill(!mktF)}>All Markets</button>
+        {MKTS.map(m => <button key={m} onClick={() => setMktF(m)} style={fpill(mktF === m)}>{M_SHORT[m]}</button>)}
+        {!isStatusView && <>
+          <span style={{ color: '#E5E3E0' }}>|</span>
+          <button onClick={() => setStatusF(null)} style={fpill(!statusF)}>All Statuses</button>
+          {STATUSES.map(s => <button key={s} onClick={() => setStatusF(s)} style={fpill(statusF === s)}>{S_SHORT[s]}</button>)}
+        </>}
+      </div>
+
+      {isCapped && <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B40', borderRadius: 8, padding: '6px 14px', marginBottom: 12, fontSize: 12, color: '#B45309' }}>Showing top 12 by contract value</div>}
+
+      {/* Columns */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(colArray.length, 4)},1fr)`, gap: 12, alignItems: 'flex-start' }}>
+        {colArray.map(col => {
+          const colVal = col.jobs.reduce((x, j) => x + n(j.adj_contract_value || j.contract_value), 0);
+          const colLf = col.jobs.reduce((x, j) => x + n(j.total_lf), 0);
           return (
-            <div key={s}>
-              <div style={{ background: S_COLOR[s] + '15', border: `1px solid ${S_COLOR[s]}30`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
-                <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 14, color: S_COLOR[s] }}>{S_LABEL[s]}</div>
-                <div style={{ fontSize: 11, color: '#6B6056', marginTop: 2 }}>{col.length} projects · {$k(colVal)} · {colLf.toLocaleString()} LF</div>
+            <div key={col.key}>
+              <div style={{ background: (col.bg || '#FDF4F4'), border: `1px solid ${col.color}30`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
+                <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 14, color: col.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</div>
+                <div style={{ fontSize: 11, color: '#6B6056', marginTop: 2 }}>
+                  <span style={{ background: '#E5E3E0', padding: '1px 6px', borderRadius: 4, fontWeight: 700, marginRight: 6 }}>{col.jobs.length}</span>
+                  {colLf.toLocaleString()} LF · {$k(colVal)}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
-                {col.map(j => (
-                  <div key={j.id} style={{ background: '#F9F8F6', border: '1px solid #E5E3E0', borderRadius: 10, padding: 12 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.job_name}</div>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span>
-                      {j.fence_type && <span style={pill('#6B6056')}>{j.fence_type}</span>}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B6056', marginBottom: 8 }}>
-                      <span>{n(j.total_lf).toLocaleString()} LF</span>
-                      <span style={{ fontFamily: 'Syne', fontWeight: 700, color: '#8B2020' }}>{$(j.adj_contract_value || j.contract_value)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {STATUSES.filter(ns => ns !== s).map(ns => (
-                        <button key={ns} onClick={() => move(j, ns)} style={{ flex: 1, padding: '4px 2px', borderRadius: 6, border: `1px solid ${S_COLOR[ns]}30`, background: 'transparent', color: S_COLOR[ns], fontSize: 9, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>→ {S_SHORT[ns]}</button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 'calc(100vh - 280px)', overflow: 'auto' }}>
+                {col.jobs.map(j => <ProdJobCard key={j.id} j={j} move={move} />)}
+                {col.jobs.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#9E9B96', fontSize: 12 }}>No projects</div>}
               </div>
             </div>
           );
