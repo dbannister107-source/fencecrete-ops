@@ -8,6 +8,7 @@ const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'applic
 const get = async (t, q = '') => { const r = await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H }); return r.json(); };
 const patch = async (t, id, b) => { await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) }); };
 const post = async (t, b) => { const r = await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) }); return r.json(); };
+const alert_ = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ type, job }) }); } catch {} };
 
 const $ = v => { const x = Number(v) || 0; return '$' + x.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
 const $k = v => { const x = Number(v) || 0; return x >= 1e6 ? '$' + (x/1e6).toFixed(1) + 'M' : x >= 1e3 ? '$' + (x/1e3).toFixed(0) + 'K' : '$' + x; };
@@ -88,7 +89,7 @@ function Dashboard({ jobs }) {
             return (
               <div key={s} style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span><span style={pill(S_COLOR[s])}>{S_SHORT[s]}</span> <span style={{ color: '#64748B', marginLeft: 6 }}>{sj.length} jobs</span></span>
+                  <span><span style={pill(S_COLOR[s])}>{S_SHORT[s]}</span> <span style={{ color: '#64748B', marginLeft: 6 }}>{sj.length} projects</span></span>
                   <span style={{ color: '#94A3B8' }}>{$k(sv)} &middot; LTB {$k(sl)}</span>
                 </div>
                 <PBar pct={tc > 0 ? sv / tc * 100 : 0} color={S_COLOR[s]} />
@@ -163,13 +164,15 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
       const { id, created_at, updated_at, ...rest } = form;
       if (!rest.job_name) { setSaving(false); return; }
       if (!rest.status) rest.status = 'contract_review';
-      await post('jobs', rest);
+      const saved = await post('jobs', rest);
+      if (saved && saved[0]) alert_('new_job', saved[0]);
     } else {
       const { id, created_at, updated_at, ...rest } = form;
       await patch('jobs', job.id, rest);
+      alert_('job_updated', { id: job.id, ...rest });
     }
     setSaving(false);
-    onSaved(isNew ? 'Job created' : null);
+    onSaved(isNew ? 'Project created' : null);
   };
 
   const sec = SECTIONS.find(s => s.key === tab);
@@ -179,11 +182,11 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid #1A2035', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <div>
-          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800 }}>{isNew ? 'New Job' : (form.job_name || 'Untitled')}</div>
-          <div style={{ fontSize: 12, color: '#64748B' }}>{isNew ? 'Fill in job details below' : `#${form.job_number} · ${form.customer_name}`}</div>
+          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800 }}>{isNew ? 'New Project' : (form.job_name || 'Untitled')}</div>
+          <div style={{ fontSize: 12, color: '#64748B' }}>{isNew ? 'Fill in project details below' : `#${form.job_number} · ${form.customer_name}`}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleSave} disabled={saving} style={{ ...btnP, background: isNew ? '#10B981' : '#F97316' }}>{saving ? 'Saving...' : isNew ? 'Create Job' : 'Save'}</button>
+          <button onClick={handleSave} disabled={saving} style={{ ...btnP, background: isNew ? '#10B981' : '#F97316' }}>{saving ? 'Saving...' : isNew ? 'Create Project' : 'Save'}</button>
           <button onClick={onClose} style={btnS}>Close</button>
         </div>
       </div>
@@ -257,7 +260,7 @@ function JobsPage({ jobs, onRefresh }) {
     const header = cols.map(c => c.label).join(',');
     const rows = filtered.map(j => cols.map(c => { const v = j[c.key]; return typeof v === 'string' && v.includes(',') ? `"${v}"` : (v ?? ''); }).join(','));
     const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fencecrete-jobs.csv'; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fencecrete-projects.csv'; a.click();
   };
 
   const openNewJob = () => {
@@ -279,7 +282,11 @@ function JobsPage({ jobs, onRefresh }) {
 
   const saveInlineEdit = async () => {
     if (!inlineEdit) return;
-    await patch('jobs', inlineEdit.id, { [inlineEdit.key]: inlineEdit.value });
+    const updates = { [inlineEdit.key]: inlineEdit.value };
+    await patch('jobs', inlineEdit.id, updates);
+    const job = jobs.find(j => j.id === inlineEdit.id);
+    if (['ytd_invoiced', 'last_billed'].includes(inlineEdit.key)) alert_('billing_logged', { ...job, ...updates });
+    else alert_('job_updated', { ...job, ...updates });
     setInlineEdit(null);
     setToast('Saved');
     onRefresh();
@@ -311,13 +318,13 @@ function JobsPage({ jobs, onRefresh }) {
     <div>
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900 }}>Jobs</h1>
+        <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900 }}>Projects</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setEditMode(!editMode)} style={{ ...btnS, background: editMode ? '#F9731620' : '#1A2035', color: editMode ? '#F97316' : '#94A3B8', border: editMode ? '1px solid #F97316' : '1px solid #1A2035' }}>
             {editMode ? '✏ Edit Mode' : '👁 View Mode'}
           </button>
           <button onClick={() => setShowCols(!showCols)} style={btnS}>Columns</button>
-          <button onClick={openNewJob} style={{ ...btnP, background: '#10B981' }}>+ New Job</button>
+          <button onClick={openNewJob} style={{ ...btnP, background: '#10B981' }}>+ New Project</button>
           <button onClick={exportCSV} style={btnP}>Export CSV</button>
         </div>
       </div>
@@ -326,14 +333,14 @@ function JobsPage({ jobs, onRefresh }) {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs..." style={{ ...inputS, width: 240 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." style={{ ...inputS, width: 240 }} />
         <select value={statusF || ''} onChange={e => setStatusF(e.target.value || null)} style={{ ...inputS, width: 160 }}>
           <option value="">All Statuses</option>{STATUSES.map(s => <option key={s} value={s}>{S_LABEL[s]}</option>)}
         </select>
         <select value={mktF || ''} onChange={e => setMktF(e.target.value || null)} style={{ ...inputS, width: 160 }}>
           <option value="">All Markets</option>{MKTS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-        <span style={{ fontSize: 12, color: '#64748B' }}>{filtered.length} jobs · {$(filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0))} contract · {$(filtered.reduce((s, j) => s + n(j.left_to_bill), 0))} LTB</span>
+        <span style={{ fontSize: 12, color: '#64748B' }}>{filtered.length} projects · {$(filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0))} contract · {$(filtered.reduce((s, j) => s + n(j.left_to_bill), 0))} LTB</span>
       </div>
 
       {/* Column picker */}
@@ -388,6 +395,7 @@ function BillingPage({ jobs, onRefresh }) {
     const updates = {};
     updates[editField] = editVal;
     await patch('jobs', j.id, updates);
+    alert_('billing_logged', { ...j, ...updates });
     setEditId(null); setEditField(null);
     onRefresh();
   };
@@ -475,6 +483,7 @@ function BillingPage({ jobs, onRefresh }) {
 function ProductionPage({ jobs, onRefresh }) {
   const move = async (job, newStatus) => {
     await patch('jobs', job.id, { status: newStatus });
+    alert_('job_updated', { ...job, status: newStatus });
     onRefresh();
   };
 
@@ -490,7 +499,7 @@ function ProductionPage({ jobs, onRefresh }) {
             <div key={s}>
               <div style={{ background: S_COLOR[s] + '15', border: `1px solid ${S_COLOR[s]}30`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 14, color: S_COLOR[s] }}>{S_LABEL[s]}</div>
-                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{col.length} jobs · {$k(colVal)} · {colLf.toLocaleString()} LF</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{col.length} projects · {$k(colVal)} · {colLf.toLocaleString()} LF</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
                 {col.map(j => (
@@ -523,7 +532,7 @@ function ProductionPage({ jobs, onRefresh }) {
 /* ═══ APP ═══ */
 const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: '▣' },
-  { key: 'jobs', label: 'Jobs', icon: '◧' },
+  { key: 'jobs', label: 'Projects', icon: '◧' },
   { key: 'billing', label: 'Billing', icon: '$' },
   { key: 'production', label: 'Production', icon: '⚙' },
 ];
@@ -556,7 +565,7 @@ export default function App() {
           ))}
         </nav>
         <div style={{ padding: '16px 20px', borderTop: '1px solid #1A2035', fontSize: 11, color: '#475569' }}>
-          {jobs.length} jobs loaded
+          {jobs.length} projects loaded
           <button onClick={fetchJobs} style={{ display: 'block', marginTop: 6, padding: '4px 10px', background: '#1A2035', border: 'none', borderRadius: 6, color: '#94A3B8', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
         </div>
       </div>
