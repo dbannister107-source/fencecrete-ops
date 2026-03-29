@@ -17,26 +17,28 @@ const fD = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', da
 
 const STATUSES = ['contract_review', 'production_queue', 'in_production', 'complete'];
 const S_LABEL = { contract_review: 'Contract Review', production_queue: 'Production Queue', in_production: 'In Production', complete: 'Complete' };
-const S_COLOR = { contract_review: '#F59E0B', production_queue: '#3B82F6', in_production: '#8B5CF6', complete: '#10B981' };
+const S_COLOR = { contract_review: '#B45309', production_queue: '#1D4ED8', in_production: '#6D28D9', complete: '#065F46' };
+const S_BG = { contract_review: '#FEF3C7', production_queue: '#DBEAFE', in_production: '#EDE9FE', complete: '#D1FAE5' };
 const S_SHORT = { contract_review: 'Review', production_queue: 'Prod Queue', in_production: 'In Prod', complete: 'Complete' };
 const MKTS = ['Austin', 'Dallas-Fort Worth', 'Houston', 'San Antonio'];
-const M_COLOR = { Austin: '#FB923C', 'Dallas-Fort Worth': '#60A5FA', Houston: '#34D399', 'San Antonio': '#F472B6' };
+const M_COLOR = { Austin: '#C2410C', 'Dallas-Fort Worth': '#1D4ED8', Houston: '#065F46', 'San Antonio': '#9D174D' };
+const M_BG = { Austin: '#FED7AA', 'Dallas-Fort Worth': '#DBEAFE', Houston: '#D1FAE5', 'San Antonio': '#FCE7F3' };
 const M_SHORT = { Austin: 'Austin', 'Dallas-Fort Worth': 'DFW', Houston: 'Houston', 'San Antonio': 'SA' };
 
 /* ═══ STYLES ═══ */
-const card = { background: '#111520', border: '1px solid #1A2035', borderRadius: 12, padding: 20 };
-const inputS = { width: '100%', padding: '8px 12px', background: '#0A0C12', border: '1px solid #1A2035', borderRadius: 8, color: '#E2E8F0', fontSize: 13 };
-const btnP = { padding: '8px 16px', background: '#F97316', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
-const btnS = { ...btnP, background: '#1A2035', color: '#94A3B8' };
-const pill = (c) => ({ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: c + '20', color: c });
+const card = { background: '#FFFFFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
+const inputS = { width: '100%', padding: '8px 12px', background: '#FFFFFF', border: '1px solid #D1CEC9', borderRadius: 8, color: '#1A1A1A', fontSize: 13 };
+const btnP = { padding: '8px 16px', background: '#8B2020', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
+const btnS = { ...btnP, background: '#F4F4F2', color: '#6B6056', border: '1px solid #E5E3E0' };
+const pill = (c, bg) => ({ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: bg || (c + '18'), color: c });
 
 /* ═══ COMPONENTS ═══ */
-function KPI({ label, value, color = '#F97316' }) {
-  return <div style={card}><div style={{ fontFamily: 'Syne', fontSize: 26, fontWeight: 800, color }}>{value}</div><div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>{label}</div></div>;
+function KPI({ label, value, color = '#8B2020' }) {
+  return <div style={card}><div style={{ fontFamily: 'Syne', fontSize: 26, fontWeight: 800, color }}>{value}</div><div style={{ fontSize: 12, color: '#6B6056', marginTop: 4 }}>{label}</div></div>;
 }
 
-function PBar({ pct: p, color = '#F97316', h = 6 }) {
-  return <div style={{ height: h, background: '#1A2035', borderRadius: h, overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.min(Math.max(p, 0), 100)}%`, background: color, borderRadius: h, transition: 'width .3s' }} /></div>;
+function PBar({ pct: p, color = '#8B2020', h = 6 }) {
+  return <div style={{ height: h, background: '#E5E3E0', borderRadius: h, overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.min(Math.max(p, 0), 100)}%`, background: color, borderRadius: h, transition: 'width .3s' }} /></div>;
 }
 
 /* ═══ DASHBOARD ═══ */
@@ -60,9 +62,9 @@ function Dashboard({ jobs }) {
       <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900, marginBottom: 20 }}>Dashboard</h1>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
         <KPI label="Total Contract Value" value={$k(tc)} />
-        <KPI label="Left to Bill" value={$k(tl)} color="#F59E0B" />
-        <KPI label="YTD Billed" value={$k(ty)} color="#10B981" />
-        <KPI label="Active LF" value={tlf.toLocaleString()} color="#3B82F6" />
+        <KPI label="Left to Bill" value={$k(tl)} color="#B45309" />
+        <KPI label="YTD Billed" value={$k(ty)} color="#065F46" />
+        <KPI label="Active LF" value={tlf.toLocaleString()} color="#1D4ED8" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -71,9 +73,9 @@ function Dashboard({ jobs }) {
           <div style={{ fontFamily: 'Syne', fontWeight: 700, marginBottom: 12 }}>Contract Value by Market</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={mktData} barSize={40}>
-              <XAxis dataKey="name" tick={{ fill: '#64748B', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v/1e6).toFixed(1) + 'M'} />
-              <Tooltip formatter={v => $(v)} contentStyle={{ background: '#111520', border: '1px solid #1A2035', borderRadius: 8, color: '#E2E8F0' }} />
+              <XAxis dataKey="name" tick={{ fill: '#6B6056', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6B6056', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v/1e6).toFixed(1) + 'M'} />
+              <Tooltip formatter={v => $(v)} contentStyle={{ background: '#FFFFFF', border: '1px solid #E5E3E0', borderRadius: 8, color: '#1A1A1A' }} />
               <Bar dataKey="value" radius={[6, 6, 0, 0]}>{mktData.map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -89,8 +91,8 @@ function Dashboard({ jobs }) {
             return (
               <div key={s} style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span><span style={pill(S_COLOR[s])}>{S_SHORT[s]}</span> <span style={{ color: '#64748B', marginLeft: 6 }}>{sj.length} projects</span></span>
-                  <span style={{ color: '#94A3B8' }}>{$k(sv)} &middot; LTB {$k(sl)}</span>
+                  <span><span style={pill(S_COLOR[s], S_BG[s])}>{S_SHORT[s]}</span> <span style={{ color: '#6B6056', marginLeft: 6 }}>{sj.length} projects</span></span>
+                  <span style={{ color: '#9E9B96' }}>{$k(sv)} &middot; LTB {$k(sl)}</span>
                 </div>
                 <PBar pct={tc > 0 ? sv / tc * 100 : 0} color={S_COLOR[s]} />
               </div>
@@ -104,29 +106,29 @@ function Dashboard({ jobs }) {
         <div style={card}>
           <div style={{ fontFamily: 'Syne', fontWeight: 700, marginBottom: 12 }}>Top 15 Left to Bill</div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr style={{ borderBottom: '1px solid #1A2035', fontSize: 11, color: '#64748B' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Job</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Market</th><th style={{ textAlign: 'right', padding: '6px 8px' }}>LTB</th><th style={{ textAlign: 'right', padding: '6px 8px' }}>%</th></tr></thead>
+            <thead><tr style={{ borderBottom: '1px solid #E5E3E0', fontSize: 11, color: '#6B6056' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Job</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Market</th><th style={{ textAlign: 'right', padding: '6px 8px' }}>LTB</th><th style={{ textAlign: 'right', padding: '6px 8px' }}>%</th></tr></thead>
             <tbody>{top15.map(j => (
-              <tr key={j.id} style={{ borderBottom: '1px solid #111520' }}>
+              <tr key={j.id} style={{ borderBottom: '1px solid #E5E3E0' }}>
                 <td style={{ padding: '5px 8px', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.job_name}</td>
-                <td style={{ padding: '5px 8px' }}><span style={pill(M_COLOR[j.market] || '#64748B')}>{M_SHORT[j.market] || '—'}</span></td>
-                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'Syne', fontWeight: 700, color: '#F97316', fontSize: 13 }}>{$(j.left_to_bill)}</td>
-                <td style={{ padding: '5px 8px', textAlign: 'right', fontSize: 12, color: '#64748B' }}>{n(j.pct_billed)}%</td>
+                <td style={{ padding: '5px 8px' }}><span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span></td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'Syne', fontWeight: 700, color: '#8B2020', fontSize: 13 }}>{$(j.left_to_bill)}</td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontSize: 12, color: '#6B6056' }}>{n(j.pct_billed)}%</td>
               </tr>
             ))}</tbody>
           </table>
         </div>
 
         {/* Alerts */}
-        <div style={{ ...card, borderColor: alerts.length > 0 ? '#F59E0B30' : '#1A2035' }}>
-          <div style={{ fontFamily: 'Syne', fontWeight: 700, marginBottom: 12, color: '#F59E0B' }}>Billing Alerts ({alerts.length})</div>
-          {alerts.length === 0 && <div style={{ color: '#64748B', padding: 20, textAlign: 'center' }}>No alerts</div>}
+        <div style={{ ...card, borderColor: alerts.length > 0 ? '#F59E0B30' : '#E5E3E0' }}>
+          <div style={{ fontFamily: 'Syne', fontWeight: 700, marginBottom: 12, color: '#B45309' }}>Billing Alerts ({alerts.length})</div>
+          {alerts.length === 0 && <div style={{ color: '#6B6056', padding: 20, textAlign: 'center' }}>No alerts</div>}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>{alerts.slice(0, 15).map(j => (
-              <tr key={j.id} style={{ borderBottom: '1px solid #111520' }}>
+              <tr key={j.id} style={{ borderBottom: '1px solid #E5E3E0' }}>
                 <td style={{ padding: '5px 8px', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.job_name}</td>
-                <td style={{ padding: '5px 8px' }}><span style={pill(M_COLOR[j.market] || '#64748B')}>{M_SHORT[j.market] || '—'}</span></td>
+                <td style={{ padding: '5px 8px' }}><span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span></td>
                 <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'Syne', fontWeight: 700, fontSize: 12 }}>{$(j.contract_value)}</td>
-                <td style={{ padding: '5px 8px', textAlign: 'right', fontSize: 12, color: '#F59E0B' }}>{j.contract_age}d</td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontSize: 12, color: '#B45309' }}>{j.contract_age}d</td>
               </tr>
             ))}</tbody>
           </table>
@@ -178,22 +180,22 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
   const sec = SECTIONS.find(s => s.key === tab);
 
   return (
-    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 520, background: '#0D1018', borderLeft: '1px solid #1A2035', zIndex: 200, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 30px rgba(0,0,0,.5)' }}>
+    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 520, background: '#FFFFFF', borderLeft: '1px solid #E5E3E0', zIndex: 200, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 30px rgba(0,0,0,.1)' }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid #1A2035', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E3E0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <div>
           <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800 }}>{isNew ? 'New Project' : (form.job_name || 'Untitled')}</div>
-          <div style={{ fontSize: 12, color: '#64748B' }}>{isNew ? 'Fill in project details below' : `#${form.job_number} · ${form.customer_name}`}</div>
+          <div style={{ fontSize: 12, color: '#6B6056' }}>{isNew ? 'Fill in project details below' : `#${form.job_number} · ${form.customer_name}`}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleSave} disabled={saving} style={{ ...btnP, background: isNew ? '#10B981' : '#F97316' }}>{saving ? 'Saving...' : isNew ? 'Create Project' : 'Save'}</button>
+          <button onClick={handleSave} disabled={saving} style={{ ...btnP, background: isNew ? '#065F46' : '#8B2020' }}>{saving ? 'Saving...' : isNew ? 'Create Project' : 'Save'}</button>
           <button onClick={onClose} style={btnS}>Close</button>
         </div>
       </div>
       {/* Tabs */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 20px', borderBottom: '1px solid #1A2035', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '10px 20px', borderBottom: '1px solid #E5E3E0', flexShrink: 0 }}>
         {SECTIONS.map(s => (
-          <button key={s.key} onClick={() => setTab(s.key)} style={{ padding: '4px 10px', borderRadius: 6, border: tab === s.key ? '1px solid #F97316' : '1px solid #1A2035', background: tab === s.key ? '#F9731615' : 'transparent', color: tab === s.key ? '#F97316' : '#64748B', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{s.label}</button>
+          <button key={s.key} onClick={() => setTab(s.key)} style={{ padding: '4px 10px', borderRadius: 6, border: tab === s.key ? '1px solid #8B2020' : '1px solid #E5E3E0', background: tab === s.key ? '#8B202015' : 'transparent', color: tab === s.key ? '#8B2020' : '#6B6056', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{s.label}</button>
         ))}
       </div>
       {/* Fields */}
@@ -204,7 +206,7 @@ function EditPanel({ job, onClose, onSaved, isNew }) {
           const dd = DROPDOWN_FIELDS[f];
           return (
             <div key={f} style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 11, color: '#64748B', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{friendlyLabel}</label>
+              <label style={{ display: 'block', fontSize: 11, color: '#6B6056', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{friendlyLabel}</label>
               {f === 'notes' ? (
                 <textarea value={form[f] || ''} onChange={e => set(f, e.target.value)} rows={6} style={{ ...inputS, resize: 'vertical' }} />
               ) : dd ? (
@@ -385,9 +387,9 @@ function JobsPage({ jobs, onRefresh }) {
       );
     }
     const v = j[k];
-    if (k === 'status') return <span style={pill(S_COLOR[v] || '#64748B')}>{S_SHORT[v] || v}</span>;
-    if (k === 'market') return <span style={pill(M_COLOR[v] || '#64748B')}>{M_SHORT[v] || v || '—'}</span>;
-    if (['adj_contract_value', 'contract_value', 'left_to_bill', 'ytd_invoiced', 'net_contract_value'].includes(k)) return <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 12, color: k === 'left_to_bill' ? (n(v) > 100000 ? '#EF4444' : n(v) > 50000 ? '#F59E0B' : '#10B981') : '#E2E8F0' }}>{$(v)}</span>;
+    if (k === 'status') return <span style={pill(S_COLOR[v] || '#6B6056', S_BG[v] || '#F4F4F2')}>{S_SHORT[v] || v}</span>;
+    if (k === 'market') return <span style={pill(M_COLOR[v] || '#6B6056', M_BG[v] || '#F4F4F2')}>{M_SHORT[v] || v || '—'}</span>;
+    if (['adj_contract_value', 'contract_value', 'left_to_bill', 'ytd_invoiced', 'net_contract_value'].includes(k)) return <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 12, color: k === 'left_to_bill' ? (n(v) > 100000 ? '#991B1B' : n(v) > 50000 ? '#B45309' : '#065F46') : '#E2E8F0' }}>{$(v)}</span>;
     if (k === 'pct_billed') return <span>{n(v)}%</span>;
     if (k === 'total_lf') return <span>{n(v).toLocaleString()}</span>;
     if (['contract_date', 'last_billed', 'est_start_date', 'active_entry_date', 'complete_date'].includes(k)) return fD(v);
@@ -400,16 +402,16 @@ function JobsPage({ jobs, onRefresh }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900 }}>Projects</h1>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setEditMode(!editMode)} style={{ ...btnS, background: editMode ? '#F9731620' : '#1A2035', color: editMode ? '#F97316' : '#94A3B8', border: editMode ? '1px solid #F97316' : '1px solid #1A2035' }}>
+          <button onClick={() => setEditMode(!editMode)} style={{ ...btnS, background: editMode ? '#FDF4F4' : '#E5E3E0', color: editMode ? '#8B2020' : '#6B6056', border: editMode ? '1px solid #8B2020' : '1px solid #E5E3E0' }}>
             {editMode ? '✏ Edit Mode' : '👁 View Mode'}
           </button>
           <button onClick={() => setShowCols(!showCols)} style={btnS}>Columns</button>
-          <button onClick={openNewJob} style={{ ...btnP, background: '#10B981' }}>+ New Project</button>
+          <button onClick={openNewJob} style={{ ...btnP, background: '#065F46' }}>+ New Project</button>
           <button onClick={exportCSV} style={btnP}>Export CSV</button>
         </div>
       </div>
 
-      {editMode && <div style={{ background: '#F9731612', border: '1px solid #F9731640', borderRadius: 8, padding: '6px 14px', marginBottom: 12, fontSize: 12, color: '#F97316' }}>✏ Edit Mode — click any cell to edit inline. Press Enter to save, Escape to cancel.</div>}
+      {editMode && <div style={{ background: '#FDF4F4', border: '1px solid #8B202030', borderRadius: 8, padding: '6px 14px', marginBottom: 12, fontSize: 12, color: '#8B2020' }}>✏ Edit Mode — click any cell to edit inline. Press Enter to save, Escape to cancel.</div>}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -420,14 +422,14 @@ function JobsPage({ jobs, onRefresh }) {
         <select value={mktF || ''} onChange={e => setMktF(e.target.value || null)} style={{ ...inputS, width: 160 }}>
           <option value="">All Markets</option>{MKTS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-        <span style={{ fontSize: 12, color: '#64748B' }}>{filtered.length} projects · {$(filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0))} contract · {$(filtered.reduce((s, j) => s + n(j.left_to_bill), 0))} LTB</span>
+        <span style={{ fontSize: 12, color: '#6B6056' }}>{filtered.length} projects · {$(filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0))} contract · {$(filtered.reduce((s, j) => s + n(j.left_to_bill), 0))} LTB</span>
       </div>
 
       {/* Column picker */}
       {showCols && (
         <div style={{ ...card, marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {ALL_COLS.map(c => (
-            <button key={c.key} onClick={() => toggleCol(c.key)} style={{ padding: '4px 10px', borderRadius: 6, border: visCols.includes(c.key) ? '1px solid #F97316' : '1px solid #1A2035', background: visCols.includes(c.key) ? '#F9731615' : 'transparent', color: visCols.includes(c.key) ? '#F97316' : '#64748B', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{c.label}</button>
+            <button key={c.key} onClick={() => toggleCol(c.key)} style={{ padding: '4px 10px', borderRadius: 6, border: visCols.includes(c.key) ? '1px solid #8B2020' : '1px solid #E5E3E0', background: visCols.includes(c.key) ? '#8B202015' : 'transparent', color: visCols.includes(c.key) ? '#8B2020' : '#6B6056', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{c.label}</button>
           ))}
         </div>
       )}
@@ -435,18 +437,18 @@ function JobsPage({ jobs, onRefresh }) {
       {/* Table */}
       <div style={{ ...card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead style={{ position: 'sticky', top: 0, background: '#111520', zIndex: 2 }}>
+          <thead style={{ position: 'sticky', top: 0, background: '#F9F8F6', zIndex: 2 }}>
             <tr>{visColDefs.map(c => (
-              <th key={c.key} onClick={() => toggleSort(c.key)} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #1A2035', color: '#64748B', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: 0.5, userSelect: 'none' }}>
+              <th key={c.key} onClick={() => toggleSort(c.key)} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #E5E3E0', color: '#6B6056', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: 0.5, userSelect: 'none' }}>
                 {c.label} {sortCol === c.key && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
             ))}</tr>
           </thead>
           <tbody>{filtered.map(j => (
-            <tr key={j.id} onClick={() => { if (!editMode) { setEditJob(j); setIsNewJob(false); } }} style={{ cursor: editMode ? 'default' : 'pointer', borderBottom: '1px solid #0D1018' }} onMouseEnter={e => e.currentTarget.style.background = editMode ? '#1A203520' : '#F9731608'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <tr key={j.id} onClick={() => { if (!editMode) { setEditJob(j); setIsNewJob(false); } }} style={{ cursor: editMode ? 'default' : 'pointer', borderBottom: '1px solid #F4F4F2' }} onMouseEnter={e => e.currentTarget.style.background = editMode ? '#E5E3E020' : '#FDF9F6'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               {visColDefs.map(c => (
                 <td key={c.key} onClick={(e) => { if (editMode) { e.stopPropagation(); startInlineEdit(j, c.key); } }}
-                  style={{ padding: '8px 10px', whiteSpace: 'nowrap', maxWidth: c.w, overflow: 'hidden', textOverflow: 'ellipsis', cursor: editMode ? 'cell' : 'pointer', ...(editMode ? { borderRight: '1px dashed #1A2035' } : {}) }}>
+                  style={{ padding: '8px 10px', whiteSpace: 'nowrap', maxWidth: c.w, overflow: 'hidden', textOverflow: 'ellipsis', cursor: editMode ? 'cell' : 'pointer', ...(editMode ? { borderRight: '1px dashed #E5E3E0' } : {}) }}>
                   {renderCell(j, c.key)}
                 </td>
               ))}
@@ -480,7 +482,7 @@ function BillingPage({ jobs, onRefresh }) {
     onRefresh();
   };
 
-  const ltbColor = v => { const x = n(v); return x > 100000 ? '#EF4444' : x > 50000 ? '#F59E0B' : '#10B981'; };
+  const ltbColor = v => { const x = n(v); return x > 100000 ? '#991B1B' : x > 50000 ? '#B45309' : '#065F46'; };
 
   const totals = { contract: withBal.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0), ytd: withBal.reduce((s, j) => s + n(j.ytd_invoiced), 0), ltb: withBal.reduce((s, j) => s + n(j.left_to_bill), 0) };
 
@@ -505,7 +507,7 @@ function BillingPage({ jobs, onRefresh }) {
               <div key={m}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, color: M_COLOR[m] }}>{M_SHORT[m]}</span>
-                  <span style={{ color: '#64748B' }}>{mp}% · {$k(mb)} / {$k(mc)}</span>
+                  <span style={{ color: '#6B6056' }}>{mp}% · {$k(mb)} / {$k(mc)}</span>
                 </div>
                 <PBar pct={mp} color={M_COLOR[m]} h={8} />
               </div>
@@ -517,39 +519,39 @@ function BillingPage({ jobs, onRefresh }) {
       {/* Table */}
       <div style={{ ...card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead style={{ position: 'sticky', top: 0, background: '#111520', zIndex: 2 }}>
+          <thead style={{ position: 'sticky', top: 0, background: '#F9F8F6', zIndex: 2 }}>
             <tr>{['Job Name', 'Market', 'Status', 'Contract', 'YTD Invoiced', 'Left to Bill', '% Billed', 'Last Billed', 'Billing Date'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '10px', borderBottom: '1px solid #1A2035', color: '#64748B', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
+              <th key={h} style={{ textAlign: 'left', padding: '10px', borderBottom: '1px solid #E5E3E0', color: '#6B6056', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
             {withBal.map(j => (
-              <tr key={j.id} style={{ borderBottom: '1px solid #0D1018' }}>
+              <tr key={j.id} style={{ borderBottom: '1px solid #F4F4F2' }}>
                 <td style={{ padding: '8px 10px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{j.job_name}</td>
-                <td style={{ padding: '8px 10px' }}><span style={pill(M_COLOR[j.market] || '#64748B')}>{M_SHORT[j.market] || '—'}</span></td>
-                <td style={{ padding: '8px 10px' }}><span style={pill(S_COLOR[j.status] || '#64748B')}>{S_SHORT[j.status]}</span></td>
+                <td style={{ padding: '8px 10px' }}><span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span></td>
+                <td style={{ padding: '8px 10px' }}><span style={pill(S_COLOR[j.status] || '#6B6056')}>{S_SHORT[j.status]}</span></td>
                 <td style={{ padding: '8px 10px', fontFamily: 'Syne', fontWeight: 700, fontSize: 12 }}>{$(j.adj_contract_value || j.contract_value)}</td>
                 <td style={{ padding: '8px 10px' }} onClick={(e) => { e.stopPropagation(); startEdit(j, 'ytd_invoiced'); }}>
                   {editId === j.id && editField === 'ytd_invoiced' ? (
                     <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={() => saveEdit(j)} onKeyDown={e => e.key === 'Enter' && saveEdit(j)} style={{ ...inputS, width: 100, padding: '4px 8px' }} />
-                  ) : <span style={{ cursor: 'pointer', borderBottom: '1px dashed #1A2035' }}>{$(j.ytd_invoiced)}</span>}
+                  ) : <span style={{ cursor: 'pointer', borderBottom: '1px dashed #E5E3E0' }}>{$(j.ytd_invoiced)}</span>}
                 </td>
                 <td style={{ padding: '8px 10px', fontFamily: 'Syne', fontWeight: 800, color: ltbColor(j.left_to_bill), fontSize: 13 }}>{$(j.left_to_bill)}</td>
-                <td style={{ padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PBar pct={n(j.pct_billed)} h={4} color="#F97316" /><span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{n(j.pct_billed)}%</span></div></td>
+                <td style={{ padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PBar pct={n(j.pct_billed)} h={4} color="#8B2020" /><span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{n(j.pct_billed)}%</span></div></td>
                 <td style={{ padding: '8px 10px' }} onClick={(e) => { e.stopPropagation(); startEdit(j, 'last_billed'); }}>
                   {editId === j.id && editField === 'last_billed' ? (
                     <input autoFocus type="date" value={editVal || ''} onChange={e => setEditVal(e.target.value)} onBlur={() => saveEdit(j)} onKeyDown={e => e.key === 'Enter' && saveEdit(j)} style={{ ...inputS, width: 130, padding: '4px 8px' }} />
-                  ) : <span style={{ cursor: 'pointer', borderBottom: '1px dashed #1A2035' }}>{fD(j.last_billed)}</span>}
+                  ) : <span style={{ cursor: 'pointer', borderBottom: '1px dashed #E5E3E0' }}>{fD(j.last_billed)}</span>}
                 </td>
-                <td style={{ padding: '8px 10px', color: '#64748B' }}>{j.billing_date || '—'}</td>
+                <td style={{ padding: '8px 10px', color: '#6B6056' }}>{j.billing_date || '—'}</td>
               </tr>
             ))}
             {/* Totals row */}
-            <tr style={{ background: '#0D1018', fontWeight: 700, borderTop: '2px solid #1A2035' }}>
+            <tr style={{ background: '#F9F8F6', fontWeight: 700, borderTop: '2px solid #E5E3E0' }}>
               <td style={{ padding: '10px', fontFamily: 'Syne' }}>TOTALS ({withBal.length})</td>
               <td colSpan={2} /><td style={{ padding: '10px', fontFamily: 'Syne', fontSize: 13 }}>{$(totals.contract)}</td>
               <td style={{ padding: '10px', fontFamily: 'Syne', fontSize: 13 }}>{$(totals.ytd)}</td>
-              <td style={{ padding: '10px', fontFamily: 'Syne', fontSize: 13, color: '#F59E0B' }}>{$(totals.ltb)}</td>
+              <td style={{ padding: '10px', fontFamily: 'Syne', fontSize: 13, color: '#B45309' }}>{$(totals.ltb)}</td>
               <td colSpan={3} />
             </tr>
           </tbody>
@@ -579,19 +581,19 @@ function ProductionPage({ jobs, onRefresh }) {
             <div key={s}>
               <div style={{ background: S_COLOR[s] + '15', border: `1px solid ${S_COLOR[s]}30`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 14, color: S_COLOR[s] }}>{S_LABEL[s]}</div>
-                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{col.length} projects · {$k(colVal)} · {colLf.toLocaleString()} LF</div>
+                <div style={{ fontSize: 11, color: '#6B6056', marginTop: 2 }}>{col.length} projects · {$k(colVal)} · {colLf.toLocaleString()} LF</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
                 {col.map(j => (
-                  <div key={j.id} style={{ background: '#111520', border: '1px solid #1A2035', borderRadius: 10, padding: 12 }}>
+                  <div key={j.id} style={{ background: '#F9F8F6', border: '1px solid #E5E3E0', borderRadius: 10, padding: 12 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.job_name}</div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <span style={pill(M_COLOR[j.market] || '#64748B')}>{M_SHORT[j.market] || '—'}</span>
-                      {j.fence_type && <span style={pill('#64748B')}>{j.fence_type}</span>}
+                      <span style={pill(M_COLOR[j.market] || '#6B6056', M_BG[j.market] || '#F4F4F2')}>{M_SHORT[j.market] || '—'}</span>
+                      {j.fence_type && <span style={pill('#6B6056')}>{j.fence_type}</span>}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748B', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B6056', marginBottom: 8 }}>
                       <span>{n(j.total_lf).toLocaleString()} LF</span>
-                      <span style={{ fontFamily: 'Syne', fontWeight: 700, color: '#F97316' }}>{$(j.adj_contract_value || j.contract_value)}</span>
+                      <span style={{ fontFamily: 'Syne', fontWeight: 700, color: '#8B2020' }}>{$(j.adj_contract_value || j.contract_value)}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {STATUSES.filter(ns => ns !== s).map(ns => (
@@ -632,27 +634,27 @@ export default function App() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       {/* Sidebar */}
-      <div style={{ width: 220, background: '#0D1018', borderRight: '1px solid #1A2035', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, bottom: 0, zIndex: 50 }}>
+      <div style={{ width: 220, background: '#1A1A1A', borderRight: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, bottom: 0, zIndex: 50 }}>
         <div style={{ padding: '24px 20px 20px' }}>
-          <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 900, color: '#F97316' }}>FENCECRETE</div>
-          <div style={{ fontSize: 10, color: '#475569', letterSpacing: 2, textTransform: 'uppercase' }}>Operations</div>
+          <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 900, color: '#8B2020' }}>FENCECRETE</div>
+          <div style={{ fontSize: 10, color: '#9E9B96', letterSpacing: 2, textTransform: 'uppercase' }}>Operations</div>
         </div>
         <nav style={{ flex: 1, padding: '0 8px' }}>
           {NAV.map(n => (
-            <button key={n.key} onClick={() => setPage(n.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px', marginBottom: 2, borderRadius: 8, border: 'none', background: page === n.key ? '#F9731618' : 'transparent', color: page === n.key ? '#F97316' : '#64748B', fontSize: 14, fontWeight: page === n.key ? 600 : 400, cursor: 'pointer', textAlign: 'left', borderLeft: page === n.key ? '3px solid #F97316' : '3px solid transparent' }}>
+            <button key={n.key} onClick={() => setPage(n.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px', marginBottom: 2, borderRadius: 8, border: 'none', background: page === n.key ? '#8B202018' : 'transparent', color: page === n.key ? '#8B2020' : '#9E9B96', fontSize: 14, fontWeight: page === n.key ? 600 : 400, cursor: 'pointer', textAlign: 'left', borderLeft: page === n.key ? '3px solid #8B2020' : '3px solid transparent' }}>
               <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{n.icon}</span> {n.label}
             </button>
           ))}
         </nav>
-        <div style={{ padding: '16px 20px', borderTop: '1px solid #1A2035', fontSize: 11, color: '#475569' }}>
+        <div style={{ padding: '16px 20px', borderTop: '1px solid #2A2A2A', fontSize: 11, color: '#6B6056' }}>
           {jobs.length} projects loaded
-          <button onClick={fetchJobs} style={{ display: 'block', marginTop: 6, padding: '4px 10px', background: '#1A2035', border: 'none', borderRadius: 6, color: '#94A3B8', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
+          <button onClick={fetchJobs} style={{ display: 'block', marginTop: 6, padding: '4px 10px', background: '#2A2A2A', border: 'none', borderRadius: 6, color: '#9E9B96', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
         </div>
       </div>
 
       {/* Main */}
       <div style={{ flex: 1, marginLeft: 220, padding: '24px 32px' }}>
-        {loading ? <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', color: '#475569' }}>Loading...</div> : (
+        {loading ? <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', color: '#9E9B96' }}>Loading...</div> : (
           <>
             {page === 'dashboard' && <Dashboard jobs={jobs} />}
             {page === 'jobs' && <JobsPage jobs={jobs} onRefresh={fetchJobs} />}
