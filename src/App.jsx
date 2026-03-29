@@ -7,6 +7,7 @@ const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZi
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 const get = async (t, q = '') => { const r = await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H }); return r.json(); };
 const patch = async (t, id, b) => { await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) }); };
+const post = async (t, b) => { const r = await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) }); return r.json(); };
 
 const $ = v => { const x = Number(v) || 0; return '$' + x.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
 const $k = v => { const x = Number(v) || 0; return x >= 1e6 ? '$' + (x/1e6).toFixed(1) + 'M' : x >= 1e3 ? '$' + (x/1e3).toFixed(0) + 'K' : '$' + x; };
@@ -150,18 +151,25 @@ const SECTIONS = [
   { key: 'co', label: 'Change Order Info', fields: ['change_orders', 'contract_value_recalculation', 'contract_value_recalc_diff'] },
 ];
 
-function EditPanel({ job, onClose, onSaved }) {
+function EditPanel({ job, onClose, onSaved, isNew }) {
   const [form, setForm] = useState({ ...job });
-  const [tab, setTab] = useState('contract');
+  const [tab, setTab] = useState(isNew ? 'details' : 'contract');
   const [saving, setSaving] = useState(false);
   const set = (f, v) => setForm(p => ({ ...p, [f]: v }));
 
   const handleSave = async () => {
     setSaving(true);
-    const { id, created_at, updated_at, ...rest } = form;
-    await patch('jobs', job.id, rest);
+    if (isNew) {
+      const { id, created_at, updated_at, ...rest } = form;
+      if (!rest.job_name) { setSaving(false); return; }
+      if (!rest.status) rest.status = 'contract_review';
+      await post('jobs', rest);
+    } else {
+      const { id, created_at, updated_at, ...rest } = form;
+      await patch('jobs', job.id, rest);
+    }
     setSaving(false);
-    onSaved();
+    onSaved(isNew ? 'Job created' : null);
   };
 
   const sec = SECTIONS.find(s => s.key === tab);
@@ -171,11 +179,11 @@ function EditPanel({ job, onClose, onSaved }) {
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid #1A2035', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <div>
-          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800 }}>{form.job_name}</div>
-          <div style={{ fontSize: 12, color: '#64748B' }}>#{form.job_number} &middot; {form.customer_name}</div>
+          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800 }}>{isNew ? 'New Job' : (form.job_name || 'Untitled')}</div>
+          <div style={{ fontSize: 12, color: '#64748B' }}>{isNew ? 'Fill in job details below' : `#${form.job_number} · ${form.customer_name}`}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleSave} disabled={saving} style={btnP}>{saving ? 'Saving...' : 'Save'}</button>
+          <button onClick={handleSave} disabled={saving} style={{ ...btnP, background: isNew ? '#10B981' : '#F97316' }}>{saving ? 'Saving...' : isNew ? 'Create Job' : 'Save'}</button>
           <button onClick={onClose} style={btnS}>Close</button>
         </div>
       </div>
@@ -224,6 +232,10 @@ function JobsPage({ jobs, onRefresh }) {
   const [visCols, setVisCols] = useState(() => ALL_COLS.slice(0, 15).map(c => c.key));
   const [showCols, setShowCols] = useState(false);
   const [editJob, setEditJob] = useState(null);
+  const [isNewJob, setIsNewJob] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [inlineEdit, setInlineEdit] = useState(null); // { id, key, value }
+  const [toast, setToast] = useState(null);
 
   const toggleCol = k => setVisCols(v => v.includes(k) ? v.filter(x => x !== k) : [...v, k]);
   const toggleSort = k => { if (sortCol === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(k); setSortDir('desc'); } };
@@ -248,9 +260,43 @@ function JobsPage({ jobs, onRefresh }) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fencecrete-jobs.csv'; a.click();
   };
 
+  const openNewJob = () => {
+    setEditJob({ job_name: '', job_number: '', customer_name: '', market: '', status: 'contract_review', fence_type: '', product: '', sales_rep: '' });
+    setIsNewJob(true);
+  };
+
+  const handlePanelSaved = (msg) => {
+    setEditJob(null);
+    setIsNewJob(false);
+    if (msg) setToast(msg);
+    onRefresh();
+  };
+
+  const startInlineEdit = (j, k) => {
+    if (!editMode) return;
+    setInlineEdit({ id: j.id, key: k, value: j[k] ?? '' });
+  };
+
+  const saveInlineEdit = async () => {
+    if (!inlineEdit) return;
+    await patch('jobs', inlineEdit.id, { [inlineEdit.key]: inlineEdit.value });
+    setInlineEdit(null);
+    setToast('Saved');
+    onRefresh();
+  };
+
   const visColDefs = ALL_COLS.filter(c => visCols.includes(c.key));
 
   const renderCell = (j, k) => {
+    // Inline edit active for this cell
+    if (inlineEdit && inlineEdit.id === j.id && inlineEdit.key === k) {
+      return (
+        <input autoFocus value={inlineEdit.value} onChange={e => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+          onBlur={saveInlineEdit} onKeyDown={e => { if (e.key === 'Enter') saveInlineEdit(); if (e.key === 'Escape') setInlineEdit(null); }}
+          onClick={e => e.stopPropagation()}
+          style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }} />
+      );
+    }
     const v = j[k];
     if (k === 'status') return <span style={pill(S_COLOR[v] || '#64748B')}>{S_SHORT[v] || v}</span>;
     if (k === 'market') return <span style={pill(M_COLOR[v] || '#64748B')}>{M_SHORT[v] || v || '—'}</span>;
@@ -263,13 +309,20 @@ function JobsPage({ jobs, onRefresh }) {
 
   return (
     <div>
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900 }}>Jobs</h1>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setEditMode(!editMode)} style={{ ...btnS, background: editMode ? '#F9731620' : '#1A2035', color: editMode ? '#F97316' : '#94A3B8', border: editMode ? '1px solid #F97316' : '1px solid #1A2035' }}>
+            {editMode ? '✏ Edit Mode' : '👁 View Mode'}
+          </button>
           <button onClick={() => setShowCols(!showCols)} style={btnS}>Columns</button>
+          <button onClick={openNewJob} style={{ ...btnP, background: '#10B981' }}>+ New Job</button>
           <button onClick={exportCSV} style={btnP}>Export CSV</button>
         </div>
       </div>
+
+      {editMode && <div style={{ background: '#F9731612', border: '1px solid #F9731640', borderRadius: 8, padding: '6px 14px', marginBottom: 12, fontSize: 12, color: '#F97316' }}>✏ Edit Mode — click any cell to edit inline. Press Enter to save, Escape to cancel.</div>}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -293,7 +346,7 @@ function JobsPage({ jobs, onRefresh }) {
       )}
 
       {/* Table */}
-      <div style={{ ...card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 220px)' }}>
+      <div style={{ ...card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead style={{ position: 'sticky', top: 0, background: '#111520', zIndex: 2 }}>
             <tr>{visColDefs.map(c => (
@@ -303,14 +356,19 @@ function JobsPage({ jobs, onRefresh }) {
             ))}</tr>
           </thead>
           <tbody>{filtered.map(j => (
-            <tr key={j.id} onClick={() => setEditJob(j)} style={{ cursor: 'pointer', borderBottom: '1px solid #0D1018' }} onMouseEnter={e => e.currentTarget.style.background = '#F9731608'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              {visColDefs.map(c => <td key={c.key} style={{ padding: '8px 10px', whiteSpace: 'nowrap', maxWidth: c.w, overflow: 'hidden', textOverflow: 'ellipsis' }}>{renderCell(j, c.key)}</td>)}
+            <tr key={j.id} onClick={() => { if (!editMode) { setEditJob(j); setIsNewJob(false); } }} style={{ cursor: editMode ? 'default' : 'pointer', borderBottom: '1px solid #0D1018' }} onMouseEnter={e => e.currentTarget.style.background = editMode ? '#1A203520' : '#F9731608'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {visColDefs.map(c => (
+                <td key={c.key} onClick={(e) => { if (editMode) { e.stopPropagation(); startInlineEdit(j, c.key); } }}
+                  style={{ padding: '8px 10px', whiteSpace: 'nowrap', maxWidth: c.w, overflow: 'hidden', textOverflow: 'ellipsis', cursor: editMode ? 'cell' : 'pointer', ...(editMode ? { borderRight: '1px dashed #1A2035' } : {}) }}>
+                  {renderCell(j, c.key)}
+                </td>
+              ))}
             </tr>
           ))}</tbody>
         </table>
       </div>
 
-      {editJob && <EditPanel job={editJob} onClose={() => setEditJob(null)} onSaved={() => { setEditJob(null); onRefresh(); }} />}
+      {editJob && <EditPanel job={editJob} isNew={isNewJob} onClose={() => { setEditJob(null); setIsNewJob(false); }} onSaved={handlePanelSaved} />}
     </div>
   );
 }
