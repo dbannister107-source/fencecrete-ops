@@ -761,12 +761,12 @@ export default function App() {
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', width: '100%' }}>
       {/* Sidebar */}
-      <div style={{ width: 220, background: '#1A1A1A', borderRight: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, bottom: 0, zIndex: 50 }}>
+      <div style={{ width: 220, minWidth: 220, maxWidth: 220, flexShrink: 0, background: '#1A1A1A', borderRight: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, bottom: 0, zIndex: 50, overflow: 'hidden' }}>
         <div style={{ padding: '24px 20px 20px' }}>
-          <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 900, color: '#8B2020' }}>FENCECRETE</div>
-          <div style={{ fontSize: 10, color: '#9E9B96', letterSpacing: 2, textTransform: 'uppercase' }}>Operations</div>
+          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 900, color: '#8B2020', whiteSpace: 'nowrap', overflow: 'hidden' }}>FENCECRETE</div>
+          <div style={{ fontSize: 10, color: '#9E9B96', letterSpacing: 2, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden' }}>Operations</div>
         </div>
         <nav style={{ flex: 1, padding: '0 8px' }}>
           {NAV.map(n => (
@@ -782,7 +782,7 @@ export default function App() {
       </div>
 
       {/* Main */}
-      <div style={{ flex: 1, marginLeft: 220, padding: '24px 32px' }}>
+      <div style={{ flex: 1, minWidth: 0, marginLeft: 220, padding: '24px 32px', overflow: 'auto' }}>
         {loading ? <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', color: '#9E9B96' }}>Loading...</div> : (
           <>
             {page === 'dashboard' && <Dashboard jobs={jobs} />}
