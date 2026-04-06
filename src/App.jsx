@@ -298,15 +298,16 @@ function BillingPage({jobs,onRefresh}){
       </div>}
     </div>
     {/* Confirm Mark Full Modal */}
-    {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:28,width:420}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:12}}>Mark {confirmFullJob.job_name} as 100% billed?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:20}}>
-          This will set YTD Invoiced to <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(n(confirmFullJob.adj_contract_value||confirmFullJob.contract_value))}</span>.<br/>
-          Current YTD: <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(confirmFullJob.ytd_invoiced)}</span><br/>
-          Are you sure?
+    {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)} onKeyDown={e=>{if(e.key==='Escape')setConfirmFullJob(null);}} tabIndex={-1} ref={el=>el&&el.focus()}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:16,color:'#1A1A1A'}}>Mark as 100% Billed?</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:8}}>
+          This will set YTD Invoiced to <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(n(confirmFullJob.adj_contract_value||confirmFullJob.contract_value))}</span> for <span style={{fontWeight:700,color:'#1A1A1A'}}>{confirmFullJob.job_name}</span>. This cannot be undone.
         </div>
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm</button></div>
+        <div style={{fontSize:13,color:'#6B6056',marginBottom:20}}>
+          Current YTD Invoiced: <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(confirmFullJob.ytd_invoiced)}</span>
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm — Mark Fully Billed</button></div>
       </div>
     </div>}
     {/* Confirm Undo Modal */}
