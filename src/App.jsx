@@ -226,11 +226,14 @@ function BillingPage({jobs,onRefresh}){
   const fully=active.filter(j=>n(j.pct_billed)>=99).length;
   const[editId,setEditId]=useState(null);const[editField,setEditField]=useState(null);const[editVal,setEditVal]=useState('');const[billingF,setBillingF]=useState(null);
   const[pmEntries,setPmEntries]=useState([]);const[showPmModal,setShowPmModal]=useState(null);const[toast,setToast]=useState(null);
+  const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   useEffect(()=>{sbGet('pm_billing_entries','select=*&status=eq.pending').then(d=>setPmEntries(d||[]));},[]);
   const getPendingForJob=(jobId)=>pmEntries.filter(e=>e.job_id===jobId);
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
   const saveEdit=async j=>{const u={[editField]:editVal};if(editField==='ytd_invoiced'){const adj=n(j.adj_contract_value||j.contract_value);const ytd=n(editVal);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/100:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',editField,j[editField],editVal);setEditId(null);setEditField(null);onRefresh();};
-  const markFull=async j=>{const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:adj,pct_billed:100,left_to_bill:0};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,adj);onRefresh();};
+  const confirmMarkFull=async()=>{if(!confirmFullJob)return;const j=confirmFullJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:adj,pct_billed:100,left_to_bill:0};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,adj);setConfirmFullJob(null);setToast(`${j.job_name} marked as 100% billed`);onRefresh();};
+  const confirmUndo=async()=>{if(!undoJob)return;const j=undoJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:0,pct_billed:0,left_to_bill:adj};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,0);setUndoJob(null);setToast(`Undo: ${j.job_name} YTD reset to $0`);onRefresh();};
+  const recentlyBilled=useMemo(()=>jobs.filter(j=>n(j.pct_billed)>=99).sort((a,b)=>(b.last_billed||'').localeCompare(a.last_billed||'')).slice(0,10),[jobs]);
   const applyToYTD=async(job,pendingList)=>{
     const sumAmt=pendingList.reduce((s,e)=>s+n(e.amount_to_invoice),0);
     const newYTD=n(job.ytd_invoiced)+sumAmt;
@@ -265,8 +268,52 @@ function BillingPage({jobs,onRefresh}){
         <td style={{padding:'8px 10px'}}>{pending.length>0?<button onClick={()=>setShowPmModal({job:j,entries:pending})} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:700,cursor:'pointer',padding:'3px 8px'}}>{pending.length} pending · {$(pendingAmt)}</button>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
         <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
         <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
-        <td style={{padding:'8px 10px'}}><button onClick={()=>markFull(j)} title="Mark 100% billed" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
+        <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Mark 100% billed" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
       </tr>;})}</tbody></table></div>
+    {/* Recently Fully Billed */}
+    <div style={{marginTop:24}}>
+      <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Syne',fontWeight:700,fontSize:14,color:'#6B6056',padding:0,marginBottom:showRecent?12:0}}>
+        <span style={{fontSize:12,transition:'transform .2s',transform:showRecent?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
+        Recently Fully Billed ({recentlyBilled.length})
+      </button>
+      {showRecent&&<div style={{...card,padding:0,overflow:'auto',maxHeight:360}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job Name','Market','Contract Value','Date Billed','Sales Rep',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{recentlyBilled.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
+            <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+            <td style={{padding:'8px 10px',fontFamily:'Syne',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
+            <td style={{padding:'8px 10px'}}>{fD(j.last_billed)}</td>
+            <td style={{padding:'8px 10px'}}>{j.sales_rep||'—'}</td>
+            <td style={{padding:'8px 10px'}}><button onClick={()=>setUndoJob(j)} style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Undo</button></td>
+          </tr>)}</tbody>
+        </table>
+        {recentlyBilled.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No fully billed jobs</div>}
+      </div>}
+    </div>
+    {/* Confirm Mark Full Modal */}
+    {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:420}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:800,marginBottom:12}}>Mark {confirmFullJob.job_name} as 100% billed?</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:20}}>
+          This will set YTD Invoiced to <span style={{fontFamily:'Syne',fontWeight:700,color:'#1A1A1A'}}>{$(n(confirmFullJob.adj_contract_value||confirmFullJob.contract_value))}</span>.<br/>
+          Current YTD: <span style={{fontFamily:'Syne',fontWeight:700,color:'#1A1A1A'}}>{$(confirmFullJob.ytd_invoiced)}</span><br/>
+          Are you sure?
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm</button></div>
+      </div>
+    </div>}
+    {/* Confirm Undo Modal */}
+    {undoJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setUndoJob(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:420}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:800,marginBottom:12}}>Undo billing for {undoJob.job_name}?</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:20}}>
+          This will reset YTD Invoiced from <span style={{fontFamily:'Syne',fontWeight:700,color:'#1A1A1A'}}>{$(undoJob.ytd_invoiced)}</span> back to <span style={{fontFamily:'Syne',fontWeight:700,color:'#991B1B'}}>$0</span>.<br/>
+          Are you sure?
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
+      </div>
+    </div>}
     {/* PM Entries Modal */}
     {showPmModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPmModal(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:500,maxHeight:'70vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
