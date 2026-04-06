@@ -340,7 +340,8 @@ function BillingPage({jobs,onRefresh}){
 }
 
 /* ═══ PM BILLING PAGE ═══ */
-const PMS=['Max','Luis','Ray','Rafael','Manuel'];
+const PM_LIST=[{id:'Doug',label:'Doug Monroe'},{id:'Ray',label:'Ray Garcia'},{id:'Manuel',label:'Manuel Salazar'},{id:'Jr',label:'Rafael Anaya Jr.'}];
+const PMS=PM_LIST.map(p=>p.id);
 const ACTIVE_STATUSES=['production_queue','in_production','ready_to_install'];
 
 function PMBillingPage({jobs,onRefresh}){
@@ -434,7 +435,7 @@ function PMBillingPage({jobs,onRefresh}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Billing</h1>
     <div style={{...card,textAlign:'center',padding:40}}>
       <div style={{fontSize:16,color:'#6B6056',marginBottom:20}}>Select your name to get started</div>
-      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PMS.map(pm=><button key={pm} onClick={()=>pickPM(pm)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',fontFamily:'Inter',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8B2020';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8B2020';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm}</button>)}</div>
+      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8B2020';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8B2020';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
     </div>
   </div>);
 
@@ -444,7 +445,7 @@ function PMBillingPage({jobs,onRefresh}){
 
     {/* PM Selector */}
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-      {PMS.map(pm=><button key={pm} onClick={()=>pickPM(pm)} style={{padding:'8px 20px',borderRadius:20,border:'none',background:selPM===pm?'#8B2020':'#F4F4F2',color:selPM===pm?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>{pm}</button>)}
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 20px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>{pm.id}</button>)}
     </div>
 
     {/* Tabs */}
