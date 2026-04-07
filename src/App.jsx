@@ -769,6 +769,179 @@ function SchedulePage({jobs}){
   </div>);
 }
 
+/* ═══ DAILY REPORT PAGE ═══ */
+function DailyReportPage(){
+  const SCHED_FIELDS=['sched_short_panels','sched_long_panels','sched_posts','sched_end_posts','sched_rails','sched_other'];
+  const ACTUAL_FIELDS=['actual_short_panels','actual_long_panels','actual_posts','actual_end_posts','actual_rails','actual_other'];
+  const PIECE_LABELS=['Short Panels','Long Panels','Posts','End Posts','Rails','Other'];
+  const NEXT_FIELDS=['sched_short_panels','sched_long_panels','sched_posts','sched_end_posts','sched_rails','sched_other'];
+  const PRIORITIES=['Critical','High','Normal','Low'];
+  const priorityColor=p=>p==='Critical'?'#A32D2D':p==='High'?'#854F0B':'#1A1A1A';
+
+  const emptyToday=()=>({job_name:'',...Object.fromEntries([...SCHED_FIELDS,...ACTUAL_FIELDS].map(f=>[f,0]))});
+  const emptyNext=()=>({job_name:'',priority:'Normal',ship_date:'',notes:'',...Object.fromEntries(NEXT_FIELDS.map(f=>[f,0]))});
+  const sumF=(row,fields)=>fields.reduce((s,f)=>s+(parseInt(row[f])||0),0);
+
+  const[tab,setTab]=useState('new');
+  const[reportId,setReportId]=useState(null);
+
+  // New Report state
+  const todayISO=new Date().toISOString().slice(0,10);
+  const[date,setDate]=useState(todayISO);
+  const[scheduler,setScheduler]=useState('');
+  const[shift,setShift]=useState('');
+  const[todayRows,setTodayRows]=useState(()=>Array.from({length:8},emptyToday));
+  const[nextDayRows,setNextDayRows]=useState(()=>Array.from({length:6},emptyNext));
+  const[commentary,setCommentary]=useState({});
+  const[submitting,setSubmitting]=useState(false);
+  const[toast,setToast]=useState(null);
+
+  // History state
+  const[reports,setReports]=useState([]);
+  const[histLoading,setHistLoading]=useState(false);
+
+  // Detail state
+  const[detailReport,setDetailReport]=useState(null);
+  const[detailToday,setDetailToday]=useState([]);
+  const[detailNext,setDetailNext]=useState([]);
+
+  const showToast=(msg,ok)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500);};
+
+  const fetchHistory=async()=>{setHistLoading(true);try{const data=await sbGet('daily_schedule_reports','order=report_date.desc');const enriched=await Promise.all(data.map(async r=>{const rows=await sbGet('daily_schedule_rows',`report_id=eq.${r.id}&section=eq.today`);const ts=rows.reduce((s,row)=>s+sumF(row,SCHED_FIELDS),0);const ta=rows.reduce((s,row)=>s+sumF(row,ACTUAL_FIELDS),0);return{...r,adherence:ts>0?(ta/ts)*100:null};}));setReports(enriched);}catch(e){console.error(e);}setHistLoading(false);};
+
+  const openDetail=async(id)=>{try{const rArr=await sbGet('daily_schedule_reports',`id=eq.${id}`);if(!rArr||!rArr[0])return;setDetailReport(rArr[0]);const rows=await sbGet('daily_schedule_rows',`report_id=eq.${id}&order=row_order.asc`);const tRows=Array.from({length:8},emptyToday);rows.filter(r=>r.section==='today').forEach((r,i)=>{if(i<tRows.length)tRows[i]=r;});setDetailToday(tRows);const nRows=Array.from({length:6},emptyNext);rows.filter(r=>r.section==='nextday').forEach((r,i)=>{if(i<nRows.length)nRows[i]=r;});setDetailNext(nRows);setReportId(id);}catch(e){console.error(e);}};
+
+  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setTodayRows(Array.from({length:8},emptyToday));setNextDayRows(Array.from({length:6},emptyNext));setCommentary({});};
+
+  const submitReport=async()=>{setSubmitting(true);try{const rpt=await sbPost('daily_schedule_reports',{report_date:date,scheduler:scheduler||null,shift:shift||null,...commentary});const rowPayloads=[];todayRows.forEach((r,i)=>{if(!r.job_name&&sumF(r,SCHED_FIELDS)===0&&sumF(r,ACTUAL_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'today',row_order:i,job_name:r.job_name,...Object.fromEntries(SCHED_FIELDS.map(f=>[f,parseInt(r[f])||0])),...Object.fromEntries(ACTUAL_FIELDS.map(f=>[f,parseInt(r[f])||0]))});});nextDayRows.forEach((r,i)=>{if(!r.job_name&&sumF(r,NEXT_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'nextday',row_order:i,job_name:r.job_name,...Object.fromEntries(NEXT_FIELDS.map(f=>[f,parseInt(r[f])||0])),priority:r.priority||'Normal',ship_date:r.ship_date||null,notes:r.notes||null});});if(rowPayloads.length>0)await sbPost('daily_schedule_rows',rowPayloads);showToast(`Report submitted for ${date}`,true);resetForm();setTimeout(()=>{setTab('history');fetchHistory();},600);}catch(e){showToast(e.message||'Submit failed',false);}setSubmitting(false);};
+
+  useEffect(()=>{if(tab==='history'&&!reportId)fetchHistory();},[tab,reportId]);
+
+  const updateToday=(i,field,val)=>setTodayRows(prev=>prev.map((r,idx)=>idx===i?{...r,[field]:val}:r));
+  const updateNext=(i,field,val)=>setNextDayRows(prev=>prev.map((r,idx)=>idx===i?{...r,[field]:val}:r));
+
+  const totalSched=todayRows.reduce((s,r)=>s+sumF(r,SCHED_FIELDS),0);
+  const totalActual=todayRows.reduce((s,r)=>s+sumF(r,ACTUAL_FIELDS),0);
+  const adherence=totalSched>0?(totalActual/totalSched)*100:null;
+  const nextTotal=nextDayRows.reduce((s,r)=>s+sumF(r,NEXT_FIELDS),0);
+
+  const adhBadge=(val)=>{if(val===null||val===undefined||isNaN(val))return<span style={{...pill('#6B6056','#E5E3E0'),fontSize:11}}>—</span>;const pct=Math.round(val);const bg=pct>=90?'#3B6D11':pct>=75?'#854F0B':'#A32D2D';return<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:bg,color:'#FFF'}}>{pct}%</span>;};
+
+  const thS={padding:'4px 6px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'center',borderBottom:'2px solid #E5E3E0',whiteSpace:'nowrap'};
+  const tdS={padding:'3px 4px',fontSize:11,borderBottom:'1px solid #F4F4F2',textAlign:'center'};
+  const numInput={width:'100%',padding:'3px 2px',border:'1px solid #E5E3E0',borderRadius:4,fontSize:11,textAlign:'center',background:'transparent',color:'#1A1A1A',MozAppearance:'textfield',WebkitAppearance:'none'};
+  const txtInput={...numInput,textAlign:'left',padding:'3px 6px'};
+  const lockedTd={...tdS,background:'#F3F4F6',fontWeight:600};
+  const schedBg='#EBF3FB';const actualBg='#EAF3DE';
+
+  const formatDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // ─── DETAIL VIEW ───
+  if(tab==='history'&&reportId&&detailReport){
+    const dtSched=detailToday.reduce((s,r)=>s+sumF(r,SCHED_FIELDS),0);
+    const dtActual=detailToday.reduce((s,r)=>s+sumF(r,ACTUAL_FIELDS),0);
+    const dtAdh=dtSched>0?(dtActual/dtSched)*100:null;
+    const dtNextTotal=detailNext.reduce((s,r)=>s+sumF(r,NEXT_FIELDS),0);
+    const submittedAt=new Date(detailReport.submitted_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    return(<div>
+      {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <button onClick={()=>setReportId(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer'}}>← Back to History</button>
+        <span style={{fontSize:12,color:'#9E9B96'}}>Submitted {submittedAt}</span>
+      </div>
+      <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',gap:24,alignItems:'center'}}>
+        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Date</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.report_date}</div></div>
+        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Scheduler</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.scheduler||'—'}</div></div>
+        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Shift</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.shift||'—'}</div></div>
+      </div>
+      {/* Section 1 read-only */}
+      <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+        <div style={{background:'#185FA5',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 1 — Today's schedule vs. actual</span>{adhBadge(dtAdh)}</div>
+        <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS} rowSpan={2}>Job</th><th style={{...thS,background:schedBg}} colSpan={7}>Scheduled</th><th style={{...thS,background:actualBg}} colSpan={7}>Actual</th><th style={{...thS,background:'#F3F4F6'}} rowSpan={2}>Var %</th></tr><tr>{PIECE_LABELS.map(c=><th key={'s'+c} style={{...thS,background:schedBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th>{PIECE_LABELS.map(c=><th key={'a'+c} style={{...thS,background:actualBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th></tr></thead>
+        <tbody>{detailToday.map((r,i)=>{const st=sumF(r,SCHED_FIELDS);const at=sumF(r,ACTUAL_FIELDS);const v=st>0?((at-st)/st*100):null;return<tr key={i}><td style={{...tdS,textAlign:'left',fontWeight:500,paddingLeft:8}}>{r.job_name||''}</td>{SCHED_FIELDS.map(f=><td key={f} style={{...tdS,background:schedBg}}>{r[f]||0}</td>)}<td style={lockedTd}>{st}</td>{ACTUAL_FIELDS.map(f=><td key={f} style={{...tdS,background:actualBg}}>{r[f]||0}</td>)}<td style={lockedTd}>{at}</td><td style={lockedTd}>{v===null?'—':<span style={{color:v>=0?'#3B6D11':'#A32D2D'}}>{v>=0?'+':''}{Math.round(v)}%</span>}</td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>TOTAL</td>{SCHED_FIELDS.map(f=>{const c=detailToday.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:schedBg}}>{c}</td>;})}<td style={lockedTd}>{dtSched}</td>{ACTUAL_FIELDS.map(f=>{const c=detailToday.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:actualBg}}>{c}</td>;})}<td style={lockedTd}>{dtActual}</td><td style={lockedTd}>{dtSched>0?<span style={{color:(dtActual-dtSched)>=0?'#3B6D11':'#A32D2D'}}>{dtActual-dtSched>=0?'+':''}{Math.round((dtActual-dtSched)/dtSched*100)}%</span>:'—'}</td></tr><tr style={{background:schedBg,fontWeight:700}}><td style={tdS} colSpan={15}>SCHEDULE ADHERENCE</td><td style={{...tdS,textAlign:'center'}}>{adhBadge(dtAdh)} <span style={{fontSize:10,color:'#9E9B96',fontWeight:400}}>Target ≥ 90%</span></td></tr></tbody></table></div>
+      </div>
+      {/* Section 2 read-only */}
+      <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+        <div style={{background:'#3B6D11',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 2 — Next-day production schedule</span><span style={{fontSize:12,fontWeight:600,background:'rgba(255,255,255,0.2)',padding:'2px 8px',borderRadius:6}}>Total: {dtNextTotal} pieces</span></div>
+        <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS}>Job</th>{PIECE_LABELS.map(c=><th key={c} style={thS}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th><th style={thS}>Priority</th><th style={thS}>Ship Date</th><th style={thS}>Notes</th></tr></thead>
+        <tbody>{detailNext.map((r,i)=>{const t=sumF(r,NEXT_FIELDS);return<tr key={i}><td style={{...tdS,textAlign:'left',fontWeight:500,paddingLeft:8}}>{r.job_name||''}</td>{NEXT_FIELDS.map(f=><td key={f} style={tdS}>{r[f]||0}</td>)}<td style={lockedTd}>{t}</td><td style={{...tdS,color:priorityColor(r.priority)}}>{r.priority||'Normal'}</td><td style={tdS}>{r.ship_date||'—'}</td><td style={{...tdS,textAlign:'left',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||''}</td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>NEXT-DAY TOTAL</td>{NEXT_FIELDS.map(f=>{const c=detailNext.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={tdS}>{c}</td>;})}<td style={lockedTd}>{dtNextTotal}</td><td style={tdS} colSpan={3}/></tr></tbody></table></div>
+      </div>
+      {/* Section 3 read-only */}
+      <div style={{...card,padding:0,overflow:'hidden'}}>
+        <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Section 3 — Constraints, readiness & commentary</div>
+        <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {[{k:'blockers',l:'Schedule Blockers / Constraints',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow'},{k:'material_readiness',l:'Material Readiness for Tomorrow'},{k:'equipment_status',l:'Equipment Status'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations'},{k:'other_comments',l:'Other Comments',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}><div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</div><div style={{fontSize:13,color:'#1A1A1A',background:'#FAFAF8',borderRadius:8,padding:10,minHeight:48,whiteSpace:'pre-wrap'}}>{detailReport[f.k]||'—'}</div></div>)}
+        </div>
+      </div>
+    </div>);
+  }
+
+  // ─── HISTORY VIEW ───
+  if(tab==='history'){
+    return(<div>
+      {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Daily Report</h1>
+        <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>setTab('history')} style={gpill(tab==='history')}>History</button></div>
+      </div>
+      {histLoading?<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>Loading...</div>:reports.length===0?<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>No reports submitted yet. Start with New Report.</div>:<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        {reports.map(r=><div key={r.id} style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div><div style={{fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{formatDate(r.report_date)}</div><div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{r.scheduler||'—'} | {r.shift||'—'}</div></div>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>{adhBadge(r.adherence)}<button onClick={()=>openDetail(r.id)} style={{fontSize:12,fontWeight:600,color:'#8B2020',background:'none',border:'none',cursor:'pointer'}}>View Report →</button></div>
+        </div>)}
+      </div>}
+    </div>);
+  }
+
+  // ─── NEW REPORT VIEW ───
+  return(<div>
+    {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Daily Report</h1>
+      <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchHistory();}} style={gpill(tab==='history')}>History</button></div>
+    </div>
+
+    {/* Header bar */}
+    <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',flexWrap:'wrap',gap:16,alignItems:'center'}}>
+      <div style={{color:'#FFF',flex:'1 1 100%'}}><div style={{fontFamily:'Syne',fontSize:18,fontWeight:800}}>Daily Production Scheduling Report</div><div style={{fontSize:12,opacity:0.8}}>Fencecrete America — San Antonio Plant</div></div>
+      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Date</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
+      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Scheduler</div><input value={scheduler} onChange={e=>setScheduler(e.target.value)} placeholder="Max" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
+      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Shift</div><input value={shift} onChange={e=>setShift(e.target.value)} placeholder="Day / Eve" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
+    </div>
+
+    {/* Section 1 */}
+    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+      <div style={{background:'#185FA5',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 1 — Today's schedule vs. actual</span><div style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>Adherence: {adhBadge(adherence)}</div></div>
+      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS} rowSpan={2}>Job</th><th style={{...thS,background:schedBg}} colSpan={7}>Scheduled (Max)</th><th style={{...thS,background:actualBg}} colSpan={7}>Actual (from Luis Daily Report)</th><th style={{...thS,background:'#F3F4F6'}} rowSpan={2}>Var %</th></tr><tr>{PIECE_LABELS.map(c=><th key={'s'+c} style={{...thS,background:schedBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th>{PIECE_LABELS.map(c=><th key={'a'+c} style={{...thS,background:actualBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th></tr></thead>
+      <tbody>{todayRows.map((r,i)=>{const st=sumF(r,SCHED_FIELDS);const at=sumF(r,ACTUAL_FIELDS);const v=st>0?((at-st)/st*100):null;return<tr key={i}><td style={{...tdS,minWidth:120}}><input value={r.job_name} onChange={e=>updateToday(i,'job_name',e.target.value)} placeholder="Job name" style={txtInput}/></td>{SCHED_FIELDS.map(f=><td key={f} style={{...tdS,background:schedBg,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{st}</td>{ACTUAL_FIELDS.map(f=><td key={f} style={{...tdS,background:actualBg,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{at}</td><td style={lockedTd}>{v===null?'—':<span style={{color:v>=0?'#3B6D11':'#A32D2D'}}>{v>=0?'+':''}{Math.round(v)}%</span>}</td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>TOTAL</td>{SCHED_FIELDS.map(f=>{const c=todayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:schedBg}}>{c}</td>;})}<td style={lockedTd}>{totalSched}</td>{ACTUAL_FIELDS.map(f=>{const c=todayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:actualBg}}>{c}</td>;})}<td style={lockedTd}>{totalActual}</td><td style={lockedTd}>{totalSched>0?<span style={{color:(totalActual-totalSched)>=0?'#3B6D11':'#A32D2D'}}>{totalActual-totalSched>=0?'+':''}{Math.round((totalActual-totalSched)/totalSched*100)}%</span>:'—'}</td></tr><tr style={{background:schedBg,fontWeight:700}}><td style={tdS} colSpan={15}>SCHEDULE ADHERENCE</td><td style={{...tdS,textAlign:'center'}}>{adhBadge(adherence)} <span style={{fontSize:10,color:'#9E9B96',fontWeight:400}}>Target ≥ 90%</span></td></tr></tbody></table></div>
+    </div>
+
+    {/* Section 2 */}
+    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+      <div style={{background:'#3B6D11',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 2 — Next-day production schedule</span><span style={{fontSize:12,fontWeight:600,background:'rgba(255,255,255,0.2)',padding:'2px 8px',borderRadius:6}}>Total: {nextTotal} pieces</span></div>
+      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS}>Job</th>{PIECE_LABELS.map(c=><th key={c} style={thS}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th><th style={thS}>Priority</th><th style={thS}>Ship Date</th><th style={thS}>Notes / Special Instructions</th></tr></thead>
+      <tbody>{nextDayRows.map((r,i)=>{const t=sumF(r,NEXT_FIELDS);return<tr key={i}><td style={{...tdS,minWidth:120}}><input value={r.job_name} onChange={e=>updateNext(i,'job_name',e.target.value)} placeholder="Job name" style={txtInput}/></td>{NEXT_FIELDS.map(f=><td key={f} style={{...tdS,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateNext(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{t}</td><td style={{...tdS,minWidth:80}}><select value={r.priority} onChange={e=>updateNext(i,'priority',e.target.value)} style={{...numInput,color:priorityColor(r.priority),fontWeight:r.priority==='Critical'||r.priority==='High'?600:400}}>{PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}</select></td><td style={{...tdS,minWidth:110}}><input type="date" value={r.ship_date||''} onChange={e=>updateNext(i,'ship_date',e.target.value)} style={numInput}/></td><td style={{...tdS,minWidth:160}}><input value={r.notes||''} onChange={e=>updateNext(i,'notes',e.target.value)} placeholder="Notes" style={txtInput}/></td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>NEXT-DAY TOTAL</td>{NEXT_FIELDS.map(f=>{const c=nextDayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={tdS}>{c}</td>;})}<td style={lockedTd}>{nextTotal}</td><td style={tdS} colSpan={3}/></tr></tbody></table></div>
+    </div>
+
+    {/* Section 3 */}
+    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+      <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Section 3 — Constraints, readiness & commentary</div>
+      <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        {[{k:'blockers',l:'Schedule Blockers / Constraints',h:'What prevented hitting today\'s schedule',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow',h:'Headcount confirmed, gaps, call-outs expected'},{k:'material_readiness',l:'Material Readiness for Tomorrow',h:'Any shortages, deliveries pending'},{k:'equipment_status',l:'Equipment Status',h:'Down units, expected return'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations',h:''},{k:'other_comments',l:'Other Comments',h:'',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}>
+          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</label>
+          <textarea value={commentary[f.k]||''} onChange={e=>setCommentary(prev=>({...prev,[f.k]:e.target.value}))} placeholder={f.h} rows={3} style={{...inputS,resize:'vertical',minHeight:56}}/>
+        </div>)}
+      </div>
+    </div>
+
+    {/* Submit footer */}
+    <div style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
+      <div style={{fontSize:11,color:'#9E9B96'}}>Submit by end of shift | Actuals populated from Luis Daily Production Report | Archive: SharePoint &gt; Production &gt; Scheduling &gt; YYYY-MM</div>
+      <button onClick={submitReport} disabled={submitting} style={{...btnP,opacity:submitting?0.5:1}}>{submitting?'Submitting...':'Submit Report'}</button>
+    </div>
+  </div>);
+}
+
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch}){
   const alerts=jobs.filter(j=>j.status!=='complete'&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
@@ -787,7 +960,7 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Billing',icon:'◧'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'}];
+const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Billing',icon:'◧'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
@@ -820,6 +993,7 @@ export default function App(){
             {page==='production'&&<ProductionPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
+            {page==='daily_report'&&<DailyReportPage/>}
           </>}
         </div>
       </div>
