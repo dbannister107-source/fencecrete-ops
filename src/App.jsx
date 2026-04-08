@@ -368,7 +368,9 @@ function PMBillingPage({jobs,onRefresh}){
   const[search,setSearch]=useState('');
   const[mktF,setMktF]=useState(null);
   const[histF,setHistF]=useState({status:null,market:null,period:null});
-  const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',amount_to_invoice:'',invoice_notes:'',labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''});
+  const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
+  const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
+  const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',invoice_notes:'',labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''});
 
   const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=created_at.desc');setEntries(d||[]);},[]);
   useEffect(()=>{fetchEntries();},[fetchEntries]);
@@ -393,37 +395,41 @@ function PMBillingPage({jobs,onRefresh}){
   const openLogForm=(job)=>{
     const prevCum=getCumulativeLF(job.id);
     const rate=n(job.contract_rate_precast);
-    setLogForm({billing_period:curMonthFirst,lf_this_period:'',amount_to_invoice:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''});
+    const initForm={billing_period:curMonthFirst,lf_this_period:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''};
+    initForm.lf_this_period=calcLFTotal(initForm);
+    setLogForm(initForm);
     setShowLog(job);
   };
 
   const editEntry=(job,entry)=>{
     const prevCum=getCumulativeLF(job.id)-n(entry.lf_this_period);
     const rate=n(job.contract_rate_precast);
-    setLogForm({billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',amount_to_invoice:entry.amount_to_invoice||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''});
+    const editForm={billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''};
+    editForm.lf_this_period=calcLFTotal(editForm);
+    setLogForm(editForm);
     setShowLog(job);
   };
 
   const saveLog=async()=>{
-    if(!showLog||!logForm.lf_this_period)return;
+    const lfPeriod=calcLFTotal(logForm);
+    if(!showLog||!lfPeriod)return;
     const j=showLog;
-    const lfPeriod=n(logForm.lf_this_period);
     const prevCum=n(logForm._prevCum);
     const cumulative=prevCum+lfPeriod;
     const body={
       job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,
       billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:cumulative,
-      amount_to_invoice:n(logForm.amount_to_invoice),invoice_notes:logForm.invoice_notes,status:'pending'
+      invoice_notes:logForm.invoice_notes,status:'pending'
     };
     if(logForm._editId){
       await sbPatch('pm_billing_entries',logForm._editId,body);
     }else{
       await sbPost('pm_billing_entries',body);
     }
-    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
+    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls),lf_installed_this_period:lfPeriod};
     await sbPatch('jobs',j.id,lfFields);
-    fireAlert('billing_logged',{...j,pm:selPM,lf_this_period:lfPeriod,amount_to_invoice:n(logForm.amount_to_invoice)});
-    logAct(j,'billing_update','pm_billing','',[selPM,lfPeriod+'LF',$(n(logForm.amount_to_invoice))].join(' · '));
+    fireAlert('billing_logged',{...j,pm:selPM,lf_this_period:lfPeriod});
+    logAct(j,'billing_update','pm_billing','',[selPM,lfPeriod+'LF'].join(' · '));
     setShowLog(null);
     onRefresh();
     setToast(`Billing entry logged for ${j.job_name}`);
@@ -600,21 +606,6 @@ function PMBillingPage({jobs,onRefresh}){
           <input type="month" value={logForm.billing_period?logForm.billing_period.slice(0,7):curMonth} onChange={e=>setLogForm(f=>({...f,billing_period:e.target.value+'-01'}))} style={inputS}/>
         </div>
 
-        <div style={{marginBottom:16}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>LF Installed This Period</label>
-          <input type="number" value={logForm.lf_this_period} onChange={e=>{
-            const lf=e.target.value;
-            const sugAmt=logForm._rate>0?n(lf)*logForm._rate:'';
-            setLogForm(f=>({...f,lf_this_period:lf,amount_to_invoice:sugAmt||f.amount_to_invoice}));
-          }} placeholder="0" style={inputS} required/>
-          <div style={{fontSize:11,color:'#9E9B96',marginTop:4}}>Running total will be: {(n(logForm._prevCum)+n(logForm.lf_this_period)).toLocaleString()} LF of {n(logForm._totalLF).toLocaleString()} total</div>
-        </div>
-
-        <div style={{marginBottom:16}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Amount to Invoice ($)</label>
-          <input type="number" value={logForm.amount_to_invoice} onChange={e=>setLogForm(f=>({...f,amount_to_invoice:e.target.value}))} placeholder="0.00" style={inputS} required/>
-          {logForm._rate>0&&<div style={{fontSize:11,color:'#1D4ED8',marginTop:4}}>Est. at ${logForm._rate.toFixed(2)}/LF = {$(n(logForm.lf_this_period)*logForm._rate)}</div>}
-        </div>
 
         <div style={{marginBottom:16}}>
           <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Section / Notes</label>
@@ -626,14 +617,20 @@ function PMBillingPage({jobs,onRefresh}){
           <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,padding:'6px 10px',background:sec.bg,borderRadius:6}}>{sec.title}</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
             {sec.fields.map(([label,field])=><div key={field}>
-              <label style={{display:'block',fontSize:10,color:'#9E9B96',marginBottom:2}}>{label}</label>
-              <input type="number" value={logForm[field]} onChange={e=>setLogForm(f=>({...f,[field]:e.target.value}))} placeholder="0" style={{...inputS,padding:'6px 10px',fontSize:12}}/>
+              <label style={{display:'block',fontSize:10,color:'#9E9B96',marginBottom:2}}>{label} (LF)</label>
+              <input type="number" value={logForm[field]} onChange={e=>{const updated={...logForm,[field]:e.target.value};updated.lf_this_period=calcLFTotal(updated);setLogForm(updated);}} placeholder="0 LF" style={{...inputS,padding:'6px 10px',fontSize:12}}/>
             </div>)}
           </div>
         </div>)}
 
+        <div style={{background:'#1D4ED8',borderRadius:10,padding:14,marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{color:'#fff',fontSize:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>LF Installed This Period</div>
+          <div style={{color:'#fff',fontFamily:'Inter',fontSize:24,fontWeight:900}}>{n(logForm.lf_this_period).toLocaleString()} <span style={{fontSize:14,fontWeight:600}}>LF</span></div>
+        </div>
+        <div style={{fontSize:11,color:'#9E9B96',marginBottom:16,textAlign:'center'}}>Running total: {(n(logForm._prevCum)+n(logForm.lf_this_period)).toLocaleString()} LF of {n(logForm._totalLF).toLocaleString()} total</div>
+
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:12,marginBottom:20,fontSize:13,fontWeight:600,color:'#1A1A1A'}}>
-          Logging {n(logForm.lf_this_period).toLocaleString()} LF for {$(n(logForm.amount_to_invoice))} — {logForm.billing_period?new Date(logForm.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):curMonthLabel}
+          Logging {n(logForm.lf_this_period).toLocaleString()} LF — {logForm.billing_period?new Date(logForm.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):curMonthLabel}
         </div>
 
         <div style={{display:'flex',gap:8}}>
