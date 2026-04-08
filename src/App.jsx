@@ -368,7 +368,7 @@ function PMBillingPage({jobs,onRefresh}){
   const[search,setSearch]=useState('');
   const[mktF,setMktF]=useState(null);
   const[histF,setHistF]=useState({status:null,market:null,period:null});
-  const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',amount_to_invoice:'',invoice_notes:''});
+  const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',amount_to_invoice:'',invoice_notes:'',labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''});
 
   const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=created_at.desc');setEntries(d||[]);},[]);
   useEffect(()=>{fetchEntries();},[fetchEntries]);
@@ -393,14 +393,14 @@ function PMBillingPage({jobs,onRefresh}){
   const openLogForm=(job)=>{
     const prevCum=getCumulativeLF(job.id);
     const rate=n(job.contract_rate_precast);
-    setLogForm({billing_period:curMonthFirst,lf_this_period:'',amount_to_invoice:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate});
+    setLogForm({billing_period:curMonthFirst,lf_this_period:'',amount_to_invoice:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''});
     setShowLog(job);
   };
 
   const editEntry=(job,entry)=>{
     const prevCum=getCumulativeLF(job.id)-n(entry.lf_this_period);
     const rate=n(job.contract_rate_precast);
-    setLogForm({billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',amount_to_invoice:entry.amount_to_invoice||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id});
+    setLogForm({billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',amount_to_invoice:entry.amount_to_invoice||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''});
     setShowLog(job);
   };
 
@@ -420,9 +420,12 @@ function PMBillingPage({jobs,onRefresh}){
     }else{
       await sbPost('pm_billing_entries',body);
     }
+    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
+    await sbPatch('jobs',j.id,lfFields);
     fireAlert('billing_logged',{...j,pm:selPM,lf_this_period:lfPeriod,amount_to_invoice:n(logForm.amount_to_invoice)});
     logAct(j,'billing_update','pm_billing','',[selPM,lfPeriod+'LF',$(n(logForm.amount_to_invoice))].join(' · '));
     setShowLog(null);
+    onRefresh();
     setToast(`Billing entry logged for ${j.job_name}`);
     fetchEntries();
   };
@@ -547,7 +550,15 @@ function PMBillingPage({jobs,onRefresh}){
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 400px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-            <tr>{['Billing Period','Job Name','Market','LF This Period','Cumulative LF','Amount to Invoice','Status','Notes','Date Logged'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr>
+            <tr>
+              {['Billing Period','Job Name','Market','LF This Period','Cumulative LF','Amount to Invoice','Status','Notes','Date Logged'].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
+              <th colSpan={3} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Precast</th>
+              <th colSpan={4} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#DBEAFE',color:'#1E40AF',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Single Wythe</th>
+              <th colSpan={7} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#EDE9FE',color:'#5B21B6',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>One Line Items</th>
+            </tr>
+            <tr>
+              {[['Post Only','#FEF3C7'],['Post+Panels','#FEF3C7'],['Complete','#FEF3C7'],['Foundation','#DBEAFE'],['Columns','#DBEAFE'],['Panels','#DBEAFE'],['Complete','#DBEAFE'],['WI Gates','#EDE9FE'],['WI Fencing','#EDE9FE'],['WI Columns','#EDE9FE'],['Bonds','#EDE9FE'],['Permits','#EDE9FE'],['Remove','#EDE9FE'],['Gate Ctrl','#EDE9FE']].map(([h,bg])=><th key={h} style={{textAlign:'right',padding:'4px 6px',borderBottom:'1px solid #E5E3E0',background:bg,color:'#6B6056',fontSize:9,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>)}
+            </tr>
           </thead>
           <tbody>
             {filteredHistory.map(e=>{
@@ -555,6 +566,8 @@ function PMBillingPage({jobs,onRefresh}){
               const[sc2,sb2]=statusColors[e.status]||['#6B6056','#F4F4F2'];
               const periodDate=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;
               const periodLabel=periodDate?periodDate.toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';
+              const ej=jobs.find(x=>x.id===e.job_id)||{};
+              const lfV=f=>n(ej[f])?n(ej[f]).toLocaleString():'—';
               return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
                 <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
                 <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name}</td>
@@ -565,6 +578,9 @@ function PMBillingPage({jobs,onRefresh}){
                 <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{e.status}</span></td>
                 <td style={{padding:'8px 10px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={e.invoice_notes}>{e.invoice_notes||'—'}</td>
                 <td style={{padding:'8px 10px',color:'#9E9B96'}}>{fD(e.created_at)}</td>
+                {['labor_post_only','labor_post_panels','labor_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#FFFBEB50'}}>{lfV(f)}</td>)}
+                {['sw_foundation','sw_columns','sw_panels','sw_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#EFF6FF50'}}>{lfV(f)}</td>)}
+                {['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#F5F3FF50'}}>{lfV(f)}</td>)}
               </tr>;
             })}
           </tbody>
@@ -604,6 +620,17 @@ function PMBillingPage({jobs,onRefresh}){
           <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Section / Notes</label>
           <textarea value={logForm.invoice_notes} onChange={e=>setLogForm(f=>({...f,invoice_notes:e.target.value}))} rows={3} placeholder="e.g. North section complete, gates pending, sections 1-3 done" style={{...inputS,resize:'vertical'}}/>
         </div>
+
+        {/* LF Detail Sections */}
+        {[{title:'Precast',bg:'#FEF3C7',fields:[['Labor Post Only','labor_post_only'],['Labor Post & Panels','labor_post_panels'],['Labor Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['Wrought Iron Gates','wi_gates'],['Wrought Iron Fencing','wi_fencing'],['Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove Existing','remove_existing'],['Gate Controls','gate_controls']]}].map(sec=><div key={sec.title} style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,padding:'6px 10px',background:sec.bg,borderRadius:6}}>{sec.title}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {sec.fields.map(([label,field])=><div key={field}>
+              <label style={{display:'block',fontSize:10,color:'#9E9B96',marginBottom:2}}>{label}</label>
+              <input type="number" value={logForm[field]} onChange={e=>setLogForm(f=>({...f,[field]:e.target.value}))} placeholder="0" style={{...inputS,padding:'6px 10px',fontSize:12}}/>
+            </div>)}
+          </div>
+        </div>)}
 
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:12,marginBottom:20,fontSize:13,fontWeight:600,color:'#1A1A1A'}}>
           Logging {n(logForm.lf_this_period).toLocaleString()} LF for {$(n(logForm.amount_to_invoice))} — {logForm.billing_period?new Date(logForm.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):curMonthLabel}
