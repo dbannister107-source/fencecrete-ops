@@ -324,7 +324,7 @@ function BillingPage({jobs,onRefresh}){
     {/* PM Entries Modal */}
     {showPmModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPmModal(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:500,maxHeight:'70vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4}}>PM Billing Entries — {showPmModal.job.job_name}</div>
+        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4}}>PM Bill Sheet Entries — {showPmModal.job.job_name}</div>
         <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>#{showPmModal.job.job_number} · {showPmModal.entries.length} pending entries</div>
         {showPmModal.entries.map(e=>{const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;return<div key={e.id} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontWeight:600}}>{pd?pd.toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—'}</span><span style={{color:'#6B6056'}}>by {e.pm}</span></div>
@@ -434,7 +434,7 @@ function PMBillingPage({jobs,onRefresh}){
   };
 
   if(!selPM)return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Billing</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Bill Sheet</h1>
     <div style={{...card,textAlign:'center',padding:40}}>
       <div style={{fontSize:16,color:'#6B6056',marginBottom:20}}>Select your name to get started</div>
       <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8B2020';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8B2020';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
@@ -443,7 +443,7 @@ function PMBillingPage({jobs,onRefresh}){
 
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>PM Billing</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>PM Bill Sheet</h1>
 
     {/* PM Selector */}
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
@@ -960,7 +960,7 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Billing',icon:'◧'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
+const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
