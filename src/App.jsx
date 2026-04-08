@@ -785,7 +785,7 @@ function SchedulePage({jobs}){
   const getMonday=d=>{const dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay()+1);return dt;};
   const weeks8=useMemo(()=>{const w=[];const s=getMonday(new Date());for(let i=0;i<8;i++){const d=new Date(s);d.setDate(d.getDate()+i*7);w.push(d);}return w;},[]);
   return(<div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button></div></div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button></div></div>
     <div style={{display:'flex',gap:6,marginBottom:16}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
     <div style={{display:'flex',gap:20}}>
       <div style={{flex:1,minWidth:0}}>
@@ -794,6 +794,53 @@ function SchedulePage({jobs}){
           <div style={{fontSize:11,color:'#9E9B96',marginTop:8,textAlign:'center'}}>Click any event to edit or reschedule</div>
         </>}
         {view==='list'&&<div style={card}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Date','Project','Market','Type','LF','Assigned','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{filteredEvents.map(e=><tr key={e.id} onClick={()=>openEdit(e)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}><td style={{padding:'6px 8px'}}>{fD(e.scheduled_date)}</td><td style={{padding:'6px 8px',fontWeight:500}}>{e.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{(e.event_type||'').replace(/_/g,' ')}</td><td style={{padding:'6px 8px'}}>{n(e.lf_scheduled).toLocaleString()}</td><td style={{padding:'6px 8px'}}>{e.assigned_to||'—'}</td><td style={{padding:'6px 8px',color:'#9E9B96',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes||'—'}</td></tr>)}</tbody></table></div>}
+        {view==='gantt'&&(()=>{
+          const GANTT_MKT_C={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
+          let ganttJobs=jobs.filter(j=>j.status!=='complete'&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
+          if(mktF)ganttJobs=ganttJobs.filter(j=>j.market===mktF);
+          ganttJobs=ganttJobs.slice(0,40);
+          if(ganttJobs.length===0)return<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No active projects with start dates</div>;
+          const parseD=d=>new Date(d+'T12:00:00').getTime();
+          const allStarts=ganttJobs.map(j=>parseD(j.est_start_date));
+          const allEnds=ganttJobs.map(j=>j.install_complete_date?parseD(j.install_complete_date):parseD(j.est_start_date)+60*86400000);
+          const minDate=Math.min(...allStarts);
+          const threeMonths=90*86400000;
+          const maxDate=Math.max(Math.max(...allEnds),minDate+threeMonths);
+          const totalDays=Math.ceil((maxDate-minDate)/86400000);
+          const todayMs=new Date(new Date().toISOString().split('T')[0]+'T12:00:00').getTime();
+          const todayPct=todayMs>=minDate&&todayMs<=maxDate?((todayMs-minDate)/(maxDate-minDate))*100:null;
+          const chartW=Math.max(800,totalDays*8);
+          const rowH=28;const chartH=ganttJobs.length*rowH+60;
+          const monthTicks=[];
+          const mStart=new Date(minDate);mStart.setDate(1);
+          while(mStart.getTime()<=maxDate){if(mStart.getTime()>=minDate)monthTicks.push({ms:mStart.getTime(),label:mStart.toLocaleDateString('en-US',{month:'short',year:'2-digit'})});const nm=new Date(mStart);nm.setMonth(nm.getMonth()+1);mStart.setTime(nm.getTime());}
+          return<div style={card}>
+            <div style={{overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
+              <div style={{display:'flex',minWidth:chartW}}>
+                <div style={{width:200,flexShrink:0,borderRight:'1px solid #E5E3E0'}}>
+                  <div style={{height:30,borderBottom:'1px solid #E5E3E0',padding:'6px 8px',fontSize:10,fontWeight:600,color:'#6B6056'}}>PROJECT</div>
+                  {ganttJobs.map(j=><div key={j.id} style={{height:rowH,padding:'0 8px',display:'flex',alignItems:'center',borderBottom:'1px solid #F4F4F2',fontSize:11,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={j.job_name}>{(j.job_name||'').slice(0,25)}</div>)}
+                </div>
+                <div style={{flex:1,position:'relative',minWidth:0}}>
+                  <div style={{height:30,borderBottom:'1px solid #E5E3E0',position:'relative'}}>
+                    {monthTicks.map(t=><div key={t.ms} style={{position:'absolute',left:`${((t.ms-minDate)/(maxDate-minDate))*100}%`,fontSize:9,fontWeight:600,color:'#6B6056',top:8,borderLeft:'1px solid #E5E3E0',paddingLeft:4}}>{t.label}</div>)}
+                  </div>
+                  {ganttJobs.map((j,i)=>{
+                    const s=parseD(j.est_start_date);
+                    const e2=j.install_complete_date?parseD(j.install_complete_date):s+60*86400000;
+                    const left=((s-minDate)/(maxDate-minDate))*100;
+                    const width=((e2-s)/(maxDate-minDate))*100;
+                    const c=GANTT_MKT_C[j.market]||'#8B2020';
+                    return<div key={j.id} style={{height:rowH,position:'relative',borderBottom:'1px solid #F4F4F2',display:'flex',alignItems:'center'}}>
+                      <div title={`${j.job_name}\n${j.market}\nStart: ${fD(j.est_start_date)}\nEnd: ${j.install_complete_date?fD(j.install_complete_date):'Est. +60d'}\nStatus: ${SL[j.status]||j.status}\nLF: ${n(j.total_lf).toLocaleString()}`} style={{position:'absolute',left:`${left}%`,width:`${Math.max(width,0.5)}%`,height:18,background:c,borderRadius:4,opacity:0.85,cursor:'pointer'}}/>
+                    </div>;
+                  })}
+                  {todayPct!==null&&<div style={{position:'absolute',top:0,bottom:0,left:`${todayPct}%`,borderLeft:'2px dashed #EF4444',zIndex:1,pointerEvents:'none'}}><div style={{position:'absolute',top:2,left:4,fontSize:8,color:'#EF4444',fontWeight:700}}>TODAY</div></div>}
+                </div>
+              </div>
+            </div>
+          </div>;
+        })()}
       </div>
       {view==='calendar'&&<div style={{width:220,flexShrink:0}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:10}}>Weekly Capacity</div>{weeks8.map(w=>{const wk=w.toISOString().split('T')[0];const wEnd=new Date(w);wEnd.setDate(wEnd.getDate()+6);const wEv=events.filter(e=>e.scheduled_date>=wk&&e.scheduled_date<=wEnd.toISOString().split('T')[0]);const wLF=wEv.reduce((s,e)=>s+n(e.lf_scheduled),0);const color=wLF>8000?'#991B1B':wLF>5000?'#B45309':'#065F46';return<div key={wk} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}><span style={{color:'#6B6056'}}>Wk {w.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span><span style={{fontWeight:700,color}}>{wLF.toLocaleString()} LF</span></div><PBar pct={wLF/8000*100} color={color} h={4}/></div>;})}</div>}
     </div>
