@@ -289,7 +289,7 @@ function BillingPage({jobs,onRefresh}){
         <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
         <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
         <td style={{padding:'8px 10px',textAlign:'center'}}>{j.job_number?<a href={spSearch(j.job_number)} target="_blank" rel="noopener noreferrer" style={{color:'#0078D4',textDecoration:'none',fontSize:16}} title="Open in SharePoint" onClick={e=>e.stopPropagation()}>📁</a>:'—'}</td>
-        <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Mark 100% billed" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
+        <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Complete" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
       </tr>;})}</tbody></table></div>
     {/* Recently Fully Billed */}
     <div style={{marginTop:24}}>
