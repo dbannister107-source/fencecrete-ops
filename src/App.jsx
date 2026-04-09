@@ -2011,7 +2011,14 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'estimating',label:'Estimating',icon:'📊'},{key:'map',label:'Map',icon:'📍'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
+const NAV_GROUPS=[
+  {label:'Overview',items:[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'map',label:'Map',icon:'📍'}]},
+  {label:'Sales',items:[{key:'estimating',label:'Estimating',icon:'📊'},{key:'projects',label:'Projects',icon:'◧'}]},
+  {label:'Operations',items:[{key:'production',label:'Production',icon:'⚙'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'}]},
+  {label:'Finance',items:[{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'}]},
+  {label:'Field',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}]},
+  {label:'Reports',items:[{key:'reports',label:'Reports',icon:'◑'}]}
+];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
@@ -2028,7 +2035,7 @@ export default function App(){
           {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FENCECRETE</div><div style={{fontSize:10,color:'#9E9B96',letterSpacing:2,textTransform:'uppercase',whiteSpace:'nowrap'}}>Operations</div></>}
           {sideCollapsed&&<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
         </div>
-        <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</nav>
+        <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label}>{!sideCollapsed&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:1,fontWeight:600,padding:'12px 12px 4px'}}>{g.label}</div>}{sideCollapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</div>)}</nav>
         <div style={{padding:sideCollapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
           {!sideCollapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
           <button onClick={()=>setSideCollapsed(!sideCollapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{sideCollapsed?'→':'←'}</button>
