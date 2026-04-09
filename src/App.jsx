@@ -61,6 +61,21 @@ function renderCell(j,k){const v=j[k];if(k==='status')return<span style={pill(SC
 const ALL_COLS=[{key:'status',label:'Status',w:130},{key:'market',label:'Location',w:110},{key:'job_number',label:'Project Code',w:100},{key:'included_on_billing_schedule',label:'Billing Sched.',w:100},{key:'included_on_lf_schedule',label:'LF Sched.',w:90},{key:'job_name',label:'Project Name',w:220},{key:'customer_name',label:'Customer',w:180},{key:'cust_number',label:'Cust #',w:80},{key:'fence_type',label:'Fence Type',w:100},{key:'documents_needed',label:'Docs Needed',w:140},{key:'file_location',label:'File Location',w:110},{key:'billing_method',label:'Billing Method',w:110},{key:'billing_date',label:'Billing Date',w:90},{key:'sales_rep',label:'Sales Rep',w:80},{key:'pm',label:'Project Manager',w:100},{key:'job_type',label:'Type',w:80},{key:'address',label:'Address',w:180},{key:'city',label:'City',w:100},{key:'state',label:'State',w:60},{key:'zip',label:'ZIP',w:70},{key:'lf_precast',label:'LF - Precast',w:90},{key:'height_precast',label:'Height - Precast',w:110},{key:'style',label:'Style - Precast',w:140},{key:'color',label:'Color - Precast',w:120},{key:'contract_rate_precast',label:'Rate - Precast',w:110},{key:'lf_single_wythe',label:'LF - Single Wythe',w:120},{key:'height_single_wythe',label:'Height - SW',w:90},{key:'contract_rate_single_wythe',label:'Rate - SW',w:90},{key:'style_single_wythe',label:'Style - SW',w:110},{key:'lf_wrought_iron',label:'LF - Wrought Iron',w:120},{key:'height_wrought_iron',label:'Height - WI',w:90},{key:'contract_rate_wrought_iron',label:'Rate - WI',w:90},{key:'lf_removal',label:'LF - Removal',w:100},{key:'height_removal',label:'Height - Removal',w:110},{key:'removal_material_type',label:'Removal Material',w:130},{key:'contract_rate_removal',label:'Rate - Removal',w:110},{key:'lf_other',label:'LF - Other',w:90},{key:'height_other',label:'Height - Other',w:100},{key:'other_material_type',label:'Other Material',w:120},{key:'contract_rate_other',label:'Rate - Other',w:100},{key:'number_of_gates',label:'# Gates',w:70},{key:'gate_height',label:'Gate Height',w:90},{key:'gate_description',label:'Gate Description',w:140},{key:'gate_rate',label:'Gate Rate',w:90},{key:'lump_sum_amount',label:'Lump Sum Amt',w:110},{key:'lump_sum_description',label:'Lump Sum Desc',w:150},{key:'total_lf',label:'Total LF Installed',w:130},{key:'average_height_installed',label:'Avg Height Installed',w:140},{key:'total_lf_removed',label:'Total LF Removed',w:130},{key:'average_height_removed',label:'Avg Height Removed',w:140},{key:'net_contract_value',label:'Net Contract Value',w:140},{key:'sales_tax',label:'Sales Tax',w:90},{key:'contract_value',label:'Contract Value',w:120},{key:'change_orders',label:'Change Orders',w:120},{key:'adj_contract_value',label:'Adj. Contract Value',w:140},{key:'contract_value_recalculation',label:'CV Recalc',w:100},{key:'contract_value_recalc_diff',label:'CV Recalc Diff',w:110},{key:'ytd_invoiced',label:'YTD Invoiced',w:110},{key:'pct_billed',label:'% Billed',w:80},{key:'left_to_bill',label:'Left to Bill',w:110},{key:'last_billed',label:'Last Billed',w:100},{key:'contract_date',label:'Contract Date',w:110},{key:'contract_month',label:'Contract Month',w:120},{key:'est_start_date',label:'Est. Start Date',w:120},{key:'start_month',label:'Start Month',w:100},{key:'contract_age',label:'Contract Age',w:100},{key:'active_entry_date',label:'Active Entry Date',w:130},{key:'complete_date',label:'Complete Date',w:110},{key:'complete_month',label:'Complete Month',w:120},{key:'aia_billing',label:'AIA',w:60},{key:'bonds',label:'Bonds',w:60},{key:'certified_payroll',label:'Cert Pay',w:60},{key:'ocip_ccip',label:'OCIP',w:60},{key:'third_party_billing',label:'3rd Party',w:60},{key:'notes',label:'Notes',w:220},{key:'retainage_pct',label:'Retainage %',w:90},{key:'retainage_held',label:'Retainage Held',w:110},{key:'collected',label:'Collected',w:90}];
 const DEF_VIS=['status','market','job_number','job_name','customer_name','fence_type','sales_rep','pm','adj_contract_value','left_to_bill','pct_billed','total_lf','contract_date','est_start_date','last_billed','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','notes'];
 
+// Monthly billing cycle — maps the 10 LF fields on jobs to the cycle table columns,
+// plus the grouped layout for the review modal. Used by PMBillingPage (Start Cycle),
+// BillingPage (Monthly Cycles tab + review modal), and Dashboard (status card).
+const CYCLE_LF_MAP=[['labor_post_only','lf_precast_post_only','Post Only'],['labor_post_panels','lf_precast_post_panels','Post & Panels'],['labor_complete','lf_precast_complete','Complete'],['sw_foundation','lf_sw_foundation','Foundation'],['sw_columns','lf_sw_columns','Columns'],['sw_panels','lf_sw_panels','Panels'],['sw_complete','lf_sw_complete','Complete'],['wi_gates','lf_wi_gates','Gates'],['wi_fencing','lf_wi_fencing','Fencing'],['wi_columns','lf_wi_columns','Columns']];
+const CYCLE_LF_GROUPS=[
+  {title:'Precast',keys:['lf_precast_post_only','lf_precast_post_panels','lf_precast_complete'],labels:['Post Only','Post & Panels','Complete']},
+  {title:'Single Wythe',keys:['lf_sw_foundation','lf_sw_columns','lf_sw_panels','lf_sw_complete'],labels:['Foundation','Columns','Panels','Complete']},
+  {title:'Wrought Iron',keys:['lf_wi_gates','lf_wi_fencing','lf_wi_columns'],labels:['Gates','Fencing','Columns']},
+];
+const cycleStatus=(c)=>c.invoice_sent?'invoiced':c.accounting_approved?'approved':c.accounting_approved_by?'review':'pending';
+const CYCLE_STATUS_META={pending:{label:'Pending',c:'#6B6056',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
+const curBillingMonth=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;};
+const monthLabel=(ym)=>{if(!ym)return'';const[y,m]=ym.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});};
+const fmtPct1=(v)=>(Math.round(n(v)*1000)/10).toFixed(1)+'%';
+
 // PM Bill Sheet LF fields — written to pm_billing_entries by PMBillingPage. Surfaced
 // here as read-only context for the Billing page (table column group, modal, EditPanel).
 const PM_BILL_LF_TABLE=[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete'],['sw_foundation','SW Found.'],['sw_columns','SW Col.'],['sw_panels','SW Panels'],['sw_complete','SW Complete'],['wi_gates','WI Gates'],['wi_fencing','WI Fencing']];
@@ -409,6 +424,10 @@ function Dashboard({jobs,onNav}){
   const largest=[...active].sort((a,b)=>n(b.adj_contract_value||b.contract_value)-n(a.adj_contract_value||a.contract_value))[0];
   const oldestUnbilled=alerts[0];
   const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
+  // Current month billing cycle status — small card for the dashboard
+  const dashBillingMonth=curBillingMonth();
+  const[dashCycles,setDashCycles]=useState([]);useEffect(()=>{sbGet('monthly_billing_cycles',`billing_month=eq.${dashBillingMonth}&select=id,invoice_sent,amount_to_invoice,accounting_approved`).then(d=>setDashCycles(d||[]));},[dashBillingMonth]);
+  const dashCycleStats=useMemo(()=>{const total=dashCycles.length;const invoiced=dashCycles.filter(c=>c.invoice_sent).length;const invoicedAmt=dashCycles.filter(c=>c.invoice_sent).reduce((s,c)=>s+n(c.amount_to_invoice),0);const pending=dashCycles.filter(c=>!c.accounting_approved&&!c.invoice_sent).length;return{total,invoiced,invoicedAmt,pending};},[dashCycles]);
 
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
@@ -453,6 +472,19 @@ function Dashboard({jobs,onNav}){
         </div>
       </div>;
     })()}
+    {/* Billing Cycle status card */}
+    <div style={{...card,marginBottom:16,display:'flex',alignItems:'center',gap:18,flexWrap:'wrap',borderLeft:'4px solid #8B2020'}}>
+      <div style={{flex:'0 0 auto'}}>
+        <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{monthLabel(dashBillingMonth)} Billing Cycle</div>
+        <div style={{fontSize:11,color:'#9E9B96'}}>{dashCycleStats.total>0?'Cycle active':'No cycle started'}</div>
+      </div>
+      <div style={{display:'flex',gap:24,flex:1,flexWrap:'wrap'}}>
+        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#1D4ED8'}}>{dashCycleStats.invoiced} of {dashCycleStats.total}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Jobs invoiced</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$k(dashCycleStats.invoicedAmt)}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Invoiced this month</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:dashCycleStats.pending>0?'#B45309':'#9E9B96'}}>{dashCycleStats.pending}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Pending approval</div></div>
+      </div>
+      {onNav&&<button onClick={()=>onNav('billing')} style={{...btnS,fontSize:12,whiteSpace:'nowrap'}}>Go to Monthly Cycles →</button>}
+    </div>
     {/* Quick Actions */}
     {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
       {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
@@ -613,6 +645,19 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[pmEntries,setPmEntries]=useState([]);const[toast,setToast]=useState(null);
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   const[allBillingEntries,setAllBillingEntries]=useState([]);const[showLfDetail,setShowLfDetail]=useState(false);
+  // Monthly billing cycle state — Part 2/3 of the workflow
+  const[cycles,setCycles]=useState([]);const[cyclesMonth,setCyclesMonth]=useState(curBillingMonth());const[cyclesLoading,setCyclesLoading]=useState(false);
+  const[cycleReview,setCycleReview]=useState(null);const[cycleForm,setCycleForm]=useState({pct_complete_accounting:'',accounting_approved_by:'',invoice_number:'',invoice_sent_date:'',notes:''});
+  const fetchCycles=useCallback(async(month)=>{setCyclesLoading(true);const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${month}&order=job_name.asc`);setCycles(d||[]);setCyclesLoading(false);},[]);
+  useEffect(()=>{if(billingTab==='monthlycycles')fetchCycles(cyclesMonth);},[billingTab,cyclesMonth,fetchCycles]);
+  const openCycleReview=(c)=>{setCycleReview(c);setCycleForm({pct_complete_accounting:c.pct_complete_accounting!=null?String(c.pct_complete_accounting):'',accounting_approved_by:c.accounting_approved_by||'',invoice_number:c.invoice_number||'',invoice_sent_date:c.invoice_sent_date||new Date().toISOString().split('T')[0],notes:c.notes||''});if(!c.accounting_approved_by){sbPatch('monthly_billing_cycles',c.id,{accounting_approved_by:'(opened)'});}};
+  const closeCycleReview=()=>{setCycleReview(null);setCycleForm({pct_complete_accounting:'',accounting_approved_by:'',invoice_number:'',invoice_sent_date:'',notes:''});};
+  const cycleFinalPct=(c,form)=>{const override=form.pct_complete_accounting!==''?n(form.pct_complete_accounting):null;if(override!=null)return override;return n(c.pct_complete_lf);};
+  const cycleAmount=(c,form)=>{const pct=cycleFinalPct(c,form)/100;return Math.max(n(c.adj_contract_value)*pct-n(c.ytd_invoiced_before),0);};
+  const approveCycle=async()=>{if(!cycleReview)return;const c=cycleReview;const finalPct=cycleFinalPct(c,cycleForm);const amt=cycleAmount(c,cycleForm);const u={pct_complete_accounting:cycleForm.pct_complete_accounting!==''?n(cycleForm.pct_complete_accounting):null,pct_complete_final:finalPct,amount_to_invoice:amt,accounting_approved:true,accounting_approved_by:cycleForm.accounting_approved_by||'Accounting',accounting_approved_at:new Date().toISOString(),notes:cycleForm.notes||null};try{await sbPatch('monthly_billing_cycles',c.id,u);setToast('Cycle approved');await fetchCycles(cyclesMonth);setCycleReview({...c,...u});}catch(err){console.error('approveCycle failed:',err);setToast({message:'Approve failed: '+(err.message||err),isError:true});}};
+  const markCycleInvoiced=async()=>{if(!cycleReview)return;const c=cycleReview;const finalPct=cycleFinalPct(c,cycleForm);const amt=n(c.amount_to_invoice)||cycleAmount(c,cycleForm);if(amt<=0){setToast({message:'Approve & set an invoice amount first',isError:true});return;}if(!cycleForm.invoice_number){setToast({message:'Invoice number required',isError:true});return;}try{const newYTD=n(c.ytd_invoiced_before)+amt;await sbPatch('monthly_billing_cycles',c.id,{invoice_sent:true,invoice_sent_date:cycleForm.invoice_sent_date||new Date().toISOString().split('T')[0],invoice_number:cycleForm.invoice_number,ytd_invoiced_after:newYTD,amount_to_invoice:amt,pct_complete_final:finalPct,notes:cycleForm.notes||null});await sbPatch('jobs',c.job_id,{ytd_invoiced:newYTD,last_billed:cycleForm.invoice_sent_date||new Date().toISOString().split('T')[0]});logAct({id:c.job_id,job_number:c.job_number,job_name:c.job_name},'billing_update','ytd_invoiced',c.ytd_invoiced_before,newYTD);setToast('Marked as invoiced');closeCycleReview();await fetchCycles(cyclesMonth);onRefresh();}catch(err){console.error('markCycleInvoiced failed:',err);setToast({message:'Failed: '+(err.message||err),isError:true});}};
+  const cycleSummary=useMemo(()=>{const total=cycles.reduce((s,c)=>s+(n(c.amount_to_invoice)||0),0);const approved=cycles.filter(c=>c.accounting_approved&&!c.invoice_sent).length;const invoiced=cycles.filter(c=>c.invoice_sent).length;const pending=cycles.length-approved-invoiced;return{count:cycles.length,total,approved,pending,invoiced};},[cycles]);
+  const exportCyclesCSV=()=>{if(cycles.length===0)return;const rows=[['Job #','Job Name','Billing Month','LF This Month','LF To Date','Contract LF','% LF','Acctg %','Final %','Adj Contract','Amount to Invoice','YTD Before','YTD After','Status','Approved By','Invoice #','Invoice Date']];cycles.forEach(c=>{rows.push([c.job_number||'',c.job_name||'',c.billing_month||'',n(c.lf_total_this_month),n(c.lf_installed_to_date),n(c.total_lf_contract),n(c.pct_complete_lf),c.pct_complete_accounting??'',n(c.pct_complete_final),n(c.adj_contract_value),n(c.amount_to_invoice),n(c.ytd_invoiced_before),n(c.ytd_invoiced_after),CYCLE_STATUS_META[cycleStatus(c)].label,c.accounting_approved_by||'',c.invoice_number||'',c.invoice_sent_date||'']);});const csv=rows.map(r=>r.map(v=>typeof v==='string'&&v.includes(',')?`"${v}"`:v).join(',')).join('\n');const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`billing-cycle-${cyclesMonth}.csv`;a.click();};
   const nowM=new Date();const defPeriod=`${nowM.getFullYear()}-${String(nowM.getMonth()+1).padStart(2,'0')}`;
   const[subPeriodF,setSubPeriodF]=useState('');const[subMktF,setSubMktF]=useState(null);const[subPmF,setSubPmF]=useState('');const[subStatusF,setSubStatusF]=useState(null);const[subSearch,setSubSearch]=useState('');
   const[invoiceModal,setInvoiceModal]=useState(null);const[invoiceAmt,setInvoiceAmt]=useState('');
@@ -653,7 +698,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&subPendingCount>0&&<span style={{marginLeft:6,background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{subPendingCount}</span>}</button>)}
+      {[['submissions','PM Submissions'],['monthlycycles','Monthly Cycles'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&subPendingCount>0&&<span style={{marginLeft:6,background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{subPendingCount}</span>}</button>)}
     </div>
 
     {/* ═══ TAB: PM SUBMISSIONS ═══ */}
@@ -711,6 +756,45 @@ function BillingPage({jobs,onRefresh,onNav}){
         {subEntries.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>$</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:8}}>No PM billing submissions found</div><div style={{fontSize:12,color:'#9E9B96'}}>{subPeriodF?'Try clearing the period filter or selecting a different month':'PMs submit entries from the PM Bill Sheet page'}</div></div>}
       </div>
     </div>;})()}
+
+    {/* ═══ TAB: MONTHLY CYCLES ═══ */}
+    {billingTab==='monthlycycles'&&<div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Cycle Month</label>
+          <input type="month" value={cyclesMonth} onChange={e=>setCyclesMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
+          <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{monthLabel(cyclesMonth)}</span>
+        </div>
+        <button onClick={exportCyclesCSV} style={btnS} disabled={cycles.length===0}>Export CSV</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{cycleSummary.count}</div><div style={{fontSize:11,color:'#6B6056'}}>Jobs in cycle</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#065F46'}}>{$k(cycleSummary.total)}</div><div style={{fontSize:11,color:'#6B6056'}}>Total to invoice</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1D4ED8'}}>{cycleSummary.approved+cycleSummary.invoiced}</div><div style={{fontSize:11,color:'#6B6056'}}>{cycleSummary.invoiced} invoiced · {cycleSummary.approved} approved</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{cycleSummary.pending}</div><div style={{fontSize:11,color:'#6B6056'}}>Pending review</div></div>
+      </div>
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
+        {cyclesLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading…</div>:cycles.length===0?<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>📅</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:4}}>No billing cycle started for {monthLabel(cyclesMonth)}</div><div style={{fontSize:12,color:'#9E9B96'}}>PMs start the cycle from the PM Bill Sheet page.</div></div>:<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','PM','Market','LF This Mo.','LF To Date','Contract LF','% LF','Acctg %','Final %','Adj Contract','Amount to Invoice','Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          <tbody>{cycles.map(c=>{const job=jobs.find(j=>j.id===c.job_id)||{};const st=cycleStatus(c);const sm=CYCLE_STATUS_META[st];return<tr key={c.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'8px 10px',fontSize:11}}>{c.job_number||'—'}</td>
+            <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.job_name||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11}}>{job.pm||'—'}</td>
+            <td style={{padding:'8px 10px'}}><span style={pill(MC[job.market]||'#6B6056',MB[job.market]||'#F4F4F2')}>{MS[job.market]||'—'}</span></td>
+            <td style={{padding:'8px 10px',textAlign:'right'}}>{n(c.lf_total_this_month).toLocaleString()}</td>
+            <td style={{padding:'8px 10px',textAlign:'right'}}>{n(c.lf_installed_to_date).toLocaleString()}</td>
+            <td style={{padding:'8px 10px',textAlign:'right'}}>{n(c.total_lf_contract).toLocaleString()}</td>
+            <td style={{padding:'8px 10px',textAlign:'right',fontWeight:600}}>{n(c.pct_complete_lf).toFixed(1)}%</td>
+            <td style={{padding:'8px 10px',textAlign:'right',color:c.pct_complete_accounting!=null?'#1A1A1A':'#9E9B96'}}>{c.pct_complete_accounting!=null?n(c.pct_complete_accounting).toFixed(1)+'%':'—'}</td>
+            <td style={{padding:'8px 10px',textAlign:'right',fontWeight:700}}>{n(c.pct_complete_final).toFixed(1)}%</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(c.adj_contract_value)}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:'#065F46'}}>{n(c.amount_to_invoice)>0?$(c.amount_to_invoice):'—'}</td>
+            <td style={{padding:'8px 10px'}}><span style={pill(sm.c,sm.bg)}>{sm.label}</span></td>
+            <td style={{padding:'8px 10px'}}><button onClick={()=>openCycleReview(c)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 12px'}}>Review</button></td>
+          </tr>;})}</tbody>
+        </table>}
+      </div>
+    </div>}
 
     {/* ═══ TAB: ALL JOBS ═══ */}
     {billingTab==='alljobs'&&<div>
@@ -805,6 +889,69 @@ function BillingPage({jobs,onRefresh,onNav}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm — Mark Fully Billed</button></div>
       </div>
     </div>}
+    {/* Billing Cycle Review Modal — accounting reviews LF, sets %, marks invoiced */}
+    {cycleReview&&(()=>{const c=cycleReview;const finalPct=cycleFinalPct(c,cycleForm);const amtThis=cycleAmount(c,cycleForm);const remaining=Math.max(n(c.adj_contract_value)-n(c.ytd_invoiced_before)-amtThis,0);const overrideEntered=cycleForm.pct_complete_accounting!=='';const status=cycleStatus({...c,accounting_approved_by:c.accounting_approved&&c.accounting_approved_by||c.accounting_approved_by});return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeCycleReview}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:640,maxWidth:'94vw',maxHeight:'94vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{c.job_name} — {monthLabel(c.billing_month)} Billing</div>
+          <span style={pill(CYCLE_STATUS_META[status].c,CYCLE_STATUS_META[status].bg)}>{CYCLE_STATUS_META[status].label}</span>
+        </div>
+        <div style={{fontSize:11,color:'#9E9B96',marginBottom:16}}>Job #{c.job_number} · PM submitted {c.pm_submitted_at?new Date(c.pm_submitted_at).toLocaleDateString():'—'}{c.pm_submitted_by?` by ${c.pm_submitted_by}`:''}</div>
+
+        {/* SECTION 1: LF Summary */}
+        <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Summary (from PM Bill Sheet)</div>
+          {CYCLE_LF_GROUPS.map(g=><div key={g.title} style={{marginBottom:8}}>
+            <div style={{fontSize:9,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{g.title}</div>
+            <div style={{display:'grid',gridTemplateColumns:`repeat(${g.keys.length},1fr)`,gap:6}}>
+              {g.keys.map((k,i)=>{const v=n(c[k]);return<div key={k} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'5px 8px'}}>
+                <div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{g.labels[i]}</div>
+                <div style={{fontFamily:'Inter',fontSize:13,fontWeight:700,color:v>0?'#1A1A1A':'#C8C4BD'}}>{v>0?v.toLocaleString():'—'}</div>
+              </div>;})}
+            </div>
+          </div>)}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:10,paddingTop:10,borderTop:'1px solid #E5E3E0'}}>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF This Month</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(c.lf_total_this_month).toLocaleString()}</div></div>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>LF Installed to Date</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{n(c.lf_installed_to_date).toLocaleString()}</div></div>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Contract LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{n(c.total_lf_contract).toLocaleString()}</div></div>
+          </div>
+        </div>
+
+        {/* SECTION 2: % Complete + Amount calc */}
+        <div style={{background:'#FDF4F4',border:'1px solid #8B202020',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>% Complete & Invoice Amount</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>LF-Based %</label><div style={{padding:'8px 12px',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,fontFamily:'Inter',fontWeight:700}}>{n(c.pct_complete_lf).toFixed(1)}%</div></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Acctg Override %</label><input type="number" step="0.1" value={cycleForm.pct_complete_accounting} onChange={e=>setCycleForm(p=>({...p,pct_complete_accounting:e.target.value}))} placeholder="(optional)" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Final % to Bill</label><div style={{padding:'8px 12px',background:'#FFF',border:'2px solid #8B2020',borderRadius:6,fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{finalPct.toFixed(1)}%{overrideEntered&&<span style={{fontSize:9,color:'#9E9B96',fontWeight:600,marginLeft:6}}>(override)</span>}</div></div>
+          </div>
+          <div style={{borderTop:'1px solid #8B202020',paddingTop:10,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,fontSize:12}}>
+            <div style={{color:'#6B6056'}}>Adj Contract Value</div><div style={{textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(c.adj_contract_value)}</div>
+            <div style={{color:'#6B6056'}}>Final % × Adj Contract</div><div style={{textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(n(c.adj_contract_value)*finalPct/100)}</div>
+            <div style={{color:'#6B6056'}}>Previously Billed (YTD)</div><div style={{textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#B45309'}}>−{$(c.ytd_invoiced_before)}</div>
+            <div style={{color:'#1A1A1A',fontWeight:700,borderTop:'1px solid #8B202020',paddingTop:6,marginTop:2}}>This Invoice</div><div style={{textAlign:'right',fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#065F46',borderTop:'1px solid #8B202020',paddingTop:6,marginTop:2}}>{$(amtThis)}</div>
+            <div style={{color:'#6B6056',fontSize:11}}>Remaining After</div><div style={{textAlign:'right',fontFamily:'Inter',fontWeight:600,fontSize:11,color:'#6B6056'}}>{$(remaining)}</div>
+          </div>
+        </div>
+
+        {/* SECTION 3: Approval & Invoice */}
+        <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Approval & Invoice Tracking</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Approved By</label><input value={cycleForm.accounting_approved_by} onChange={e=>setCycleForm(p=>({...p,accounting_approved_by:e.target.value}))} placeholder="Your name" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label><input value={cycleForm.invoice_number} onChange={e=>setCycleForm(p=>({...p,invoice_number:e.target.value}))} placeholder="From external system" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label><input type="date" value={cycleForm.invoice_sent_date} onChange={e=>setCycleForm(p=>({...p,invoice_sent_date:e.target.value}))} style={inputS}/></div>
+          </div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={cycleForm.notes} onChange={e=>setCycleForm(p=>({...p,notes:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
+        </div>
+
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',flexWrap:'wrap'}}>
+          <button onClick={closeCycleReview} style={btnS}>Cancel</button>
+          <button onClick={approveCycle} style={{...btnP,background:'#065F46'}}>Approve & Set Invoice Amount</button>
+          <button onClick={markCycleInvoiced} disabled={!c.accounting_approved&&n(c.amount_to_invoice)===0} style={{...btnP,background:'#1D4ED8',opacity:!c.accounting_approved&&n(c.amount_to_invoice)===0?0.5:1}}>Mark as Invoiced</button>
+        </div>
+      </div>
+    </div>;})()}
     {/* Billing Entry Modal — log monthly entry + view/manage history */}
     {billingModal&&(()=>{const j=billingModal;const histTotal=billingHistory.reduce((s,e)=>s+n(e.amount),0);const yr=new Date().getFullYear();const ytdSum=billingHistory.filter(e=>e.billing_month&&e.billing_month.startsWith(yr+'-')).reduce((s,e)=>s+n(e.amount),0);const fmtMonth=(m)=>{if(!m)return'—';const[y,mo]=m.split('-');if(!y||!mo)return m;return new Date(+y,+mo-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeBillingModal}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'92vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
@@ -904,6 +1051,15 @@ function PMBillingPage({jobs,onRefresh}){
   const curMonthFirst=`${curMonth}-01`;
 
   const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','complete'].includes(j.status)),[jobs]);
+
+  // Monthly billing cycle — Start Cycle button + status
+  const billingMonth=curBillingMonth();
+  const[cycleRows,setCycleRows]=useState([]);const[showStartCycle,setShowStartCycle]=useState(false);const[startingCycle,setStartingCycle]=useState(false);
+  const fetchCycleRows=useCallback(async()=>{const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id`);setCycleRows(d||[]);},[billingMonth]);
+  useEffect(()=>{fetchCycleRows();},[fetchCycleRows]);
+  const cycleJobIds=useMemo(()=>new Set(cycleRows.map(c=>c.job_id)),[cycleRows]);
+  const cycleAlreadyStarted=activeJobs.length>0&&activeJobs.every(j=>cycleJobIds.has(j.id));
+  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=activeJobs.filter(j=>!cycleJobIds.has(j.id));let created=0;for(const j of toCreate){const lfTotal=CYCLE_LF_MAP.reduce((s,[src])=>s+n(j[src]),0);const totalLF=n(j.total_lf)||(n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron));const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,lf_total_this_month:lfTotal,lf_installed_to_date:lfTotal,adj_contract_value:n(j.adj_contract_value||j.contract_value),total_lf_contract:totalLF,pct_complete_lf:totalLF>0?Math.round(lfTotal/totalLF*10000)/100:0,ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:selPM||null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};CYCLE_LF_MAP.forEach(([src,dst])=>{body[dst]=n(j[src]);});try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCycleRows();setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
 
   const pmEntries=useMemo(()=>selPM?entries.filter(e=>e.pm===selPM):entries,[entries,selPM]);
 
@@ -1015,7 +1171,12 @@ function PMBillingPage({jobs,onRefresh}){
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>PM Bill Sheet</h1>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Bill Sheet</h1>
+      {cycleAlreadyStarted
+        ?<button disabled style={{padding:'10px 20px',borderRadius:10,border:'none',background:'#D1FAE5',color:'#065F46',fontSize:13,fontWeight:800,cursor:'not-allowed'}}>{monthLabel(billingMonth)} Cycle Active ✓</button>
+        :<button onClick={()=>setShowStartCycle(true)} style={{...btnP,padding:'10px 20px',fontSize:13}}>Start {monthLabel(billingMonth)} Billing Cycle</button>}
+    </div>
 
     {/* PM Selector */}
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
@@ -1240,6 +1401,14 @@ function PMBillingPage({jobs,onRefresh}){
           <button onClick={handleDupCreate} style={{...btnP,flex:1,background:'#065F46'}}>Create New Entry</button>
           <button onClick={()=>setDuplicateConfirm(null)} style={btnS}>Cancel</button>
         </div>
+      </div>
+    </div>}
+    {/* Start Billing Cycle Confirm Modal */}
+    {showStartCycle&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!startingCycle&&setShowStartCycle(false)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:8,color:'#1A1A1A'}}>Start {monthLabel(billingMonth)} Billing Cycle</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:18}}>This will create billing cycle entries for all active jobs using their current LF data. <br/><br/><strong>{activeJobs.filter(j=>!cycleJobIds.has(j.id)).length}</strong> jobs will get a new entry. Jobs that already have a {monthLabel(billingMonth)} entry will be skipped.</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowStartCycle(false)} disabled={startingCycle} style={btnS}>Cancel</button><button onClick={startBillingCycle} disabled={startingCycle} style={btnP}>{startingCycle?'Creating…':'Continue'}</button></div>
       </div>
     </div>}
   </div>);
