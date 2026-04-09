@@ -61,6 +61,14 @@ function renderCell(j,k){const v=j[k];if(k==='status')return<span style={pill(SC
 const ALL_COLS=[{key:'status',label:'Status',w:130},{key:'market',label:'Location',w:110},{key:'job_number',label:'Project Code',w:100},{key:'included_on_billing_schedule',label:'Billing Sched.',w:100},{key:'included_on_lf_schedule',label:'LF Sched.',w:90},{key:'job_name',label:'Project Name',w:220},{key:'customer_name',label:'Customer',w:180},{key:'cust_number',label:'Cust #',w:80},{key:'fence_type',label:'Fence Type',w:100},{key:'documents_needed',label:'Docs Needed',w:140},{key:'file_location',label:'File Location',w:110},{key:'billing_method',label:'Billing Method',w:110},{key:'billing_date',label:'Billing Date',w:90},{key:'sales_rep',label:'Sales Rep',w:80},{key:'pm',label:'Project Manager',w:100},{key:'job_type',label:'Type',w:80},{key:'address',label:'Address',w:180},{key:'city',label:'City',w:100},{key:'state',label:'State',w:60},{key:'zip',label:'ZIP',w:70},{key:'lf_precast',label:'LF - Precast',w:90},{key:'height_precast',label:'Height - Precast',w:110},{key:'style',label:'Style - Precast',w:140},{key:'color',label:'Color - Precast',w:120},{key:'contract_rate_precast',label:'Rate - Precast',w:110},{key:'lf_single_wythe',label:'LF - Single Wythe',w:120},{key:'height_single_wythe',label:'Height - SW',w:90},{key:'contract_rate_single_wythe',label:'Rate - SW',w:90},{key:'style_single_wythe',label:'Style - SW',w:110},{key:'lf_wrought_iron',label:'LF - Wrought Iron',w:120},{key:'height_wrought_iron',label:'Height - WI',w:90},{key:'contract_rate_wrought_iron',label:'Rate - WI',w:90},{key:'lf_removal',label:'LF - Removal',w:100},{key:'height_removal',label:'Height - Removal',w:110},{key:'removal_material_type',label:'Removal Material',w:130},{key:'contract_rate_removal',label:'Rate - Removal',w:110},{key:'lf_other',label:'LF - Other',w:90},{key:'height_other',label:'Height - Other',w:100},{key:'other_material_type',label:'Other Material',w:120},{key:'contract_rate_other',label:'Rate - Other',w:100},{key:'number_of_gates',label:'# Gates',w:70},{key:'gate_height',label:'Gate Height',w:90},{key:'gate_description',label:'Gate Description',w:140},{key:'gate_rate',label:'Gate Rate',w:90},{key:'lump_sum_amount',label:'Lump Sum Amt',w:110},{key:'lump_sum_description',label:'Lump Sum Desc',w:150},{key:'total_lf',label:'Total LF Installed',w:130},{key:'average_height_installed',label:'Avg Height Installed',w:140},{key:'total_lf_removed',label:'Total LF Removed',w:130},{key:'average_height_removed',label:'Avg Height Removed',w:140},{key:'net_contract_value',label:'Net Contract Value',w:140},{key:'sales_tax',label:'Sales Tax',w:90},{key:'contract_value',label:'Contract Value',w:120},{key:'change_orders',label:'Change Orders',w:120},{key:'adj_contract_value',label:'Adj. Contract Value',w:140},{key:'contract_value_recalculation',label:'CV Recalc',w:100},{key:'contract_value_recalc_diff',label:'CV Recalc Diff',w:110},{key:'ytd_invoiced',label:'YTD Invoiced',w:110},{key:'pct_billed',label:'% Billed',w:80},{key:'left_to_bill',label:'Left to Bill',w:110},{key:'last_billed',label:'Last Billed',w:100},{key:'contract_date',label:'Contract Date',w:110},{key:'contract_month',label:'Contract Month',w:120},{key:'est_start_date',label:'Est. Start Date',w:120},{key:'start_month',label:'Start Month',w:100},{key:'contract_age',label:'Contract Age',w:100},{key:'active_entry_date',label:'Active Entry Date',w:130},{key:'complete_date',label:'Complete Date',w:110},{key:'complete_month',label:'Complete Month',w:120},{key:'aia_billing',label:'AIA',w:60},{key:'bonds',label:'Bonds',w:60},{key:'certified_payroll',label:'Cert Pay',w:60},{key:'ocip_ccip',label:'OCIP',w:60},{key:'third_party_billing',label:'3rd Party',w:60},{key:'notes',label:'Notes',w:220},{key:'retainage_pct',label:'Retainage %',w:90},{key:'retainage_held',label:'Retainage Held',w:110},{key:'collected',label:'Collected',w:90}];
 const DEF_VIS=['status','market','job_number','job_name','customer_name','fence_type','sales_rep','pm','adj_contract_value','left_to_bill','pct_billed','total_lf','contract_date','est_start_date','last_billed','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','notes'];
 
+// PM Bill Sheet LF fields — written to pm_billing_entries by PMBillingPage. Surfaced
+// here as read-only context for the Billing page (table column group, modal, EditPanel).
+const PM_BILL_LF_TABLE=[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete'],['sw_foundation','SW Found.'],['sw_columns','SW Col.'],['sw_panels','SW Panels'],['sw_complete','SW Complete'],['wi_gates','WI Gates'],['wi_fencing','WI Fencing']];
+const PM_BILL_LF_GROUPS=[
+  {title:'Precast',fields:[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete']]},
+  {title:'Single Wythe',fields:[['sw_foundation','SW Foundation'],['sw_columns','SW Columns'],['sw_panels','SW Panels'],['sw_complete','SW Complete']]},
+  {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Columns'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['remove_existing','Remove Existing'],['gate_controls','Gate Controls']]},
+];
 const SECS=[{key:'contract',label:'Contract & Billing',fields:['net_contract_value','sales_tax','contract_value','change_orders','adj_contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'precast',label:'Precast',fields:['lf_precast','height_precast','style','color','contract_rate_precast']},{key:'wythe',label:'Single Wythe',fields:['lf_single_wythe','height_single_wythe','style_single_wythe','contract_rate_single_wythe']},{key:'iron',label:'Wrought Iron',fields:['lf_wrought_iron','height_wrought_iron','contract_rate_wrought_iron']},{key:'removal',label:'Removal',fields:['lf_removal','height_removal','removal_material_type','contract_rate_removal']},{key:'other',label:'Other/Lump',fields:['lf_other','height_other','other_material_type','contract_rate_other','lump_sum_amount','lump_sum_description']},{key:'gates',label:'Gates',fields:['number_of_gates','gate_height','gate_description','gate_rate']},{key:'totals',label:'Totals',fields:['total_lf','average_height_installed','total_lf_removed','product','fence_type']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]}];
 
 const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#6B6056',job_created:'#8B2020'};
@@ -107,7 +115,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.job_number='';const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
   const[coForm,setCOForm]=useState({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
+  const[latestPmLF,setLatestPmLF]=useState(null);
   useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
+  useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
   const saveCO=async()=>{const body={...coForm,amount:n(coForm.amount),job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:job.pm};await sbPost('change_orders',body);setShowCOForm(false);setCOForm({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));};
   const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
   const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
@@ -141,6 +151,21 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:8,fontWeight:600,textTransform:'uppercase'}}>Auto-calculated</div>
             {sec.computed.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const val=f==='pct_billed'?`${adjCV>0?Math.round(n(form.ytd_invoiced)/adjCV*1000)/10:0}%`:f==='left_to_bill'?$(adjCV-n(form.ytd_invoiced)):(form[f]??'—');return(
               <div key={f} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #E5E3E0'}}><span style={{fontSize:12,color:'#6B6056'}}>{cd?cd.label:f}</span><span style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{val}</span></div>);})}
+          </div>}
+          {tab==='contract'&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+              <div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>LF on File from PM Bill Sheet</div>
+              {latestPmLF?.billing_period&&<div style={{fontSize:9,color:'#9E9B96'}}>{new Date(latestPmLF.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'})}</div>}
+            </div>
+            {!latestPmLF?<div style={{color:'#9E9B96',fontSize:11,padding:8,textAlign:'center'}}>No PM bill sheet entries on file</div>:PM_BILL_LF_GROUPS.map(g=><div key={g.title} style={{marginBottom:8}}>
+              <div style={{fontSize:9,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{g.title}</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(100px,1fr))',gap:6}}>
+                {g.fields.map(([k,l])=>{const v=n(latestPmLF[k]);return<div key={k} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'5px 7px'}}>
+                  <div style={{fontSize:8,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{l}</div>
+                  <div style={{fontFamily:'Inter',fontSize:12,fontWeight:700,color:v>0?'#1A1A1A':'#C8C4BD'}}>{v>0?v.toLocaleString():'—'}</div>
+                </div>;})}
+              </div>
+            </div>)}
           </div>}
         </>}
       </div>
@@ -576,7 +601,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
 }
 
 /* ═══ BILLING PAGE ═══ */
-function BillingPage({jobs,onRefresh}){
+function BillingPage({jobs,onRefresh,onNav}){
   const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
@@ -587,12 +612,15 @@ function BillingPage({jobs,onRefresh}){
   const[bSearch,setBSearch]=useState('');const[bMktF,setBMktF]=useState(null);const[bPmF,setBPmF]=useState('');const[bStatusF,setBStatusF]=useState(null);
   const[pmEntries,setPmEntries]=useState([]);const[toast,setToast]=useState(null);
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
-  const[allBillingEntries,setAllBillingEntries]=useState([]);
+  const[allBillingEntries,setAllBillingEntries]=useState([]);const[showLfDetail,setShowLfDetail]=useState(false);
   const nowM=new Date();const defPeriod=`${nowM.getFullYear()}-${String(nowM.getMonth()+1).padStart(2,'0')}`;
   const[subPeriodF,setSubPeriodF]=useState('');const[subMktF,setSubMktF]=useState(null);const[subPmF,setSubPmF]=useState('');const[subStatusF,setSubStatusF]=useState(null);const[subSearch,setSubSearch]=useState('');
   const[invoiceModal,setInvoiceModal]=useState(null);const[invoiceAmt,setInvoiceAmt]=useState('');
   const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=billing_period.desc');setAllBillingEntries(d||[]);const p=await sbGet('pm_billing_entries','select=*&status=eq.pending');setPmEntries(p||[]);},[]);
   useEffect(()=>{fetchEntries();},[fetchEntries]);
+  // Lookups for LF context from PM Bill Sheet entries
+  const thisMonthByJob=useMemo(()=>{const m={};allBillingEntries.forEach(e=>{if(e.billing_period&&e.billing_period.startsWith(defPeriod)&&!m[e.job_id])m[e.job_id]=e;});return m;},[allBillingEntries,defPeriod]);
+  const latestPmByJob=useMemo(()=>{const m={};[...allBillingEntries].sort((a,b)=>(b.billing_period||'').localeCompare(a.billing_period||'')||(b.created_at||'').localeCompare(a.created_at||'')).forEach(e=>{if(!m[e.job_id])m[e.job_id]=e;});return m;},[allBillingEntries]);
   const getPendingForJob=(jobId)=>pmEntries.filter(e=>e.job_id===jobId);
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
   const saveEdit=async j=>{const u={[editField]:editVal};if(editField==='ytd_invoiced'){const adj=n(j.adj_contract_value||j.contract_value);const ytd=n(editVal);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',editField,j[editField],editVal);setEditId(null);setEditField(null);onRefresh();};
@@ -697,9 +725,13 @@ function BillingPage({jobs,onRefresh}){
         <button onClick={()=>setBStatusF('invoiced')} style={fpill(bStatusF==='invoiced')}>Invoiced</button>
         <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
         <span style={{fontSize:12,color:'#6B6056'}}>{shown.length} jobs</span>
+        <button onClick={()=>setShowLfDetail(v=>!v)} style={{...gpill(showLfDetail),marginLeft:'auto'}}>{showLfDetail?'Hide':'Show'} LF Detail</button>
       </div>
       <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
-      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Project','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','PM Entries','Last Billed','Notes',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
+        <tr>{['Project','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','PM Entries','Last Billed','Notes',''].map(h=><th key={h} rowSpan={showLfDetail?2:1} style={thS}>{h}</th>)}{showLfDetail&&<th colSpan={9} style={{...thS,textAlign:'center',background:'#FDF4F4',color:'#8B2020',borderLeft:'1px solid #E5E3E0'}}>LF This Month</th>}</tr>
+        {showLfDetail&&<tr>{PM_BILL_LF_TABLE.map(([k,l],i)=><th key={k} style={{...thS,fontSize:9,padding:'6px 4px',background:'#FDF4F4',textAlign:'right',borderLeft:i===0?'1px solid #E5E3E0':'none'}}>{l}</th>)}</tr>}
+        </thead>
         <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
           <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
@@ -712,6 +744,7 @@ function BillingPage({jobs,onRefresh}){
           <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
           <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
           <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Complete" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
+          {showLfDetail&&PM_BILL_LF_TABLE.map(([k],i)=>{const e=thisMonthByJob[j.id];const v=e?n(e[k]):0;return<td key={k} style={{padding:'8px 6px',fontSize:11,textAlign:'right',color:v>0?'#1A1A1A':'#9E9B96',borderLeft:i===0?'1px solid #E5E3E0':'none',background:i===0?'#FDFBFB':'transparent'}}>{v>0?v.toLocaleString():'—'}</td>;})}
         </tr>;})}</tbody></table></div>
       {/* Recently Fully Billed */}
       <div style={{marginTop:24}}>
@@ -784,6 +817,25 @@ function BillingPage({jobs,onRefresh}){
         <div style={{marginBottom:10}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes (optional)</label><input value={billingForm.notes} onChange={e=>setBillingForm(p=>({...p,notes:e.target.value}))} placeholder="Invoice #, milestone, etc." style={inputS}/></div>
         <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={billingForm.entered_by} onChange={e=>setBillingForm(p=>({...p,entered_by:e.target.value}))} placeholder="Your name" style={inputS}/></div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginBottom:18}}><button onClick={closeBillingModal} style={btnS}>Close</button><button onClick={saveBillingEntry} style={btnP}>Save Entry</button></div>
+        {/* LF on File from PM Bill Sheet — read-only context for whoever is invoicing */}
+        {(()=>{const lfEntry=latestPmByJob[j.id];const lfPeriod=lfEntry?.billing_period?new Date(lfEntry.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'}):null;return<div style={{borderTop:'1px solid #E5E3E0',paddingTop:14,marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A'}}>LF on File from PM Bill Sheet</div>
+            {lfPeriod&&<div style={{fontSize:10,color:'#9E9B96'}}>Latest report: {lfPeriod}</div>}
+          </div>
+          {!lfEntry?<div style={{color:'#9E9B96',fontSize:12,padding:12,textAlign:'center',background:'#F9F8F6',borderRadius:8}}>No PM bill sheet entries on file for this job</div>:<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:12}}>
+            {PM_BILL_LF_GROUPS.map(g=><div key={g.title} style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{g.title}</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:6}}>
+                {g.fields.map(([k,l])=>{const v=n(lfEntry[k]);return<div key={k} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 8px'}}>
+                  <div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{l}</div>
+                  <div style={{fontFamily:'Inter',fontSize:13,fontWeight:700,color:v>0?'#1A1A1A':'#C8C4BD'}}>{v>0?v.toLocaleString():'—'}</div>
+                </div>;})}
+              </div>
+            </div>)}
+          </div>}
+          {onNav&&<div style={{textAlign:'right',marginTop:8}}><button onClick={()=>{closeBillingModal();onNav('pm_billing');}} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer',padding:0}}>Update LF on PM Bill Sheet →</button></div>}
+        </div>;})()}
         {/* Billing History */}
         <div style={{borderTop:'1px solid #E5E3E0',paddingTop:14}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:'#1A1A1A'}}>Billing History</div>
@@ -2173,7 +2225,7 @@ export default function App(){
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
-            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs}/>}
+            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='production'&&<ProductionPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
