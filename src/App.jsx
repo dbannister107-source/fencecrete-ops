@@ -525,7 +525,7 @@ function BillingPage({jobs,onRefresh}){
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   const[allBillingEntries,setAllBillingEntries]=useState([]);
   const nowM=new Date();const defPeriod=`${nowM.getFullYear()}-${String(nowM.getMonth()+1).padStart(2,'0')}`;
-  const[subPeriodF,setSubPeriodF]=useState(defPeriod);const[subMktF,setSubMktF]=useState(null);const[subPmF,setSubPmF]=useState('');const[subStatusF,setSubStatusF]=useState(null);const[subSearch,setSubSearch]=useState('');
+  const[subPeriodF,setSubPeriodF]=useState('');const[subMktF,setSubMktF]=useState(null);const[subPmF,setSubPmF]=useState('');const[subStatusF,setSubStatusF]=useState(null);const[subSearch,setSubSearch]=useState('');
   const[invoiceModal,setInvoiceModal]=useState(null);const[invoiceAmt,setInvoiceAmt]=useState('');
   const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=billing_period.desc');setAllBillingEntries(d||[]);const p=await sbGet('pm_billing_entries','select=*&status=eq.pending');setPmEntries(p||[]);},[]);
   useEffect(()=>{fetchEntries();},[fetchEntries]);
@@ -567,6 +567,7 @@ function BillingPage({jobs,onRefresh}){
       </div>
       <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
         <input value={subSearch} onChange={e=>setSubSearch(e.target.value)} placeholder="Search job name, number, PM..." style={{...inputS,width:240}}/>
+        <button onClick={()=>setSubPeriodF(defPeriod)} style={fpill(subPeriodF===defPeriod)}>This Month</button>
         <input type="month" value={subPeriodF} onChange={e=>setSubPeriodF(e.target.value)} style={{...inputS,width:150}}/>
         {subPeriodF&&<button onClick={()=>setSubPeriodF('')} style={{...btnS,padding:'4px 8px',fontSize:10}}>All Periods</button>}
         <button onClick={()=>setSubMktF(null)} style={fpill(!subMktF)}>All</button>
@@ -596,7 +597,7 @@ function BillingPage({jobs,onRefresh}){
             <td style={{padding:'8px 10px'}}>{isPending?<button onClick={()=>{setInvoiceModal(e);setInvoiceAmt(String(Math.round(netDue)));}} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>Invoice</button>:<span style={{fontSize:10,color:'#9E9B96'}}>{fD(e.invoiced_date)}</span>}</td>
           </tr>;})}</tbody>
         </table>
-        {subEntries.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No billing entries for this period</div>}
+        {subEntries.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>$</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:8}}>No PM billing submissions found</div><div style={{fontSize:12,color:'#9E9B96'}}>{subPeriodF?'Try clearing the period filter or selecting a different month':'PMs submit entries from the PM Bill Sheet page'}</div></div>}
       </div>
     </div>;})()}
 
@@ -772,16 +773,32 @@ function PMBillingPage({jobs,onRefresh}){
 
   const finishSave=(action)=>{fireAlert('billing_logged',{...showLog,pm:selPM,lf_this_period:calcLFTotal(logForm)});logAct(showLog,'billing_update','pm_billing','',[selPM,calcLFTotal(logForm)+'LF'].join(' · '));setShowLog(null);setDuplicateConfirm(null);onRefresh();setToast(`Billing entry ${action} for ${showLog.job_name}`);fetchEntries();};
   const saveLog=async()=>{
-    const pc=getProgressCalc(showLog,logForm);
-    if(!showLog||!pc.lfPeriod)return;
+    const lfPeriod=calcLFTotal(logForm);
+    if(!showLog||!lfPeriod)return;
     const j=showLog;
+    // Fetch fresh job data and all entries to ensure accurate calculations
+    const freshJobs=await sbGet('jobs',`id=eq.${j.id}&select=adj_contract_value,contract_value,ytd_invoiced,total_lf,retainage_pct`);
+    const fj=freshJobs&&freshJobs[0]?freshJobs[0]:j;
+    const prevEntries=await sbGet('pm_billing_entries',`job_id=eq.${j.id}&select=lf_this_period,id`);
+    const prevLF=(prevEntries||[]).filter(e=>logForm._editId?e.id!==logForm._editId:true).reduce((s,e)=>s+n(e.lf_this_period),0);
+    const lfCum=prevLF+lfPeriod;
+    const totalLF=n(fj.total_lf);
+    const cv=n(fj.adj_contract_value||fj.contract_value);
+    const ytdInv=n(fj.ytd_invoiced);
+    const pctPeriod=totalLF>0?lfPeriod/totalLF:0;
+    const pctCum=totalLF>0?lfCum/totalLF:0;
+    const amtCum=cv*pctCum;
+    const amtPeriod=Math.max(amtCum-ytdInv,0);
+    const retPct=n(logForm.retainage_pct)||n(fj.retainage_pct)||0;
+    const retAmt=amtPeriod*(retPct/100);
+    const netDue=amtPeriod-retAmt;
     const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
     const body={
       job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,
-      billing_period:logForm.billing_period,lf_this_period:pc.lfPeriod,lf_cumulative:pc.lfCum,
-      pct_complete_period:Math.round(pc.pctPeriod*10000)/10000,pct_complete_cumulative:Math.round(pc.pctCum*10000)/10000,
-      amount_this_period:Math.round(pc.amtPeriod*100)/100,amount_cumulative:Math.round(pc.amtCum*100)/100,
-      retainage_pct:pc.retPct,retainage_amount:Math.round(pc.retAmt*100)/100,net_amount_due:Math.round(pc.netDue*100)/100,
+      billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:lfCum,
+      pct_complete_period:Math.round(pctPeriod*10000)/10000,pct_complete_cumulative:Math.round(pctCum*10000)/10000,
+      amount_this_period:Math.round(amtPeriod*100)/100,amount_cumulative:Math.round(amtCum*100)/100,
+      retainage_pct:retPct,retainage_amount:Math.round(retAmt*100)/100,net_amount_due:Math.round(netDue*100)/100,
       invoice_notes:logForm.invoice_notes,status:'pending',...lfFields
     };
     if(logForm._editId){
