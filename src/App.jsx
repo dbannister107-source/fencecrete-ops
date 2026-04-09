@@ -1621,12 +1621,51 @@ function PMDailyReportPage({jobs}){
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
   const pmJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'&&j.pm===selPM),[jobs,selPM]);
-  const selectJob=(jobId)=>{setSelJobId(jobId);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,num_gates_installed,num_posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.num_gates_installed),0),posts:d.reduce((s,r)=>s+n(r.num_posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
+  const selectJob=(jobId)=>{setSelJobId(jobId);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
   const submitReport=async()=>{
-    const body={...form,report_date:form.report_date||todayISO,submitted_by:selPM||form.submitted_by,num_employees:n(form.num_employees),num_gates_installed:n(form.num_gates_installed),gate_height:n(form.gate_height),num_holes_dug:n(form.num_holes_dug),num_posts_placed:n(form.num_posts_placed),lf_panels_installed:n(form.lf_panels_installed),fence_height:n(form.fence_height),num_cut_sections:n(form.num_cut_sections),num_sections_leveled:n(form.num_sections_leveled),lf_panels_washed:n(form.lf_panels_washed),drill_piercing_lf:n(form.drill_piercing_lf),num_columns_laid_out:n(form.num_columns_laid_out),num_columns_34_built:n(form.num_columns_34_built),num_columns_capped:n(form.num_columns_capped),lf_panels_shoulder:n(form.lf_panels_shoulder),lf_panels_completed:n(form.lf_panels_completed),lf_impacted_delays:n(form.lf_impacted_delays),num_defective_panels:n(form.num_defective_panels),num_defective_posts:n(form.num_defective_posts)};
+    // Body keys must match the pm_daily_reports schema exactly. Form uses legacy field
+    // names (num_*, lf_panels_completed, etc.); we map them to actual DB column names here.
+    const body={
+      report_date:form.report_date||todayISO,
+      job_number:form.job_number,
+      repair_location:form.repair_location,
+      job_type:form.job_type,
+      crew:form.crew,
+      employee_count:n(form.num_employees),
+      daily_target:form.daily_target,
+      gate_style:form.gate_style,
+      gate_height:n(form.gate_height),
+      gates_installed:n(form.num_gates_installed),
+      holes_dug:n(form.num_holes_dug),
+      posts_placed:n(form.num_posts_placed),
+      lf_panels_installed:n(form.lf_panels_installed),
+      fence_style:form.fence_style,
+      fence_height:n(form.fence_height),
+      cut_sections:n(form.num_cut_sections),
+      sections_leveled:n(form.num_sections_leveled),
+      lf_panels_washed:n(form.lf_panels_washed),
+      drill_piercing_lf:n(form.drill_piercing_lf),
+      columns_laid_out:n(form.num_columns_laid_out),
+      columns_three_quarter:n(form.num_columns_34_built),
+      columns_capped:n(form.num_columns_capped),
+      lf_panels_shoulder:n(form.lf_panels_shoulder),
+      lf_panels_capped:n(form.lf_panels_completed),
+      machinery_used:form.machinery_used,
+      soil_type:form.soil_type,
+      soil_quality:parseInt(form.soil_quality)||0,
+      terrain_rating:parseInt(form.terrain_rating)||0,
+      delay_reason:form.delay_reason,
+      delay_time:form.delay_time,
+      lf_impacted_by_delays:n(form.lf_impacted_delays),
+      defective_panels:n(form.num_defective_panels),
+      defective_posts:n(form.num_defective_posts),
+      other_defective:form.other_defective_materials,
+      delay_notes:form.delay_notes,
+      submitted_by:selPM||form.submitted_by,
+    };
     if(form.crew)localStorage.setItem('last_crew',form.crew);
     if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
     try{
@@ -1651,7 +1690,7 @@ function PMDailyReportPage({jobs}){
     <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
     <div style={{...card,marginBottom:16}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,fontSize:13}}>
-        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.num_employees],['Fence Style',detailRpt.fence_style],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.num_gates_installed],['Posts Placed',detailRpt.num_posts_placed],['Holes Dug',detailRpt.num_holes_dug],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
+        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
       </div>
       {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
     </div>
