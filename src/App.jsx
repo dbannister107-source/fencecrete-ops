@@ -215,7 +215,7 @@ function WeeklyDigest({jobs,active}){
 }
 
 /* ═══ DASHBOARD ═══ */
-function Dashboard({jobs}){
+function Dashboard({jobs,onNav}){
   const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
   const mktData=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],value:mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),fill:MC[m]};});
@@ -230,6 +230,10 @@ function Dashboard({jobs}){
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}><KPI label="Total Contract" value={$k(tc)}/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Active LF" value={tlf.toLocaleString()} color="#1D4ED8"/></div>
+    {/* Quick Actions */}
+    {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
+      {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
+    </div>}
     {/* Quick stats */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:10,marginBottom:24}}>{[['Total',jobs.length],['Active',active.length],['Completed Mo.',compThisMonth],['Avg Contract',$k(active.length?tc/active.length:0)],['Largest',largest?largest.job_name?.slice(0,18):'—'],['Oldest Unbilled',oldestUnbilled?`${oldestUnbilled.contract_age}d`:'—']].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>
     {/* Backlog Health */}
@@ -300,10 +304,21 @@ function Dashboard({jobs}){
 }
 
 /* ═══ PROJECTS PAGE ═══ */
+const COL_GROUPS=[
+  {label:'Job Info',keys:['status','market','job_number','sharepoint','job_name','customer_name','cust_number']},
+  {label:'Product',keys:['fence_type','lf_precast','lf_single_wythe','lf_wrought_iron','total_lf','style','color','height_precast']},
+  {label:'Contract',keys:['contract_value','change_orders','adj_contract_value','net_contract_value','sales_tax','billing_method','billing_date']},
+  {label:'Billing',keys:['ytd_invoiced','pct_billed','left_to_bill','last_billed','contract_date','retainage_pct','retainage_held']},
+  {label:'Schedule',keys:['est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},
+  {label:'Requirements',keys:['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing']},
+  {label:'Team',keys:['sales_rep','pm','job_type']},
+  {label:'Other',keys:['notes','documents_needed','file_location','address','city','state','zip']}
+];
 function ProjectsPage({jobs,onRefresh,openJob}){
   const[search,setSearch]=useState('');const[statusF,setStatusF]=useState(null);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');
   const[sortCol,setSortCol]=useState('left_to_bill');const[sortDir,setSortDir]=useState('desc');
-  const[visCols,setVisCols]=useState(()=>DEF_VIS);const[showCols,setShowCols]=useState(false);
+  const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');return s?JSON.parse(s):DEF_VIS;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
+  useEffect(()=>{try{localStorage.setItem('fc_vis_cols',JSON.stringify(visCols));}catch(e){}},[visCols]);
   const[editJob,setEditJob]=useState(openJob||null);const[isNew,setIsNew]=useState(false);
   const[editMode,setEditMode]=useState(false);const[inlE,setInlE]=useState(null);
   const[sel,setSel]=useState(new Set());const[toast,setToast]=useState(null);
@@ -317,27 +332,40 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   const bulkRep=async r=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{sales_rep:r});logAct(j,'field_update','sales_rep',j.sales_rep,r);}}setSel(new Set());setToast(`Assigned to ${r}`);onRefresh();};
   const visCD=ALL_COLS.filter(c=>visCols.includes(c.key));
   const inlineField=(j,k)=>{const dd=DD[k];if(dd)return<select autoFocus value={inlE?.value||''} onChange={e=>{setInlE({...inlE,value:e.target.value});}} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;if(k==='est_start_date'||k==='last_billed')return<input autoFocus type="date" value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;return<input autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;};
+  const fTC=filtered.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+  const fLTB=filtered.reduce((s,j)=>s+n(j.left_to_bill),0);
+  const fAvgB=filtered.length>0?filtered.reduce((s,j)=>s+n(j.pct_billed),0)/filtered.length:0;
+  const colRef=useRef();
+  useEffect(()=>{if(!showCols)return;const h=e=>{if(colRef.current&&!colRef.current.contains(e.target))setShowCols(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[showCols]);
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Projects</h1>
-      <div style={{display:'flex',gap:8}}>
-        <button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8B2020':'#6B6056',border:editMode?'1px solid #8B2020':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>
-        <button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns</button>
-        <button onClick={()=>{setEditJob({job_name:'',job_number:'',customer_name:'',market:'',status:'contract_review'});setIsNew(true);}} style={{...btnP,background:'#065F46'}}>+ New Project</button>
-        <button onClick={()=>exportCSV(filtered)} style={btnP}>Export</button>
+    <div style={{position:'sticky',top:0,zIndex:10,background:'#F4F4F2',paddingBottom:8,marginBottom:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>Projects</h1>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8B2020':'#6B6056',border:editMode?'1px solid #8B2020':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>
+          <div style={{position:'relative'}} ref={colRef}><button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns ({visCols.length})</button>
+            {showCols&&<div style={{position:'absolute',right:0,top:36,width:360,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:480,overflow:'auto'}}>
+              {COL_GROUPS.map(g=>{const gk=g.keys.filter(k=>ALL_COLS.some(c=>c.key===k));const allOn=gk.every(k=>visCols.includes(k));return<div key={g.label} style={{marginBottom:12}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5}}>{g.label}</span><button onClick={()=>{if(allOn)setVisCols(v=>v.filter(k=>!gk.includes(k)));else setVisCols(v=>[...new Set([...v,...gk])]);}} style={{background:'none',border:'none',color:'#8B2020',fontSize:10,fontWeight:600,cursor:'pointer'}}>{allOn?'Deselect All':'Select All'}</button></div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...v,k])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8B2020':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8B2020':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
+              </div>;})}
+            </div>}
+          </div>
+          <button onClick={()=>{setEditJob({job_name:'',job_number:'',customer_name:'',market:'',status:'contract_review'});setIsNew(true);}} style={{...btnP,background:'#065F46'}}>+ New Project</button>
+          <button onClick={()=>exportCSV(filtered)} style={btnP}>Export</button>
+        </div>
       </div>
+      <div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:240}}/>
+        <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
+        <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
+        <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+      </div>
+      <div style={{fontSize:12,color:'#6B6056',padding:'4px 0'}}>Showing {filtered.length} jobs | {$k(fTC)} contract value | {$k(fLTB)} left to bill | {Math.round(fAvgB*100)}% avg billed</div>
     </div>
-    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:240}}/>
-      <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
-      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
-      <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-      <span style={{fontSize:12,color:'#6B6056'}}>{statusF||mktF||pmF||search?`Showing ${filtered.length} of ${jobs.length}`:filtered.length} projects</span>
-    </div>
-    {showCols&&<div style={{...card,marginBottom:12,display:'flex',flexWrap:'wrap',gap:6}}>{ALL_COLS.map(c=><button key={c.key} onClick={()=>setVisCols(v=>v.includes(c.key)?v.filter(x=>x!==c.key):[...v,c.key])} style={gpill(visCols.includes(c.key))}>{c.label}</button>)}</div>}
-    {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:12,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span><select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select><select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select><button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
-    <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 280px)'}}>
+    {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span><select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select><select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select><button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
+    <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr><th style={{width:40,padding:'10px 8px',borderBottom:'1px solid #E5E3E0'}}><input type="checkbox" checked={sel.size===filtered.length&&filtered.length>0} onChange={()=>{if(sel.size===filtered.length)setSel(new Set());else setSel(new Set(filtered.map(j=>j.id)));}} /></th>{visCD.map(c=><th key={c.key} onClick={()=>toggleSort(c.key)} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,userSelect:'none'}}>{c.label} {sortCol===c.key&&(sortDir==='asc'?'↑':'↓')}</th>)}</tr></thead>
         <tbody>{filtered.map((j,i)=><tr key={j.id} onClick={()=>{if(!editMode&&!sel.size){setEditJob(j);setIsNew(false);}}} style={{cursor:editMode?'default':'pointer',borderLeft:`3px solid ${SC[j.status]||'transparent'}`,background:i%2===0?'#FFF':'#FAFAF8'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
           <td style={{width:40,padding:'8px 8px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(j.id)} onChange={()=>{const s=new Set(sel);if(s.has(j.id))s.delete(j.id);else s.add(j.id);setSel(s);}}/></td>
@@ -1323,7 +1351,7 @@ function WeatherDaysPage({jobs}){
           <td style={{padding:'8px 10px'}}>{d.reason||'—'}</td>
           <td style={{padding:'8px 10px',color:'#9E9B96',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.notes||'—'}</td>
           <td style={{padding:'8px 10px'}} onClick={e=>e.stopPropagation()}><button onClick={()=>openForm(d)} style={{...btnS,padding:'3px 10px',fontSize:11}}>Edit</button></td>
-        </tr>)}{filtered.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No weather days logged</td></tr>}</tbody></table>
+        </tr>)}{filtered.length===0&&<tr><td colSpan={8} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>☁</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No weather days logged yet</div><button onClick={()=>openForm(null)} style={{...btnP,fontSize:12}}>+ Log First Weather Day</button></td></tr>}</tbody></table>
     </div>}
     {showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowForm(false)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:480,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
@@ -1370,7 +1398,7 @@ function ChangeOrdersPage({jobs}){
           <td style={{padding:'8px 10px'}}>{o.pm||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(MC[o.market]||'#6B6056',MB[o.market]||'#F4F4F2')}>{MS[o.market]||'—'}</span></td>
         </tr>;})}
-        {filtered.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No change orders found</td></tr>}</tbody></table>
+        {filtered.length===0&&<tr><td colSpan={8} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>±</div><div style={{color:'#9E9B96',fontSize:14}}>No change orders found</div></td></tr>}</tbody></table>
     </div>}
   </div>);
 }
@@ -1422,7 +1450,7 @@ function PMDailyReportPage({jobs}){
     {!selPM&&<div style={{...card,textAlign:'center',padding:40,color:'#6B6056'}}>Select your name above to get started</div>}
     {selPM&&tab==='history'&&<div>
       <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}><button onClick={()=>setShowAllPMs(false)} style={fpill(!showAllPMs)}>My Reports</button><button onClick={()=>setShowAllPMs(true)} style={fpill(showAllPMs)}>All PMs</button><span style={{fontSize:12,color:'#6B6056'}}>{filteredReports.length} reports</span></div>
-      {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:filteredReports.length===0?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>No reports yet</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
+      {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:filteredReports.length===0?<div style={{textAlign:'center',padding:40}}><div style={{fontSize:28,marginBottom:8}}>📋</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No reports submitted yet</div><button onClick={()=>setTab('new')} style={{...btnP,fontSize:12}}>+ New Report</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{filteredReports.map(r=><tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <td style={{padding:'8px 10px'}}>{fD(r.report_date||r.created_at)}</td>
@@ -1542,6 +1570,7 @@ export default function App(){
   const sideW=sideCollapsed||isMobile?48:220;
   return(
     <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
+      <style>{`@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
       <div style={{width:sideW,minWidth:sideW,maxWidth:sideW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
         <div style={{padding:sideCollapsed?'16px 8px':'24px 20px 20px',textAlign:sideCollapsed?'center':'left'}}>
           {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FENCECRETE</div><div style={{fontSize:10,color:'#9E9B96',letterSpacing:2,textTransform:'uppercase',whiteSpace:'nowrap'}}>Operations</div></>}
@@ -1557,7 +1586,7 @@ export default function App(){
         <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)}/>
         <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
           {loading?<div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'50vh',color:'#9E9B96'}}>Loading...</div>:<>
-            {page==='dashboard'&&<Dashboard jobs={jobs}/>}
+            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
