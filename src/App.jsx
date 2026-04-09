@@ -1234,11 +1234,13 @@ function ReportsPage({jobs}){
 
 /* ═══ SCHEDULE PAGE ═══ */
 function SchedulePage({jobs}){
-  const[events,setEvents]=useState([]);const[view,setView]=useState('calendar');const[month,setMonth]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1));const[showAdd,setShowAdd]=useState(false);const[mktF,setMktF]=useState(null);const[editEvt,setEditEvt]=useState(null);
+  const[events,setEvents]=useState([]);const[view,setView]=useState('calendar');const[month,setMonth]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1));const[showAdd,setShowAdd]=useState(false);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[editEvt,setEditEvt]=useState(null);
+  const jobsById=useMemo(()=>{const m={};jobs.forEach(j=>{m[j.id]=j;});return m;},[jobs]);
+  const pmJobCounts=useMemo(()=>{const c={};jobs.forEach(j=>{if(j.status!=='complete'&&j.pm)c[j.pm]=(c[j.pm]||0)+1;});return c;},[jobs]);
   const[form,setForm]=useState({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});const[jobSearch,setJobSearch]=useState('');
   const fetchEvents=useCallback(async()=>{const d=await sbGet('schedule_events','order=scheduled_date.asc');setEvents(d||[]);},[]);
   useEffect(()=>{fetchEvents();},[fetchEvents]);
-  const filteredEvents=mktF?events.filter(e=>e.market===mktF):events;
+  const filteredEvents=useMemo(()=>events.filter(e=>(!mktF||e.market===mktF)&&(!pmF||jobsById[e.job_id]?.pm===pmF)),[events,mktF,pmF,jobsById]);
   const saveEvent=async e=>{e.preventDefault();const job=jobs.find(j=>j.id===form.job_id);if(!job&&!editEvt)return;const body={...form,job_number:job?.job_number||editEvt?.job_number,job_name:job?.job_name||editEvt?.job_name,market:job?.market||editEvt?.market,color:MC[job?.market||editEvt?.market]||'#8B2020',lf_scheduled:n(form.lf_scheduled)};if(editEvt){await sbPatch('schedule_events',editEvt.id,body);}else{await sbPost('schedule_events',body);}setShowAdd(false);setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');fetchEvents();};
   const deleteEvent=async id=>{if(!window.confirm('Delete this event?'))return;await sbDel('schedule_events',id);setEditEvt(null);setShowAdd(false);fetchEvents();};
   const openEdit=ev=>{setForm({job_id:ev.job_id||'',event_type:ev.event_type||'production_start',scheduled_date:ev.scheduled_date||'',end_date:ev.end_date||'',assigned_to:ev.assigned_to||'',crew:ev.crew||'',lf_scheduled:ev.lf_scheduled||'',notes:ev.notes||''});setJobSearch(ev.job_name||'');setEditEvt(ev);setShowAdd(true);};
@@ -1248,7 +1250,10 @@ function SchedulePage({jobs}){
   const weeks8=useMemo(()=>{const w=[];const s=getMonday(new Date());for(let i=0;i<8;i++){const d=new Date(s);d.setDate(d.getDate()+i*7);w.push(d);}return w;},[]);
   return(<div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button></div></div>
-    <div style={{display:'flex',gap:6,marginBottom:16}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
+    <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+      <div style={{display:'flex',gap:6}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}><label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>PM</label><select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:180}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}{pmJobCounts[p.id]?` (${pmJobCounts[p.id]})`:''}</option>)}</select></div>
+    </div>
     <div style={{display:'flex',gap:20}}>
       <div style={{flex:1,minWidth:0}}>
         {view==='calendar'&&<><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))} style={btnS}>← Prev</button><span style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{month.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><div style={{display:'flex',gap:8}}><button onClick={()=>setMonth(new Date(new Date().getFullYear(),new Date().getMonth(),1))} style={btnS}>Today</button><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))} style={btnS}>Next →</button></div></div>
@@ -1260,6 +1265,7 @@ function SchedulePage({jobs}){
           const GANTT_MKT_C={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
           let ganttJobs=jobs.filter(j=>j.status!=='complete'&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
           if(mktF)ganttJobs=ganttJobs.filter(j=>j.market===mktF);
+          if(pmF)ganttJobs=ganttJobs.filter(j=>j.pm===pmF);
           ganttJobs=ganttJobs.slice(0,40);
           if(ganttJobs.length===0)return<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No active projects with start dates</div>;
           const parseD=d=>new Date(d+'T12:00:00').getTime();
