@@ -1113,18 +1113,18 @@ function DailyReportPage(){
 function WeatherDaysPage({jobs}){
   const[days,setDays]=useState([]);const[loading,setLoading]=useState(true);const[showForm,setShowForm]=useState(false);const[editDay,setEditDay]=useState(null);
   const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[toast,setToast]=useState(null);
-  const[form,setForm]=useState({job_id:'',date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});
+  const[form,setForm]=useState({job_id:'',weather_date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});
   const[jobSearch,setJobSearch]=useState('');
-  const fetchDays=useCallback(async()=>{const d=await sbGet('weather_days','order=date.desc');setDays(d||[]);setLoading(false);},[]);
+  const fetchDays=useCallback(async()=>{const d=await sbGet('weather_days','select=*&order=weather_date.desc');setDays(d||[]);setLoading(false);},[]);
   useEffect(()=>{fetchDays();},[fetchDays]);
   const activeJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const searchedJobs=jobSearch?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,10):[];
   const filtered=useMemo(()=>{let f=days;if(mktF)f=f.filter(d=>d.market===mktF);if(pmF)f=f.filter(d=>d.pm===pmF);return f;},[days,mktF,pmF]);
-  const now=new Date();const thisMonth=filtered.filter(d=>d.date&&new Date(d.date).getMonth()===now.getMonth()&&new Date(d.date).getFullYear()===now.getFullYear());
-  const thisYear=filtered.filter(d=>d.date&&new Date(d.date).getFullYear()===now.getFullYear());
+  const now=new Date();const thisMonth=filtered.filter(d=>d.weather_date&&new Date(d.weather_date).getMonth()===now.getMonth()&&new Date(d.weather_date).getFullYear()===now.getFullYear());
+  const thisYear=filtered.filter(d=>d.weather_date&&new Date(d.weather_date).getFullYear()===now.getFullYear());
   const totalHours=filtered.reduce((s,d)=>s+n(d.hours_lost),0);
-  const openForm=(day)=>{if(day){setForm({job_id:day.job_id||'',date:day.date||'',hours_lost:day.hours_lost||'',reason:day.reason||'Rain',logged_by:day.logged_by||'',notes:day.notes||''});setJobSearch(day.job_name||'');setEditDay(day);}else{setForm({job_id:'',date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});setJobSearch('');setEditDay(null);}setShowForm(true);};
-  const saveDay=async()=>{const job=jobs.find(j=>j.id===form.job_id);const body={...form,hours_lost:n(form.hours_lost),job_number:job?.job_number||editDay?.job_number||'',job_name:job?.job_name||editDay?.job_name||'',market:job?.market||editDay?.market||'',pm:job?.pm||editDay?.pm||''};if(editDay){await sbPatch('weather_days',editDay.id,body);}else{await sbPost('weather_days',body);}setShowForm(false);setEditDay(null);setToast('Weather day saved');fetchDays();};
+  const openForm=(day)=>{if(day){setForm({job_id:day.job_id||'',weather_date:day.weather_date||'',hours_lost:day.hours_lost||'',reason:day.reason||'Rain',logged_by:day.logged_by||'',notes:day.notes||''});setJobSearch(day.job_name||'');setEditDay(day);}else{setForm({job_id:'',weather_date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});setJobSearch('');setEditDay(null);}setShowForm(true);};
+  const saveDay=async()=>{const job=jobs.find(j=>j.id===form.job_id);const body={weather_date:form.weather_date,hours_lost:n(form.hours_lost),reason:form.reason,logged_by:form.logged_by,notes:form.notes,job_id:form.job_id,job_number:job?.job_number||editDay?.job_number||'',job_name:job?.job_name||editDay?.job_name||'',market:job?.market||editDay?.market||'',pm:job?.pm||editDay?.pm||''};if(editDay){await sbPatch('weather_days',editDay.id,body);}else{await sbPost('weather_days',body);}setShowForm(false);setEditDay(null);setToast('Weather day saved');fetchDays();};
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
@@ -1141,7 +1141,7 @@ function WeatherDaysPage({jobs}){
     {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Name','Market','PM','Hours Lost','Reason','Notes','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>{filtered.map(d=><tr key={d.id} onClick={()=>openForm(d)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-          <td style={{padding:'8px 10px'}}>{fD(d.date)}</td>
+          <td style={{padding:'8px 10px'}}>{fD(d.weather_date)}</td>
           <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.job_name||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(MC[d.market]||'#6B6056',MB[d.market]||'#F4F4F2')}>{MS[d.market]||'—'}</span></td>
           <td style={{padding:'8px 10px'}}>{d.pm||'—'}</td>
@@ -1156,7 +1156,7 @@ function WeatherDaysPage({jobs}){
         <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:16}}>{editDay?'Edit Weather Day':'Log Weather Day'}</div>
         <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search jobs..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Date</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Date</label><input type="date" value={form.weather_date} onChange={e=>setForm(f=>({...f,weather_date:e.target.value}))} style={inputS}/></div>
           <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Hours Lost</label><select value={form.hours_lost} onChange={e=>setForm(f=>({...f,hours_lost:e.target.value}))} style={inputS}><option value="">— Select —</option>{[0.5,1,2,3,4,5,6,7,8,'8+'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Reason</label><select value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} style={inputS}>{['Rain','Wind','Lightning','Extreme Heat','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={form.logged_by} onChange={e=>setForm(f=>({...f,logged_by:e.target.value}))} style={inputS}/></div>
