@@ -232,6 +232,52 @@ function Dashboard({jobs}){
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}><KPI label="Total Contract" value={$k(tc)}/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Active LF" value={tlf.toLocaleString()} color="#1D4ED8"/></div>
     {/* Quick stats */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:10,marginBottom:24}}>{[['Total',jobs.length],['Active',active.length],['Completed Mo.',compThisMonth],['Avg Contract',$k(active.length?tc/active.length:0)],['Largest',largest?largest.job_name?.slice(0,18):'—'],['Oldest Unbilled',oldestUnbilled?`${oldestUnbilled.contract_age}d`:'—']].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>
+    {/* Backlog Health */}
+    {(()=>{
+      const blJobs=jobs.filter(j=>['production_queue','in_production'].includes(j.status));
+      const blLTB=blJobs.reduce((s,j)=>s+n(j.left_to_bill),0);
+      const allYTD=jobs.reduce((s,j)=>s+n(j.ytd_invoiced),0);
+      const blCount=blJobs.length;
+      const blLF=blJobs.reduce((s,j)=>s+n(j.total_lf),0);
+      const runRate=allYTD/3.3;
+      const blMonths=runRate>0?blLTB/runRate:0;
+      const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
+      const blBg=blMonths>=4?'#D1FAE5':blMonths>=2?'#FEF3C7':'#FEE2E2';
+      const mktLTB=MKTS.map(m=>{const mj=blJobs.filter(j=>j.market===m);return{name:MS[m],market:m,ltb:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});
+      const mktTotal=mktLTB.reduce((s,m)=>s+m.ltb,0);
+      return<div style={{...card,marginBottom:24,border:`1px solid ${blColor}30`}}>
+        <div style={{display:'flex',gap:24,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
+          <div>
+            <div style={{fontFamily:'Inter',fontWeight:900,fontSize:36,color:blColor}}>{blMonths.toFixed(1)}</div>
+            <div style={{fontSize:14,fontWeight:700,color:blColor}}>months of backlog</div>
+            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>Target: 4–6 months</div>
+          </div>
+          <div style={{display:'flex',gap:20,flex:1,justifyContent:'flex-end',flexWrap:'wrap'}}>
+            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(blLTB)}</div><div style={{fontSize:10,color:'#9E9B96'}}>Left to Bill</div></div>
+            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(runRate)}/mo</div><div style={{fontSize:10,color:'#9E9B96'}}>Monthly Run Rate</div></div>
+            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{blCount}</div><div style={{fontSize:10,color:'#9E9B96'}}>Active Jobs</div></div>
+            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{blLF.toLocaleString()}</div><div style={{fontSize:10,color:'#9E9B96'}}>Total LF</div></div>
+          </div>
+        </div>
+        {/* Market breakdown bar */}
+        <div style={{marginBottom:8}}>
+          <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',background:'#E5E3E0'}}>
+            {mktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{width:`${mktTotal>0?m.ltb/mktTotal*100:0}%`,background:MC[m.market],display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:700,minWidth:m.ltb/mktTotal>0.08?0:'fit-content'}} title={`${m.name}: ${$(m.ltb)} (${Math.round(m.ltb/mktTotal*100)}%)`}>{mktTotal>0&&m.ltb/mktTotal>0.12?m.name:''}</div>)}
+          </div>
+          <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
+            {mktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{display:'flex',alignItems:'center',gap:4,fontSize:11}}>
+              <div style={{width:8,height:8,borderRadius:2,background:MC[m.market]}}/>
+              <span style={{color:'#6B6056'}}>{m.name}</span>
+              <span style={{fontWeight:700}}>{$k(m.ltb)}</span>
+              <span style={{color:'#9E9B96'}}>{mktTotal>0?Math.round(m.ltb/mktTotal*100):0}%</span>
+            </div>)}
+          </div>
+        </div>
+        {/* Warning banners */}
+        {blMonths<2&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginTop:8}}>Critical: Less than 2 months of backlog remaining</div>}
+        {blMonths>=2&&blMonths<4&&<div style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#B45309',marginTop:8}}>Backlog below 4-month target — new contracts needed to maintain revenue pace</div>}
+      </div>;
+    })()}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>s!=='complete').map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
