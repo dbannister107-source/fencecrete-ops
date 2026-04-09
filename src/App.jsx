@@ -375,7 +375,7 @@ function BillingPage({jobs,onRefresh}){
   // Invoice a single PM entry
   const invoiceEntry=async()=>{if(!invoiceModal)return;const e=invoiceModal;const job=jobs.find(j=>j.id===e.job_id);const today=new Date().toISOString().split('T')[0];await sbPatch('pm_billing_entries',e.id,{status:'invoiced',invoiced_by:'Accounting',invoiced_date:today});if(job&&n(invoiceAmt)>0){const newYTD=n(job.ytd_invoiced)+n(invoiceAmt);const adj=n(job.adj_contract_value||job.contract_value);const u={ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:today};await sbPatch('jobs',job.id,u);fireAlert('billing_logged',{...job,...u});logAct(job,'billing_update','ytd_invoiced',job.ytd_invoiced,newYTD);}setInvoiceModal(null);setInvoiceAmt('');setToast('Entry invoiced');fetchEntries();onRefresh();};
   // Submissions tab: filtered entries
-  const subEntries=useMemo(()=>{let f=allBillingEntries;if(subPeriodF)f=f.filter(e=>e.billing_period&&e.billing_period.startsWith(subPeriodF));if(subMktF)f=f.filter(e=>e.market===subMktF);if(subPmF)f=f.filter(e=>e.pm===subPmF);if(subStatusF)f=f.filter(e=>e.status===subStatusF);if(subSearch){const q=subSearch.toLowerCase();f=f.filter(e=>`${e.job_name} ${e.job_number} ${e.pm}`.toLowerCase().includes(q));}return f;},[allBillingEntries,subPeriodF,subMktF,subPmF,subStatusF,subSearch]);
+  const subEntries=useMemo(()=>{let f=allBillingEntries;if(subPeriodF)f=f.filter(e=>e.billing_period&&e.billing_period.startsWith(subPeriodF));if(subMktF)f=f.filter(e=>e.market===subMktF);if(subPmF)f=f.filter(e=>e.pm===subPmF);if(subStatusF)f=f.filter(e=>e.status===subStatusF);if(subSearch){const q=subSearch.toLowerCase();f=f.filter(e=>`${e.job_name} ${e.job_number} ${e.pm}`.toLowerCase().includes(q));}return[...f].sort((a,b)=>{const pc=(b.billing_period||'').localeCompare(a.billing_period||'');if(pc!==0)return pc;return(a.job_name||'').localeCompare(b.job_name||'');});},[allBillingEntries,subPeriodF,subMktF,subPmF,subStatusF,subSearch]);
   const subPendingCount=subEntries.filter(e=>e.status==='pending').length;
   const subTotalLF=subEntries.reduce((s,e)=>s+n(e.lf_this_period),0);
   // All Jobs tab: filtered jobs
@@ -544,6 +544,7 @@ function PMBillingPage({jobs,onRefresh}){
   const[entries,setEntries]=useState([]);
   const[toast,setToast]=useState(null);
   const[showLog,setShowLog]=useState(null);
+  const[duplicateConfirm,setDuplicateConfirm]=useState(null);
   const[search,setSearch]=useState('');
   const[mktF,setMktF]=useState(null);
   const[histF,setHistF]=useState({status:null,market:null,period:''});
@@ -589,36 +590,32 @@ function PMBillingPage({jobs,onRefresh}){
     setShowLog(job);
   };
 
+  const buildBody=()=>{
+    const lfPeriod=calcLFTotal(logForm);const j=showLog;const prevCum=n(logForm._prevCum);const cumulative=prevCum+lfPeriod;
+    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
+    return{job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:cumulative,invoice_notes:logForm.invoice_notes,status:'pending',...lfFields};
+  };
+  const finishSave=(action)=>{fireAlert('billing_logged',{...showLog,pm:selPM,lf_this_period:calcLFTotal(logForm)});logAct(showLog,'billing_update','pm_billing','',[selPM,calcLFTotal(logForm)+'LF'].join(' · '));setShowLog(null);setDuplicateConfirm(null);onRefresh();setToast(`Billing entry ${action} for ${showLog.job_name}`);fetchEntries();};
   const saveLog=async()=>{
     const lfPeriod=calcLFTotal(logForm);
     if(!showLog||!lfPeriod)return;
-    const j=showLog;
-    const prevCum=n(logForm._prevCum);
-    const cumulative=prevCum+lfPeriod;
-    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
-    const body={
-      job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,
-      billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:cumulative,
-      invoice_notes:logForm.invoice_notes,status:'pending',...lfFields
-    };
+    const body=buildBody();
     if(logForm._editId){
       await sbPatch('pm_billing_entries',logForm._editId,body);
+      finishSave('updated');
     }else{
-      // Check for existing entry for this job+period before inserting
-      const existing=await sbGet('pm_billing_entries',`job_id=eq.${j.id}&billing_period=eq.${logForm.billing_period}&select=id`);
+      const existing=await sbGet('pm_billing_entries',`job_id=eq.${showLog.id}&billing_period=eq.${logForm.billing_period}&select=id`);
       if(existing&&existing.length>0){
-        await sbPatch('pm_billing_entries',existing[0].id,body);
+        const pd=logForm.billing_period?new Date(logForm.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'this month';
+        setDuplicateConfirm({existingId:existing[0].id,body,periodLabel:pd});
       }else{
         await sbPost('pm_billing_entries',body);
+        finishSave('logged');
       }
     }
-    fireAlert('billing_logged',{...j,pm:selPM,lf_this_period:lfPeriod});
-    logAct(j,'billing_update','pm_billing','',[selPM,lfPeriod+'LF'].join(' · '));
-    setShowLog(null);
-    onRefresh();
-    setToast(`Billing entry logged for ${j.job_name}`);
-    fetchEntries();
   };
+  const handleDupUpdate=async()=>{if(!duplicateConfirm)return;await sbPatch('pm_billing_entries',duplicateConfirm.existingId,duplicateConfirm.body);finishSave('updated');};
+  const handleDupCreate=async()=>{if(!duplicateConfirm)return;await sbPost('pm_billing_entries',duplicateConfirm.body);finishSave('logged');};
 
   const markInvoiced=async(entry)=>{
     await sbPatch('pm_billing_entries',entry.id,{status:'invoiced',invoiced_by:selPM,invoiced_date:new Date().toISOString().split('T')[0]});
@@ -823,6 +820,20 @@ function PMBillingPage({jobs,onRefresh}){
         <div style={{display:'flex',gap:8}}>
           <button onClick={saveLog} style={{...btnP,flex:1,padding:'12px 0',fontSize:14}}>{logForm._editId?'Update Entry':'Save Entry'}</button>
           <button onClick={()=>setShowLog(null)} style={{...btnS,padding:'12px 20px'}}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+    {/* Duplicate Entry Confirmation */}
+    {duplicateConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setDuplicateConfirm(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:8,color:'#1A1A1A'}}>Entry Already Exists</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>
+          A billing entry for <span style={{fontWeight:700,color:'#1A1A1A'}}>{duplicateConfirm.periodLabel}</span> already exists for this job. Do you want to update it or create a new entry?
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={handleDupUpdate} style={{...btnP,flex:1,background:'#B45309'}}>Update Existing</button>
+          <button onClick={handleDupCreate} style={{...btnP,flex:1,background:'#065F46'}}>Create New Entry</button>
+          <button onClick={()=>setDuplicateConfirm(null)} style={btnS}>Cancel</button>
         </div>
       </div>
     </div>}
