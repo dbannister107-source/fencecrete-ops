@@ -313,8 +313,8 @@ function BillingPage({jobs,onRefresh}){
   const[pmEntries,setPmEntries]=useState([]);const[showPmModal,setShowPmModal]=useState(null);const[toast,setToast]=useState(null);
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   const[allBillingEntries,setAllBillingEntries]=useState([]);
-  useEffect(()=>{sbGet('pm_billing_entries','select=*&status=eq.pending').then(d=>setPmEntries(d||[]));sbGet('pm_billing_entries','select=job_id,billing_period&order=billing_period.desc').then(d=>setAllBillingEntries(d||[]));},[]);
-  const getLatestPeriod=(jobId)=>{const e=allBillingEntries.find(x=>x.job_id===jobId);return e?.billing_period||null;};
+  useEffect(()=>{sbGet('pm_billing_entries','select=*&status=eq.pending').then(d=>setPmEntries(d||[]));sbGet('pm_billing_entries','select=*&order=billing_period.desc').then(d=>setAllBillingEntries(d||[]));},[]);
+  const getLatestEntry=(jobId)=>allBillingEntries.find(x=>x.job_id===jobId)||null;
   const getPendingForJob=(jobId)=>pmEntries.filter(e=>e.job_id===jobId);
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
   const saveEdit=async j=>{const u={[editField]:editVal};if(editField==='ytd_invoiced'){const adj=n(j.adj_contract_value||j.contract_value);const ytd=n(editVal);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',editField,j[editField],editVal);setEditId(null);setEditField(null);onRefresh();};
@@ -350,13 +350,13 @@ function BillingPage({jobs,onRefresh}){
         <th colSpan={3} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Precast</th>
         <th colSpan={4} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#DBEAFE',color:'#1E40AF',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Single Wythe</th>
         <th colSpan={7} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#EDE9FE',color:'#5B21B6',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>One Line Items</th>
-        {['PM Entries','Last Billed','Notes','SP',''].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
+        {['Entry Status','PM Entries','Last Billed','Notes','SP',''].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
       </tr>
       <tr>
         {[['Post Only','#FEF3C7'],['Post+Panels','#FEF3C7'],['Complete','#FEF3C7'],['Foundation','#DBEAFE'],['Columns','#DBEAFE'],['Panels','#DBEAFE'],['Complete','#DBEAFE'],['WI Gates','#EDE9FE'],['WI Fencing','#EDE9FE'],['WI Columns','#EDE9FE'],['Bonds','#EDE9FE'],['Permits','#EDE9FE'],['Remove','#EDE9FE'],['Gate Ctrl','#EDE9FE']].map(([h,bg])=><th key={h} style={{textAlign:'right',padding:'4px 6px',borderBottom:'1px solid #E5E3E0',background:bg,color:'#6B6056',fontSize:9,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>)}
       </tr>
     </thead>
-      <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);const latestPeriod=getLatestPeriod(j.id)||j.billing_date||null;const periodLabel=latestPeriod?(() =>{const d=new Date(latestPeriod+'T12:00:00');return d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});})():'—';const lfV=f=>n(j[f])?n(j[f]).toLocaleString():'—';return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+      <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);const le=getLatestEntry(j.id);const latestPeriod=le?.billing_period||j.billing_date||null;const periodLabel=latestPeriod?(()=>{const d=new Date(latestPeriod+'T12:00:00');return d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});})():'—';const lfV=f=>le&&n(le[f])?n(le[f]).toLocaleString():'—';const entryStatus=le?.status||null;const entryStatusC={pending:['#B45309','#FEF3C7'],invoiced:['#065F46','#D1FAE5']};const[esc,esb]=entryStatusC[entryStatus]||['#9E9B96','#F4F4F2'];return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
         <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
         <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
         <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
@@ -368,6 +368,7 @@ function BillingPage({jobs,onRefresh}){
         {['labor_post_only','labor_post_panels','labor_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#FFFBEB50'}}>{lfV(f)}</td>)}
         {['sw_foundation','sw_columns','sw_panels','sw_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#EFF6FF50'}}>{lfV(f)}</td>)}
         {['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#F5F3FF50'}}>{lfV(f)}</td>)}
+        <td style={{padding:'8px 10px'}}>{entryStatus?<span style={pill(esc,esb)}>{entryStatus}</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
         <td style={{padding:'8px 10px'}}>{pending.length>0?<button onClick={()=>setShowPmModal({job:j,entries:pending})} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:700,cursor:'pointer',padding:'3px 8px'}}>{pending.length} pending · {$(pendingAmt)}</button>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
         <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
         <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
@@ -450,7 +451,7 @@ function PMBillingPage({jobs,onRefresh}){
   const[showLog,setShowLog]=useState(null);
   const[search,setSearch]=useState('');
   const[mktF,setMktF]=useState(null);
-  const[histF,setHistF]=useState({status:null,market:null,period:null});
+  const[histF,setHistF]=useState({status:null,market:null,period:''});
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
   const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
   const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',invoice_notes:'',labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''});
@@ -478,7 +479,7 @@ function PMBillingPage({jobs,onRefresh}){
   const openLogForm=(job)=>{
     const prevCum=getCumulativeLF(job.id);
     const rate=n(job.contract_rate_precast);
-    const initForm={billing_period:curMonthFirst,lf_this_period:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''};
+    const initForm={billing_period:curMonthFirst,lf_this_period:'',invoice_notes:'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''};
     initForm.lf_this_period=calcLFTotal(initForm);
     setLogForm(initForm);
     setShowLog(job);
@@ -487,7 +488,7 @@ function PMBillingPage({jobs,onRefresh}){
   const editEntry=(job,entry)=>{
     const prevCum=getCumulativeLF(job.id)-n(entry.lf_this_period);
     const rate=n(job.contract_rate_precast);
-    const editForm={billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id,labor_post_only:job.labor_post_only||'',labor_post_panels:job.labor_post_panels||'',labor_complete:job.labor_complete||'',sw_foundation:job.sw_foundation||'',sw_columns:job.sw_columns||'',sw_panels:job.sw_panels||'',sw_complete:job.sw_complete||'',wi_gates:job.wi_gates||'',wi_fencing:job.wi_fencing||'',wi_columns:job.wi_columns||'',line_bonds:job.line_bonds||'',line_permits:job.line_permits||'',remove_existing:job.remove_existing||'',gate_controls:job.gate_controls||''};
+    const editForm={billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||'',invoice_notes:entry.invoice_notes||'',_prevCum:prevCum,_totalLF:n(job.total_lf),_rate:rate,_editId:entry.id,labor_post_only:entry.labor_post_only||'',labor_post_panels:entry.labor_post_panels||'',labor_complete:entry.labor_complete||'',sw_foundation:entry.sw_foundation||'',sw_columns:entry.sw_columns||'',sw_panels:entry.sw_panels||'',sw_complete:entry.sw_complete||'',wi_gates:entry.wi_gates||'',wi_fencing:entry.wi_fencing||'',wi_columns:entry.wi_columns||'',line_bonds:entry.line_bonds||'',line_permits:entry.line_permits||'',remove_existing:entry.remove_existing||'',gate_controls:entry.gate_controls||''};
     editForm.lf_this_period=calcLFTotal(editForm);
     setLogForm(editForm);
     setShowLog(job);
@@ -499,18 +500,23 @@ function PMBillingPage({jobs,onRefresh}){
     const j=showLog;
     const prevCum=n(logForm._prevCum);
     const cumulative=prevCum+lfPeriod;
+    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
     const body={
       job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,
       billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:cumulative,
-      invoice_notes:logForm.invoice_notes,status:'pending'
+      invoice_notes:logForm.invoice_notes,status:'pending',...lfFields
     };
     if(logForm._editId){
       await sbPatch('pm_billing_entries',logForm._editId,body);
     }else{
-      await sbPost('pm_billing_entries',body);
+      // Check for existing entry for this job+period before inserting
+      const existing=await sbGet('pm_billing_entries',`job_id=eq.${j.id}&billing_period=eq.${logForm.billing_period}&select=id`);
+      if(existing&&existing.length>0){
+        await sbPatch('pm_billing_entries',existing[0].id,body);
+      }else{
+        await sbPost('pm_billing_entries',body);
+      }
     }
-    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls),lf_installed_this_period:lfPeriod};
-    await sbPatch('jobs',j.id,lfFields);
     fireAlert('billing_logged',{...j,pm:selPM,lf_this_period:lfPeriod});
     logAct(j,'billing_update','pm_billing','',[selPM,lfPeriod+'LF'].join(' · '));
     setShowLog(null);
@@ -634,6 +640,10 @@ function PMBillingPage({jobs,onRefresh}){
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
         <button onClick={()=>setHistF(f=>({...f,market:null}))} style={fpill(!histF.market)}>All</button>
         {MKTS.map(m=><button key={m} onClick={()=>setHistF(f=>({...f,market:m}))} style={fpill(histF.market===m)}>{MS[m]}</button>)}
+        <span style={{color:'#E5E3E0'}}>|</span>
+        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Period:</span>
+        <input type="month" value={histF.period||''} onChange={e=>setHistF(f=>({...f,period:e.target.value}))} style={{...inputS,width:140,padding:'4px 8px',fontSize:11}}/>
+        {histF.period&&<button onClick={()=>setHistF(f=>({...f,period:''}))} style={{...btnS,padding:'2px 8px',fontSize:10}}>Clear</button>}
       </div>
 
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 400px)'}}>
@@ -655,8 +665,7 @@ function PMBillingPage({jobs,onRefresh}){
               const[sc2,sb2]=statusColors[e.status]||['#6B6056','#F4F4F2'];
               const periodDate=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;
               const periodLabel=periodDate?periodDate.toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';
-              const ej=jobs.find(x=>x.id===e.job_id)||{};
-              const lfV=f=>n(ej[f])?n(ej[f]).toLocaleString():'—';
+              const lfV=f=>n(e[f])?n(e[f]).toLocaleString():'—';
               return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
                 <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
                 <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name}</td>
