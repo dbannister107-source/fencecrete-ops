@@ -178,17 +178,21 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);
   const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lf_precast:'',height_precast:'',style:'',color:'',contract_rate_precast:'',lf_single_wythe:'',height_single_wythe:'',style_single_wythe:'',contract_rate_single_wythe:'',lf_wrought_iron:'',height_wrought_iron:'',contract_rate_wrought_iron:'',lf_removal:'',height_removal:'',removal_material_type:'',contract_rate_removal:'',lf_other:'',height_other:'',other_material_type:'',contract_rate_other:'',number_of_gates:'',gate_height:'',gate_description:'',gate_rate:'',lump_sum_amount:'',lump_sum_description:'',contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
   const[f,setF]=useState(emptyF);
+  const[avgRates,setAvgRates]=useState({});
   const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market')u.pm=AUTO_PM(v,u.fence_type);if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
+  // Fetch avg rates when market changes
+  useEffect(()=>{if(!f.market)return;const mj=jobs.filter(j=>j.market===f.market);const avg=(field)=>{const valid=mj.filter(j=>n(j[field])>0);return valid.length?Math.round(valid.reduce((s,j)=>s+n(j[field]),0)/valid.length*100)/100:0;};setAvgRates({contract_rate_precast:avg('contract_rate_precast'),contract_rate_single_wythe:avg('contract_rate_single_wythe'),contract_rate_wrought_iron:avg('contract_rate_wrought_iron'),gate_rate:avg('gate_rate')});},[f.market,jobs]);
   const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
-  // Auto-calc contract values
+  // Auto-calc contract values — recalculates on every render as f changes
   const ncv=n(f.lf_precast)*n(f.contract_rate_precast)+n(f.lf_single_wythe)*n(f.contract_rate_single_wythe)+n(f.lf_wrought_iron)*n(f.contract_rate_wrought_iron)+n(f.lf_removal)*n(f.contract_rate_removal)+n(f.lf_other)*n(f.contract_rate_other)+n(f.number_of_gates)*n(f.gate_rate)+n(f.lump_sum_amount);
-  const stax=n(f.sales_tax);const cv=ncv+stax;
+  const stax=n(f.sales_tax);const cv=ncv+stax;const acv=cv;
   const totalLF=n(f.lf_precast)+n(f.lf_single_wythe)+n(f.lf_wrought_iron)+n(f.lf_removal)+n(f.lf_other);
   const ft=f.fence_type||'';const showPC=ft.includes('PC');const showSW=ft.includes('SW');const showWI=ft.includes('WI');
   const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
-  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:cv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:cv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
+  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
   const secIdx=NP_SECS.indexOf(sec)+1;
   const grd='repeat(auto-fill,minmax(220px,1fr))';
+  const rateHint=(field)=>avgRates[field]?`Avg ${f.market}: $${avgRates[field].toFixed(2)}/LF`:'';
   return(<div style={{position:'fixed',inset:0,background:'#F4F4F2',zIndex:250,display:'flex',flexDirection:'column'}}>
     {/* Header */}
     <div style={{padding:'12px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
@@ -201,6 +205,15 @@ function NewProjectForm({jobs,onClose,onSaved}){
     <div style={{display:'flex',gap:4,padding:'10px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',flexShrink:0,flexWrap:'wrap'}}>{NP_SECS.map(s=><button key={s} onClick={()=>setSec(s)} style={{padding:'6px 14px',borderRadius:8,border:sec===s?'1px solid #8B2020':'1px solid #E5E3E0',background:sec===s?'#8B2020':'#FFF',color:sec===s?'#fff':'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>{NP_LABELS[s]}</button>)}</div>
     {/* Body */}
     <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
+      {/* Sticky Contract Summary — visible on fence & contract sections */}
+      {(sec==='fence'||sec==='contract')&&<div style={{position:'sticky',top:0,zIndex:5,marginBottom:16,background:'#1A1A1A',borderRadius:10,padding:'12px 20px',color:'#fff',display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',boxShadow:'0 4px 12px rgba(0,0,0,.15)'}}>
+        <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Net Contract</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{$(ncv)}</div></div>
+        <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Sales Tax</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{stax?$(stax):'Exempt'}</div></div>
+        <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Contract Value</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{$(cv)}</div></div>
+        <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Change Orders</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>$0</div></div>
+        <div style={{marginLeft:'auto'}}><div style={{fontSize:9,color:'#10B981',textTransform:'uppercase',fontWeight:700}}>Adj Contract Value</div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#10B981'}}>{$(acv)}</div></div>
+        <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{totalLF.toLocaleString()}</div></div>
+      </div>}
       {sec==='info'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>{fLbl('Job Code')}<input value={f.job_number} onChange={e=>set('job_number',e.target.value)} placeholder="e.g. 26H017" style={inputS}/></div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
@@ -223,18 +236,18 @@ function NewProjectForm({jobs,onClose,onSaved}){
           <div>{fLbl('Height (ft)')}<input type="number" value={f.height_precast} onChange={e=>set('height_precast',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Style')}<input value={f.style} onChange={e=>set('style',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Color')}<input value={f.color} onChange={e=>set('color',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_precast} onChange={e=>set('contract_rate_precast',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_precast} onChange={e=>set('contract_rate_precast',e.target.value)} placeholder={rateHint('contract_rate_precast')} style={inputS}/></div>
         </div></div>}
         {showSW&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#1D4ED8',marginBottom:8,padding:'6px 10px',background:'#DBEAFE',borderRadius:6}}>SINGLE WYTHE</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
           <div>{fLbl('LF - Single Wythe')}<input type="number" value={f.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Height (ft)')}<input type="number" value={f.height_single_wythe} onChange={e=>set('height_single_wythe',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Style')}<input value={f.style_single_wythe} onChange={e=>set('style_single_wythe',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_single_wythe} onChange={e=>set('contract_rate_single_wythe',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_single_wythe} onChange={e=>set('contract_rate_single_wythe',e.target.value)} placeholder={rateHint('contract_rate_single_wythe')} style={inputS}/></div>
         </div></div>}
         {showWI&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6D28D9',marginBottom:8,padding:'6px 10px',background:'#EDE9FE',borderRadius:6}}>WROUGHT IRON</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
           <div>{fLbl('LF - Wrought Iron')}<input type="number" value={f.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Height (ft)')}<input type="number" value={f.height_wrought_iron} onChange={e=>set('height_wrought_iron',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_wrought_iron} onChange={e=>set('contract_rate_wrought_iron',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_wrought_iron} onChange={e=>set('contract_rate_wrought_iron',e.target.value)} placeholder={rateHint('contract_rate_wrought_iron')} style={inputS}/></div>
         </div></div>}
         <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>REMOVAL</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
           <div>{fLbl('LF - Removal')}<input type="number" value={f.lf_removal} onChange={e=>set('lf_removal',e.target.value)} style={inputS}/></div>
@@ -246,7 +259,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
           <div>{fLbl('# of Gates')}<input type="number" value={f.number_of_gates} onChange={e=>set('number_of_gates',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Gate Height (ft)')}<input type="number" value={f.gate_height} onChange={e=>set('gate_height',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Gate Description')}<input value={f.gate_description} onChange={e=>set('gate_description',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Gate Rate ($)')}<input type="number" value={f.gate_rate} onChange={e=>set('gate_rate',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Gate Rate ($)')}<input type="number" value={f.gate_rate} onChange={e=>set('gate_rate',e.target.value)} placeholder={rateHint('gate_rate')} style={inputS}/></div>
         </div></div>
         <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>LUMP SUM / OTHER</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
           <div>{fLbl('Lump Sum Amount')}<input type="number" value={f.lump_sum_amount} onChange={e=>set('lump_sum_amount',e.target.value)} style={inputS}/></div>
@@ -265,7 +278,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         </div>
         <div style={{background:'#1A1A1A',borderRadius:12,padding:20,color:'#fff'}}>
           <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,color:'#9E9B96',marginBottom:12}}>Auto-Calculated Contract Summary</div>
-          {[['Net Contract Value',$(ncv)],['Sales Tax',$(stax)],['Contract Value',$(cv)],['Total LF',totalLF.toLocaleString()],['Retainage',n(f.retainage_pct)+'%']].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #333',fontSize:13}}><span style={{color:'#9E9B96'}}>{l}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{v}</span></div>)}
+          {[['Net Contract Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Change Orders','$0'],['Adj Contract Value',$(acv)],['Total LF',totalLF.toLocaleString()],['Retainage',n(f.retainage_pct)+'%']].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #333',fontSize:l==='Adj Contract Value'?16:13}}><span style={{color:l==='Adj Contract Value'?'#10B981':'#9E9B96',fontWeight:l==='Adj Contract Value'?700:400}}>{l}</span><span style={{fontFamily:'Inter',fontWeight:l==='Adj Contract Value'?900:700,color:l==='Adj Contract Value'?'#10B981':'#fff'}}>{v}</span></div>)}
         </div>
       </div>}
       {sec==='requirements'&&<div>
@@ -287,7 +300,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',f.fence_type],['Total LF',totalLF.toLocaleString()],['Gates',f.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',$(stax)],['Contract Value',$(cv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
+          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',f.fence_type],['Total LF',totalLF.toLocaleString()],['Gates',f.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
             {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
           </div>)}
