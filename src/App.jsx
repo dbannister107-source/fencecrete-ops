@@ -173,6 +173,140 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
     </div>);
 }
 
+/* ═══ NEW PROJECT FORM ═══ */
+const NP_SECS=['info','fence','contract','requirements','schedule','review'];
+const NP_LABELS={info:'Job Info',fence:'Fence & Dimensions',contract:'Contract & Billing',requirements:'Requirements',schedule:'Schedule',review:'Review & Submit'};
+const AUTO_PM=(mkt,ft)=>{if(mkt==='Austin'||mkt==='Dallas-Fort Worth')return'Doug Monroe';if(mkt==='San Antonio')return'Ray Garcia';if(mkt==='Houston'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
+function NewProjectForm({jobs,onClose,onSaved}){
+  const todayISO=new Date().toISOString().split('T')[0];
+  const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lf_precast:'',height_precast:'',style:'',color:'',contract_rate_precast:'',lf_single_wythe:'',height_single_wythe:'',style_single_wythe:'',contract_rate_single_wythe:'',lf_wrought_iron:'',height_wrought_iron:'',contract_rate_wrought_iron:'',lf_removal:'',height_removal:'',removal_material_type:'',contract_rate_removal:'',lf_other:'',height_other:'',other_material_type:'',contract_rate_other:'',number_of_gates:'',gate_height:'',gate_description:'',gate_rate:'',lump_sum_amount:'',lump_sum_description:'',contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
+  const[f,setF]=useState(emptyF);
+  const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market')u.pm=AUTO_PM(v,u.fence_type);if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
+  const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
+  // Auto-calc contract values
+  const ncv=n(f.lf_precast)*n(f.contract_rate_precast)+n(f.lf_single_wythe)*n(f.contract_rate_single_wythe)+n(f.lf_wrought_iron)*n(f.contract_rate_wrought_iron)+n(f.lf_removal)*n(f.contract_rate_removal)+n(f.lf_other)*n(f.contract_rate_other)+n(f.number_of_gates)*n(f.gate_rate)+n(f.lump_sum_amount);
+  const stax=n(f.sales_tax);const cv=ncv+stax;
+  const totalLF=n(f.lf_precast)+n(f.lf_single_wythe)+n(f.lf_wrought_iron)+n(f.lf_removal)+n(f.lf_other);
+  const ft=f.fence_type||'';const showPC=ft.includes('PC');const showSW=ft.includes('SW');const showWI=ft.includes('WI');
+  const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
+  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:cv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:cv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
+  const secIdx=NP_SECS.indexOf(sec)+1;
+  const grd='repeat(auto-fill,minmax(220px,1fr))';
+  return(<div style={{position:'fixed',inset:0,background:'#F4F4F2',zIndex:250,display:'flex',flexDirection:'column'}}>
+    {/* Header */}
+    <div style={{padding:'12px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+      <div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#8B2020'}}>New Project</div><div style={{fontSize:11,color:'#9E9B96'}}>Section {secIdx} of {NP_SECS.length} — {NP_LABELS[sec]}</div></div>
+      <div style={{display:'flex',gap:8}}><button onClick={onClose} style={btnS}>Cancel</button></div>
+    </div>
+    {/* Progress bar */}
+    <div style={{height:3,background:'#E5E3E0',flexShrink:0}}><div style={{height:'100%',background:'#8B2020',width:`${secIdx/NP_SECS.length*100}%`,transition:'width .3s'}}/></div>
+    {/* Section tabs */}
+    <div style={{display:'flex',gap:4,padding:'10px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',flexShrink:0,flexWrap:'wrap'}}>{NP_SECS.map(s=><button key={s} onClick={()=>setSec(s)} style={{padding:'6px 14px',borderRadius:8,border:sec===s?'1px solid #8B2020':'1px solid #E5E3E0',background:sec===s?'#8B2020':'#FFF',color:sec===s?'#fff':'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>{NP_LABELS[s]}</button>)}</div>
+    {/* Body */}
+    <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
+      {sec==='info'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+        <div>{fLbl('Job Code')}<input value={f.job_number} onChange={e=>set('job_number',e.target.value)} placeholder="e.g. 26H017" style={inputS}/></div>
+        <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('Cust #')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('Status')}<select value={f.status} onChange={e=>set('status',e.target.value)} style={inputS}>{[['contract_review','Contract Review'],['production_queue','Booked-Not Started'],['in_production','In Production'],['complete','Complete']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+        <div>{fLbl('Market',true)}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div>{fLbl('Job Type')}<select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div>{fLbl('Sales Rep')}<select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+        <div>{fLbl('Project Manager')}<select value={f.pm} onChange={e=>set('pm',e.target.value)} style={inputS}><option value="">— Auto-assigned —</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>{f.pm&&<div style={{fontSize:10,color:'#065F46',marginTop:2}}>Assigned: {f.pm}</div>}</div>
+        <div>{fLbl('Address')}<input value={f.address} onChange={e=>set('address',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('City')}<input value={f.city} onChange={e=>set('city',e.target.value)} style={inputS}/></div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div>{fLbl('State')}<input value={f.state} onChange={e=>set('state',e.target.value)} style={inputS}/></div><div>{fLbl('ZIP')}<input value={f.zip} onChange={e=>set('zip',e.target.value)} style={inputS}/></div></div>
+        <div style={{gridColumn:'1/-1'}}>{fLbl('Notes')}<textarea value={f.notes} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+      </div>}
+      {sec==='fence'&&<div>
+        <div style={{marginBottom:16}}>{fLbl('Fence Type')}<select value={f.fence_type} onChange={e=>set('fence_type',e.target.value)} style={inputS}>{['PC','SW','WI','PC/SW','PC/WI','PC/Columns','PC/Gates','SW/Columns','SW/Gate','SW/WI','WI/Gate','PC/SW/Columns','LABOR','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        {showPC&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#8B2020',marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('LF - Precast')}<input type="number" value={f.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_precast} onChange={e=>set('height_precast',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Style')}<input value={f.style} onChange={e=>set('style',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Color')}<input value={f.color} onChange={e=>set('color',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_precast} onChange={e=>set('contract_rate_precast',e.target.value)} style={inputS}/></div>
+        </div></div>}
+        {showSW&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#1D4ED8',marginBottom:8,padding:'6px 10px',background:'#DBEAFE',borderRadius:6}}>SINGLE WYTHE</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('LF - Single Wythe')}<input type="number" value={f.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_single_wythe} onChange={e=>set('height_single_wythe',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Style')}<input value={f.style_single_wythe} onChange={e=>set('style_single_wythe',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_single_wythe} onChange={e=>set('contract_rate_single_wythe',e.target.value)} style={inputS}/></div>
+        </div></div>}
+        {showWI&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6D28D9',marginBottom:8,padding:'6px 10px',background:'#EDE9FE',borderRadius:6}}>WROUGHT IRON</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('LF - Wrought Iron')}<input type="number" value={f.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_wrought_iron} onChange={e=>set('height_wrought_iron',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_wrought_iron} onChange={e=>set('contract_rate_wrought_iron',e.target.value)} style={inputS}/></div>
+        </div></div>}
+        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>REMOVAL</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('LF - Removal')}<input type="number" value={f.lf_removal} onChange={e=>set('lf_removal',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_removal} onChange={e=>set('height_removal',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Material Type')}<input value={f.removal_material_type} onChange={e=>set('removal_material_type',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_removal} onChange={e=>set('contract_rate_removal',e.target.value)} style={inputS}/></div>
+        </div></div>
+        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>GATES</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('# of Gates')}<input type="number" value={f.number_of_gates} onChange={e=>set('number_of_gates',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Gate Height (ft)')}<input type="number" value={f.gate_height} onChange={e=>set('gate_height',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Gate Description')}<input value={f.gate_description} onChange={e=>set('gate_description',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Gate Rate ($)')}<input type="number" value={f.gate_rate} onChange={e=>set('gate_rate',e.target.value)} style={inputS}/></div>
+        </div></div>
+        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>LUMP SUM / OTHER</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+          <div>{fLbl('Lump Sum Amount')}<input type="number" value={f.lump_sum_amount} onChange={e=>set('lump_sum_amount',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Lump Sum Description')}<input value={f.lump_sum_description} onChange={e=>set('lump_sum_description',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('LF - Other')}<input type="number" value={f.lf_other} onChange={e=>set('lf_other',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Rate - Other ($/LF)')}<input type="number" value={f.contract_rate_other} onChange={e=>set('contract_rate_other',e.target.value)} style={inputS}/></div>
+        </div></div>
+      </div>}
+      {sec==='contract'&&<div>
+        <div style={{display:'grid',gridTemplateColumns:grd,gap:12,marginBottom:20}}>
+          <div>{fLbl('Contract Date')}<input type="date" value={f.contract_date} onChange={e=>set('contract_date',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Billing Method')}<select value={f.billing_method} onChange={e=>set('billing_method',e.target.value)} style={inputS}>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div>{fLbl('Billing Date')}<input value={f.billing_date} onChange={e=>set('billing_date',e.target.value)} placeholder="e.g. 25th of month" style={inputS}/></div>
+          <div>{fLbl('Sales Tax ($)')}<input type="number" value={f.sales_tax} onChange={e=>set('sales_tax',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div>{fLbl('Retainage %')}<input type="number" value={f.retainage_pct} onChange={e=>set('retainage_pct',e.target.value)} placeholder="0" style={inputS}/></div>
+        </div>
+        <div style={{background:'#1A1A1A',borderRadius:12,padding:20,color:'#fff'}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,color:'#9E9B96',marginBottom:12}}>Auto-Calculated Contract Summary</div>
+          {[['Net Contract Value',$(ncv)],['Sales Tax',$(stax)],['Contract Value',$(cv)],['Total LF',totalLF.toLocaleString()],['Retainage',n(f.retainage_pct)+'%']].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #333',fontSize:13}}><span style={{color:'#9E9B96'}}>{l}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{v}</span></div>)}
+        </div>
+      </div>}
+      {sec==='requirements'&&<div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+          {[['AIA (G702/703)','aia_billing'],['Bonds','bonds'],['Certified Payroll','certified_payroll'],['OCIP/CCIP','ocip_ccip'],['3rd Party Billing','third_party_billing'],['Included on Billing Schedule','included_on_billing_schedule'],['Included on LF Schedule','included_on_lf_schedule']].map(([l,k])=><label key={k} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13}}>
+            <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:18,height:18,accentColor:'#8B2020'}}/>{l}
+          </label>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div>{fLbl('Documents Needed')}<input value={f.documents_needed} onChange={e=>set('documents_needed',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('File Location')}<input value={f.file_location} onChange={e=>set('file_location',e.target.value)} style={inputS}/></div>
+        </div>
+      </div>}
+      {sec==='schedule'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+        <div>{fLbl('Est. Start Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('Active Entry Date')}<input type="date" value={f.active_entry_date} onChange={e=>set('active_entry_date',e.target.value)} style={inputS}/></div>
+        <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#6B6056'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
+      </div>}
+      {sec==='review'&&<div>
+        {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',f.fence_type],['Total LF',totalLF.toLocaleString()],['Gates',f.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',$(stax)],['Contract Value',$(cv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
+            {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
+          </div>)}
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:20}}><button onClick={()=>setSec('schedule')} style={btnS}>← Go Back</button><button onClick={submit} disabled={saving||missing.length>0} style={{...btnP,flex:1,padding:'14px 0',fontSize:16,opacity:saving||missing.length>0?0.5:1}}>{saving?'Creating...':'Create Project'}</button></div>
+      </div>}
+    </div>
+    {/* Bottom nav for non-review sections */}
+    {sec!=='review'&&<div style={{padding:'12px 24px',background:'#FFF',borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',flexShrink:0}}>
+      <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i>0)setSec(NP_SECS[i-1]);}} disabled={sec==='info'} style={{...btnS,opacity:sec==='info'?0.3:1}}>← Previous</button>
+      <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i<NP_SECS.length-1)setSec(NP_SECS[i+1]);}} style={btnP}>Next →</button>
+    </div>}
+  </div>);
+}
+
 /* ═══ GLOBAL SEARCH ═══ */
 function GlobalSearch({jobs,onSelect}){
   const[q,setQ]=useState('');const[open,setOpen]=useState(false);const ref=useRef();
@@ -319,7 +453,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   const[sortCol,setSortCol]=useState('left_to_bill');const[sortDir,setSortDir]=useState('desc');
   const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');return s?JSON.parse(s):DEF_VIS;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
   useEffect(()=>{try{localStorage.setItem('fc_vis_cols',JSON.stringify(visCols));}catch(e){}},[visCols]);
-  const[editJob,setEditJob]=useState(openJob||null);const[isNew,setIsNew]=useState(false);
+  const[editJob,setEditJob]=useState(openJob||null);const[isNew,setIsNew]=useState(false);const[showNewForm,setShowNewForm]=useState(false);
   const[editMode,setEditMode]=useState(false);const[inlE,setInlE]=useState(null);
   const[sel,setSel]=useState(new Set());const[toast,setToast]=useState(null);
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
@@ -352,7 +486,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
               </div>;})}
             </div>}
           </div>
-          <button onClick={()=>{setEditJob({job_name:'',job_number:'',customer_name:'',market:'',status:'contract_review'});setIsNew(true);}} style={{...btnP,background:'#065F46'}}>+ New Project</button>
+          <button onClick={()=>setShowNewForm(true)} style={{...btnP,background:'#065F46'}}>+ New Project</button>
           <button onClick={()=>exportCSV(filtered)} style={btnP}>Export</button>
         </div>
       </div>
@@ -372,7 +506,8 @@ function ProjectsPage({jobs,onRefresh,openJob}){
           {visCD.map(c=><td key={c.key} onClick={e=>{if(editMode){e.stopPropagation();setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?'cell':'pointer'}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>)}
         </tr>)}</tbody></table>
     </div>
-    {editJob&&<EditPanel job={editJob} isNew={isNew} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}}/>}
+    {editJob&&<EditPanel job={editJob} isNew={false} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}}/>}
+    {showNewForm&&<NewProjectForm jobs={jobs} onClose={()=>setShowNewForm(false)} onSaved={msg=>{setShowNewForm(false);if(msg)setToast(msg);onRefresh();}}/>}
   </div>);
 }
 
