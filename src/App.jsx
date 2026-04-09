@@ -368,9 +368,13 @@ function WeeklyDigest({jobs,active}){
 function Dashboard({jobs,onNav}){
   const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
-  // 2026 Revenue Goal — computed from the already-loaded jobs prop (parent fetches all jobs).
+  // 2026 Revenue Goal — sum jobs ACTIVE during 2026 (not filtered by contract date,
+  // since most 2026 work was contracted before 2026). Job counts toward 2026 if its
+  // start date is on/before end of 2026 AND it wasn't already completed before 2026,
+  // and it's not in a dead status (lost/cancelled/on_hold).
   const GOAL_2026=36000000;
-  const ytd2026=useMemo(()=>jobs.filter(j=>j.contract_date&&j.contract_date>='2026-01-01'&&j.contract_date<='2026-12-31').reduce((s,j)=>s+n(j.adj_contract_value),0),[jobs]);
+  const DEAD_2026=new Set(['lost','cancelled','on_hold']);
+  const ytd2026=useMemo(()=>jobs.filter(j=>!DEAD_2026.has(j.status)&&j.est_start_date&&j.est_start_date<='2026-12-31'&&(!j.complete_date||j.complete_date>='2026-01-01')).reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),[jobs]);
   const pct2026=Math.min(ytd2026/GOAL_2026,1);
   const achieved2026=ytd2026>=GOAL_2026;
   const remaining2026=Math.max(GOAL_2026-ytd2026,0);
@@ -405,11 +409,13 @@ function Dashboard({jobs,onNav}){
               <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke="#E5E7EB" strokeWidth="22" strokeLinecap="round"/>
               <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke={arcColor} strokeWidth="22" strokeLinecap="round" strokeDasharray={`${circ} ${circ}`} strokeDashoffset={offset} style={{transition:'stroke-dashoffset .8s ease-out, stroke .3s'}}/>
               <text x={cx} y={cy-46} textAnchor="middle" style={{fontFamily:'Inter',fontWeight:900,fontSize:42,fill:'#1A1A1A'}}>{$k(ytd2026)}</text>
-              <text x={cx} y={cy-8} textAnchor="middle" style={{fontSize:32}}>{goalEmoji}</text>
               <text x={cx} y={cy+18} textAnchor="middle" style={{fontFamily:'Inter',fontWeight:600,fontSize:14,fill:arcColor}}>{Math.round(pct2026*100)}% of goal</text>
               <text x={cx-r} y={cy+44} textAnchor="middle" style={{fontFamily:'Inter',fontSize:10,fill:'#9E9B96'}}>$0</text>
               <text x={cx+r} y={cy+44} textAnchor="middle" style={{fontFamily:'Inter',fontSize:10,fill:'#9E9B96'}}>$36M</text>
             </svg>
+            {/* Emoji overlay — rendered as HTML so color-emoji fonts work in all browsers
+               (SVG <text> doesn't reliably fall back to Apple/Segoe/Noto Color Emoji). */}
+            <div style={{position:'absolute',left:0,right:0,top:'66%',textAlign:'center',fontSize:32,lineHeight:1,pointerEvents:'none'}}>{goalEmoji}</div>
           </div>
           {/* Stats column */}
           <div style={{flex:'1 1 240px',minWidth:220}}>
