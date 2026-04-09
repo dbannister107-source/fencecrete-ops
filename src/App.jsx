@@ -1744,7 +1744,7 @@ function EstimatingPage({jobs,onNav}){
   const[tab,setTab]=useState('list');const[estimates,setEstimates]=useState([]);const[loading,setLoading]=useState(true);const[toast,setToast]=useState(null);
   const[editEst,setEditEst]=useState(null);const[lostModal,setLostModal]=useState(null);const[lostReason,setLostReason]=useState('');
   const[listSearch,setListSearch]=useState('');const[listMktF,setListMktF]=useState(null);const[listRepF,setListRepF]=useState('');const[listStatusF,setListStatusF]=useState(null);
-  const fetchEst=useCallback(async()=>{setLoading(true);const d=await sbGet('estimates','select=*&order=created_at.desc');setEstimates(d||[]);setLoading(false);},[]);
+  const fetchEst=useCallback(async()=>{setLoading(true);try{const d=await sbGet('estimates','select=*&order=created_at.desc');setEstimates(Array.isArray(d)?d:[]);}catch(e){setEstimates([]);}setLoading(false);},[]);
   useEffect(()=>{fetchEst();},[fetchEst]);
   // New estimate form state
   const todayISO=new Date().toISOString().split('T')[0];const plus30=(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().split('T')[0];})();
@@ -1757,8 +1757,6 @@ function EstimatingPage({jobs,onNav}){
   const custTimeout=useRef();
   const onCustChange=(v)=>{set('customer_name',v);if(custTimeout.current)clearTimeout(custTimeout.current);if(v.length<2){setCustSugg([]);setCustHist(null);setShowCustDD(false);return;}custTimeout.current=setTimeout(()=>{const q=v.toLowerCase();const matches=[...new Set(jobs.filter(j=>j.customer_name&&j.customer_name.toLowerCase().includes(q)).map(j=>j.customer_name))].slice(0,8);setCustSugg(matches);setShowCustDD(matches.length>0);},200);};
   const selectCust=(name)=>{set('customer_name',name);setShowCustDD(false);const cj=jobs.filter(j=>j.customer_name===name).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));if(cj.length){const totalVal=cj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const avgPC=cj.filter(j=>n(j.contract_rate_precast)>0);const avgPCRate=avgPC.length?Math.round(avgPC.reduce((s,j)=>s+n(j.contract_rate_precast),0)/avgPC.length):0;const avgLF=cj.length?Math.round(cj.reduce((s,j)=>s+n(j.total_lf),0)/cj.length):0;const mkts=[...new Set(cj.map(j=>j.market).filter(Boolean))];if(mkts.length===1&&!f.market)set('market',mkts[0]);setCustHist({name,count:cj.length,totalVal,avgVal:Math.round(totalVal/cj.length),avgPCRate,avgLF,lastJob:cj[0],recent:cj.slice(0,3)});}else{setCustHist(null);}};
-  // Similar jobs
-  const similarJobs=useMemo(()=>{if(!f.market||totalLF<=0)return[];const halfLF=totalLF*0.5;const doubleLF=totalLF*1.5;return jobs.filter(j=>j.market===f.market&&n(j.adj_contract_value)>0&&n(j.total_lf)>=halfLF&&n(j.total_lf)<=doubleLF).sort((a,b)=>Math.abs(n(a.total_lf)-totalLF)-Math.abs(n(b.total_lf)-totalLF)).slice(0,3);},[jobs,f.market,totalLF]);
   const mr=MKT_RATES[f.market]||{pc:0,sw:0,wi:0,gate:0};
   // Live calcs
   const pcSub=n(f.lf_precast)*n(f.rate_precast);const swSub=n(f.lf_sw)*n(f.rate_sw);const wiSub=n(f.lf_wi)*n(f.rate_wi);
@@ -1769,6 +1767,8 @@ function EstimatingPage({jobs,onNav}){
   const totalEst=netEst+taxAmt;
   const totalLF=n(f.lf_precast)+n(f.lf_sw)+n(f.lf_wi)+n(f.lf_removal)+n(f.lf_other);
   const blended=totalLF>0?(netEst-gtSub-lsSub)/totalLF:0;
+  // Similar jobs
+  const similarJobs=useMemo(()=>{if(!f.market||totalLF<=0)return[];const halfLF=totalLF*0.5;const doubleLF=totalLF*1.5;return jobs.filter(j=>j.market===f.market&&n(j.adj_contract_value)>0&&n(j.total_lf)>=halfLF&&n(j.total_lf)<=doubleLF).sort((a,b)=>Math.abs(n(a.total_lf)-totalLF)-Math.abs(n(b.total_lf)-totalLF)).slice(0,3);},[jobs,f.market,totalLF]);
   // Market comparison
   const mktAvgBlended=mr.pc||mr.sw||0;const rateDiff=mktAvgBlended>0&&blended>0?((blended-mktAvgBlended)/mktAvgBlended*100):null;
   const rateColor=rateDiff===null?'#9E9B96':rateDiff<-5?'#1D4ED8':Math.abs(rateDiff)<=10?'#065F46':rateDiff<=25?'#B45309':'#991B1B';
