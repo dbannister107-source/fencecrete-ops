@@ -309,105 +309,159 @@ function BillingPage({jobs,onRefresh}){
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
   const avgDaysFirst=active.filter(j=>n(j.ytd_invoiced)>0&&j.contract_age);const avgD=avgDaysFirst.length?Math.round(avgDaysFirst.reduce((s,j)=>s+n(j.contract_age),0)/avgDaysFirst.length):0;
   const fully=active.filter(j=>n(j.pct_billed)>=0.99).length;
+  const[billingTab,setBillingTab]=useState('submissions');
   const[editId,setEditId]=useState(null);const[editField,setEditField]=useState(null);const[editVal,setEditVal]=useState('');const[billingF,setBillingF]=useState(null);
   const[bSearch,setBSearch]=useState('');const[bMktF,setBMktF]=useState(null);const[bPmF,setBPmF]=useState('');const[bStatusF,setBStatusF]=useState(null);
-  const[pmEntries,setPmEntries]=useState([]);const[showPmModal,setShowPmModal]=useState(null);const[toast,setToast]=useState(null);
+  const[pmEntries,setPmEntries]=useState([]);const[toast,setToast]=useState(null);
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   const[allBillingEntries,setAllBillingEntries]=useState([]);
-  useEffect(()=>{sbGet('pm_billing_entries','select=*&status=eq.pending').then(d=>setPmEntries(d||[]));sbGet('pm_billing_entries','select=*&order=billing_period.desc').then(d=>setAllBillingEntries(d||[]));},[]);
-  const getLatestEntry=(jobId)=>allBillingEntries.find(x=>x.job_id===jobId)||null;
+  const nowM=new Date();const defPeriod=`${nowM.getFullYear()}-${String(nowM.getMonth()+1).padStart(2,'0')}`;
+  const[subPeriodF,setSubPeriodF]=useState(defPeriod);const[subMktF,setSubMktF]=useState(null);const[subPmF,setSubPmF]=useState('');const[subStatusF,setSubStatusF]=useState(null);const[subSearch,setSubSearch]=useState('');
+  const[invoiceModal,setInvoiceModal]=useState(null);const[invoiceAmt,setInvoiceAmt]=useState('');
+  const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=billing_period.desc');setAllBillingEntries(d||[]);const p=await sbGet('pm_billing_entries','select=*&status=eq.pending');setPmEntries(p||[]);},[]);
+  useEffect(()=>{fetchEntries();},[fetchEntries]);
   const getPendingForJob=(jobId)=>pmEntries.filter(e=>e.job_id===jobId);
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
   const saveEdit=async j=>{const u={[editField]:editVal};if(editField==='ytd_invoiced'){const adj=n(j.adj_contract_value||j.contract_value);const ytd=n(editVal);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',editField,j[editField],editVal);setEditId(null);setEditField(null);onRefresh();};
   const confirmMarkFull=async()=>{if(!confirmFullJob)return;const j=confirmFullJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:adj,pct_billed:1,left_to_bill:0};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,adj);setConfirmFullJob(null);setToast(`${j.job_name} marked as 100% billed`);onRefresh();};
   const confirmUndo=async()=>{if(!undoJob)return;const j=undoJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:0,pct_billed:0,left_to_bill:adj};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,0);setUndoJob(null);setToast(`Undo: ${j.job_name} YTD reset to $0`);onRefresh();};
   const recentlyBilled=useMemo(()=>jobs.filter(j=>n(j.pct_billed)>=0.99).sort((a,b)=>(b.last_billed||'').localeCompare(a.last_billed||'')).slice(0,10),[jobs]);
-  const applyToYTD=async(job,pendingList)=>{
-    const sumAmt=pendingList.reduce((s,e)=>s+n(e.amount_to_invoice),0);
-    const newYTD=n(job.ytd_invoiced)+sumAmt;
-    const adj=n(job.adj_contract_value||job.contract_value);
-    const u={ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD};
-    await sbPatch('jobs',job.id,u);
-    const today=new Date().toISOString().split('T')[0];
-    for(const e of pendingList){await sbPatch('pm_billing_entries',e.id,{status:'invoiced',invoiced_by:'Accounting',invoiced_date:today});}
-    fireAlert('billing_logged',{...job,...u});
-    logAct(job,'billing_update','ytd_invoiced',job.ytd_invoiced,newYTD);
-    setPmEntries(prev=>prev.filter(e=>!pendingList.some(p=>p.id===e.id)));
-    setShowPmModal(null);
-    setToast(`Applied ${$(sumAmt)} to YTD invoiced for ${job.job_name}`);
-    onRefresh();
-  };
+  // Invoice a single PM entry
+  const invoiceEntry=async()=>{if(!invoiceModal)return;const e=invoiceModal;const job=jobs.find(j=>j.id===e.job_id);const today=new Date().toISOString().split('T')[0];await sbPatch('pm_billing_entries',e.id,{status:'invoiced',invoiced_by:'Accounting',invoiced_date:today});if(job&&n(invoiceAmt)>0){const newYTD=n(job.ytd_invoiced)+n(invoiceAmt);const adj=n(job.adj_contract_value||job.contract_value);const u={ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:today};await sbPatch('jobs',job.id,u);fireAlert('billing_logged',{...job,...u});logAct(job,'billing_update','ytd_invoiced',job.ytd_invoiced,newYTD);}setInvoiceModal(null);setInvoiceAmt('');setToast('Entry invoiced');fetchEntries();onRefresh();};
+  // Submissions tab: filtered entries
+  const subEntries=useMemo(()=>{let f=allBillingEntries;if(subPeriodF)f=f.filter(e=>e.billing_period&&e.billing_period.startsWith(subPeriodF));if(subMktF)f=f.filter(e=>e.market===subMktF);if(subPmF)f=f.filter(e=>e.pm===subPmF);if(subStatusF)f=f.filter(e=>e.status===subStatusF);if(subSearch){const q=subSearch.toLowerCase();f=f.filter(e=>`${e.job_name} ${e.job_number} ${e.pm}`.toLowerCase().includes(q));}return f;},[allBillingEntries,subPeriodF,subMktF,subPmF,subStatusF,subSearch]);
+  const subPendingCount=subEntries.filter(e=>e.status==='pending').length;
+  const subTotalLF=subEntries.reduce((s,e)=>s+n(e.lf_this_period),0);
+  // All Jobs tab: filtered jobs
   const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='pending')f=f.filter(j=>pmEntries.some(e=>e.job_id===j.id));else if(bStatusF==='invoiced')f=f.filter(j=>!pmEntries.some(e=>e.job_id===j.id)&&n(j.ytd_invoiced)>0);else if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF,pmEntries]);
+  const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Billing</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD+'d'} color="#1D4ED8"/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
-    <div style={{...card,marginBottom:24}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Billing by Market</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>{MKTS.map(m=>{const mj=active.filter(j=>j.market===m);const mc=mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const mb=mj.reduce((s,j)=>s+n(j.ytd_invoiced),0);const mp=mc>0?Math.round(mb/mc*100):0;return<div key={m}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span style={{fontWeight:600,color:MC[m]}}>{MS[m]}</span><span style={{color:'#6B6056'}}>{mp}%</span></div><PBar pct={mp} color={MC[m]} h={8}/></div>;})}</div></div>
-    <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={bSearch} onChange={e=>setBSearch(e.target.value)} placeholder="Search by job name, number, or customer..." style={{...inputS,width:280}}/>
-      <button onClick={()=>setBMktF(null)} style={fpill(!bMktF)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setBMktF(m)} style={fpill(bMktF===m)}>{MS[m]}</button>)}
-      <select value={bPmF} onChange={e=>setBPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-      <button onClick={()=>setBStatusF(null)} style={fpill(!bStatusF)}>All</button>
-      <button onClick={()=>setBStatusF('pending')} style={fpill(bStatusF==='pending')}>Pending</button>
-      <button onClick={()=>setBStatusF('invoiced')} style={fpill(bStatusF==='invoiced')}>Invoiced</button>
-      <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
-      <span style={{fontSize:12,color:'#6B6056'}}>{shown.length} jobs</span>
+    {/* Tabs */}
+    <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
+      {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&subPendingCount>0&&<span style={{marginLeft:6,background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{subPendingCount}</span>}</button>)}
     </div>
-    <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
-    <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 400px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-      <tr>
-        {['Project','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed'].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
-        <th rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>Billing Period</th>
-        <th colSpan={3} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Precast</th>
-        <th colSpan={4} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#DBEAFE',color:'#1E40AF',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Single Wythe</th>
-        <th colSpan={7} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#EDE9FE',color:'#5B21B6',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>One Line Items</th>
-        {['Entry Status','PM Entries','Last Billed','Notes','SP',''].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
-      </tr>
-      <tr>
-        {[['Post Only','#FEF3C7'],['Post+Panels','#FEF3C7'],['Complete','#FEF3C7'],['Foundation','#DBEAFE'],['Columns','#DBEAFE'],['Panels','#DBEAFE'],['Complete','#DBEAFE'],['WI Gates','#EDE9FE'],['WI Fencing','#EDE9FE'],['WI Columns','#EDE9FE'],['Bonds','#EDE9FE'],['Permits','#EDE9FE'],['Remove','#EDE9FE'],['Gate Ctrl','#EDE9FE']].map(([h,bg])=><th key={h} style={{textAlign:'right',padding:'4px 6px',borderBottom:'1px solid #E5E3E0',background:bg,color:'#6B6056',fontSize:9,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>)}
-      </tr>
-    </thead>
-      <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);const le=getLatestEntry(j.id);const latestPeriod=le?.billing_period||j.billing_date||null;const periodLabel=latestPeriod?(()=>{const d=new Date(latestPeriod+'T12:00:00');return d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});})():'—';const lfV=f=>le&&n(le[f])?n(le[f]).toLocaleString():'—';const entryStatus=le?.status||null;const entryStatusC={pending:['#B45309','#FEF3C7'],invoiced:['#065F46','#D1FAE5']};const[esc,esb]=entryStatusC[entryStatus]||['#9E9B96','#F4F4F2'];return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-        <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
-        <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
-        <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
-        <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
-        <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'ytd_invoiced')}>{editId===j.id&&editField==='ytd_invoiced'?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:100,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{$(j.ytd_invoiced)}</span>}</td>
-        <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:n(j.left_to_bill)>100000?'#991B1B':n(j.left_to_bill)>50000?'#B45309':'#065F46',fontSize:13}}>{$(j.left_to_bill)}</td>
-        <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><PBar pct={n(j.pct_billed)*100} h={4}/><span style={{fontSize:11}}>{fmtPct(j.pct_billed)}</span></div></td>
-        <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{periodLabel}</td>
-        {['labor_post_only','labor_post_panels','labor_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#FFFBEB50'}}>{lfV(f)}</td>)}
-        {['sw_foundation','sw_columns','sw_panels','sw_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#EFF6FF50'}}>{lfV(f)}</td>)}
-        {['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#F5F3FF50'}}>{lfV(f)}</td>)}
-        <td style={{padding:'8px 10px'}}>{entryStatus?<span style={pill(esc,esb)}>{entryStatus}</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
-        <td style={{padding:'8px 10px'}}>{pending.length>0?<button onClick={()=>setShowPmModal({job:j,entries:pending})} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:700,cursor:'pointer',padding:'3px 8px'}}>{pending.length} pending · {$(pendingAmt)}</button>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
-        <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
-        <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
-        <td style={{padding:'8px 10px',textAlign:'center'}}>{j.job_number?<a href={spSearch(j.job_number)} target="_blank" rel="noopener noreferrer" style={{color:'#0078D4',textDecoration:'none',fontSize:16}} title="Open in SharePoint" onClick={e=>e.stopPropagation()}>📁</a>:'—'}</td>
-        <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Complete" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
-      </tr>;})}</tbody></table></div>
-    {/* Recently Fully Billed */}
-    <div style={{marginTop:24}}>
-      <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#6B6056',padding:0,marginBottom:showRecent?12:0}}>
-        <span style={{fontSize:12,transition:'transform .2s',transform:showRecent?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
-        Recently Fully Billed ({recentlyBilled.length})
-      </button>
-      {showRecent&&<div style={{...card,padding:0,overflow:'auto',maxHeight:360}}>
+
+    {/* ═══ TAB: PM SUBMISSIONS ═══ */}
+    {billingTab==='submissions'&&<div>
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={subSearch} onChange={e=>setSubSearch(e.target.value)} placeholder="Search job name, number, PM..." style={{...inputS,width:240}}/>
+        <input type="month" value={subPeriodF} onChange={e=>setSubPeriodF(e.target.value)} style={{...inputS,width:150}}/>
+        {subPeriodF&&<button onClick={()=>setSubPeriodF('')} style={{...btnS,padding:'4px 8px',fontSize:10}}>All Periods</button>}
+        <button onClick={()=>setSubMktF(null)} style={fpill(!subMktF)}>All</button>
+        {MKTS.map(m=><button key={m} onClick={()=>setSubMktF(m)} style={fpill(subMktF===m)}>{MS[m]}</button>)}
+        <select value={subPmF} onChange={e=>setSubPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+        <button onClick={()=>setSubStatusF(null)} style={fpill(!subStatusF)}>All</button>
+        <button onClick={()=>setSubStatusF('pending')} style={fpill(subStatusF==='pending')}>Pending</button>
+        <button onClick={()=>setSubStatusF('invoiced')} style={fpill(subStatusF==='invoiced')}>Invoiced</button>
+        <span style={{fontSize:12,color:'#6B6056'}}>{subEntries.length} entries · {subTotalLF.toLocaleString()} LF</span>
+      </div>
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job Name','Market','Contract Value','Date Billed','Sales Rep',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{recentlyBilled.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-            <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
-            <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
-            <td style={{padding:'8px 10px'}}>{fD(j.last_billed)}</td>
-            <td style={{padding:'8px 10px'}}>{j.sales_rep||'—'}</td>
-            <td style={{padding:'8px 10px'}}><button onClick={()=>setUndoJob(j)} style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Undo</button></td>
-          </tr>)}</tbody>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
+            <tr>
+              {['Job Name','Job #','PM','Market','Billing Period','LF This Period'].map(h=><th key={h} rowSpan={2} style={{...thS,verticalAlign:'bottom'}}>{h}</th>)}
+              <th colSpan={3} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Precast</th>
+              <th colSpan={4} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#DBEAFE',color:'#1E40AF',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Single Wythe</th>
+              <th colSpan={7} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#EDE9FE',color:'#5B21B6',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>One Line Items</th>
+              {['Status','Contract','Left to Bill','Notes','Actions'].map(h=><th key={h} rowSpan={2} style={{...thS,verticalAlign:'bottom'}}>{h}</th>)}
+            </tr>
+            <tr>
+              {[['Post Only','#FEF3C7'],['Post+Panels','#FEF3C7'],['Complete','#FEF3C7'],['Foundation','#DBEAFE'],['Columns','#DBEAFE'],['Panels','#DBEAFE'],['Complete','#DBEAFE'],['WI Gates','#EDE9FE'],['WI Fencing','#EDE9FE'],['WI Columns','#EDE9FE'],['Bonds','#EDE9FE'],['Permits','#EDE9FE'],['Remove','#EDE9FE'],['Gate Ctrl','#EDE9FE']].map(([h,bg])=><th key={h} style={{textAlign:'right',padding:'4px 6px',borderBottom:'1px solid #E5E3E0',background:bg,color:'#6B6056',fontSize:9,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>{subEntries.map(e=>{const job=jobs.find(j=>j.id===e.job_id)||{};const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;const periodLabel=pd?pd.toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—';const lfV=f=>n(e[f])?n(e[f]).toLocaleString():'—';const isPending=e.status==='pending';return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{e.job_name||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11}}>{e.job_number||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11}}>{e.pm||'—'}</td>
+            <td style={{padding:'8px 10px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td>
+            <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{n(e.lf_this_period).toLocaleString()}</td>
+            {['labor_post_only','labor_post_panels','labor_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#FFFBEB50'}}>{lfV(f)}</td>)}
+            {['sw_foundation','sw_columns','sw_panels','sw_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#EFF6FF50'}}>{lfV(f)}</td>)}
+            {['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#F5F3FF50'}}>{lfV(f)}</td>)}
+            <td style={{padding:'8px 10px'}}>{isPending?<span style={pill('#B45309','#FEF3C7')}>Ready to Invoice</span>:<span style={pill('#065F46','#D1FAE5')}>Invoiced</span>}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,fontSize:11}}>{$(job.adj_contract_value||job.contract_value)}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,color:n(job.left_to_bill)>50000?'#B45309':'#065F46',fontSize:11}}>{$(job.left_to_bill)}</td>
+            <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96',fontSize:11}} title={e.invoice_notes}>{e.invoice_notes||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{isPending?<button onClick={()=>{setInvoiceModal(e);setInvoiceAmt('');}} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>Invoice</button>:<span style={{fontSize:10,color:'#9E9B96'}}>{fD(e.invoiced_date)}</span>}</td>
+          </tr>;})}</tbody>
         </table>
-        {recentlyBilled.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No fully billed jobs</div>}
-      </div>}
-    </div>
+        {subEntries.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No billing entries for this period</div>}
+      </div>
+    </div>}
+
+    {/* ═══ TAB: ALL JOBS ═══ */}
+    {billingTab==='alljobs'&&<div>
+      <div style={{...card,marginBottom:24}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Billing by Market</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>{MKTS.map(m=>{const mj=active.filter(j=>j.market===m);const mc=mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const mb=mj.reduce((s,j)=>s+n(j.ytd_invoiced),0);const mp=mc>0?Math.round(mb/mc*100):0;return<div key={m}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span style={{fontWeight:600,color:MC[m]}}>{MS[m]}</span><span style={{color:'#6B6056'}}>{mp}%</span></div><PBar pct={mp} color={MC[m]} h={8}/></div>;})}</div></div>
+      <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={bSearch} onChange={e=>setBSearch(e.target.value)} placeholder="Search by job name, number, or customer..." style={{...inputS,width:280}}/>
+        <button onClick={()=>setBMktF(null)} style={fpill(!bMktF)}>All</button>
+        {MKTS.map(m=><button key={m} onClick={()=>setBMktF(m)} style={fpill(bMktF===m)}>{MS[m]}</button>)}
+        <select value={bPmF} onChange={e=>setBPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+        <button onClick={()=>setBStatusF(null)} style={fpill(!bStatusF)}>All</button>
+        <button onClick={()=>setBStatusF('pending')} style={fpill(bStatusF==='pending')}>Pending</button>
+        <button onClick={()=>setBStatusF('invoiced')} style={fpill(bStatusF==='invoiced')}>Invoiced</button>
+        <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
+        <span style={{fontSize:12,color:'#6B6056'}}>{shown.length} jobs</span>
+      </div>
+      <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Project','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','PM Entries','Last Billed','Notes','SP',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+        <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
+          <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
+          <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
+          <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'ytd_invoiced')}>{editId===j.id&&editField==='ytd_invoiced'?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:100,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{$(j.ytd_invoiced)}</span>}</td>
+          <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:n(j.left_to_bill)>100000?'#991B1B':n(j.left_to_bill)>50000?'#B45309':'#065F46',fontSize:13}}>{$(j.left_to_bill)}</td>
+          <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><PBar pct={n(j.pct_billed)*100} h={4}/><span style={{fontSize:11}}>{fmtPct(j.pct_billed)}</span></div></td>
+          <td style={{padding:'8px 10px'}}>{pending.length>0?<span style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:700,padding:'3px 8px'}}>{pending.length} pending</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
+          <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
+          <td style={{padding:'8px 10px',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={j.notes}>{j.notes||'—'}</td>
+          <td style={{padding:'8px 10px',textAlign:'center'}}>{j.job_number?<a href={spSearch(j.job_number)} target="_blank" rel="noopener noreferrer" style={{color:'#0078D4',textDecoration:'none',fontSize:16}} title="Open in SharePoint" onClick={e=>e.stopPropagation()}>📁</a>:'—'}</td>
+          <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Complete" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
+        </tr>;})}</tbody></table></div>
+      {/* Recently Fully Billed */}
+      <div style={{marginTop:24}}>
+        <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#6B6056',padding:0,marginBottom:showRecent?12:0}}>
+          <span style={{fontSize:12,transition:'transform .2s',transform:showRecent?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
+          Recently Fully Billed ({recentlyBilled.length})
+        </button>
+        {showRecent&&<div style={{...card,padding:0,overflow:'auto',maxHeight:360}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job Name','Market','Contract Value','Date Billed','Sales Rep',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+            <tbody>{recentlyBilled.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
+              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+              <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
+              <td style={{padding:'8px 10px'}}>{fD(j.last_billed)}</td>
+              <td style={{padding:'8px 10px'}}>{j.sales_rep||'—'}</td>
+              <td style={{padding:'8px 10px'}}><button onClick={()=>setUndoJob(j)} style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Undo</button></td>
+            </tr>)}</tbody>
+          </table>
+          {recentlyBilled.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No fully billed jobs</div>}
+        </div>}
+      </div>
+    </div>}
+
+    {/* Invoice Entry Modal */}
+    {invoiceModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setInvoiceModal(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Invoice Entry</div>
+        <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{invoiceModal.job_name} — {invoiceModal.billing_period?new Date(invoiceModal.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—'}</div>
+        <div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:16,fontSize:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>LF This Period</span><span style={{fontWeight:700}}>{n(invoiceModal.lf_this_period).toLocaleString()}</span></div>
+          <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Submitted By</span><span style={{fontWeight:700}}>{invoiceModal.pm||'—'}</span></div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) — adds to YTD Invoiced</label>
+          <input type="number" value={invoiceAmt} onChange={e=>setInvoiceAmt(e.target.value)} placeholder="Enter amount to add to YTD..." style={inputS} autoFocus/>
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setInvoiceModal(null)} style={btnS}>Cancel</button><button onClick={invoiceEntry} style={{...btnP,background:'#065F46'}}>Mark Invoiced</button></div>
+      </div>
+    </div>}
     {/* Confirm Mark Full Modal */}
     {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)} onKeyDown={e=>{if(e.key==='Escape')setConfirmFullJob(null);}} tabIndex={-1} ref={el=>el&&el.focus()}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
@@ -430,23 +484,6 @@ function BillingPage({jobs,onRefresh}){
           Are you sure?
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
-      </div>
-    </div>}
-    {/* PM Entries Modal */}
-    {showPmModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPmModal(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:24,width:500,maxHeight:'70vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4}}>PM Bill Sheet Entries — {showPmModal.job.job_name}</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>#{showPmModal.job.job_number} · {showPmModal.entries.length} pending entries</div>
-        {showPmModal.entries.map(e=>{const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;return<div key={e.id} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontWeight:600}}>{pd?pd.toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—'}</span><span style={{color:'#6B6056'}}>by {e.pm}</span></div>
-          <div style={{display:'flex',gap:12,color:'#6B6056'}}><span>{n(e.lf_this_period).toLocaleString()} LF</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(e.amount_to_invoice)}</span></div>
-          {e.invoice_notes&&<div style={{color:'#9E9B96',marginTop:2}}>{e.invoice_notes}</div>}
-        </div>;})}
-        <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:12,marginTop:16,marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:700}}>Total: {$(showPmModal.entries.reduce((s,e)=>s+n(e.amount_to_invoice),0))}</div>
-          <div style={{fontSize:11,color:'#6B6056'}}>Will be added to YTD invoiced ({$(showPmModal.job.ytd_invoiced)} current)</div>
-        </div>
-        <div style={{display:'flex',gap:8}}><button onClick={()=>applyToYTD(showPmModal.job,showPmModal.entries)} style={{...btnP,flex:1,background:'#065F46'}}>Apply to YTD</button><button onClick={()=>setShowPmModal(null)} style={btnS}>Cancel</button></div>
       </div>
     </div>}
   </div>);
