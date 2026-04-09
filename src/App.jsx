@@ -101,6 +101,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const handleSave=async()=>{setSaving(true);if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');};
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.job_number='';const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
+  const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
+  const[coForm,setCOForm]=useState({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
+  useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
+  const saveCO=async()=>{const body={...coForm,amount:n(coForm.amount),job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:job.pm};await sbPost('change_orders',body);setShowCOForm(false);setCOForm({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));};
+  const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
+  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
     <div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
@@ -135,7 +141,35 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
           </div>}
         </>}
       </div>
-      {!isNew&&<div style={{padding:'12px 20px',borderTop:'1px solid #E5E3E0',flexShrink:0}}><button onClick={handleDup} style={{...btnS,fontSize:12}}>Duplicate Project</button></div>}
+      {!isNew&&<div style={{padding:'12px 20px',borderTop:'1px solid #E5E3E0',flexShrink:0}}>
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>Change Orders</span><button onClick={()=>setShowCOForm(!showCOForm)} style={{...btnP,padding:'4px 12px',fontSize:11}}>+ Add CO</button></div>
+          {showCOForm&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:8,border:'1px solid #E5E3E0'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date</label><input type="date" value={coForm.date} onChange={e=>setCOForm(f=>({...f,date:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(f=>({...f,status:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(f=>({...f,approved_by:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+            </div>
+            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
+            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
+            <div style={{display:'flex',gap:6}}><button onClick={saveCO} style={{...btnP,padding:'4px 12px',fontSize:11}}>Save</button><button onClick={()=>setShowCOForm(false)} style={{...btnS,padding:'4px 12px',fontSize:11}}>Cancel</button></div>
+          </div>}
+          {coList.length>0&&<div style={{fontSize:12}}>
+            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#6B6056','#F4F4F2'];return<div key={c.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
+              <span style={{fontWeight:600}}>{c.co_number||'—'}</span>
+              <span style={{color:'#9E9B96'}}>{fD(c.date)}</span>
+              <span style={{fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</span>
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{c.description||''}</span>
+              <span style={pill(sc2,sb2)}>{c.status}</span>
+            </div>;})}
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11,fontWeight:700}}><span>Approved Total:</span><span style={{color:'#065F46'}}>{$(approvedTotal)}</span></div>
+          </div>}
+          {coList.length===0&&!showCOForm&&<div style={{fontSize:11,color:'#9E9B96'}}>No change orders</div>}
+        </div>
+        <button onClick={handleDup} style={{...btnS,fontSize:12}}>Duplicate Project</button>
+      </div>}
     </div>);
 }
 
@@ -150,6 +184,34 @@ function GlobalSearch({jobs,onSelect}){
     <div style={{display:'flex',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid #E5E3E0'}}><span style={{color:'#9E9B96',marginRight:8}}>⌕</span><input ref={ref} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search projects... (Esc to close)" style={{flex:1,border:'none',outline:'none',fontSize:14,color:'#1A1A1A',background:'transparent'}} onKeyDown={e=>{if(e.key==='Enter'&&results[0])pick(results[0]);if(e.key==='Escape')setOpen(false);}}/>{q&&<button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'#9E9B96',cursor:'pointer',fontSize:16}}>×</button>}</div>
     {q.length>=2&&<div style={{maxHeight:320,overflow:'auto'}}>{results.length===0?<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No results</div>:results.map(j=><div key={j.id} onClick={()=>pick(j)} style={{padding:'10px 16px',cursor:'pointer',borderBottom:'1px solid #F4F4F2',display:'flex',gap:8,alignItems:'center'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.job_name}</div><div style={{fontSize:11,color:'#6B6056'}}>#{j.job_number} · {j.customer_name}</div></div><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></div>)}</div>}
   </div></div>);
+}
+
+/* ═══ WEEKLY DIGEST ═══ */
+function WeeklyDigest({jobs,active}){
+  const[sending,setSending]=useState(false);const[lastSent,setLastSent]=useState(null);const[digestStats,setDigestStats]=useState(null);
+  useEffect(()=>{
+    const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
+    const zeroBilled=active.filter(j=>n(j.ytd_invoiced)===0).length;
+    const now=new Date();const weekAgo=new Date(now.getTime()-7*86400000).toISOString();
+    const newJobs=jobs.filter(j=>j.created_at&&j.created_at>=weekAgo).length;
+    const compJobs=jobs.filter(j=>j.complete_date&&j.complete_date>=weekAgo.split('T')[0]).length;
+    Promise.all([
+      sbGet('weather_days',`date=gte.${weekAgo.split('T')[0]}&select=id`),
+      sbGet('change_orders',`status=eq.Pending&select=id`)
+    ]).then(([wd,co])=>{
+      setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs});
+    });
+  },[jobs,active]);
+  const sendDigest=async()=>{setSending(true);try{await fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${KEY}`}});setLastSent(new Date().toLocaleString());}catch(e){}setSending(false);};
+  return(<div style={card}>
+    <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Weekly Digest</div>
+    {digestStats&&<div style={{marginBottom:12}}>
+      {[['Total Left to Bill',$(digestStats.leftToBill)],['Jobs with 0% billed (active)',digestStats.zeroBilled+' jobs'],['Weather days logged this week',digestStats.weatherDays],['Change orders pending approval',digestStats.pendingCO],['New jobs added this week',digestStats.newJobs],['Jobs completed this week',digestStats.compJobs]].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>)}
+    </div>}
+    <div style={{fontSize:11,color:'#9E9B96',marginBottom:8}}>Recipients: david@fencecrete.com, alex@fencecrete.com</div>
+    {lastSent&&<div style={{fontSize:11,color:'#065F46',marginBottom:8}}>Last sent: {lastSent}</div>}
+    <button onClick={sendDigest} disabled={sending} style={{...btnP,width:'100%',opacity:sending?0.5:1}}>{sending?'Sending...':'Send Digest Now'}</button>
+  </div>);
 }
 
 /* ═══ DASHBOARD ═══ */
@@ -184,7 +246,10 @@ function Dashboard({jobs}){
       </div>
     </div>
     {/* Activity Feed */}
-    <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:10}}>Recent Activity</div>{actLogs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No activity yet</div>:actLogs.map(l=><div key={l.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={pill(ACT_C[l.action]||'#6B6056',(ACT_C[l.action]||'#6B6056')+'18')}>{(l.action||'').replace(/_/g,' ')}</span><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.job_name}</span><span style={{color:'#9E9B96',flexShrink:0}}>{relT(l.created_at)}</span></div>)}</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:10}}>Recent Activity</div>{actLogs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No activity yet</div>:actLogs.map(l=><div key={l.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={pill(ACT_C[l.action]||'#6B6056',(ACT_C[l.action]||'#6B6056')+'18')}>{(l.action||'').replace(/_/g,' ')}</span><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.job_name}</span><span style={{color:'#9E9B96',flexShrink:0}}>{relT(l.created_at)}</span></div>)}</div>
+      <WeeklyDigest jobs={jobs} active={active}/>
+    </div>
   </div>);
 }
 
@@ -1026,6 +1091,201 @@ function DailyReportPage(){
   </div>);
 }
 
+/* ═══ WEATHER DAYS PAGE ═══ */
+function WeatherDaysPage({jobs}){
+  const[days,setDays]=useState([]);const[loading,setLoading]=useState(true);const[showForm,setShowForm]=useState(false);const[editDay,setEditDay]=useState(null);
+  const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[toast,setToast]=useState(null);
+  const[form,setForm]=useState({job_id:'',date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});
+  const[jobSearch,setJobSearch]=useState('');
+  const fetchDays=useCallback(async()=>{const d=await sbGet('weather_days','order=date.desc');setDays(d||[]);setLoading(false);},[]);
+  useEffect(()=>{fetchDays();},[fetchDays]);
+  const activeJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const searchedJobs=jobSearch?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,10):[];
+  const filtered=useMemo(()=>{let f=days;if(mktF)f=f.filter(d=>d.market===mktF);if(pmF)f=f.filter(d=>d.pm===pmF);return f;},[days,mktF,pmF]);
+  const now=new Date();const thisMonth=filtered.filter(d=>d.date&&new Date(d.date).getMonth()===now.getMonth()&&new Date(d.date).getFullYear()===now.getFullYear());
+  const thisYear=filtered.filter(d=>d.date&&new Date(d.date).getFullYear()===now.getFullYear());
+  const totalHours=filtered.reduce((s,d)=>s+n(d.hours_lost),0);
+  const openForm=(day)=>{if(day){setForm({job_id:day.job_id||'',date:day.date||'',hours_lost:day.hours_lost||'',reason:day.reason||'Rain',logged_by:day.logged_by||'',notes:day.notes||''});setJobSearch(day.job_name||'');setEditDay(day);}else{setForm({job_id:'',date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});setJobSearch('');setEditDay(null);}setShowForm(true);};
+  const saveDay=async()=>{const job=jobs.find(j=>j.id===form.job_id);const body={...form,hours_lost:n(form.hours_lost),job_number:job?.job_number||editDay?.job_number||'',job_name:job?.job_name||editDay?.job_name||'',market:job?.market||editDay?.market||'',pm:job?.pm||editDay?.pm||''};if(editDay){await sbPatch('weather_days',editDay.id,body);}else{await sbPost('weather_days',body);}setShowForm(false);setEditDay(null);setToast('Weather day saved');fetchDays();};
+  return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Weather Days Tracker</h1>
+      <button onClick={()=>openForm(null)} style={btnP}>+ Log Weather Day</button>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
+      <KPI label="Total Weather Days" value={filtered.length}/><KPI label="Total Hours Lost" value={totalHours} color="#B45309"/><KPI label="This Month" value={thisMonth.length} color="#1D4ED8"/><KPI label="This Year" value={thisYear.length} color="#065F46"/>
+    </div>
+    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
+      <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+    </div>
+    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Name','Market','PM','Hours Lost','Reason','Notes','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <tbody>{filtered.map(d=><tr key={d.id} onClick={()=>openForm(d)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+          <td style={{padding:'8px 10px'}}>{fD(d.date)}</td>
+          <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.job_name||'—'}</td>
+          <td style={{padding:'8px 10px'}}><span style={pill(MC[d.market]||'#6B6056',MB[d.market]||'#F4F4F2')}>{MS[d.market]||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}>{d.pm||'—'}</td>
+          <td style={{padding:'8px 10px',fontWeight:700,color:'#B45309'}}>{d.hours_lost||'—'}</td>
+          <td style={{padding:'8px 10px'}}>{d.reason||'—'}</td>
+          <td style={{padding:'8px 10px',color:'#9E9B96',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.notes||'—'}</td>
+          <td style={{padding:'8px 10px'}} onClick={e=>e.stopPropagation()}><button onClick={()=>openForm(d)} style={{...btnS,padding:'3px 10px',fontSize:11}}>Edit</button></td>
+        </tr>)}{filtered.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No weather days logged</td></tr>}</tbody></table>
+    </div>}
+    {showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowForm(false)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:480,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:16}}>{editDay?'Edit Weather Day':'Log Weather Day'}</div>
+        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search jobs..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Date</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Hours Lost</label><select value={form.hours_lost} onChange={e=>setForm(f=>({...f,hours_lost:e.target.value}))} style={inputS}><option value="">— Select —</option>{[0.5,1,2,3,4,5,6,7,8,'8+'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Reason</label><select value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} style={inputS}>{['Rain','Wind','Lightning','Extreme Heat','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={form.logged_by} onChange={e=>setForm(f=>({...f,logged_by:e.target.value}))} style={inputS}/></div>
+        </div>
+        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{display:'flex',gap:8}}><button onClick={saveDay} style={{...btnP,flex:1}}>{editDay?'Update':'Save'}</button><button onClick={()=>setShowForm(false)} style={btnS}>Cancel</button></div>
+      </div>
+    </div>}
+  </div>);
+}
+
+/* ═══ CHANGE ORDERS PAGE ═══ */
+function ChangeOrdersPage({jobs}){
+  const[orders,setOrders]=useState([]);const[loading,setLoading]=useState(true);
+  const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[statusF,setStatusF]=useState(null);
+  const fetchOrders=useCallback(async()=>{const d=await sbGet('change_orders','order=created_at.desc');setOrders(d||[]);setLoading(false);},[]);
+  useEffect(()=>{fetchOrders();},[fetchOrders]);
+  const filtered=useMemo(()=>{let f=orders;if(mktF)f=f.filter(o=>o.market===mktF);if(pmF)f=f.filter(o=>o.pm===pmF);if(statusF)f=f.filter(o=>o.status===statusF);return f;},[orders,mktF,pmF,statusF]);
+  const coStatusC={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
+  return(<div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Change Orders</h1>
+    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
+      <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+      <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select>
+      <span style={{fontSize:12,color:'#6B6056'}}>{filtered.length} change orders</span>
+    </div>
+    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 280px)'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date','Amount','Description','Status','PM','Market'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+          <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.job_name||'—'}</td>
+          <td style={{padding:'8px 10px'}}>{o.co_number||'—'}</td>
+          <td style={{padding:'8px 10px'}}>{fD(o.date)}</td>
+          <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(o.amount)}</td>
+          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{o.description||'—'}</td>
+          <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{o.status||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}>{o.pm||'—'}</td>
+          <td style={{padding:'8px 10px'}}><span style={pill(MC[o.market]||'#6B6056',MB[o.market]||'#F4F4F2')}>{MS[o.market]||'—'}</span></td>
+        </tr>;})}
+        {filtered.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No change orders found</td></tr>}</tbody></table>
+    </div>}
+  </div>);
+}
+
+/* ═══ PM DAILY REPORT PAGE ═══ */
+function PMDailyReportPage({jobs}){
+  const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:''});
+  const[form,setForm]=useState(emptyForm);
+  const set=(f,v)=>setForm(p=>({...p,[f]:v}));
+  const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
+  useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
+  const submitReport=async()=>{const body={...form,num_employees:n(form.num_employees),num_gates_installed:n(form.num_gates_installed),gate_height:n(form.gate_height),num_holes_dug:n(form.num_holes_dug),num_posts_placed:n(form.num_posts_placed),lf_panels_installed:n(form.lf_panels_installed),fence_height:n(form.fence_height),num_cut_sections:n(form.num_cut_sections),num_sections_leveled:n(form.num_sections_leveled),drill_piercing_lf:n(form.drill_piercing_lf),num_columns_laid_out:n(form.num_columns_laid_out),num_columns_34_built:n(form.num_columns_34_built),num_columns_capped:n(form.num_columns_capped),lf_panels_shoulder:n(form.lf_panels_shoulder),lf_panels_completed:n(form.lf_panels_completed),lf_impacted_delays:n(form.lf_impacted_delays),num_defective_panels:n(form.num_defective_panels),num_defective_posts:n(form.num_defective_posts)};await sbPost('pm_daily_reports',body);setToast('Report submitted');setForm(emptyForm());setTimeout(()=>{setTab('history');fetchReports();},600);};
+  const secStyle={fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
+  const lblStyle={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
+  if(detailRpt)return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
+    <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
+    <div style={{...card,marginBottom:16}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,fontSize:13}}>
+        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.num_employees],['Fence Style',detailRpt.fence_style],['LF Panels Installed',detailRpt.lf_panels_installed],['Gates Installed',detailRpt.num_gates_installed],['Posts Placed',detailRpt.num_posts_placed],['Holes Dug',detailRpt.num_holes_dug],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
+      </div>
+      {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
+    </div>
+  </div>);
+  return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Daily Report</h1>
+      <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button></div>
+    </div>
+    {tab==='history'&&<div>
+      {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:reports.length===0?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>No reports yet</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 240px)'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{reports.map(r=><tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <td style={{padding:'8px 10px'}}>{fD(r.created_at)}</td>
+            <td style={{padding:'8px 10px',fontWeight:500}}>{r.job_number||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{r.job_type||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{r.crew||'—'}</td>
+            <td style={{padding:'8px 10px',fontWeight:700}}>{n(r.lf_panels_installed).toLocaleString()}</td>
+            <td style={{padding:'8px 10px'}}>{r.submitted_by||'—'}</td>
+          </tr>)}</tbody></table>
+      </div>}
+    </div>}
+    {tab==='new'&&<div style={{...card,maxHeight:'calc(100vh - 200px)',overflow:'auto'}}>
+      <div style={secStyle}>Job Info</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Crew</label><input value={form.crew} onChange={e=>set('crew',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={inputS}/></div>
+      </div>
+      <div style={secStyle}>Gates</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={inputS}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={secStyle}>Posts & Foundation</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={secStyle}>Panels & Fence</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Linear Feet of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={inputS}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Fence Height (ft)</label><input type="number" value={form.fence_height} onChange={e=>set('fence_height',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={secStyle}>Single Wythe Fields</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={secStyle}>Site Conditions</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Types of Machinery Used</label><input value={form.machinery_used} onChange={e=>set('machinery_used',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Soil Type</label><select value={form.soil_type} onChange={e=>set('soil_type',e.target.value)} style={inputS}>{['Soil','Rock'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Soil Quality</label><select value={form.soil_quality} onChange={e=>set('soil_quality',e.target.value)} style={inputS}>{['1 - Worst','2','3','4','5 - Best'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Terrain Rating</label><select value={form.terrain_rating} onChange={e=>set('terrain_rating',e.target.value)} style={inputS}>{['1 - Most Difficult','2','3','4','5 - Easiest'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+      </div>
+      <div style={secStyle}>Delays</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={inputS}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={inputS}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+        <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={inputS}/></div>
+        <div><label style={lblStyle}>Other Defective Materials</label><input value={form.other_defective_materials} onChange={e=>set('other_defective_materials',e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={{...inputS,resize:'vertical'}}/></div>
+      <div style={secStyle}>Submitted By</div>
+      <div><label style={lblStyle}>Name</label><input value={form.submitted_by} onChange={e=>set('submitted_by',e.target.value)} style={inputS}/></div>
+      <div style={{marginTop:20}}><button onClick={submitReport} style={{...btnP,width:'100%',padding:'12px 0',fontSize:14}}>Submit Report</button></div>
+    </div>}
+  </div>);
+}
+
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch}){
   const alerts=jobs.filter(j=>j.status!=='complete'&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
@@ -1044,7 +1304,7 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
+const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
@@ -1076,7 +1336,10 @@ export default function App(){
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='production'&&<ProductionPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
+            {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
+            {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
+            {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='daily_report'&&<DailyReportPage/>}
           </>}
         </div>
