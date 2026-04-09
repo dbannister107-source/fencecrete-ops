@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
+// Fix default Leaflet icon
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
 
 /* ═══ CONFIG ═══ */
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
@@ -1714,6 +1721,84 @@ function PMDailyReportPage({jobs}){
   </div>);
 }
 
+/* ═══ MAP PAGE ═══ */
+const MKT_COORDS={Austin:[30.2672,-97.7431],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
+const MKT_PIN={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
+function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.length>0){const b=L.latLngBounds(positions);map.fitBounds(b,{padding:[40,40]});}},[positions,map]);return null;}
+function MapPage({jobs,onNav}){
+  const[pins,setPins]=useState([]);const[geocoding,setGeocoding]=useState(false);const[geoProgress,setGeoProgress]=useState('');
+  const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);
+  const activeJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  useEffect(()=>{let cancelled=false;
+    const run=async()=>{setGeocoding(true);const result=[];let toGeo=0;
+      for(const j of activeJobs){
+        if(j.lat&&j.lng){result.push({...j,lat:n(j.lat),lng:n(j.lng)});continue;}
+        toGeo++;
+      }
+      // Batch geocode jobs without coords
+      const needGeo=activeJobs.filter(j=>!j.lat||!j.lng);
+      setGeoProgress(`Locating ${needGeo.length} jobs...`);
+      for(let i=0;i<needGeo.length;i++){
+        if(cancelled)return;const j=needGeo[i];
+        setGeoProgress(`Locating ${i+1}/${needGeo.length}...`);
+        const q=`${j.address||''} ${j.city||''} ${j.state||'TX'}`.trim();
+        let lat=0,lng=0;
+        if(q.length>3){try{const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,{headers:{'User-Agent':'FencecreteOps/1.0'}});const d=await r.json();if(d&&d[0]){lat=parseFloat(d[0].lat);lng=parseFloat(d[0].lon);}}catch(e){}}
+        // Fallback to market center
+        if(!lat&&j.market&&MKT_COORDS[j.market]){const c=MKT_COORDS[j.market];lat=c[0]+(Math.random()-0.5)*0.05;lng=c[1]+(Math.random()-0.5)*0.05;}
+        if(lat&&lng){try{sbPatch('jobs',j.id,{lat,lng});}catch(e){}result.push({...j,lat,lng});}
+        if(i<needGeo.length-1&&q.length>3)await new Promise(r=>setTimeout(r,1100));
+      }
+      // Add already-geocoded
+      for(const j of activeJobs){if(j.lat&&j.lng&&!result.some(r=>r.id===j.id))result.push({...j,lat:n(j.lat),lng:n(j.lng)});}
+      if(!cancelled){setPins(result);setGeocoding(false);}
+    };run();return()=>{cancelled=true;};
+  },[activeJobs]);
+  const filtered=useMemo(()=>{let f=pins;if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);return f;},[pins,mktF,statusF]);
+  const fTC=filtered.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+  const fLTB=filtered.reduce((s,j)=>s+n(j.left_to_bill),0);
+  const positions=filtered.filter(j=>j.lat&&j.lng).map(j=>[j.lat,j.lng]);
+  return(<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 96px)'}}>
+    <div style={{display:'flex',gap:8,padding:'0 0 12px',flexWrap:'wrap',alignItems:'center'}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0,marginRight:12}}>Map</h1>
+      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+      <span style={{color:'#E5E3E0'}}>|</span>
+      <button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All Statuses</button>
+      {STS.filter(s=>s!=='complete').map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}
+      <span style={{fontSize:12,color:'#6B6056',marginLeft:8}}>{filtered.length} jobs | {$k(fTC)} contract | {$k(fLTB)} LTB</span>
+    </div>
+    {geocoding&&<div style={{padding:'8px 0',fontSize:12,color:'#6B6056'}}>{geoProgress}</div>}
+    <div style={{flex:1,borderRadius:12,overflow:'hidden',border:'1px solid #E5E3E0',position:'relative'}}>
+      <MapContainer center={[31.0,-99.0]} zoom={6} style={{height:'100%',width:'100%'}} scrollWheelZoom={true}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap'/>
+        {positions.length>1&&<FitBounds positions={positions}/>}
+        <MarkerClusterGroup chunkedLoading maxClusterRadius={40}>
+          {filtered.filter(j=>j.lat&&j.lng).map(j=><CircleMarker key={j.id} center={[j.lat,j.lng]} radius={10} pathOptions={{fillColor:MKT_PIN[j.market]||'#8B2020',color:'#1A1A1A',weight:2,fillOpacity:0.85}}>
+            <Popup maxWidth={280}><div style={{fontFamily:'Inter,sans-serif',fontSize:13}}>
+              <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>{j.job_name}</div>
+              <div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,color:'#6B6056'}}>#{j.job_number}</span>
+                <span style={{...pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2'),display:'inline-block'}}>{MS[j.market]||'—'}</span>
+                <span style={{...pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2'),display:'inline-block'}}>{SS[j.status]||j.status}</span>
+              </div>
+              {j.pm&&<div style={{fontSize:11,color:'#6B6056',marginBottom:2}}>PM: {j.pm}</div>}
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#6B6056'}}>Contract</span><span style={{fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#6B6056'}}>Left to Bill</span><span style={{fontWeight:700,color:'#8B2020'}}>{$(j.left_to_bill)}</span></div>
+              {j.est_start_date&&<div style={{fontSize:11,color:'#6B6056'}}>Est. Start: {fD(j.est_start_date)}</div>}
+              <button onClick={()=>{if(onNav)onNav('projects',j);}} style={{marginTop:8,padding:'6px 14px',background:'#8B2020',color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',width:'100%'}}>View Job</button>
+            </div></Popup>
+          </CircleMarker>)}
+        </MarkerClusterGroup>
+      </MapContainer>
+      {/* Legend */}
+      <div style={{position:'absolute',bottom:24,right:12,background:'rgba(255,255,255,0.92)',borderRadius:8,padding:'8px 12px',zIndex:1000,border:'1px solid #E5E3E0',display:'flex',gap:10,fontSize:11}}>
+        {MKTS.map(m=><div key={m} style={{display:'flex',alignItems:'center',gap:3}}><div style={{width:10,height:10,borderRadius:5,background:MKT_PIN[m],border:'1.5px solid #1A1A1A'}}/>{MS[m]}</div>)}
+      </div>
+    </div>
+  </div>);
+}
+
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch}){
   const alerts=jobs.filter(j=>j.status!=='complete'&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
@@ -1732,7 +1817,7 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
+const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'map',label:'Map',icon:'📍'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
@@ -1760,6 +1845,7 @@ export default function App(){
         <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
           {loading?<div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'50vh',color:'#9E9B96'}}>Loading...</div>:<>
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage}/>}
+            {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
