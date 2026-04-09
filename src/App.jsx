@@ -649,13 +649,25 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[cycles,setCycles]=useState([]);const[cyclesMonth,setCyclesMonth]=useState(curBillingMonth());const[cyclesLoading,setCyclesLoading]=useState(false);
   // Start Billing Cycle — current month status + action (moved from PM Bill Sheet)
   const billingMonth=curBillingMonth();
-  const[currentCycleRows,setCurrentCycleRows]=useState([]);const[showStartCycle,setShowStartCycle]=useState(false);const[startingCycle,setStartingCycle]=useState(false);
-  const fetchCurrentCycleRows=useCallback(async()=>{const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id`);setCurrentCycleRows(d||[]);},[billingMonth]);
+  const[currentCycleRows,setCurrentCycleRows]=useState([]);const[showStartCycle,setShowStartCycle]=useState(false);const[startingCycle,setStartingCycle]=useState(false);const[refreshingLF,setRefreshingLF]=useState(false);
+  const fetchCurrentCycleRows=useCallback(async()=>{const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id,accounting_approved`);setCurrentCycleRows(d||[]);},[billingMonth]);
   useEffect(()=>{fetchCurrentCycleRows();},[fetchCurrentCycleRows]);
   const cycleActiveJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','complete'].includes(j.status)),[jobs]);
   const currentCycleJobIds=useMemo(()=>new Set(currentCycleRows.map(c=>c.job_id)),[currentCycleRows]);
   const cycleAlreadyStarted=cycleActiveJobs.length>0&&cycleActiveJobs.every(j=>currentCycleJobIds.has(j.id));
-  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id));let created=0;for(const j of toCreate){const lfTotal=CYCLE_LF_MAP.reduce((s,[src])=>s+n(j[src]),0);const totalLF=n(j.total_lf)||(n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron));const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,lf_total_this_month:lfTotal,lf_installed_to_date:lfTotal,adj_contract_value:n(j.adj_contract_value||j.contract_value),total_lf_contract:totalLF,pct_complete_lf:totalLF>0?Math.round(lfTotal/totalLF*10000)/100:0,ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};CYCLE_LF_MAP.forEach(([src,dst])=>{body[dst]=n(j[src]);});try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
+  // Build LF body from a job — pulls labor_*/sw_*/wi_* fields directly from the jobs table
+  // and computes totals + % complete. Used by both Start Cycle and Refresh LF Data.
+  const buildCycleLF=(j)=>{
+    const lfThisMonth=CYCLE_LF_MAP.reduce((s,[src])=>s+n(j[src]),0);
+    const totalLFContract=n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron);
+    const lfInstalledToDate=n(j.total_lf_installed)||(n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron));
+    const pctCompleteLF=totalLFContract>0?Math.round(lfInstalledToDate/totalLFContract*1000)/10:0;
+    const out={lf_total_this_month:lfThisMonth,total_lf_contract:totalLFContract,lf_installed_to_date:lfInstalledToDate,pct_complete_lf:pctCompleteLF};
+    CYCLE_LF_MAP.forEach(([src,dst])=>{out[dst]=n(j[src]);});
+    return out;
+  };
+  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id));let created=0;for(const j of toCreate){const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,...buildCycleLF(j),adj_contract_value:n(j.adj_contract_value||j.contract_value),ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
+  const refreshCycleLF=async()=>{setRefreshingLF(true);try{const rows=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id,accounting_approved`);const toUpdate=(rows||[]).filter(r=>!r.accounting_approved);let updated=0,skipped=0;for(const r of toUpdate){const job=jobs.find(j=>j.id===r.job_id);if(!job){skipped++;continue;}try{await sbPatch('monthly_billing_cycles',r.id,buildCycleLF(job));updated++;}catch(err){console.error('Refresh LF failed:',r.id,err);skipped++;}}await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(`Refreshed LF data for ${updated} cycle row${updated===1?'':'s'}${skipped?` · ${skipped} skipped`:''}`);}catch(err){console.error('refreshCycleLF failed:',err);setToast({message:'Refresh failed: '+(err.message||err),isError:true});}finally{setRefreshingLF(false);}};
   const[cycleReview,setCycleReview]=useState(null);const[cycleForm,setCycleForm]=useState({pct_complete_accounting:'',accounting_approved_by:'',invoice_number:'',invoice_sent_date:'',notes:''});
   const fetchCycles=useCallback(async(month)=>{setCyclesLoading(true);const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${month}&order=job_name.asc`);setCycles(d||[]);setCyclesLoading(false);},[]);
   useEffect(()=>{if(billingTab==='monthlycycles')fetchCycles(cyclesMonth);},[billingTab,cyclesMonth,fetchCycles]);
@@ -775,6 +787,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{monthLabel(cyclesMonth)}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <button onClick={refreshCycleLF} style={btnS} disabled={refreshingLF||currentCycleRows.length===0} title="Re-pull LF values from the jobs table for unapproved cycle rows in the current month">{refreshingLF?'Refreshing…':'Refresh LF Data'}</button>
           <button onClick={exportCyclesCSV} style={btnS} disabled={cycles.length===0}>Export CSV</button>
           {cycleAlreadyStarted
             ?<button disabled style={{padding:'10px 20px',borderRadius:10,border:'none',background:'#D1FAE5',color:'#065F46',fontSize:13,fontWeight:800,cursor:'not-allowed'}}>{monthLabel(billingMonth)} Cycle Active ✓</button>
