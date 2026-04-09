@@ -18,7 +18,8 @@
       "Read(//c/Users/dbann/.local/share/**)",
       "Read(//c/Users/dbann/AppData/Local/com.vercel.cli/**)",
       "Read(//c/Users/dbann/.config/**)",
-      "Read(//c/Users/dbann/**)"
+      "Read(//c/Users/dbann/**)",
+      "mcp__claude_ai_Supabase__apply_migration"
     ]
   }
 }
