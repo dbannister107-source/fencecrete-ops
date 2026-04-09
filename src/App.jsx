@@ -647,6 +647,15 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[allBillingEntries,setAllBillingEntries]=useState([]);const[showLfDetail,setShowLfDetail]=useState(false);
   // Monthly billing cycle state — Part 2/3 of the workflow
   const[cycles,setCycles]=useState([]);const[cyclesMonth,setCyclesMonth]=useState(curBillingMonth());const[cyclesLoading,setCyclesLoading]=useState(false);
+  // Start Billing Cycle — current month status + action (moved from PM Bill Sheet)
+  const billingMonth=curBillingMonth();
+  const[currentCycleRows,setCurrentCycleRows]=useState([]);const[showStartCycle,setShowStartCycle]=useState(false);const[startingCycle,setStartingCycle]=useState(false);
+  const fetchCurrentCycleRows=useCallback(async()=>{const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id`);setCurrentCycleRows(d||[]);},[billingMonth]);
+  useEffect(()=>{fetchCurrentCycleRows();},[fetchCurrentCycleRows]);
+  const cycleActiveJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','complete'].includes(j.status)),[jobs]);
+  const currentCycleJobIds=useMemo(()=>new Set(currentCycleRows.map(c=>c.job_id)),[currentCycleRows]);
+  const cycleAlreadyStarted=cycleActiveJobs.length>0&&cycleActiveJobs.every(j=>currentCycleJobIds.has(j.id));
+  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id));let created=0;for(const j of toCreate){const lfTotal=CYCLE_LF_MAP.reduce((s,[src])=>s+n(j[src]),0);const totalLF=n(j.total_lf)||(n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron));const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,lf_total_this_month:lfTotal,lf_installed_to_date:lfTotal,adj_contract_value:n(j.adj_contract_value||j.contract_value),total_lf_contract:totalLF,pct_complete_lf:totalLF>0?Math.round(lfTotal/totalLF*10000)/100:0,ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};CYCLE_LF_MAP.forEach(([src,dst])=>{body[dst]=n(j[src]);});try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
   const[cycleReview,setCycleReview]=useState(null);const[cycleForm,setCycleForm]=useState({pct_complete_accounting:'',accounting_approved_by:'',invoice_number:'',invoice_sent_date:'',notes:''});
   const fetchCycles=useCallback(async(month)=>{setCyclesLoading(true);const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${month}&order=job_name.asc`);setCycles(d||[]);setCyclesLoading(false);},[]);
   useEffect(()=>{if(billingTab==='monthlycycles')fetchCycles(cyclesMonth);},[billingTab,cyclesMonth,fetchCycles]);
@@ -765,7 +774,12 @@ function BillingPage({jobs,onRefresh,onNav}){
           <input type="month" value={cyclesMonth} onChange={e=>setCyclesMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
           <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{monthLabel(cyclesMonth)}</span>
         </div>
-        <button onClick={exportCyclesCSV} style={btnS} disabled={cycles.length===0}>Export CSV</button>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <button onClick={exportCyclesCSV} style={btnS} disabled={cycles.length===0}>Export CSV</button>
+          {cycleAlreadyStarted
+            ?<button disabled style={{padding:'10px 20px',borderRadius:10,border:'none',background:'#D1FAE5',color:'#065F46',fontSize:13,fontWeight:800,cursor:'not-allowed'}}>{monthLabel(billingMonth)} Cycle Active ✓</button>
+            :<button onClick={()=>setShowStartCycle(true)} style={{padding:'10px 20px',borderRadius:10,border:'none',background:'#8B2020',color:'#FFF',fontSize:13,fontWeight:800,cursor:'pointer'}}>Start {monthLabel(billingMonth)} Billing Cycle</button>}
+        </div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{cycleSummary.count}</div><div style={{fontSize:11,color:'#6B6056'}}>Jobs in cycle</div></div>
@@ -1019,6 +1033,14 @@ function BillingPage({jobs,onRefresh,onNav}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
       </div>
     </div>}
+    {/* Start Billing Cycle Confirm Modal */}
+    {showStartCycle&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!startingCycle&&setShowStartCycle(false)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:8,color:'#1A1A1A'}}>Start {monthLabel(billingMonth)} Billing Cycle</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:18}}>This will create billing cycle entries for all active jobs using their current LF data. <br/><br/><strong>{cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id)).length}</strong> jobs will get a new entry. Jobs that already have a {monthLabel(billingMonth)} entry will be skipped.</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowStartCycle(false)} disabled={startingCycle} style={btnS}>Cancel</button><button onClick={startBillingCycle} disabled={startingCycle} style={btnP}>{startingCycle?'Creating…':'Continue'}</button></div>
+      </div>
+    </div>}
   </div>);
 }
 
@@ -1051,15 +1073,6 @@ function PMBillingPage({jobs,onRefresh}){
   const curMonthFirst=`${curMonth}-01`;
 
   const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','complete'].includes(j.status)),[jobs]);
-
-  // Monthly billing cycle — Start Cycle button + status
-  const billingMonth=curBillingMonth();
-  const[cycleRows,setCycleRows]=useState([]);const[showStartCycle,setShowStartCycle]=useState(false);const[startingCycle,setStartingCycle]=useState(false);
-  const fetchCycleRows=useCallback(async()=>{const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id`);setCycleRows(d||[]);},[billingMonth]);
-  useEffect(()=>{fetchCycleRows();},[fetchCycleRows]);
-  const cycleJobIds=useMemo(()=>new Set(cycleRows.map(c=>c.job_id)),[cycleRows]);
-  const cycleAlreadyStarted=activeJobs.length>0&&activeJobs.every(j=>cycleJobIds.has(j.id));
-  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=activeJobs.filter(j=>!cycleJobIds.has(j.id));let created=0;for(const j of toCreate){const lfTotal=CYCLE_LF_MAP.reduce((s,[src])=>s+n(j[src]),0);const totalLF=n(j.total_lf)||(n(j.lf_precast)+n(j.lf_single_wythe)+n(j.lf_wrought_iron));const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,lf_total_this_month:lfTotal,lf_installed_to_date:lfTotal,adj_contract_value:n(j.adj_contract_value||j.contract_value),total_lf_contract:totalLF,pct_complete_lf:totalLF>0?Math.round(lfTotal/totalLF*10000)/100:0,ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:selPM||null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};CYCLE_LF_MAP.forEach(([src,dst])=>{body[dst]=n(j[src]);});try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCycleRows();setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
 
   const pmEntries=useMemo(()=>selPM?entries.filter(e=>e.pm===selPM):entries,[entries,selPM]);
 
@@ -1171,11 +1184,8 @@ function PMBillingPage({jobs,onRefresh}){
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
+    <div style={{marginBottom:16}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Bill Sheet</h1>
-      {cycleAlreadyStarted
-        ?<button disabled style={{padding:'10px 20px',borderRadius:10,border:'none',background:'#D1FAE5',color:'#065F46',fontSize:13,fontWeight:800,cursor:'not-allowed'}}>{monthLabel(billingMonth)} Cycle Active ✓</button>
-        :<button onClick={()=>setShowStartCycle(true)} style={{...btnP,padding:'10px 20px',fontSize:13}}>Start {monthLabel(billingMonth)} Billing Cycle</button>}
     </div>
 
     {/* PM Selector */}
@@ -1401,14 +1411,6 @@ function PMBillingPage({jobs,onRefresh}){
           <button onClick={handleDupCreate} style={{...btnP,flex:1,background:'#065F46'}}>Create New Entry</button>
           <button onClick={()=>setDuplicateConfirm(null)} style={btnS}>Cancel</button>
         </div>
-      </div>
-    </div>}
-    {/* Start Billing Cycle Confirm Modal */}
-    {showStartCycle&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!startingCycle&&setShowStartCycle(false)}>
-      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontSize:17,fontWeight:800,marginBottom:8,color:'#1A1A1A'}}>Start {monthLabel(billingMonth)} Billing Cycle</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:18}}>This will create billing cycle entries for all active jobs using their current LF data. <br/><br/><strong>{activeJobs.filter(j=>!cycleJobIds.has(j.id)).length}</strong> jobs will get a new entry. Jobs that already have a {monthLabel(billingMonth)} entry will be skipped.</div>
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowStartCycle(false)} disabled={startingCycle} style={btnS}>Cancel</button><button onClick={startBillingCycle} disabled={startingCycle} style={btnP}>{startingCycle?'Creating…':'Continue'}</button></div>
       </div>
     </div>}
   </div>);
