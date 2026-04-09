@@ -368,6 +368,12 @@ function WeeklyDigest({jobs,active}){
 function Dashboard({jobs,onNav}){
   const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
+  // 2026 Revenue Goal — computed from the already-loaded jobs prop (parent fetches all jobs).
+  const GOAL_2026=36000000;
+  const ytd2026=useMemo(()=>jobs.filter(j=>j.contract_date&&j.contract_date>='2026-01-01'&&j.contract_date<='2026-12-31').reduce((s,j)=>s+n(j.adj_contract_value),0),[jobs]);
+  const pct2026=Math.min(ytd2026/GOAL_2026,1);
+  const achieved2026=ytd2026>=GOAL_2026;
+  const remaining2026=Math.max(GOAL_2026-ytd2026,0);
   const mktData=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],value:mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),fill:MC[m]};});
   const alerts=active.filter(j=>n(j.contract_age)>30&&n(j.ytd_invoiced)===0).sort((a,b)=>n(b.contract_age)-n(a.contract_age));
   const crit=alerts.filter(j=>n(j.contract_age)>=90);const warn=alerts.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90);const watch=alerts.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60);
@@ -380,6 +386,42 @@ function Dashboard({jobs,onNav}){
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}><KPI label="Total Contract" value={$k(tc)}/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Active LF" value={tlf.toLocaleString()} color="#1D4ED8"/></div>
+    {/* 2026 Revenue Goal */}
+    {(()=>{
+      const r=140,cx=160,cy=160;const circ=Math.PI*r;const offset=circ*(1-pct2026);const arcColor=achieved2026?'#065F46':'#8B2020';
+      return<div style={{...card,marginBottom:16,borderTop:`3px solid ${arcColor}`}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>2026 Revenue Goal</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>YTD Contract Value vs $36M Target</div>
+          </div>
+          {achieved2026&&<div style={{fontSize:14,fontWeight:800,color:'#065F46'}}>🎯 Goal Achieved!</div>}
+        </div>
+        <div style={{display:'flex',gap:24,alignItems:'center',flexWrap:'wrap',marginTop:8}}>
+          {/* Arc gauge — semicircle, stroke-dashoffset for fill */}
+          <div style={{flex:'0 0 auto',position:'relative',width:'100%',maxWidth:340}}>
+            <svg viewBox="0 0 320 190" style={{width:'100%',height:'auto',display:'block'}}>
+              <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke="#E5E7EB" strokeWidth="22" strokeLinecap="round"/>
+              <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke={arcColor} strokeWidth="22" strokeLinecap="round" strokeDasharray={`${circ} ${circ}`} strokeDashoffset={offset} style={{transition:'stroke-dashoffset .8s ease-out, stroke .3s'}}/>
+              <text x={cx} y={cy-34} textAnchor="middle" style={{fontFamily:'Inter',fontWeight:900,fontSize:42,fill:'#1A1A1A'}}>{$k(ytd2026)}</text>
+              <text x={cx} y={cy-8} textAnchor="middle" style={{fontFamily:'Inter',fontWeight:600,fontSize:14,fill:arcColor}}>{Math.round(pct2026*100)}% of goal</text>
+              <text x={cx-r} y={cy+22} textAnchor="middle" style={{fontFamily:'Inter',fontSize:10,fill:'#9E9B96'}}>$0</text>
+              <text x={cx+r} y={cy+22} textAnchor="middle" style={{fontFamily:'Inter',fontSize:10,fill:'#9E9B96'}}>$36M</text>
+            </svg>
+          </div>
+          {/* Stats column */}
+          <div style={{flex:'1 1 240px',minWidth:220}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              <span style={{padding:'6px 14px',borderRadius:20,background:'#FDF4F4',color:'#8B2020',fontSize:13,fontWeight:700,border:'1px solid #8B202020'}}>YTD: {$k(ytd2026)}</span>
+              <span style={{padding:'6px 14px',borderRadius:20,background:'#F4F4F2',color:'#6B6056',fontSize:13,fontWeight:700,border:'1px solid #E5E3E0'}}>Remaining: {$k(remaining2026)}</span>
+              <span style={{padding:'6px 14px',borderRadius:20,background:'#1A1A1A',color:'#FFF',fontSize:13,fontWeight:700}}>Goal: $36M</span>
+            </div>
+            <PBar pct={pct2026*100} color={arcColor} h={8}/>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#9E9B96',marginTop:4}}><span>$0</span><span>{Math.round(pct2026*100)}%</span><span>$36M</span></div>
+          </div>
+        </div>
+      </div>;
+    })()}
     {/* Quick Actions */}
     {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
       {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
