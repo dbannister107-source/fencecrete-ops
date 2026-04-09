@@ -1584,6 +1584,18 @@ function ChangeOrdersPage({jobs}){
 }
 
 /* ═══ PM DAILY REPORT PAGE ═══ */
+// Hoisted to module scope so its component identity is stable across PMDailyReportPage
+// re-renders. If this were defined inside the parent's render, every keystroke would
+// remount the section subtree and cause focused inputs/textareas to lose their cursor.
+function PMReportSection({sk,title,filled,isOpen,onToggle,children}){
+  return <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,marginBottom:12,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
+    <button onClick={onToggle} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',background:'#FDF4F4',border:'none',borderBottom:isOpen?'1px solid #F0E0E0':'none',cursor:'pointer',minHeight:52}}>
+      <span style={{fontSize:14,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>✓</span>}</span>
+      <span style={{fontSize:18,color:'#8B2020',fontWeight:700}}>{isOpen?'▾':'▸'}</span>
+    </button>
+    {isOpen&&<div style={{padding:18}}>{children}</div>}
+  </div>;
+}
 function PMDailyReportPage({jobs}){
   const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('selected_pm')||'');
@@ -1671,13 +1683,7 @@ function PMDailyReportPage({jobs}){
       </div>}
     </div>}
     {selPM&&tab==='new'&&(()=>{
-      const Sec=({sk,title,children})=>{const s=SECTIONS.find(x=>x.key===sk);const isOpen=!collapsed[sk];const filled=s&&sectionFilled(s);return<div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,marginBottom:12,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
-        <button onClick={()=>setCollapsed(p=>({...p,[sk]:!p[sk]}))} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',background:'#FDF4F4',border:'none',borderBottom:isOpen?'1px solid #F0E0E0':'none',cursor:'pointer',minHeight:52}}>
-          <span style={{fontSize:14,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>✓</span>}</span>
-          <span style={{fontSize:18,color:'#8B2020',fontWeight:700}}>{isOpen?'▾':'▸'}</span>
-        </button>
-        {isOpen&&<div style={{padding:18}}>{children}</div>}
-      </div>;};
+      const secProps=(sk)=>{const s=SECTIONS.find(x=>x.key===sk);return{sk,isOpen:!collapsed[sk],filled:!!(s&&sectionFilled(s)),onToggle:()=>setCollapsed(p=>({...p,[sk]:!p[sk]}))};};
       return<div style={{paddingBottom:120}}>
       {/* Progress indicator */}
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
@@ -1686,7 +1692,7 @@ function PMDailyReportPage({jobs}){
           <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}><div style={{width:`${(sectionsFilledCount/SECTIONS.length)*100}%`,height:'100%',background:'#8B2020',transition:'width .2s'}}/></div>
         </div>
       </div>
-      <Sec sk="job" title="Job Info">
+      <PMReportSection {...secProps('job')} title="Job Info">
         <div style={{marginBottom:12}}><label style={lblStyle}>Select Job</label>
           <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={mSel}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
         </div>
@@ -1709,21 +1715,21 @@ function PMDailyReportPage({jobs}){
           <div style={{flex:1}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
           <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
         </div>
-      </Sec>
-      <Sec sk="gates" title="Gates">
+      </PMReportSection>
+      <PMReportSection {...secProps('gates')} title="Gates">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/></div>
         </div>
-      </Sec>
-      <Sec sk="posts" title="Posts & Foundation">
+      </PMReportSection>
+      <PMReportSection {...secProps('posts')} title="Posts & Foundation">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/></div>
         </div>
-      </Sec>
-      <Sec sk="panels" title="Panels & Fence">
+      </PMReportSection>
+      <PMReportSection {...secProps('panels')} title="Panels & Fence">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Linear Feet of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -1732,8 +1738,8 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
         </div>
-      </Sec>
-      <Sec sk="sw" title="Single Wythe Fields">
+      </PMReportSection>
+      <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/></div>
@@ -1742,16 +1748,16 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/></div>
         </div>
-      </Sec>
-      <Sec sk="site" title="Site Conditions">
+      </PMReportSection>
+      <PMReportSection {...secProps('site')} title="Site Conditions">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Types of Machinery Used</label><input value={form.machinery_used} onChange={e=>set('machinery_used',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Soil Type</label><select value={form.soil_type} onChange={e=>set('soil_type',e.target.value)} style={mSel}>{['Soil','Rock'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Soil Quality</label><select value={form.soil_quality} onChange={e=>set('soil_quality',e.target.value)} style={mSel}>{['1 - Worst','2','3','4','5 - Best'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Terrain Rating</label><select value={form.terrain_rating} onChange={e=>set('terrain_rating',e.target.value)} style={mSel}>{['1 - Most Difficult','2','3','4','5 - Easiest'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         </div>
-      </Sec>
-      <Sec sk="delays" title="Delays">
+      </PMReportSection>
+      <PMReportSection {...secProps('delays')} title="Delays">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={mSel}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={mSel}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -1761,7 +1767,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Other Defective Materials</label><input value={form.other_defective_materials} onChange={e=>set('other_defective_materials',e.target.value)} style={mInp}/></div>
         </div>
         <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
-      </Sec>
+      </PMReportSection>
       {/* Sticky submit bar — fixed to viewport bottom */}
       <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8B2020',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
         <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
