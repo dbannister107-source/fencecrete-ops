@@ -525,7 +525,7 @@ function BillingPage({jobs,onRefresh}){
   const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
-  const avgDaysFirst=active.filter(j=>n(j.ytd_invoiced)>0&&j.contract_age);const avgD=avgDaysFirst.length?Math.round(avgDaysFirst.reduce((s,j)=>s+n(j.contract_age),0)/avgDaysFirst.length):0;
+  const cutoff='2024-01-01';const avgDaysFirst=jobs.filter(j=>{if(!j.contract_date||!j.last_billed)return false;if(j.contract_date<cutoff)return false;const cd=new Date(j.contract_date).getTime();const lb=new Date(j.last_billed).getTime();return lb>=cd;}).map(j=>Math.round((new Date(j.last_billed).getTime()-new Date(j.contract_date).getTime())/86400000));const avgD=avgDaysFirst.length?Math.round(avgDaysFirst.reduce((s,d)=>s+d,0)/avgDaysFirst.length):-1;const avgDColor=avgD<0?'#9E9B96':avgD<=30?'#1D4ED8':avgD<=60?'#B45309':'#991B1B';
   const fully=active.filter(j=>n(j.pct_billed)>=0.99).length;
   const[billingTab,setBillingTab]=useState('submissions');
   const[editId,setEditId]=useState(null);const[editField,setEditField]=useState(null);const[editVal,setEditVal]=useState('');const[billingF,setBillingF]=useState(null);
@@ -556,7 +556,7 @@ function BillingPage({jobs,onRefresh}){
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Billing</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD+'d'} color="#1D4ED8"/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
       {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&subPendingCount>0&&<span style={{marginLeft:6,background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{subPendingCount}</span>}</button>)}
@@ -591,19 +591,27 @@ function BillingPage({jobs,onRefresh}){
           <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
             <tr>{['Job Name','Job #','PM','Market','Period','LF','% Complete','Amount','Retainage','Net Due','Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
           </thead>
-          <tbody>{subEntries.map(e=>{const job=jobs.find(j=>j.id===e.job_id)||{};const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;const periodLabel=pd?pd.toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—';const isPending=e.status==='pending';const pctCum=e.pct_complete_cumulative?fmtPct(e.pct_complete_cumulative):(n(e.lf_cumulative)>0&&n(job.total_lf)>0?Math.round(n(e.lf_cumulative)/n(job.total_lf)*100)+'%':'—');const amtP=n(e.amount_this_period)||n(e.net_amount_due);const ret=n(e.retainage_amount);const netDue=n(e.net_amount_due)||amtP;return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+          <tbody>{subEntries.map(e=>{const job=jobs.find(j=>j.id===e.job_id)||{};const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;const periodLabel=pd?pd.toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—';const isPending=e.status==='pending';
+            // % complete — cap at 100%
+            const rawPct=n(e.pct_complete_cumulative)||(n(e.lf_cumulative)>0&&n(job.total_lf)>0?n(e.lf_cumulative)/n(job.total_lf):0);const cappedPct=Math.min(rawPct,1);const pctOver=rawPct>1;const pctLabel=cappedPct>0?(Math.round(cappedPct*1000)/10)+'%':'—';
+            // Amount — calculate on-the-fly if saved as 0
+            let amtP=n(e.amount_this_period);const jcv=n(job.adj_contract_value||job.contract_value);const jtlf=n(job.total_lf);
+            if(amtP===0&&n(e.lf_this_period)>0&&jcv>0&&jtlf>0){const cumPct=Math.min(n(e.lf_cumulative)/jtlf,1);amtP=Math.max(jcv*cumPct-n(job.ytd_invoiced),0);}
+            const retPct2=n(e.retainage_pct)||n(job.retainage_pct)||0;const ret=n(e.retainage_amount)||(amtP>0?amtP*(retPct2/100):0);const netDue=n(e.net_amount_due)||(amtP-ret);
+            const noCV=jcv===0&&n(e.lf_this_period)>0;
+            return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{e.job_name||'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11}}>{e.job_number||'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11}}>{e.pm||'—'}</td>
             <td style={{padding:'8px 10px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td>
             <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
             <td style={{padding:'8px 10px'}}>{n(e.lf_this_period).toLocaleString()}</td>
-            <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:4}}><PBar pct={n(e.pct_complete_cumulative)*100||0} h={4}/><span style={{fontSize:10,whiteSpace:'nowrap'}}>{pctCum}</span></div></td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(amtP)}</td>
+            <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:4}}><PBar pct={cappedPct*100} h={4}/><span style={{fontSize:10,whiteSpace:'nowrap'}}>{pctLabel}</span>{pctOver&&<span title="LF exceeds total — capped at 100%" style={{color:'#B45309',fontSize:12}}>⚠</span>}</div></td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{noCV?<span style={{color:'#9E9B96'}} title="Contract value not set">—</span>:$(amtP)}</td>
             <td style={{padding:'8px 10px',fontSize:11,color:'#991B1B'}}>{ret>0?'-'+$(ret):'—'}</td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:'#065F46'}}>{$(netDue)}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:'#065F46'}}>{noCV?'—':$(netDue)}</td>
             <td style={{padding:'8px 10px'}}>{isPending?<span style={pill('#B45309','#FEF3C7')}>Ready to Invoice</span>:<span style={pill('#065F46','#D1FAE5')}>Invoiced</span>}</td>
-            <td style={{padding:'8px 10px'}}>{isPending?<button onClick={()=>{setInvoiceModal(e);setInvoiceAmt(String(Math.round(netDue)));}} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>Invoice</button>:<span style={{fontSize:10,color:'#9E9B96'}}>{fD(e.invoiced_date)}</span>}</td>
+            <td style={{padding:'8px 10px'}}>{isPending?<button onClick={()=>{setInvoiceModal({...e,_calcAmt:amtP,_calcNet:netDue,_calcRet:ret,_calcRetPct:retPct2,_calcPct:pctLabel});setInvoiceAmt(String(Math.round(netDue)));}} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>Invoice</button>:<span style={{fontSize:10,color:'#9E9B96'}}>{fD(e.invoiced_date)}</span>}</td>
           </tr>;})}</tbody>
         </table>
         {subEntries.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>$</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:8}}>No PM billing submissions found</div><div style={{fontSize:12,color:'#9E9B96'}}>{subPeriodF?'Try clearing the period filter or selecting a different month':'PMs submit entries from the PM Bill Sheet page'}</div></div>}
@@ -663,20 +671,24 @@ function BillingPage({jobs,onRefresh}){
     </div>}
 
     {/* Invoice Entry Modal */}
-    {invoiceModal&&(()=>{const imPd=invoiceModal.billing_period?new Date(invoiceModal.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';const imNet=n(invoiceModal.net_amount_due)||n(invoiceModal.amount_this_period);return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setInvoiceModal(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+    {invoiceModal&&(()=>{const imPd=invoiceModal.billing_period?new Date(invoiceModal.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';const imAmt=n(invoiceModal._calcAmt)||n(invoiceModal.amount_this_period);const imNet=n(invoiceModal._calcNet)||n(invoiceModal.net_amount_due)||imAmt;const imRet=n(invoiceModal._calcRet)||n(invoiceModal.retainage_amount);const imRetPct=n(invoiceModal._calcRetPct)||n(invoiceModal.retainage_pct);const imPctLbl=invoiceModal._calcPct||(invoiceModal.pct_complete_cumulative?fmtPct(invoiceModal.pct_complete_cumulative):'—');return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setInvoiceModal(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:480,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:17,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Invoice {invoiceModal.job_name}</div>
-        <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>for {imPd}</div>
+        <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{imPd}</div>
         <div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:16,fontSize:12}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>LF This Period</span><span style={{fontWeight:700}}>{n(invoiceModal.lf_this_period).toLocaleString()}</span></div>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>% Complete</span><span style={{fontWeight:700}}>{invoiceModal.pct_complete_cumulative?fmtPct(invoiceModal.pct_complete_cumulative):'—'}</span></div>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>Amount This Period</span><span style={{fontWeight:700}}>{$(invoiceModal.amount_this_period)}</span></div>
-          {n(invoiceModal.retainage_amount)>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>Retainage ({invoiceModal.retainage_pct}%)</span><span style={{fontWeight:700,color:'#991B1B'}}>-{$(invoiceModal.retainage_amount)}</span></div>}
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>% Complete</span><span style={{fontWeight:700}}>{imPctLbl}</span></div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>Calculated Amount</span><span style={{fontWeight:700}}>{$(imAmt)}</span></div>
+          {imRet>0&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{color:'#6B6056'}}>Retainage ({imRetPct}%)</span><span style={{fontWeight:700,color:'#991B1B'}}>-{$(imRet)}</span></div>}
           <div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:6,marginTop:4}}><span style={{fontWeight:700}}>Net Amount Due</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#065F46',fontSize:16}}>{$(imNet)}</span></div>
         </div>
-        <div style={{marginBottom:16}}>
+        <div style={{marginBottom:12}}>
           <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) — adds to YTD Invoiced</label>
           <input type="number" value={invoiceAmt} onChange={e=>setInvoiceAmt(e.target.value)} style={inputS} autoFocus/>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes (optional)</label>
+          <textarea rows={2} style={{...inputS,resize:'vertical'}} placeholder="Invoice notes..."/>
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setInvoiceModal(null)} style={btnS}>Cancel</button><button onClick={invoiceEntry} style={{...btnP,background:'#065F46'}}>Confirm Invoice</button></div>
       </div>
