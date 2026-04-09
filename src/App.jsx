@@ -490,7 +490,7 @@ function BillingPage({jobs,onRefresh}){
 }
 
 /* ═══ PM BILLING PAGE ═══ */
-const ACTIVE_STATUSES=['production_queue','in_production','ready_to_install'];
+const ACTIVE_STATUSES=['in_production','complete'];
 
 function PMBillingPage({jobs,onRefresh}){
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
@@ -515,7 +515,7 @@ function PMBillingPage({jobs,onRefresh}){
   const curMonthLabel=now.toLocaleDateString('en-US',{month:'long',year:'numeric'});
   const curMonthFirst=`${curMonth}-01`;
 
-  const activeJobs=useMemo(()=>jobs.filter(j=>['production_queue','in_production','ready_to_install'].includes(j.status)),[jobs]);
+  const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','complete'].includes(j.status)),[jobs]);
 
   const pmEntries=useMemo(()=>selPM?entries.filter(e=>e.pm===selPM):entries,[entries,selPM]);
 
