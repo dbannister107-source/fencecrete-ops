@@ -596,6 +596,17 @@ function BillingPage({jobs,onRefresh}){
   const getPendingForJob=(jobId)=>pmEntries.filter(e=>e.job_id===jobId);
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
   const saveEdit=async j=>{const u={[editField]:editVal};if(editField==='ytd_invoiced'){const adj=n(j.adj_contract_value||j.contract_value);const ytd=n(editVal);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',editField,j[editField],editVal);setEditId(null);setEditField(null);onRefresh();};
+  // Monthly billing entry modal — replaces the inline edit on ytd_invoiced.
+  // History is the source of truth: ytd_invoiced is recomputed from billing_entries
+  // for the current calendar year on every save/delete.
+  const[billingModal,setBillingModal]=useState(null);const[billingHistory,setBillingHistory]=useState([]);const[billingLoading,setBillingLoading]=useState(false);
+  const[billingForm,setBillingForm]=useState({billing_month:defPeriod,amount:'',notes:'',entered_by:''});
+  const fetchBillingEntries=async(jobId)=>{const d=await sbGet('billing_entries',`job_id=eq.${jobId}&order=billing_month.desc,created_at.desc`);return d||[];};
+  const recalcYTDFromEntries=async(job,entries)=>{const yr=new Date().getFullYear();const ytd=entries.filter(e=>e.billing_month&&e.billing_month.startsWith(yr+'-')).reduce((s,e)=>s+n(e.amount),0);const adj=n(job.adj_contract_value||job.contract_value);const u={ytd_invoiced:ytd,pct_billed:adj>0?Math.round(ytd/adj*10000)/10000:0,left_to_bill:adj-ytd};await sbPatch('jobs',job.id,u);return u;};
+  const openBillingModal=async j=>{setBillingModal(j);setBillingForm({billing_month:defPeriod,amount:'',notes:'',entered_by:localStorage.getItem('last_entered_by')||''});setBillingLoading(true);const entries=await fetchBillingEntries(j.id);setBillingHistory(entries);setBillingLoading(false);};
+  const closeBillingModal=()=>{setBillingModal(null);setBillingHistory([]);setBillingForm({billing_month:defPeriod,amount:'',notes:'',entered_by:''});};
+  const saveBillingEntry=async()=>{if(!billingModal)return;const j=billingModal;if(!billingForm.billing_month||!n(billingForm.amount)){setToast({message:'Month and amount are required',isError:true});return;}const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingForm.billing_month,amount:n(billingForm.amount),notes:billingForm.notes||null,entered_by:billingForm.entered_by||null};try{const res=await fetch(`${SB}/rest/v1/billing_entries`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt}`);}if(billingForm.entered_by)localStorage.setItem('last_entered_by',billingForm.entered_by);const entries=await fetchBillingEntries(j.id);setBillingHistory(entries);await recalcYTDFromEntries(j,entries);logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,'+'+body.amount);setBillingForm(p=>({...p,amount:'',notes:''}));setToast('Billing entry saved');onRefresh();}catch(err){console.error('Billing entry save failed:',err);setToast({message:`Save failed: ${err.message||err}`,isError:true});}};
+  const deleteBillingEntry=async id=>{if(!billingModal)return;if(!window.confirm('Delete this billing entry? YTD will be recalculated.'))return;await sbDel('billing_entries',id);const entries=await fetchBillingEntries(billingModal.id);setBillingHistory(entries);await recalcYTDFromEntries(billingModal,entries);setToast('Entry deleted');onRefresh();};
   const confirmMarkFull=async()=>{if(!confirmFullJob)return;const j=confirmFullJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:adj,pct_billed:1,left_to_bill:0};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,adj);setConfirmFullJob(null);setToast(`${j.job_name} marked as 100% billed`);onRefresh();};
   const confirmUndo=async()=>{if(!undoJob)return;const j=undoJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:0,pct_billed:0,left_to_bill:adj};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,0);setUndoJob(null);setToast(`Undo: ${j.job_name} YTD reset to $0`);onRefresh();};
   const recentlyBilled=useMemo(()=>jobs.filter(j=>n(j.pct_billed)>=0.99).sort((a,b)=>(b.last_billed||'').localeCompare(a.last_billed||'')).slice(0,10),[jobs]);
@@ -694,7 +705,7 @@ function BillingPage({jobs,onRefresh}){
           <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
           <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
-          <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'ytd_invoiced')}>{editId===j.id&&editField==='ytd_invoiced'?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:100,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{$(j.ytd_invoiced)}</span>}</td>
+          <td style={{padding:'8px 10px',cursor:'pointer'}} onClick={()=>openBillingModal(j)} title="Log monthly billing entry"><span style={{borderBottom:'1px dashed #8B202060',color:'#8B2020',fontWeight:600}}>{$(j.ytd_invoiced)}</span></td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:n(j.left_to_bill)>100000?'#991B1B':n(j.left_to_bill)>50000?'#B45309':'#065F46',fontSize:13}}>{$(j.left_to_bill)}</td>
           <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><PBar pct={n(j.pct_billed)*100} h={4}/><span style={{fontSize:11}}>{fmtPct(j.pct_billed)}</span></div></td>
           <td style={{padding:'8px 10px'}}>{pending.length>0?<span style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:700,padding:'3px 8px'}}>{pending.length} pending</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
@@ -761,6 +772,43 @@ function BillingPage({jobs,onRefresh}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm — Mark Fully Billed</button></div>
       </div>
     </div>}
+    {/* Billing Entry Modal — log monthly entry + view/manage history */}
+    {billingModal&&(()=>{const j=billingModal;const histTotal=billingHistory.reduce((s,e)=>s+n(e.amount),0);const yr=new Date().getFullYear();const ytdSum=billingHistory.filter(e=>e.billing_month&&e.billing_month.startsWith(yr+'-')).reduce((s,e)=>s+n(e.amount),0);const fmtMonth=(m)=>{if(!m)return'—';const[y,mo]=m.split('-');if(!y||!mo)return m;return new Date(+y,+mo-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeBillingModal}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'92vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:17,fontWeight:800,marginBottom:2,color:'#1A1A1A'}}>Log Billing Entry — {j.job_name}</div>
+        <div style={{fontSize:12,color:'#9E9B96',marginBottom:14}}>{j.job_number} · Contract {$(j.adj_contract_value||j.contract_value)} · YTD {$(ytdSum||j.ytd_invoiced)}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Billing Month</label><input type="month" value={billingForm.billing_month} onChange={e=>setBillingForm(p=>({...p,billing_month:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Amount This Month ($)</label><input type="number" value={billingForm.amount} onChange={e=>setBillingForm(p=>({...p,amount:e.target.value}))} placeholder="0" style={inputS} autoFocus/></div>
+        </div>
+        <div style={{marginBottom:10}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes (optional)</label><input value={billingForm.notes} onChange={e=>setBillingForm(p=>({...p,notes:e.target.value}))} placeholder="Invoice #, milestone, etc." style={inputS}/></div>
+        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={billingForm.entered_by} onChange={e=>setBillingForm(p=>({...p,entered_by:e.target.value}))} placeholder="Your name" style={inputS}/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginBottom:18}}><button onClick={closeBillingModal} style={btnS}>Close</button><button onClick={saveBillingEntry} style={btnP}>Save Entry</button></div>
+        {/* Billing History */}
+        <div style={{borderTop:'1px solid #E5E3E0',paddingTop:14}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:'#1A1A1A'}}>Billing History</div>
+          {billingLoading?<div style={{color:'#9E9B96',fontSize:12,padding:12}}>Loading…</div>:billingHistory.length===0?<div style={{color:'#9E9B96',fontSize:12,padding:12,textAlign:'center',background:'#F9F8F6',borderRadius:8}}>No entries yet — save one above to get started</div>:<div style={{maxHeight:260,overflow:'auto',border:'1px solid #E5E3E0',borderRadius:8}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:1}}><tr>{['Month','Amount','Notes','Entered By','Date',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',color:'#6B6056',fontSize:10,fontWeight:700,textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+              <tbody>{billingHistory.map(e=><tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'8px 10px',fontWeight:600}}>{fmtMonth(e.billing_month)}</td>
+                <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,color:'#065F46'}}>{$(e.amount)}</td>
+                <td style={{padding:'8px 10px',color:'#6B6056',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={e.notes||e.note||''}>{e.notes||e.note||'—'}</td>
+                <td style={{padding:'8px 10px',color:'#6B6056'}}>{e.entered_by||'—'}</td>
+                <td style={{padding:'8px 10px',fontSize:10,color:'#9E9B96'}}>{fD(e.created_at)}</td>
+                <td style={{padding:'8px 10px'}}><button onClick={()=>deleteBillingEntry(e.id)} title="Delete entry" style={{background:'none',border:'none',color:'#991B1B',cursor:'pointer',fontSize:14,padding:'2px 6px'}}>×</button></td>
+              </tr>)}
+              <tr style={{background:'#F9F8F6',borderTop:'2px solid #E5E3E0'}}>
+                <td style={{padding:'10px',fontWeight:800,fontSize:11,textTransform:'uppercase',color:'#6B6056'}}>Total</td>
+                <td style={{padding:'10px',fontFamily:'Inter',fontWeight:800,color:'#1A1A1A'}}>{$(histTotal)}</td>
+                <td colSpan={4} style={{padding:'10px',fontSize:10,color:'#9E9B96'}}>YTD {yr}: {$(ytdSum)}</td>
+              </tr>
+              </tbody>
+            </table>
+          </div>}
+        </div>
+      </div>
+    </div>;})()}
     {/* Confirm Undo Modal */}
     {undoJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setUndoJob(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:420}} onClick={e=>e.stopPropagation()}>
