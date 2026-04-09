@@ -1721,6 +1721,200 @@ function PMDailyReportPage({jobs}){
   </div>);
 }
 
+/* ═══ ESTIMATING PAGE ═══ */
+const MKT_RATES={Houston:{pc:108,sw:173,wi:78,gate:9262},Austin:{pc:134,sw:148,wi:0,gate:6642},'Dallas-Fort Worth':{pc:131,sw:192,wi:0,gate:13880},'San Antonio':{pc:123,sw:0,wi:0,gate:5133}};
+const EST_STATUS_C={draft:['#6B6056','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2'],expired:['#B45309','#FEF3C7']};
+function EstimatingPage({jobs,onNav}){
+  const[tab,setTab]=useState('list');const[estimates,setEstimates]=useState([]);const[loading,setLoading]=useState(true);const[toast,setToast]=useState(null);
+  const[editEst,setEditEst]=useState(null);const[lostModal,setLostModal]=useState(null);const[lostReason,setLostReason]=useState('');
+  const[listSearch,setListSearch]=useState('');const[listMktF,setListMktF]=useState(null);const[listRepF,setListRepF]=useState('');const[listStatusF,setListStatusF]=useState(null);
+  const fetchEst=useCallback(async()=>{setLoading(true);const d=await sbGet('estimates','select=*&order=created_at.desc');setEstimates(d||[]);setLoading(false);},[]);
+  useEffect(()=>{fetchEst();},[fetchEst]);
+  // New estimate form state
+  const todayISO=new Date().toISOString().split('T')[0];const plus30=(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().split('T')[0];})();
+  const nextNum=`EST-${new Date().getFullYear()}-${String((estimates.filter(e=>e.estimate_number&&e.estimate_number.includes(String(new Date().getFullYear()))).length||0)+1).padStart(3,'0')}`;
+  const emptyEst=()=>({estimate_number:nextNum,customer_name:'',contact_name:'',contact_email:'',contact_phone:'',market:'',job_type:'Commercial',sales_rep:'',address:'',city:'',state:'TX',zip:'',bid_due_date:'',est_start_date:'',valid_until:plus30,lf_precast:'',height_precast:'',style_precast:'',color_precast:'',rate_precast:'',lf_sw:'',height_sw:'',style_sw:'',rate_sw:'',lf_wi:'',height_wi:'',rate_wi:'',lf_removal:'',height_removal:'',removal_type:'',rate_removal:'',lf_other:'',desc_other:'',rate_other:'',gate_qty:'',gate_height:'',gate_desc:'',rate_gate:'',lump_sum_desc:'',lump_sum_amt:'',sales_tax_type:'Exempt',sales_tax_pct:0,retainage_pct:0,aia:false,bonds:false,cert_pay:false,ocip:false,scope_notes:'',exclusions:'',internal_notes:'',status:'draft'});
+  const[f,setF]=useState(emptyEst);const[saving,setSaving]=useState(false);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const mr=MKT_RATES[f.market]||{pc:0,sw:0,wi:0,gate:0};
+  // Live calcs
+  const pcSub=n(f.lf_precast)*n(f.rate_precast);const swSub=n(f.lf_sw)*n(f.rate_sw);const wiSub=n(f.lf_wi)*n(f.rate_wi);
+  const rmSub=n(f.lf_removal)*n(f.rate_removal);const otSub=n(f.lf_other)*n(f.rate_other);
+  const gtSub=n(f.gate_qty)*n(f.rate_gate);const lsSub=n(f.lump_sum_amt);
+  const netEst=pcSub+swSub+wiSub+rmSub+otSub+gtSub+lsSub;
+  const taxAmt=f.sales_tax_type==='Taxable'?netEst*(n(f.sales_tax_pct)/100):0;
+  const totalEst=netEst+taxAmt;
+  const totalLF=n(f.lf_precast)+n(f.lf_sw)+n(f.lf_wi)+n(f.lf_removal)+n(f.lf_other);
+  const blended=totalLF>0?(netEst-gtSub-lsSub)/totalLF:0;
+  // Market comparison
+  const mktAvgBlended=mr.pc||mr.sw||0;const rateDiff=mktAvgBlended>0&&blended>0?((blended-mktAvgBlended)/mktAvgBlended*100):null;
+  const rateColor=rateDiff===null?'#9E9B96':rateDiff<-5?'#1D4ED8':Math.abs(rateDiff)<=10?'#065F46':rateDiff<=25?'#B45309':'#991B1B';
+  const rateLabel=rateDiff===null?'—':rateDiff<-5?`${Math.abs(Math.round(rateDiff))}% below avg`:Math.abs(rateDiff)<=10?'Within market range':`${Math.round(rateDiff)}% above avg`;
+  const saveEstimate=async(status)=>{setSaving(true);const body={...f,status:status||f.status,net_estimate:netEst,total_estimate:totalEst,total_lf:totalLF,estimate_date:todayISO};if(editEst){await sbPatch('estimates',editEst.id,body);setToast('Estimate updated');}else{await sbPost('estimates',body);setToast('Estimate saved');}setSaving(false);setTab('list');setEditEst(null);fetchEst();};
+  const convertToProject=async()=>{const body={job_name:f.customer_name+' — '+(f.address||f.city||''),customer_name:f.customer_name,market:f.market,job_type:f.job_type,sales_rep:f.sales_rep,address:f.address,city:f.city,state:f.state,zip:f.zip,status:'contract_review',fence_type:n(f.lf_precast)>0?(n(f.lf_sw)>0?'PC/SW':'PC'):(n(f.lf_sw)>0?'SW':(n(f.lf_wi)>0?'WI':'Other')),lf_precast:n(f.lf_precast),height_precast:n(f.height_precast),style:f.style_precast,color:f.color_precast,contract_rate_precast:n(f.rate_precast),lf_single_wythe:n(f.lf_sw),height_single_wythe:n(f.height_sw),style_single_wythe:f.style_sw,contract_rate_single_wythe:n(f.rate_sw),lf_wrought_iron:n(f.lf_wi),height_wrought_iron:n(f.height_wi),contract_rate_wrought_iron:n(f.rate_wi),lf_removal:n(f.lf_removal),contract_rate_removal:n(f.rate_removal),number_of_gates:n(f.gate_qty),gate_height:n(f.gate_height),gate_description:f.gate_desc,gate_rate:n(f.rate_gate),lump_sum_amount:n(f.lump_sum_amt),lump_sum_description:f.lump_sum_desc,net_contract_value:netEst,contract_value:totalEst,adj_contract_value:totalEst,total_lf:totalLF,sales_tax:taxAmt,retainage_pct:n(f.retainage_pct),aia_billing:f.aia,bonds:f.bonds,certified_payroll:f.cert_pay,ocip_ccip:f.ocip,est_start_date:f.est_start_date,ytd_invoiced:0,pct_billed:0,left_to_bill:totalEst,change_orders:0,pm:AUTO_PM(f.market,n(f.lf_precast)>0?'PC':'SW')};const saved=await sbPost('jobs',body);if(saved&&saved[0]){if(editEst)await sbPatch('estimates',editEst.id,{status:'won',converted_to_job_id:saved[0].id});fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','','From estimate '+f.estimate_number);setToast(`Project created from estimate — ${f.customer_name}`);if(onNav)onNav('projects',saved[0]);}};
+  const openEdit=(est)=>{setF({...emptyEst(),...est,rate_precast:est.rate_precast||'',rate_sw:est.rate_sw||'',rate_wi:est.rate_wi||'',rate_removal:est.rate_removal||'',rate_other:est.rate_other||'',rate_gate:est.rate_gate||''});setEditEst(est);setTab('new');};
+  const markWon=async(est)=>{await sbPatch('estimates',est.id,{status:'won'});setToast('Marked as Won');fetchEst();};
+  const markLost=async()=>{if(!lostModal)return;await sbPatch('estimates',lostModal.id,{status:'lost',lost_reason:lostReason});setLostModal(null);setLostReason('');setToast('Marked as Lost');fetchEst();};
+  const printEst=()=>{window.print();};
+  // Filtered list
+  const filteredEst=useMemo(()=>{let e2=estimates;if(listSearch){const q=listSearch.toLowerCase();e2=e2.filter(e=>`${e.customer_name} ${e.estimate_number} ${e.contact_name}`.toLowerCase().includes(q));}if(listMktF)e2=e2.filter(e=>e.market===listMktF);if(listRepF)e2=e2.filter(e=>e.sales_rep===listRepF);if(listStatusF)e2=e2.filter(e=>e.status===listStatusF);return e2;},[estimates,listSearch,listMktF,listRepF,listStatusF]);
+  const nowM2=new Date();const thisMonthEst=estimates.filter(e=>e.created_at&&new Date(e.created_at).getMonth()===nowM2.getMonth()&&new Date(e.created_at).getFullYear()===nowM2.getFullYear());
+  const wonThisMonth=thisMonthEst.filter(e=>e.status==='won');const winRate=thisMonthEst.length>0?Math.round(wonThisMonth.length/thisMonthEst.length*100):0;
+  const totalValue=thisMonthEst.reduce((s,e)=>s+n(e.total_estimate),0);
+  const secH=(t)=><div style={{fontSize:12,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>{t}</div>;
+  const lbl=(l)=><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}</label>;
+  const grd='repeat(auto-fill,minmax(200px,1fr))';
+  return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Estimating</h1>
+      <div style={{display:'flex',gap:8}}><button onClick={()=>{setF(emptyEst());setEditEst(null);setTab('new');}} style={gpill(tab==='new')}>+ New Estimate</button><button onClick={()=>setTab('list')} style={gpill(tab==='list')}>All Estimates</button></div>
+    </div>
+    {/* LIST VIEW */}
+    {tab==='list'&&<div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:20}}>
+        <KPI label="Estimates This Month" value={thisMonthEst.length}/><KPI label="Value" value={$k(totalValue)} color="#1D4ED8"/><KPI label="Won This Month" value={wonThisMonth.length} color="#065F46"/><KPI label="Win Rate" value={winRate+'%'} color={winRate>=40?'#065F46':'#B45309'}/>
+      </div>
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={listSearch} onChange={e=>setListSearch(e.target.value)} placeholder="Search customer, estimate #..." style={{...inputS,width:240}}/>
+        <button onClick={()=>setListMktF(null)} style={fpill(!listMktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setListMktF(m)} style={fpill(listMktF===m)}>{MS[m]}</button>)}
+        <select value={listRepF} onChange={e=>setListRepF(e.target.value)} style={{...inputS,width:130}}><option value="">All Reps</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select>
+        <button onClick={()=>setListStatusF(null)} style={fpill(!listStatusF)}>All</button>{['draft','sent','won','lost'].map(s=><button key={s} onClick={()=>setListStatusF(s)} style={fpill(listStatusF===s)}>{s}</button>)}
+        <span style={{fontSize:12,color:'#6B6056'}}>{filteredEst.length} estimates</span>
+      </div>
+      {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Estimate #','Customer','Market','Sales Rep','Total','Status','Bid Due','Created','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{filteredEst.map(e=>{const[sc2,sb2]=EST_STATUS_C[e.status]||['#6B6056','#F4F4F2'];return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onClick={()=>openEdit(e)} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
+            <td style={{padding:'8px 10px',fontWeight:600}}>{e.estimate_number||'—'}</td>
+            <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.customer_name||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{e.market?<span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||e.market}</span>:'—'}</td>
+            <td style={{padding:'8px 10px'}}>{e.sales_rep||'—'}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(e.total_estimate)}</td>
+            <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{e.status||'draft'}</span></td>
+            <td style={{padding:'8px 10px'}}>{fD(e.bid_due_date)}</td>
+            <td style={{padding:'8px 10px',color:'#9E9B96'}}>{fD(e.created_at)}</td>
+            <td style={{padding:'8px 10px'}} onClick={ev=>ev.stopPropagation()}><div style={{display:'flex',gap:4}}>
+              {e.status==='sent'&&<><button onClick={()=>markWon(e)} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:4,color:'#065F46',fontSize:10,fontWeight:700,cursor:'pointer',padding:'2px 6px'}}>Won</button><button onClick={()=>{setLostModal(e);setLostReason('');}} style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:4,color:'#991B1B',fontSize:10,fontWeight:700,cursor:'pointer',padding:'2px 6px'}}>Lost</button></>}
+            </div></td>
+          </tr>;})}
+          {filteredEst.length===0&&<tr><td colSpan={9} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>📊</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No estimates yet</div><button onClick={()=>{setF(emptyEst());setEditEst(null);setTab('new');}} style={{...btnP,fontSize:12}}>+ Create First Estimate</button></td></tr>}
+          </tbody></table>
+      </div>}
+    </div>}
+    {/* NEW / EDIT ESTIMATE */}
+    {tab==='new'&&<div style={{display:'flex',gap:20}}>
+      <div style={{flex:1,minWidth:0,maxHeight:'calc(100vh - 180px)',overflow:'auto',paddingRight:8}}>
+        {secH('Customer & Job Info')}
+        <div style={{display:'grid',gridTemplateColumns:grd,gap:10}}>
+          <div>{lbl('Estimate #')}<input value={f.estimate_number} onChange={e=>set('estimate_number',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Customer Name')}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Contact Name')}<input value={f.contact_name} onChange={e=>set('contact_name',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Email')}<input value={f.contact_email} onChange={e=>set('contact_email',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Phone')}<input value={f.contact_phone} onChange={e=>set('contact_phone',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Market')}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div>{lbl('Job Type')}<select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div>{lbl('Sales Rep')}<select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+          <div>{lbl('Address')}<input value={f.address} onChange={e=>set('address',e.target.value)} style={inputS}/></div>
+          <div>{lbl('City')}<input value={f.city} onChange={e=>set('city',e.target.value)} style={inputS}/></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}><div>{lbl('State')}<input value={f.state} onChange={e=>set('state',e.target.value)} style={inputS}/></div><div>{lbl('ZIP')}<input value={f.zip} onChange={e=>set('zip',e.target.value)} style={inputS}/></div></div>
+          <div>{lbl('Bid Due Date')}<input type="date" value={f.bid_due_date} onChange={e=>set('bid_due_date',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Est. Start')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
+          <div>{lbl('Valid Until')}<input type="date" value={f.valid_until} onChange={e=>set('valid_until',e.target.value)} style={inputS}/></div>
+        </div>
+        {secH('Scope of Work')}
+        {/* Precast */}
+        <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,color:'#8B2020',marginBottom:6,padding:'4px 8px',background:'#FEF3C7',borderRadius:4}}>PRECAST CONCRETE</div>
+          <div style={{display:'grid',gridTemplateColumns:grd,gap:8}}>
+            <div>{lbl('LF')}<input type="number" value={f.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Height (ft)')}<input type="number" value={f.height_precast} onChange={e=>set('height_precast',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Style')}<input value={f.style_precast} onChange={e=>set('style_precast',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Color')}<input value={f.color_precast} onChange={e=>set('color_precast',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Rate ($/LF)')}<input type="number" value={f.rate_precast} onChange={e=>set('rate_precast',e.target.value)} placeholder={mr.pc?`avg $${mr.pc}/LF`:''} style={inputS}/></div>
+            <div>{lbl('Subtotal')}<div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(pcSub)}</div></div>
+          </div>
+        </div>
+        {/* Single Wythe */}
+        <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,color:'#1D4ED8',marginBottom:6,padding:'4px 8px',background:'#DBEAFE',borderRadius:4}}>SINGLE WYTHE MASONRY</div>
+          <div style={{display:'grid',gridTemplateColumns:grd,gap:8}}>
+            <div>{lbl('LF')}<input type="number" value={f.lf_sw} onChange={e=>set('lf_sw',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Height (ft)')}<input type="number" value={f.height_sw} onChange={e=>set('height_sw',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Style')}<input value={f.style_sw} onChange={e=>set('style_sw',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Rate ($/LF)')}<input type="number" value={f.rate_sw} onChange={e=>set('rate_sw',e.target.value)} placeholder={mr.sw?`avg $${mr.sw}/LF`:''} style={inputS}/></div>
+            <div>{lbl('Subtotal')}<div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(swSub)}</div></div>
+          </div>
+        </div>
+        {/* Wrought Iron */}
+        <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,color:'#6D28D9',marginBottom:6,padding:'4px 8px',background:'#EDE9FE',borderRadius:4}}>WROUGHT IRON</div>
+          <div style={{display:'grid',gridTemplateColumns:grd,gap:8}}>
+            <div>{lbl('LF')}<input type="number" value={f.lf_wi} onChange={e=>set('lf_wi',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Height (ft)')}<input type="number" value={f.height_wi} onChange={e=>set('height_wi',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Rate ($/LF)')}<input type="number" value={f.rate_wi} onChange={e=>set('rate_wi',e.target.value)} placeholder={mr.wi?`avg $${mr.wi}/LF`:''} style={inputS}/></div>
+            <div>{lbl('Subtotal')}<div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(wiSub)}</div></div>
+          </div>
+        </div>
+        {/* Removal + Other + Gates + Lump Sum */}
+        <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:6,padding:'4px 8px',background:'#F4F4F2',borderRadius:4}}>REMOVAL / GATES / OTHER</div>
+          <div style={{display:'grid',gridTemplateColumns:grd,gap:8}}>
+            <div>{lbl('Removal LF')}<input type="number" value={f.lf_removal} onChange={e=>set('lf_removal',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Removal Rate')}<input type="number" value={f.rate_removal} onChange={e=>set('rate_removal',e.target.value)} style={inputS}/></div>
+            <div>{lbl('# Gates')}<input type="number" value={f.gate_qty} onChange={e=>set('gate_qty',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Gate Rate ($)')}<input type="number" value={f.rate_gate} onChange={e=>set('rate_gate',e.target.value)} placeholder={mr.gate?`avg $${mr.gate.toLocaleString()}`:''} style={inputS}/></div>
+            <div>{lbl('Gate Desc')}<input value={f.gate_desc} onChange={e=>set('gate_desc',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Other LF')}<input type="number" value={f.lf_other} onChange={e=>set('lf_other',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Other Rate')}<input type="number" value={f.rate_other} onChange={e=>set('rate_other',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Lump Sum $')}<input type="number" value={f.lump_sum_amt} onChange={e=>set('lump_sum_amt',e.target.value)} style={inputS}/></div>
+            <div>{lbl('Lump Sum Desc')}<input value={f.lump_sum_desc} onChange={e=>set('lump_sum_desc',e.target.value)} style={inputS}/></div>
+          </div>
+        </div>
+        {secH('Pricing & Requirements')}
+        <div style={{display:'grid',gridTemplateColumns:grd,gap:10,marginBottom:16}}>
+          <div>{lbl('Sales Tax')}<select value={f.sales_tax_type} onChange={e=>set('sales_tax_type',e.target.value)} style={inputS}><option value="Exempt">Exempt</option><option value="Taxable">Taxable</option></select></div>
+          {f.sales_tax_type==='Taxable'&&<div>{lbl('Tax %')}<input type="number" value={f.sales_tax_pct} onChange={e=>set('sales_tax_pct',e.target.value)} placeholder="8.25" style={inputS}/></div>}
+          <div>{lbl('Retainage %')}<input type="number" value={f.retainage_pct} onChange={e=>set('retainage_pct',e.target.value)} placeholder="0" style={inputS}/></div>
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:16}}>
+          {[['AIA (G702/703)','aia'],['Bonds','bonds'],['Certified Payroll','cert_pay'],['OCIP/CCIP','ocip']].map(([l,k])=><label key={k} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'#F9F8F6',borderRadius:6,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:12}}><input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{accentColor:'#8B2020'}}/>{l}</label>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:10}}>
+          <div>{lbl('Scope Notes')}<textarea value={f.scope_notes} onChange={e=>set('scope_notes',e.target.value)} rows={3} placeholder="What's included in this estimate..." style={{...inputS,resize:'vertical'}}/></div>
+          <div>{lbl('Exclusions')}<textarea value={f.exclusions} onChange={e=>set('exclusions',e.target.value)} rows={2} placeholder="What's NOT included..." style={{...inputS,resize:'vertical'}}/></div>
+          <div>{lbl('Internal Notes')}<textarea value={f.internal_notes} onChange={e=>set('internal_notes',e.target.value)} rows={2} placeholder="Not shown to customer..." style={{...inputS,resize:'vertical'}}/></div>
+        </div>
+        {/* Footer actions */}
+        <div style={{display:'flex',gap:8,marginTop:20,paddingBottom:20}}>
+          <button onClick={()=>saveEstimate('draft')} disabled={saving} style={btnS}>{saving?'Saving...':'Save Draft'}</button>
+          <button onClick={()=>saveEstimate('sent')} disabled={saving} style={{...btnP,background:'#1D4ED8'}}>Mark as Sent</button>
+          <button onClick={convertToProject} disabled={saving||!f.customer_name} style={{...btnP,background:'#065F46'}}>Convert to Project →</button>
+          <button onClick={printEst} style={btnS}>Print</button>
+        </div>
+      </div>
+      {/* LIVE PRICE SUMMARY — sticky right panel */}
+      <div style={{width:280,flexShrink:0,position:'sticky',top:0,alignSelf:'flex-start'}}>
+        <div style={{...card,background:'#1A1A1A',color:'#fff',border:'none'}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,color:'#9E9B96',marginBottom:12}}>Estimate Summary</div>
+          {[[`Precast (${n(f.lf_precast).toLocaleString()} LF)`,pcSub],[`Single Wythe (${n(f.lf_sw).toLocaleString()} LF)`,swSub],[`Wrought Iron (${n(f.lf_wi).toLocaleString()} LF)`,wiSub],['Removal',rmSub],['Other/Extras',otSub],[`Gates (${n(f.gate_qty)})`,gtSub],['Lump Sum',lsSub]].filter(([,v])=>v>0).map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #333'}}><span style={{color:'#9E9B96'}}>{l}</span><span>{$(v)}</span></div>)}
+          <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',fontSize:12,borderBottom:'1px solid #555',marginTop:4}}><span style={{color:'#9E9B96'}}>Net Estimate</span><span style={{fontWeight:700}}>{$(netEst)}</span></div>
+          {taxAmt>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #333'}}><span style={{color:'#9E9B96'}}>Sales Tax ({n(f.sales_tax_pct)}%)</span><span>{$(taxAmt)}</span></div>}
+          <div style={{display:'flex',justifyContent:'space-between',padding:'10px 0 4px',fontSize:20}}><span style={{fontWeight:800}}>TOTAL</span><span style={{fontFamily:'Inter',fontWeight:900,color:'#8B2020'}}>{$(totalEst)}</span></div>
+          <div style={{borderTop:'1px solid #555',paddingTop:8,marginTop:4}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:4}}><span style={{color:'#9E9B96'}}>Total LF</span><span>{totalLF.toLocaleString()}</span></div>
+            {blended>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:4}}><span style={{color:'#9E9B96'}}>$/LF Blended</span><span>${blended.toFixed(2)}</span></div>}
+            {rateDiff!==null&&<div style={{marginTop:6,padding:'4px 8px',borderRadius:4,background:rateColor+'20',color:rateColor,fontSize:10,fontWeight:700,textAlign:'center'}}>{rateLabel}</div>}
+          </div>
+        </div>
+      </div>
+    </div>}
+    {/* Lost Reason Modal */}
+    {lostModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setLostModal(null)}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:400}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:12}}>Why was this estimate lost?</div>
+        <select value={lostReason} onChange={e=>setLostReason(e.target.value)} style={{...inputS,marginBottom:16}}><option value="">— Select reason —</option>{['Price too high','Competitor','No decision','Out of scope','Other'].map(r=><option key={r} value={r}>{r}</option>)}</select>
+        <div style={{display:'flex',gap:8}}><button onClick={markLost} disabled={!lostReason} style={{...btnP,background:'#991B1B',flex:1,opacity:lostReason?1:0.5}}>Mark as Lost</button><button onClick={()=>setLostModal(null)} style={btnS}>Cancel</button></div>
+      </div>
+    </div>}
+  </div>);
+}
+
 /* ═══ MAP PAGE ═══ */
 const MKT_COORDS={Austin:[30.2672,-97.7431],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
 const MKT_PIN={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
@@ -1817,7 +2011,7 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
-const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'map',label:'Map',icon:'📍'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
+const NAV=[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'estimating',label:'Estimating',icon:'📊'},{key:'map',label:'Map',icon:'📍'},{key:'projects',label:'Projects',icon:'◧'},{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'},{key:'production',label:'Production',icon:'⚙'},{key:'reports',label:'Reports',icon:'◑'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Daily Report',icon:'📋'}];
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
@@ -1845,6 +2039,7 @@ export default function App(){
         <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
           {loading?<div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'50vh',color:'#9E9B96'}}>Loading...</div>:<>
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage}/>}
+            {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs}/>}
