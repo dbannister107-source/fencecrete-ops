@@ -13,7 +13,12 @@
       "Bash(tail -n +1964 src/App.jsx)",
       "Read(//tmp/**)",
       "Bash(cat /tmp/app_top.jsx src/est_middle.txt /tmp/app_bottom.jsx)",
-      "Bash(rm src/est_middle.txt)"
+      "Bash(rm src/est_middle.txt)",
+      "Bash(pnpm:*)",
+      "Read(//c/Users/dbann/.local/share/**)",
+      "Read(//c/Users/dbann/AppData/Local/com.vercel.cli/**)",
+      "Read(//c/Users/dbann/.config/**)",
+      "Read(//c/Users/dbann/**)"
     ]
   }
 }

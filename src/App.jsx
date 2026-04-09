@@ -52,7 +52,7 @@ const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeigh
 const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#9E9B96' });
 
 /* ═══ SHARED ═══ */
-function Toast({message,onDone}){useEffect(()=>{const t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[onDone]);return<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:'#8B2020',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{message}</div>;}
+function Toast({message,onDone,isError}){useEffect(()=>{const t=setTimeout(onDone,isError?6000:2500);return()=>clearTimeout(t);},[onDone,isError]);return<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:isError?'#DC2626':'#8B2020',color:'#fff',padding:isError?'12px 24px':'8px 20px',borderRadius:isError?10:20,fontSize:13,fontWeight:600,zIndex:9999,maxWidth:'90vw',boxShadow:isError?'0 4px 16px rgba(220,38,38,0.4)':'none'}}>{message}</div>;}
 function KPI({label,value,color='#8B2020'}){return<div style={card}><div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color}}>{value}</div><div style={{fontSize:12,color:'#6B6056',marginTop:4}}>{label}</div></div>;}
 function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
 function renderCell(j,k){const v=j[k];if(k==='status')return<span style={pill(SC[v]||'#6B6056',SB_[v]||'#F4F4F2')}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#6B6056',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf')return<span>{n(v).toLocaleString()}</span>;if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;return v||'—';}
@@ -488,7 +488,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   const colRef=useRef();
   useEffect(()=>{if(!showCols)return;const h=e=>{if(colRef.current&&!colRef.current.contains(e.target))setShowCols(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[showCols]);
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{position:'sticky',top:0,zIndex:10,background:'#F4F4F2',paddingBottom:8,marginBottom:8}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
         <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>Projects</h1>
@@ -561,7 +561,7 @@ function BillingPage({jobs,onRefresh}){
   const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='pending')f=f.filter(j=>pmEntries.some(e=>e.job_id===j.id));else if(bStatusF==='invoiced')f=f.filter(j=>!pmEntries.some(e=>e.job_id===j.id)&&n(j.ytd_invoiced)>0);else if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF,pmEntries]);
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Billing</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs */}
@@ -866,7 +866,7 @@ function PMBillingPage({jobs,onRefresh}){
   </div>);
 
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>PM Bill Sheet</h1>
 
     {/* PM Selector */}
@@ -1508,7 +1508,7 @@ function WeatherDaysPage({jobs}){
   const openForm=(day)=>{if(day){setForm({job_id:day.job_id||'',weather_date:day.weather_date||'',hours_lost:day.hours_lost||'',reason:day.reason||'Rain',logged_by:day.logged_by||'',notes:day.notes||''});setJobSearch(day.job_name||'');setEditDay(day);}else{setForm({job_id:'',weather_date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});setJobSearch('');setEditDay(null);}setShowForm(true);};
   const saveDay=async()=>{const job=jobs.find(j=>j.id===form.job_id);const body={weather_date:form.weather_date,hours_lost:n(form.hours_lost),reason:form.reason,logged_by:form.logged_by,notes:form.notes,job_id:form.job_id,job_number:job?.job_number||editDay?.job_number||'',job_name:job?.job_name||editDay?.job_name||'',market:job?.market||editDay?.market||'',pm:job?.pm||editDay?.pm||''};if(editDay){await sbPatch('weather_days',editDay.id,body);}else{await sbPost('weather_days',body);}setShowForm(false);setEditDay(null);setToast('Weather day saved');fetchDays();};
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Weather Days Tracker</h1>
       <button onClick={()=>openForm(null)} style={btnP}>+ Log Weather Day</button>
@@ -1600,14 +1600,28 @@ function PMDailyReportPage({jobs}){
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
-  const submitReport=async()=>{const body={...form,submitted_by:selPM||form.submitted_by,num_employees:n(form.num_employees),num_gates_installed:n(form.num_gates_installed),gate_height:n(form.gate_height),num_holes_dug:n(form.num_holes_dug),num_posts_placed:n(form.num_posts_placed),lf_panels_installed:n(form.lf_panels_installed),fence_height:n(form.fence_height),num_cut_sections:n(form.num_cut_sections),num_sections_leveled:n(form.num_sections_leveled),drill_piercing_lf:n(form.drill_piercing_lf),num_columns_laid_out:n(form.num_columns_laid_out),num_columns_34_built:n(form.num_columns_34_built),num_columns_capped:n(form.num_columns_capped),lf_panels_shoulder:n(form.lf_panels_shoulder),lf_panels_completed:n(form.lf_panels_completed),lf_impacted_delays:n(form.lf_impacted_delays),num_defective_panels:n(form.num_defective_panels),num_defective_posts:n(form.num_defective_posts)};if(form.crew)localStorage.setItem('last_crew',form.crew);if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);await sbPost('pm_daily_reports',body);setToast('Report submitted');setSelJobId('');setJobTotals(null);setForm(emptyForm());setTimeout(()=>{setTab('history');fetchReports();},600);};
+  const submitReport=async()=>{
+    const body={...form,report_date:form.report_date||todayISO,submitted_by:selPM||form.submitted_by,num_employees:n(form.num_employees),num_gates_installed:n(form.num_gates_installed),gate_height:n(form.gate_height),num_holes_dug:n(form.num_holes_dug),num_posts_placed:n(form.num_posts_placed),lf_panels_installed:n(form.lf_panels_installed),fence_height:n(form.fence_height),num_cut_sections:n(form.num_cut_sections),num_sections_leveled:n(form.num_sections_leveled),drill_piercing_lf:n(form.drill_piercing_lf),num_columns_laid_out:n(form.num_columns_laid_out),num_columns_34_built:n(form.num_columns_34_built),num_columns_capped:n(form.num_columns_capped),lf_panels_shoulder:n(form.lf_panels_shoulder),lf_panels_completed:n(form.lf_panels_completed),lf_impacted_delays:n(form.lf_impacted_delays),num_defective_panels:n(form.num_defective_panels),num_defective_posts:n(form.num_defective_posts)};
+    if(form.crew)localStorage.setItem('last_crew',form.crew);
+    if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
+    try{
+      const res=await fetch(`${SB}/rest/v1/pm_daily_reports`,{method:'POST',headers:H,body:JSON.stringify(body)});
+      if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
+      setToast({message:'Report submitted',isError:false});
+      setSelJobId('');setJobTotals(null);setForm(emptyForm());
+      setTimeout(()=>{setTab('history');fetchReports();},600);
+    }catch(err){
+      console.error('PM Daily Report submit failed:',err,'body:',body);
+      setToast({message:`Submit failed: ${err.message||err}`,isError:true});
+    }
+  };
   const mInp={...inputS,minHeight:44,fontSize:16};const mSel={...mInp};const mTxt={...mInp,resize:'vertical'};
   const secStyle={fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
   const lblStyle={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
   const gridR='repeat(auto-fit,minmax(240px,1fr))';
   // Detail view
   if(detailRpt)return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
     <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
     <div style={{...card,marginBottom:16}}>
@@ -1618,7 +1632,7 @@ function PMDailyReportPage({jobs}){
     </div>
   </div>);
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Daily Report</h1>
       <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button></div>
@@ -1757,7 +1771,7 @@ function EstimatingPage(){
   const nextNum=`EST-${new Date().getFullYear()}-${String(estimates.length+1).padStart(3,'0')}`;
   const saveEst=async(status)=>{setSaving(true);try{const body={estimate_number:f.estimate_number||nextNum,customer_name:f.customer_name,market:f.market,sales_rep:f.sales_rep,job_type:f.job_type,lf_precast:n(f.lf_precast),rate_precast:n(f.rate_precast),lf_sw:n(f.lf_sw),rate_sw:n(f.rate_sw),gate_qty:n(f.gate_qty),rate_gate:n(f.rate_gate),net_estimate:netEst,total_estimate:netEst,notes:f.notes,status:status};await sbPost('estimates',body);setToast('Estimate saved');setView('list');setF(emptyForm);fetchEst();}catch(e){setToast('Error saving estimate');}setSaving(false);};
   return(<div>
-    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Estimating</h1>
       {view==='list'&&<button onClick={()=>{setF({...emptyForm,estimate_number:nextNum});setView('form');}} style={btnP}>+ New Estimate</button>}
