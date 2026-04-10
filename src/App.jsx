@@ -27,11 +27,12 @@ const fD = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'n
 const fmtPct = v => (!v && v !== 0) ? '—' : `${(parseFloat(v) * 100).toFixed(1)}%`;
 const relT = d => { if(!d) return '—'; const ms=Date.now()-new Date(d).getTime(), m=ms/60000; if(m<60) return `${Math.floor(m)}m ago`; const h=m/60; if(h<24) return `${Math.floor(h)}h ago`; const dy=h/24; if(dy<2) return 'Yesterday'; if(dy<7) return `${Math.floor(dy)}d ago`; return fD(d); };
 
-const STS = ['contract_review','production_queue','in_production','ready_to_install','in_install','active_installation','installation_complete','complete'];
-const SL = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', ready_to_install:'Ready to Install', in_install:'In Install', active_installation:'Active Installation', installation_complete:'Installation Complete', complete:'Complete' };
-const SC = { contract_review:'#B45309', production_queue:'#1D4ED8', in_production:'#6D28D9', ready_to_install:'#7C3AED', in_install:'#2563EB', active_installation:'#B45309', installation_complete:'#0F6E56', complete:'#065F46' };
-const SB_ = { contract_review:'#FEF3C7', production_queue:'#DBEAFE', in_production:'#EDE9FE', ready_to_install:'#F3E8FF', in_install:'#DBEAFE', active_installation:'#FEF3C7', installation_complete:'#D1FAE5', complete:'#D1FAE5' };
-const SS = { contract_review:'Review', production_queue:'Prod Queue', in_production:'In Prod', ready_to_install:'Ready', in_install:'Install', active_installation:'Active Install', installation_complete:'Install Done', complete:'Complete' };
+const STS = ['contract_review','production_queue','in_production','ready_to_install','in_install','active_installation','installation_complete','complete','closed'];
+const SL = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', ready_to_install:'Ready to Install', in_install:'In Install', active_installation:'Active Installation', installation_complete:'Installation Complete', complete:'Complete', closed:'Closed' };
+const SC = { contract_review:'#B45309', production_queue:'#1D4ED8', in_production:'#6D28D9', ready_to_install:'#7C3AED', in_install:'#2563EB', active_installation:'#B45309', installation_complete:'#0F6E56', complete:'#065F46', closed:'#FFFFFF' };
+const SB_ = { contract_review:'#FEF3C7', production_queue:'#DBEAFE', in_production:'#EDE9FE', ready_to_install:'#F3E8FF', in_install:'#DBEAFE', active_installation:'#FEF3C7', installation_complete:'#D1FAE5', complete:'#D1FAE5', closed:'#374151' };
+const SS = { contract_review:'Review', production_queue:'Prod Queue', in_production:'In Prod', ready_to_install:'Ready', in_install:'Install', active_installation:'Active Install', installation_complete:'Install Done', complete:'Complete', closed:'Closed' };
+const CLOSED_SET=new Set(['complete','closed']);
 const MKTS = ['Austin','Dallas-Fort Worth','Houston','San Antonio'];
 const MC = { Austin:'#C2410C', 'Dallas-Fort Worth':'#1D4ED8', Houston:'#065F46', 'San Antonio':'#9D174D' };
 const MB = { Austin:'#FED7AA', 'Dallas-Fort Worth':'#DBEAFE', Houston:'#D1FAE5', 'San Antonio':'#FCE7F3' };
@@ -40,7 +41,7 @@ const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
 const PMS=PM_LIST.map(p=>p.id);
 const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'].map(v=>({v,l:v})), style_single_wythe:['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'].map(v=>({v,l:v})), color:['LAC','Painted','10#61078','Café','Adobe','8#860','Regular Brown','Outback','Silversmoke 8085','Green','Stain','10#860','8#677','3.5#860','1.5#860','Dune 6058','Sandstone 5237','Pebble 641','No Color','Other'].map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})) };
-const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'ready_to_install', ready_to_install:'in_install', in_install:'active_installation', active_installation:'installation_complete', installation_complete:'complete' };
+const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'ready_to_install', ready_to_install:'in_install', in_install:'active_installation', active_installation:'installation_complete', installation_complete:'complete', complete:'closed' };
 
 /* ═══ STYLES ═══ */
 const card = { background:'#FFF', border:'1px solid #E5E3E0', borderRadius:12, padding:20, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' };
@@ -266,7 +267,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Cust #')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS}/></div>
-        <div>{fLbl('Status')}<select value={f.status} onChange={e=>set('status',e.target.value)} style={inputS}>{[['contract_review','Contract Review'],['production_queue','Booked-Not Started'],['in_production','In Production'],['ready_to_install','Ready to Install'],['in_install','In Install'],['active_installation','Active Installation'],['installation_complete','Installation Complete'],['complete','Complete']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+        <div>{fLbl('Status')}<select value={f.status} onChange={e=>set('status',e.target.value)} style={inputS}>{[['contract_review','Contract Review'],['production_queue','Booked-Not Started'],['in_production','In Production'],['ready_to_install','Ready to Install'],['in_install','In Install'],['active_installation','Active Installation'],['installation_complete','Installation Complete'],['complete','Complete'],['closed','Closed']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
         <div>{fLbl('Market',true)}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
         <div>{fLbl('Job Type')}<select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         <div>{fLbl('Sales Rep')}<select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
@@ -406,7 +407,9 @@ function WeeklyDigest({jobs,active}){
 
 /* ═══ DASHBOARD ═══ */
 function Dashboard({jobs,onNav}){
-  const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
+  const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
+  const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
   // 2026 Revenue Goal — uses the same value as the "YTD Billed" KPI card (ty above):
   // sum of ytd_invoiced across active jobs. Date-based filters all overcounted because
@@ -490,12 +493,12 @@ function Dashboard({jobs,onNav}){
       {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
     </div>}
     {/* Quick stats */}
-    {(()=>{const rtiCount=jobs.filter(j=>j.status==='ready_to_install').length;const iiCount=jobs.filter(j=>j.status==='in_install').length;const aiCount=jobs.filter(j=>j.status==='active_installation').length;const icCount=jobs.filter(j=>j.status==='installation_complete').length;const collMo=jobs.filter(j=>j.collected&&j.collected_date&&new Date(j.collected_date).getMonth()===now.getMonth()&&new Date(j.collected_date).getFullYear()===now.getFullYear()).length;const outstanding=jobs.filter(j=>j.status==='complete'&&!j.collected).length;return<div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:24}}>{[['Active',active.length],['Ready to Install',rtiCount],['In Install',iiCount],['Active Install',aiCount],['Install Done',icCount],['Collected Mo.',collMo],['Outstanding',outstanding],['Completed Mo.',compThisMonth],['Avg Contract',$k(active.length?tc/active.length:0)],['Total',jobs.length]].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>;})()}
+    {(()=>{const rtiCount=jobs.filter(j=>j.status==='ready_to_install').length;const iiCount=jobs.filter(j=>j.status==='in_install').length;const aiCount=jobs.filter(j=>j.status==='active_installation').length;const icCount=jobs.filter(j=>j.status==='installation_complete').length;const collMo=jobs.filter(j=>j.collected&&j.collected_date&&new Date(j.collected_date).getMonth()===now.getMonth()&&new Date(j.collected_date).getFullYear()===now.getFullYear()).length;const outstanding=jobs.filter(j=>j.status==='complete'&&!j.collected).length;return<div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:24}}>{[['Active',active.length],['Ready to Install',rtiCount],['In Install',iiCount],['Active Install',aiCount],['Install Done',icCount],['Collected Mo.',collMo],['Outstanding',outstanding],['Completed Mo.',compThisMonth],['Closed',closedJobs.length],['Total',jobs.length]].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>;})()}
     {/* Backlog Health */}
     {(()=>{
       const blJobs=jobs.filter(j=>['production_queue','in_production'].includes(j.status));
       const blLTB=blJobs.reduce((s,j)=>s+n(j.left_to_bill),0);
-      const allYTD=jobs.reduce((s,j)=>s+n(j.ytd_invoiced),0);
+      const allYTD=jobs.filter(j=>j.status!=='closed').reduce((s,j)=>s+n(j.ytd_invoiced),0);
       const blCount=blJobs.length;
       const blLF=blJobs.reduce((s,j)=>s+n(j.total_lf),0);
       const runRate=allYTD/3.3;
@@ -581,7 +584,7 @@ function Dashboard({jobs,onNav}){
     })()}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>s!=='complete').map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>!CLOSED_SET.has(s)).map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Top 15 Left to Bill</div><table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{top15.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#8B2020',fontSize:13}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table></div>
@@ -676,7 +679,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
 
 /* ═══ BILLING PAGE ═══ */
 function BillingPage({jobs,onRefresh,onNav}){
-  const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
   const cutoff='2024-01-01';const avgDaysFirst=jobs.filter(j=>{if(!j.contract_date||!j.last_billed)return false;if(j.contract_date<cutoff)return false;const cd=new Date(j.contract_date).getTime();const lb=new Date(j.last_billed).getTime();return lb>=cd;}).map(j=>Math.round((new Date(j.last_billed).getTime()-new Date(j.contract_date).getTime())/86400000));const avgD=avgDaysFirst.length?Math.round(avgDaysFirst.reduce((s,d)=>s+d,0)/avgDaysFirst.length):-1;const avgDColor=avgD<0?'#9E9B96':avgD<=30?'#1D4ED8':avgD<=60?'#B45309':'#991B1B';
@@ -1134,7 +1137,7 @@ function PMBillingPage({jobs,onRefresh}){
   const curMonthLabel=now.toLocaleDateString('en-US',{month:'long',year:'numeric'});
   const curMonthFirst=`${curMonth}-01`;
 
-  const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','active_installation','installation_complete','complete'].includes(j.status)),[jobs]);
+  const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','ready_to_install','in_install','active_installation','installation_complete','complete'].includes(j.status)&&j.status!=='closed'),[jobs]);
 
   const pmEntries=useMemo(()=>selPM?entries.filter(e=>e.pm===selPM):entries,[entries,selPM]);
 
@@ -1488,7 +1491,7 @@ function PMBillingPage({jobs,onRefresh}){
 function StartDateBadge({date,status}){
   if(!date)return null;
   const now=new Date();now.setHours(0,0,0,0);const d=new Date(date+'T12:00:00');const diff=Math.round((d-now)/86400000);
-  const isPast=diff<0&&status!=='complete';const isSoon=diff>=0&&diff<=7;
+  const isPast=diff<0&&!CLOSED_SET.has(status);const isSoon=diff>=0&&diff<=7;
   if(isPast)return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,background:'#991B1B',color:'#FFF'}}>🚩 {fD(date)}</span>;
   if(isSoon)return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#B45309',border:'1px solid #F9731640'}}>📅 {fD(date)}</span>;
   return<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,color:'#8B2020'}}>📅 {fD(date)}</span>;
@@ -1501,11 +1504,11 @@ function ProductionPage({jobs,onRefresh}){
   const[editUnlocked,setEditUnlocked]=useState(false);const[showPinModal,setShowPinModal]=useState(false);const[pinInput,setPinInput]=useState('');const[pinError,setPinError]=useState(false);
   const submitPin=()=>{if(pinInput==='2020'){setEditUnlocked(true);setShowPinModal(false);setPinInput('');setPinError(false);}else{setPinError(true);setPinInput('');}};
   useEffect(()=>{if(!showPinModal)return;const onKey=(e)=>{if(e.key==='Escape'){setShowPinModal(false);setPinInput('');setPinError(false);}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[showPinModal]);
-  const move=async(job,ns)=>{if(!editUnlocked)return;const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='ready_to_install')u.ready_to_install_date=today;if(ns==='in_install')u.in_install_date=today;if(ns==='active_installation')u.active_installation_date=today;if(ns==='installation_complete')u.installation_complete_date=today;if(ns==='complete')u.complete_date=today;await sbPatch('jobs',job.id,u);fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);onRefresh();};
-  const filtered=useMemo(()=>{let f=jobs;if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}return f;},[jobs,mktF,statusF,search]);
+  const move=async(job,ns)=>{if(!editUnlocked)return;const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='ready_to_install')u.ready_to_install_date=today;if(ns==='in_install')u.in_install_date=today;if(ns==='active_installation')u.active_installation_date=today;if(ns==='installation_complete')u.installation_complete_date=today;if(ns==='complete')u.complete_date=today;if(ns==='closed')u.closed_date=today;await sbPatch('jobs',job.id,u);fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);onRefresh();};
+  const filtered=useMemo(()=>{let f=jobs.filter(j=>j.status!=='closed');if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}return f;},[jobs,mktF,statusF,search]);
   const pipeLF=filtered.filter(j=>['production_queue','in_production','ready_to_install','in_install','active_installation','installation_complete'].includes(j.status)).reduce((s,j)=>s+n(j.total_lf),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
-  const columns=useMemo(()=>{if(groupBy==='status')return STS.map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));const groups={};filtered.forEach(j=>{const v=j[groupBy]||'';const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8B2020',bg:'#FDF4F4',jobs:sortByStart(g.jobs),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy]);
+  const columns=useMemo(()=>{if(groupBy==='status')return STS.filter(s=>s!=='closed').map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));const groups={};filtered.forEach(j=>{const v=j[groupBy]||'';const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8B2020',bg:'#FDF4F4',jobs:sortByStart(g.jobs),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy]);
   const isS=groupBy==='status';const colArr=isS?columns:columns.cols;
   return(<div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
@@ -1521,7 +1524,7 @@ function ProductionPage({jobs,onRefresh}){
     </div>
     <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} LF</span><span style={{fontSize:12,color:'#6B6056'}}>in pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>{[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}</div>
-    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
+    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{STS.filter(s=>s!=='closed').map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
     <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,8)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+n(j.total_lf),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked}/>)}</div></div>;})}</div>
     {showPinModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPinModal(false)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:320,boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
@@ -1540,7 +1543,7 @@ function ProductionPage({jobs,onRefresh}){
 
 /* ═══ REPORTS PAGE ═══ */
 function ReportsPage({jobs}){
-  const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
   const[prodSec,setProdSec]=useState({pc:false,sw:false,wi:false});
   const renderReport=()=>{
@@ -1649,7 +1652,7 @@ function ReportsPage({jobs}){
 function SchedulePage({jobs}){
   const[events,setEvents]=useState([]);const[view,setView]=useState('calendar');const[month,setMonth]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1));const[showAdd,setShowAdd]=useState(false);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[editEvt,setEditEvt]=useState(null);
   const jobsById=useMemo(()=>{const m={};jobs.forEach(j=>{m[j.id]=j;});return m;},[jobs]);
-  const pmJobCounts=useMemo(()=>{const c={};jobs.forEach(j=>{if(j.status!=='complete'&&j.pm)c[j.pm]=(c[j.pm]||0)+1;});return c;},[jobs]);
+  const pmJobCounts=useMemo(()=>{const c={};jobs.forEach(j=>{if(!CLOSED_SET.has(j.status)&&j.pm)c[j.pm]=(c[j.pm]||0)+1;});return c;},[jobs]);
   const[form,setForm]=useState({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});const[jobSearch,setJobSearch]=useState('');
   const fetchEvents=useCallback(async()=>{const d=await sbGet('schedule_events','order=scheduled_date.asc');setEvents(d||[]);},[]);
   useEffect(()=>{fetchEvents();},[fetchEvents]);
@@ -1676,7 +1679,7 @@ function SchedulePage({jobs}){
         {view==='list'&&<div style={card}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Date','Project','Market','Type','LF','Assigned','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{filteredEvents.map(e=><tr key={e.id} onClick={()=>openEdit(e)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}><td style={{padding:'6px 8px'}}>{fD(e.scheduled_date)}</td><td style={{padding:'6px 8px',fontWeight:500}}>{e.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{(e.event_type||'').replace(/_/g,' ')}</td><td style={{padding:'6px 8px'}}>{n(e.lf_scheduled).toLocaleString()}</td><td style={{padding:'6px 8px'}}>{e.assigned_to||'—'}</td><td style={{padding:'6px 8px',color:'#9E9B96',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes||'—'}</td></tr>)}</tbody></table></div>}
         {view==='gantt'&&(()=>{
           const GANTT_MKT_C={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
-          let ganttJobs=jobs.filter(j=>j.status!=='complete'&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
+          let ganttJobs=jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
           if(mktF)ganttJobs=ganttJobs.filter(j=>j.market===mktF);
           if(pmF)ganttJobs=ganttJobs.filter(j=>j.pm===pmF);
           ganttJobs=ganttJobs.slice(0,40);
@@ -1953,7 +1956,7 @@ function WeatherDaysPage({jobs}){
   const[jobSearch,setJobSearch]=useState('');
   const fetchDays=useCallback(async()=>{const d=await sbGet('weather_days','select=*&order=weather_date.desc');setDays(d||[]);setLoading(false);},[]);
   useEffect(()=>{fetchDays();},[fetchDays]);
-  const activeJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const searchedJobs=jobSearch?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,10):[];
   const filtered=useMemo(()=>{let f=days;if(mktF)f=f.filter(d=>d.market===mktF);if(pmF)f=f.filter(d=>d.pm===pmF);return f;},[days,mktF,pmF]);
   const now=new Date();const thisMonth=filtered.filter(d=>d.weather_date&&new Date(d.weather_date).getMonth()===now.getMonth()&&new Date(d.weather_date).getFullYear()===now.getFullYear());
@@ -2075,7 +2078,7 @@ function PMDailyReportPage({jobs}){
   const clearForm=()=>{if(window.confirm('Clear all fields? This cannot be undone.')){setForm(emptyForm());setSelJobId('');setJobTotals(null);}};
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
-  const pmJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'&&j.pm===selPM),[jobs,selPM]);
+  const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.pm===selPM),[jobs,selPM]);
   const selectJob=(jobId)=>{setSelJobId(jobId);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
@@ -2385,7 +2388,7 @@ function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.l
 function MapPage({jobs,onNav}){
   const[pins,setPins]=useState([]);const[geocoding,setGeocoding]=useState(false);const[geoProgress,setGeoProgress]=useState('');
   const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);
-  const activeJobs=useMemo(()=>jobs.filter(j=>j.status!=='complete'),[jobs]);
+  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   useEffect(()=>{let cancelled=false;
     const run=async()=>{setGeocoding(true);const result=[];let toGeo=0;
       for(const j of activeJobs){
@@ -2422,7 +2425,7 @@ function MapPage({jobs,onNav}){
       {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
       <span style={{color:'#E5E3E0'}}>|</span>
       <button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All Statuses</button>
-      {STS.filter(s=>s!=='complete').map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}
+      {STS.filter(s=>!CLOSED_SET.has(s)).map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}
       <span style={{fontSize:12,color:'#6B6056',marginLeft:8}}>{filtered.length} jobs | {$k(fTC)} contract | {$k(fLTB)} LTB</span>
     </div>
     {geocoding&&<div style={{padding:'8px 0',fontSize:12,color:'#6B6056'}}>{geoProgress}</div>}
@@ -2458,7 +2461,7 @@ function MapPage({jobs,onNav}){
 
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch}){
-  const alerts=jobs.filter(j=>j.status!=='complete'&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
+  const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const today=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 24px',gap:16,flexShrink:0}}>
