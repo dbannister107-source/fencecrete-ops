@@ -1784,6 +1784,11 @@ function DailyReportPage(){
   const[commentary,setCommentary]=useState({});
   const[submitting,setSubmitting]=useState(false);
   const[toast,setToast]=useState(null);
+  const[expanded,setExpanded]=useState(new Set());
+  const toggleCard=(i)=>setExpanded(prev=>{const n=new Set(prev);if(n.has(i))n.delete(i);else n.add(i);return n;});
+  const expandAll=()=>setExpanded(new Set(cards.map((_,i)=>i)));
+  const collapseAll=()=>setExpanded(new Set());
+
   const[reports,setReports]=useState([]);
   const[histLoading,setHistLoading]=useState(false);
   const[detailReport,setDetailReport]=useState(null);
@@ -1792,7 +1797,7 @@ function DailyReportPage(){
   const showToast=(msg,ok)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500);};
   const updateCard=(i,field,val)=>setCards(prev=>prev.map((c,idx)=>idx===i?{...c,[field]:val}:c));
   const addCard=()=>setCards(prev=>[...prev,emptyCard()]);
-  const removeCard=(i)=>setCards(prev=>prev.filter((_,idx)=>idx!==i));
+  const removeCard=(i)=>{setCards(prev=>prev.filter((_,idx)=>idx!==i));setExpanded(prev=>{const n=new Set();prev.forEach(idx=>{if(idx<i)n.add(idx);else if(idx>i)n.add(idx-1);});return n;});};
 
   // Overall adherence
   const overallPlanned=cards.reduce((s,c)=>s+sumF(c,ALL_P_FIELDS),0);
@@ -1806,7 +1811,7 @@ function DailyReportPage(){
 
   const openDetail=async(id)=>{try{const rArr=await sbGet('daily_schedule_reports',`id=eq.${id}`);if(!rArr||!rArr[0])return;setDetailReport(rArr[0]);const rows=await sbGet('daily_schedule_rows',`report_id=eq.${id}&section=eq.today&order=row_order.asc`);setDetailCards(rows||[]);setReportId(id);}catch(e){console.error(e);}};
 
-  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setCards(Array.from({length:3},emptyCard));setCommentary({});};
+  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setCards(Array.from({length:3},emptyCard));setCommentary({});setExpanded(new Set());};
 
   const submitReport=async()=>{setSubmitting(true);try{const rpt=await sbPost('daily_schedule_reports',{report_date:date,scheduler:scheduler||null,shift:shift||null,...commentary});const rowPayloads=[];cards.forEach((c,i)=>{if(!c.job_name&&sumF(c,ALL_P_FIELDS)===0&&sumF(c,ALL_A_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'today',row_order:i,job_name:c.job_name,fence_style:c.fence_style||null,fence_color:c.fence_color||null,fence_height:c.fence_height||null,...Object.fromEntries(ALL_P_FIELDS.map(f=>[f,parseInt(c[f])||null])),...Object.fromEntries(ALL_A_FIELDS.map(f=>[f,parseInt(c[f])||null]))});});if(rowPayloads.length>0)await sbPost('daily_schedule_rows',rowPayloads);showToast(`Production Daily Report submitted for ${date}`,true);resetForm();setTimeout(()=>{setTab('history');fetchHistory();},600);}catch(e){showToast(e.message||'Submit failed',false);}setSubmitting(false);};
 
@@ -1819,21 +1824,28 @@ function DailyReportPage(){
   const varText=(v)=>v>0?`+${v}`:v<0?`${v}`:'—';
 
   // ─── Render one project card ───
-  const renderProjectCard=(c,i,readOnly,update)=>{
+  const renderProjectCard=(c,i,readOnly,update,isCollapsible=false,isExp=true,onToggle=null)=>{
     const cardPlanned=sumF(c,ALL_P_FIELDS);const cardActual=sumF(c,ALL_A_FIELDS);const cardAdh=cardPlanned>0?(cardActual/cardPlanned)*100:null;
+    const hasData=cardPlanned>0||cardActual>0;
+    const stopProp=(e)=>e.stopPropagation();
     return(
     <div key={i} style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
       {/* Project header */}
-      <div style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
-        <div style={{flex:'1 1 200px'}}>{readOnly?<span style={{fontSize:14,fontWeight:700}}>{c.job_name||'—'}</span>:<input value={c.job_name||''} onChange={e=>update(i,'job_name',e.target.value)} placeholder="Project Name" style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'4px 10px',fontSize:13,fontWeight:600,width:'100%'}}/>}</div>
-        <div style={{display:'flex',gap:8,alignItems:'center',fontSize:12}}>
+      <div onClick={isCollapsible&&onToggle?onToggle:undefined} style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',cursor:isCollapsible?'pointer':'default'}}>
+        <div style={{flex:'1 1 200px'}} onClick={isCollapsible?stopProp:undefined}>{readOnly?<span style={{fontSize:14,fontWeight:700}}>{c.job_name||'—'}</span>:<input value={c.job_name||''} onChange={e=>update(i,'job_name',e.target.value)} placeholder="Project Name" style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'4px 10px',fontSize:13,fontWeight:600,width:'100%'}}/>}</div>
+        <div style={{display:'flex',gap:8,alignItems:'center',fontSize:12}} onClick={isCollapsible?stopProp:undefined}>
           <span style={{color:'rgba(255,255,255,0.6)'}}>Style:</span>{readOnly?<span>{c.fence_style||'—'}</span>:<input value={c.fence_style||''} onChange={e=>update(i,'fence_style',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
           <span style={{color:'rgba(255,255,255,0.6)'}}>Color:</span>{readOnly?<span>{c.fence_color||'—'}</span>:<input value={c.fence_color||''} onChange={e=>update(i,'fence_color',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
           <span style={{color:'rgba(255,255,255,0.6)'}}>Height:</span>{readOnly?<span>{c.fence_height||'—'}</span>:<select value={c.fence_height||''} onChange={e=>update(i,'fence_height',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12}}><option value="">—</option><option value="6">6</option><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="Other">Other</option></select>}
         </div>
-        {!readOnly&&cards.length>1&&<button onClick={()=>removeCard(i)} title="Remove" style={{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:18,cursor:'pointer',padding:'0 4px'}}>×</button>}
+        {isCollapsible&&<div style={{display:'flex',gap:8,alignItems:'center',fontSize:12,color:'rgba(255,255,255,0.7)',marginLeft:8}}>
+          {hasData?<><span>Planned: <b style={{color:'#FFF'}}>{cardPlanned}</b></span><span style={{opacity:0.4}}>|</span><span>Actual: <b style={{color:'#FFF'}}>{cardActual}</b></span><span style={{opacity:0.4}}>|</span>{adhBadge(cardAdh)}</>:<span style={{fontStyle:'italic'}}>No data entered</span>}
+        </div>}
+        {!readOnly&&cards.length>1&&<button onClick={(e)=>{e.stopPropagation();removeCard(i);}} title="Remove" style={{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:18,cursor:'pointer',padding:'0 4px'}}>×</button>}
+        {isCollapsible&&<span style={{fontSize:12,color:'rgba(255,255,255,0.5)',flexShrink:0,marginLeft:4,transition:'transform 0.3s ease',display:'inline-block',transform:isExp?'rotate(0deg)':'rotate(-90deg)'}}>▼</span>}
       </div>
       {/* Table */}
+      <div style={{maxHeight:(!isCollapsible||isExp)?'5000px':'0',overflow:'hidden',transition:'max-height 0.3s ease-in-out'}}>
       <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}>
         <thead><tr>
           <th style={{padding:'6px 12px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'left',borderBottom:'2px solid #E5E3E0',width:140}}></th>
@@ -1860,6 +1872,7 @@ function DailyReportPage(){
           <tr style={{fontWeight:700,background:'#EEEDEB'}}><td style={{padding:'8px 12px',fontSize:13}}>TOTAL ALL PIECES</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#185FA5',background:schedBg}}>{cardPlanned}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#3B6D11',background:actualBg}}>{cardActual}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:13,fontWeight:700,background:varBg}}>{adhBadge(cardAdh)}</td></tr>
         </tbody>
       </table></div>
+      </div>
     </div>);
   };
 
@@ -1926,9 +1939,12 @@ function DailyReportPage(){
     </div>
 
     {/* Project cards */}
-    {cards.map((c,i)=>renderProjectCard(c,i,false,updateCard))}
-
-    <button onClick={addCard} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #D1CEC9',background:'transparent',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Syne',marginBottom:16}}>+ Add Project</button>
+    <div style={{display:'flex',gap:8,marginBottom:12}}>
+      <button onClick={addCard} style={{padding:'6px 14px',borderRadius:8,border:'2px dashed #D1CEC9',background:'transparent',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Syne'}}>+ Add Project</button>
+      <button onClick={expandAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Expand All</button>
+      <button onClick={collapseAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Collapse All</button>
+    </div>
+    {cards.map((c,i)=>renderProjectCard(c,i,false,updateCard,true,expanded.has(i),()=>toggleCard(i)))}
 
     {/* Commentary */}
     <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
