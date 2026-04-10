@@ -537,6 +537,48 @@ function Dashboard({jobs,onNav}){
         {blMonths>=2&&blMonths<4&&<div style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#B45309',marginTop:8}}>Backlog below 4-month target — new contracts needed to maintain revenue pace</div>}
       </div>;
     })()}
+    {/* Fence Type Breakdown — grouped job detail */}
+    {(()=>{
+      const ftGroups=[
+        {key:'Precast',label:'Precast',filter:j=>(j.fence_type||'').toLowerCase().includes('pc')||(j.fence_type||'').toLowerCase().includes('precast')},
+        {key:'Masonry',label:'Masonry',filter:j=>(j.fence_type||'').toLowerCase().includes('masonry')||(j.fence_type||'').toLowerCase().includes('sw')},
+        {key:'Wrought Iron',label:'Wrought Iron',filter:j=>(j.fence_type||'').toLowerCase().includes('wi')||(j.fence_type||'').toLowerCase().includes('wrought')},
+        {key:'Other',label:'Other',filter:j=>true},
+      ];
+      const assigned=new Set();
+      const grouped=ftGroups.map(g=>{
+        const gjobs=active.filter(j=>{if(assigned.has(j.id))return false;return g.filter(j);});
+        gjobs.forEach(j=>assigned.add(j.id));
+        return{...g,jobs:gjobs};
+      });
+      const[ftCollapsed,setFtCollapsed]=React.useState({});
+      const toggleFt=k=>setFtCollapsed(p=>({...p,[k]:!p[k]}));
+      const thS={textAlign:'left',padding:'6px 10px',fontSize:10,color:'#6B6056',fontWeight:600,textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'};
+      const tdS={padding:'6px 10px',fontSize:12,borderBottom:'1px solid #F4F4F2',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:180};
+      return <div style={{...card,marginBottom:24}}>
+        <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Fence Type Breakdown — Active Jobs</div>
+        {grouped.filter(g=>g.jobs.length>0).map(g=><div key={g.key} style={{marginBottom:12}}>
+          <button onClick={()=>toggleFt(g.key)} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'#FDF4F4',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',marginBottom:ftCollapsed[g.key]?0:4}}>
+            <span style={{fontSize:13,fontWeight:800,color:'#8B2020'}}>{g.label} ({g.jobs.length} jobs)</span>
+            <span style={{fontSize:16,color:'#8B2020'}}>{ftCollapsed[g.key]?'▸':'▾'}</span>
+          </button>
+          {!ftCollapsed[g.key]&&<div style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr>
+            {['Job Name','Job #','City','Style','Color','Height','LF'].map(h=><th key={h} style={thS}>{h}</th>)}
+          </tr></thead><tbody>{g.jobs.map(j=>{
+            const isPC=g.key==='Precast';
+            return <tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+              <td style={{...tdS,fontWeight:500}}>{j.job_name||'—'}</td>
+              <td style={tdS}>{j.job_number||'—'}</td>
+              <td style={tdS}>{j.city||'—'}</td>
+              <td style={tdS}>{isPC?(j.style_precast||j.style_clean||'—'):(j.style_clean||'—')}</td>
+              <td style={tdS}>{j.color_precast||'—'}</td>
+              <td style={{...tdS,textAlign:'right'}}>{isPC?(j.height_precast||j.average_height_installed||'—'):(j.average_height_installed||'—')}</td>
+              <td style={{...tdS,textAlign:'right',fontWeight:700}}>{(()=>{const lf=isPC?(n(j.lf_precast)||n(j.total_lf_installed)):n(j.total_lf_installed);return lf?lf.toLocaleString():'—';})()}</td>
+            </tr>;
+          })}</tbody></table></div>}
+        </div>)}
+      </div>;
+    })()}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>s!=='complete').map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
@@ -1967,16 +2009,17 @@ function PMDailyReportPage({jobs}){
   const[showAllPMs,setShowAllPMs]=useState(false);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO});
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO});
   const[form,setForm]=useState(emptyForm);
   const[collapsed,setCollapsed]=useState({});
   const SECTIONS=[
     {key:'job',title:'Job Info',fields:['job_number','repair_location','crew','num_employees','daily_target']},
     {key:'gates',title:'Gates',fields:['gate_height','num_gates_installed']},
     {key:'posts',title:'Posts & Foundation',fields:['num_holes_dug','num_posts_placed']},
-    {key:'panels',title:'Panels & Fence',fields:['lf_panels_installed','fence_height','num_cut_sections','num_sections_leveled','lf_panels_washed']},
+    {key:'panels',title:'Panels & Fence',fields:['lf_panels_installed','fence_height','num_cut_sections','num_sections_leveled','lf_panels_washed','precast_style_onsite']},
     {key:'sw',title:'Single Wythe Fields',fields:['drill_piercing_lf','num_columns_laid_out','num_columns_34_built','num_columns_capped','lf_panels_shoulder','lf_panels_completed']},
     {key:'site',title:'Site Conditions',fields:['machinery_used']},
+    {key:'weather',title:'Weather Conditions',fields:['weather_condition','weather_temp_f','weather_notes']},
     {key:'delays',title:'Delays',fields:['lf_impacted_delays','num_defective_panels','num_defective_posts','other_defective_materials','delay_notes']},
   ];
   const sectionFilled=(s)=>s.fields.some(f=>{const v=form[f];return v!==''&&v!==undefined&&v!==null&&v!=='0'&&v!==0;});
@@ -2011,6 +2054,7 @@ function PMDailyReportPage({jobs}){
       cut_sections:n(form.num_cut_sections),
       sections_leveled:n(form.num_sections_leveled),
       lf_panels_washed:n(form.lf_panels_washed),
+      precast_style_onsite:form.precast_style_onsite||null,
       drill_piercing_lf:n(form.drill_piercing_lf),
       columns_laid_out:n(form.num_columns_laid_out),
       columns_three_quarter:n(form.num_columns_34_built),
@@ -2028,6 +2072,9 @@ function PMDailyReportPage({jobs}){
       defective_posts:n(form.num_defective_posts),
       other_defective:form.other_defective_materials,
       delay_notes:form.delay_notes,
+      weather_condition:form.weather_condition||null,
+      weather_temp_f:form.weather_temp_f?n(form.weather_temp_f):null,
+      weather_notes:form.weather_notes||null,
       submitted_by:selPM||form.submitted_by,
     };
     if(form.crew)localStorage.setItem('last_crew',form.crew);
@@ -2054,7 +2101,7 @@ function PMDailyReportPage({jobs}){
     <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
     <div style={{...card,marginBottom:16}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,fontSize:13}}>
-        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
+        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['Precast Style on Site',detailRpt.precast_style_onsite],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Weather',detailRpt.weather_condition],['Temperature (°F)',detailRpt.weather_temp_f],['Weather Notes',detailRpt.weather_notes],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
       </div>
       {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
     </div>
@@ -2140,6 +2187,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Precast Style at Time of Visit</label><input value={form.precast_style_onsite} onChange={e=>set('precast_style_onsite',e.target.value)} placeholder="e.g. Vertical Wood 6, Santa Barbara 8" style={mInp}/></div>
         </div>
       </PMReportSection>
       <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
@@ -2159,6 +2207,13 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Soil Quality</label><select value={form.soil_quality} onChange={e=>set('soil_quality',e.target.value)} style={mSel}>{['1 - Worst','2','3','4','5 - Best'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Terrain Rating</label><select value={form.terrain_rating} onChange={e=>set('terrain_rating',e.target.value)} style={mSel}>{['1 - Most Difficult','2','3','4','5 - Easiest'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         </div>
+      </PMReportSection>
+      <PMReportSection {...secProps('weather')} title="Weather Conditions">
+        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
+          <div><label style={lblStyle}>Weather Condition</label><select value={form.weather_condition} onChange={e=>set('weather_condition',e.target.value)} style={mSel}><option value="">— Select —</option>{['Clear','Partly Cloudy','Overcast','Light Rain','Heavy Rain','Light Wind','High Wind','Extreme Heat','Fog','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={lblStyle}>Temperature (°F)</label><input type="number" value={form.weather_temp_f} onChange={e=>set('weather_temp_f',e.target.value)} placeholder="°F" style={mInp}/></div>
+        </div>
+        <div style={{marginTop:12}}><label style={lblStyle}>Weather Notes</label><textarea value={form.weather_notes} onChange={e=>set('weather_notes',e.target.value)} rows={2} placeholder="Describe conditions affecting work" style={{...mInp,resize:'vertical'}}/></div>
       </PMReportSection>
       <PMReportSection {...secProps('delays')} title="Delays">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
