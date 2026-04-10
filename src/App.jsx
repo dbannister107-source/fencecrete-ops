@@ -708,7 +708,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     CYCLE_LF_MAP.forEach(([src,dst])=>{out[dst]=n(j[src]);});
     return out;
   };
-  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id));let created=0;for(const j of toCreate){const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,...buildCycleLF(j),adj_contract_value:n(j.adj_contract_value||j.contract_value),ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false};try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
+  const startBillingCycle=async()=>{setStartingCycle(true);const toCreate=cycleActiveJobs.filter(j=>!currentCycleJobIds.has(j.id));let created=0;for(const j of toCreate){const body={job_id:j.id,job_number:j.job_number,job_name:j.job_name,billing_month:billingMonth,...buildCycleLF(j),adj_contract_value:n(j.adj_contract_value||j.contract_value),ytd_invoiced_before:n(j.ytd_invoiced),pm_submitted:true,pm_submitted_by:null,pm_submitted_at:new Date().toISOString(),accounting_approved:false,invoice_sent:false,fence_style:j.style||null,fence_color:j.color||null,fence_height:j.height_precast||null};try{const res=await fetch(`${SB}/rest/v1/monthly_billing_cycles`,{method:'POST',headers:H,body:JSON.stringify(body)});if(res.status===201)created++;else console.error('Cycle row failed:',j.job_number,await res.text());}catch(err){console.error('Cycle row error:',j.job_number,err);}}setStartingCycle(false);setShowStartCycle(false);await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(created>0?`Billing cycle started for ${created} jobs`:'All jobs already have a cycle entry for this month');};
   const refreshCycleLF=async()=>{setRefreshingLF(true);try{const rows=await sbGet('monthly_billing_cycles',`billing_month=eq.${billingMonth}&select=id,job_id,accounting_approved`);const toUpdate=(rows||[]).filter(r=>!r.accounting_approved);let updated=0,skipped=0;for(const r of toUpdate){const job=jobs.find(j=>j.id===r.job_id);if(!job){skipped++;continue;}try{await sbPatch('monthly_billing_cycles',r.id,buildCycleLF(job));updated++;}catch(err){console.error('Refresh LF failed:',r.id,err);skipped++;}}await fetchCurrentCycleRows();if(cyclesMonth===billingMonth)await fetchCycles(billingMonth);setToast(`Refreshed LF data for ${updated} cycle row${updated===1?'':'s'}${skipped?` · ${skipped} skipped`:''}`);}catch(err){console.error('refreshCycleLF failed:',err);setToast({message:'Refresh failed: '+(err.message||err),isError:true});}finally{setRefreshingLF(false);}};
   const[cycleReview,setCycleReview]=useState(null);const[cycleForm,setCycleForm]=useState({pct_complete_accounting:'',accounting_approved_by:'',invoice_number:'',invoice_sent_date:'',notes:''});
   const fetchCycles=useCallback(async(month)=>{setCyclesLoading(true);const d=await sbGet('monthly_billing_cycles',`billing_month=eq.${month}&order=job_name.asc`);setCycles(d||[]);setCyclesLoading(false);},[]);
@@ -844,10 +844,13 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
         {cyclesLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading…</div>:cycles.length===0?<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>📅</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:4}}>No billing cycle started for {monthLabel(cyclesMonth)}</div><div style={{fontSize:12,color:'#9E9B96'}}>PMs start the cycle from the PM Bill Sheet page.</div></div>:<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','PM','Market','LF This Mo.','LF To Date','Contract LF','% LF','Acctg %','Final %','Adj Contract','Amount to Invoice','Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Style','Color','Height','PM','Market','LF This Mo.','LF To Date','Contract LF','% LF','Acctg %','Final %','Adj Contract','Amount to Invoice','Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
           <tbody>{cycles.map(c=>{const job=jobs.find(j=>j.id===c.job_id)||{};const st=cycleStatus(c);const sm=CYCLE_STATUS_META[st];return<tr key={c.id} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'8px 10px',fontSize:11}}>{c.job_number||'—'}</td>
             <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.job_name||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.fence_style||job.style||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.fence_color||job.color||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.fence_height||job.height_precast||'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11}}>{job.pm||'—'}</td>
             <td style={{padding:'8px 10px'}}><span style={pill(MC[job.market]||'#6B6056',MB[job.market]||'#F4F4F2')}>{MS[job.market]||'—'}</span></td>
             <td style={{padding:'8px 10px',textAlign:'right'}}>{n(c.lf_total_this_month).toLocaleString()}</td>
@@ -882,11 +885,13 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
       <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-        <tr>{['Project','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','PM Entries','Last Billed','Notes',''].map(h=><th key={h} rowSpan={showLfDetail?2:1} style={thS}>{h}</th>)}{showLfDetail&&<th colSpan={9} style={{...thS,textAlign:'center',background:'#FDF4F4',color:'#8B2020',borderLeft:'1px solid #E5E3E0'}}>LF This Month</th>}</tr>
+        <tr>{['Project','Style','Color','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','PM Entries','Last Billed','Notes',''].map(h=><th key={h} rowSpan={showLfDetail?2:1} style={thS}>{h}</th>)}{showLfDetail&&<th colSpan={9} style={{...thS,textAlign:'center',background:'#FDF4F4',color:'#8B2020',borderLeft:'1px solid #E5E3E0'}}>LF This Month</th>}</tr>
         {showLfDetail&&<tr>{PM_BILL_LF_TABLE.map(([k,l],i)=><th key={k} style={{...thS,fontSize:9,padding:'6px 4px',background:'#FDF4F4',textAlign:'right',borderLeft:i===0?'1px solid #E5E3E0':'none'}}>{l}</th>)}</tr>}
         </thead>
         <tbody>{shown.map(j=>{const pending=getPendingForJob(j.id);const pendingAmt=pending.reduce((s,e)=>s+n(e.amount_to_invoice),0);return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
           <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
+          <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.style||''}>{j.style||'—'}</td>
+          <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.color||''}>{j.color||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
           <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
@@ -965,6 +970,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{c.job_name} — {monthLabel(c.billing_month)} Billing</div>
           <span style={pill(CYCLE_STATUS_META[status].c,CYCLE_STATUS_META[status].bg)}>{CYCLE_STATUS_META[status].label}</span>
         </div>
+        <div style={{fontSize:12,color:'#6B6056',marginBottom:4}}>{[c.fence_style||jobs.find(j2=>j2.id===c.job_id)?.style,c.fence_color||jobs.find(j2=>j2.id===c.job_id)?.color,c.fence_height||jobs.find(j2=>j2.id===c.job_id)?.height_precast?(c.fence_height||jobs.find(j2=>j2.id===c.job_id)?.height_precast)+'ft':null].filter(Boolean).join(' — ')||''}</div>
         <div style={{fontSize:11,color:'#9E9B96',marginBottom:16}}>Job #{c.job_number} · PM submitted {c.pm_submitted_at?new Date(c.pm_submitted_at).toLocaleDateString():'—'}{c.pm_submitted_by?` by ${c.pm_submitted_by}`:''}</div>
 
         {/* SECTION 1: LF Summary */}
@@ -1025,7 +1031,8 @@ function BillingPage({jobs,onRefresh,onNav}){
     {billingModal&&(()=>{const j=billingModal;const histTotal=billingHistory.reduce((s,e)=>s+n(e.amount),0);const yr=new Date().getFullYear();const ytdSum=billingHistory.filter(e=>e.billing_month&&e.billing_month.startsWith(yr+'-')).reduce((s,e)=>s+n(e.amount),0);const fmtMonth=(m)=>{if(!m)return'—';const[y,mo]=m.split('-');if(!y||!mo)return m;return new Date(+y,+mo-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeBillingModal}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'92vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:17,fontWeight:800,marginBottom:2,color:'#1A1A1A'}}>Log Billing Entry — {j.job_name}</div>
-        <div style={{fontSize:12,color:'#9E9B96',marginBottom:14}}>{j.job_number} · Contract {$(j.adj_contract_value||j.contract_value)} · YTD {$(ytdSum||j.ytd_invoiced)}</div>
+        <div style={{fontSize:12,color:'#9E9B96',marginBottom:6}}>{j.job_number} · Contract {$(j.adj_contract_value||j.contract_value)} · YTD {$(ytdSum||j.ytd_invoiced)}</div>
+        <div style={{display:'flex',gap:10,marginBottom:14,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>{j.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{j.style}</b></span>}{j.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{j.color}</b></span>}{j.height_precast&&<span>Height: <b style={{color:'#1A1A1A'}}>{j.height_precast}ft</b></span>}{n(j.lf_precast)>0&&<span>LF: <b style={{color:'#1A1A1A'}}>{n(j.lf_precast).toLocaleString()}</b></span>}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
           <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Billing Month</label><input type="month" value={billingForm.billing_month} onChange={e=>setBillingForm(p=>({...p,billing_month:e.target.value}))} style={inputS}/></div>
           <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Amount This Month ($)</label><input type="number" value={billingForm.amount} onChange={e=>setBillingForm(p=>({...p,amount:e.target.value}))} placeholder="0" style={inputS} autoFocus/></div>
@@ -1279,6 +1286,11 @@ function PMBillingPage({jobs,onRefresh}){
               <span style={{fontSize:12,color:'#6B6056'}}>#{j.job_number}</span>
               <span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
             </div>
+            {(j.style||j.color||j.height_precast)&&<div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap',fontSize:11}}>
+              {j.style&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.style}</span>}
+              {j.color&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.color}</span>}
+              {j.height_precast&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.height_precast}ft</span>}
+            </div>}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:11,color:'#6B6056',marginBottom:8}}>
               <div>Contract: <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(cv)}</span></div>
               <div>Billed: <span style={{fontWeight:700,color:'#065F46'}}>{$(ytdInv)}</span></div>
@@ -1380,7 +1392,8 @@ function PMBillingPage({jobs,onRefresh}){
     {showLog&&(()=>{const pc=getProgressCalc(showLog,logForm);return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={()=>setShowLog(null)}>
       <div style={{background:'#fff',borderRadius:'20px 20px 0 0',padding:28,width:'100%',maxWidth:580,maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:4}}>Progress Billing — {showLog.job_name}</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>#{showLog.job_number} · {showLog.market}</div>
+        <div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>#{showLog.job_number} · {showLog.market}</div>
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056'}}>{showLog.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{showLog.style}</b></span>}{showLog.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{showLog.color}</b></span>}{showLog.height_precast&&<span>Height: <b style={{color:'#1A1A1A'}}>{showLog.height_precast}ft</b></span>}</div>
         {/* Header info */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:16}}>
           {[['Contract Value',$(pc.cv)],['Previously Billed',$(pc.ytdInv)],['Left to Bill',$(pc.cv-pc.ytdInv)],['Total LF',pc.totalLF.toLocaleString()],['LF Billed to Date',n(logForm._prevCum).toLocaleString()],['% Complete to Date',pc.totalLF>0?Math.round(n(logForm._prevCum)/pc.totalLF*100)+'%':'0%']].map(([l,v])=><div key={l} style={{background:'#F9F8F6',borderRadius:6,padding:'6px 10px'}}><div style={{fontSize:9,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>{v}</div></div>)}
