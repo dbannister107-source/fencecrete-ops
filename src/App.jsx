@@ -1726,135 +1726,148 @@ function SchedulePage({jobs}){
 
 /* ═══ DAILY REPORT PAGE ═══ */
 function DailyReportPage(){
-  const SCHED_FIELDS=['sched_short_panels','sched_long_panels','sched_posts','sched_end_posts','sched_rails','sched_other'];
-  const ACTUAL_FIELDS=['actual_short_panels','actual_long_panels','actual_posts','actual_end_posts','actual_rails','actual_other'];
-  const PIECE_LABELS=['Short Panels','Long Panels','Posts','End Posts','Rails','Other'];
-  const NEXT_FIELDS=['sched_short_panels','sched_long_panels','sched_posts','sched_end_posts','sched_rails','sched_other'];
-  const PRIORITIES=['Critical','High','Normal','Low'];
-  const priorityColor=p=>p==='Critical'?'#A32D2D':p==='High'?'#854F0B':'#1A1A1A';
+  // ─── Row config: planned field → actual field ──────────────────────────
+  const DETAIL_GROUPS=[
+    {label:'POSTS',rows:[
+      {label:'8ft Line',p:'posts_8ft_line',a:'actual_posts_8ft_line'},{label:'8ft Corner',p:'posts_8ft_corner',a:'actual_posts_8ft_corner'},{label:'8ft Stop',p:'posts_8ft_stop',a:'actual_posts_8ft_stop'},
+      {label:'10ft Line',p:'posts_10ft_line',a:'actual_posts_10ft_line'},{label:'10ft Corner',p:'posts_10ft_corner',a:'actual_posts_10ft_corner'},{label:'10ft Stop',p:'posts_10ft_stop',a:'actual_posts_10ft_stop'},
+      {label:'12ft Line',p:'posts_12ft_line',a:'actual_posts_12ft_line'},{label:'12ft Corner',p:'posts_12ft_corner',a:'actual_posts_12ft_corner'},{label:'12ft Stop',p:'posts_12ft_stop',a:'actual_posts_12ft_stop'},
+    ]},
+    {label:'PANELS',rows:[
+      {label:'Regular',p:'panels_regular',a:'actual_panels_regular'},{label:'Long',p:'panels_long',a:'actual_panels_long'},
+      {label:'1/2 Regular',p:'panels_half_regular',a:'actual_panels_half_regular'},{label:'1/2 Long',p:'panels_half_long',a:'actual_panels_half_long'},
+      {label:'Center',p:'panels_center',a:'actual_panels_center'},{label:'Middle',p:'panels_middle',a:'actual_panels_middle'},
+      {label:'Diamond',p:'panels_diamond',a:'actual_panels_diamond'},{label:'Bottled',p:'panels_bottled',a:'actual_panels_bottled'},
+    ]},
+    {label:'RAILS',rows:[
+      {label:'Regular',p:'rails_regular',a:'actual_rails_regular'},{label:'Long',p:'rails_long',a:'actual_rails_long'},
+      {label:'Bottom',p:'rails_bottom',a:'actual_rails_bottom'},{label:'Top',p:'rails_top',a:'actual_rails_top'},{label:'Short',p:'rails_short',a:'actual_rails_short'},
+    ]},
+    {label:'POST CAPS',rows:[
+      {label:'Line Caps',p:'caps_line',a:'actual_caps_line'},{label:'Stop Caps',p:'caps_stop',a:'actual_caps_stop'},
+    ]},
+    {label:'OTHER MATERIALS',rows:[
+      {label:'Cement Bags',p:'cement_bags',a:'actual_cement_bags'},{label:'Rebar',p:'rebar_count',a:'actual_rebar_count'},{label:'Silicone Tubes',p:'silicone_tubes',a:'actual_silicone_tubes'},
+    ]},
+  ];
+  const ALL_P_FIELDS=DETAIL_GROUPS.flatMap(g=>g.rows.map(r=>r.p));
+  const ALL_A_FIELDS=DETAIL_GROUPS.flatMap(g=>g.rows.map(r=>r.a));
+  const ALL_FIELDS=[...ALL_P_FIELDS,...ALL_A_FIELDS,'fence_style','fence_color','fence_height'];
 
-  const PRODUCT_FIELDS=['fence_style','fence_color','fence_height','posts_8ft_line','posts_8ft_corner','posts_8ft_stop','posts_10ft_line','posts_10ft_corner','posts_10ft_stop','posts_12ft_line','posts_12ft_corner','posts_12ft_stop','panels_regular','panels_long','panels_half_regular','panels_half_long','panels_center','panels_middle','panels_diamond','panels_bottled','rails_regular','rails_long','rails_bottom','rails_top','rails_short','caps_line','caps_stop','cement_bags','rebar_count','silicone_tubes'];
-  const PRODUCT_NUM_FIELDS=PRODUCT_FIELDS.filter(f=>f!=='fence_style'&&f!=='fence_color'&&f!=='fence_height');
-  const emptyToday=()=>({job_name:'',...Object.fromEntries([...SCHED_FIELDS,...ACTUAL_FIELDS].map(f=>[f,0])),...Object.fromEntries(PRODUCT_FIELDS.map(f=>[f,f==='fence_style'||f==='fence_color'||f==='fence_height'?'':null]))});
-  const emptyNext=()=>({job_name:'',priority:'Normal',ship_date:'',notes:'',...Object.fromEntries(NEXT_FIELDS.map(f=>[f,0]))});
+  const emptyCard=()=>({job_name:'',fence_style:'',fence_color:'',fence_height:'',...Object.fromEntries([...ALL_P_FIELDS,...ALL_A_FIELDS].map(f=>[f,null]))});
   const sumF=(row,fields)=>fields.reduce((s,f)=>s+(parseInt(row[f])||0),0);
 
   const[tab,setTab]=useState('new');
   const[reportId,setReportId]=useState(null);
-
-  // New Report state
   const todayISO=new Date().toISOString().slice(0,10);
   const[date,setDate]=useState(todayISO);
   const[scheduler,setScheduler]=useState('');
   const[shift,setShift]=useState('');
-  const[todayRows,setTodayRows]=useState(()=>Array.from({length:8},emptyToday));
-  const[nextDayRows,setNextDayRows]=useState(()=>Array.from({length:6},emptyNext));
+  const[cards,setCards]=useState(()=>Array.from({length:3},emptyCard));
   const[commentary,setCommentary]=useState({});
   const[submitting,setSubmitting]=useState(false);
   const[toast,setToast]=useState(null);
-  const[expandedRow,setExpandedRow]=useState(null);
-  const[detailExpandedRow,setDetailExpandedRow]=useState(null);
-
-  // History state
   const[reports,setReports]=useState([]);
   const[histLoading,setHistLoading]=useState(false);
-
-  // Detail state
   const[detailReport,setDetailReport]=useState(null);
-  const[detailToday,setDetailToday]=useState([]);
-  const[detailNext,setDetailNext]=useState([]);
+  const[detailCards,setDetailCards]=useState([]);
 
   const showToast=(msg,ok)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500);};
+  const updateCard=(i,field,val)=>setCards(prev=>prev.map((c,idx)=>idx===i?{...c,[field]:val}:c));
+  const addCard=()=>setCards(prev=>[...prev,emptyCard()]);
+  const removeCard=(i)=>setCards(prev=>prev.filter((_,idx)=>idx!==i));
 
-  const fetchHistory=async()=>{setHistLoading(true);try{const data=await sbGet('daily_schedule_reports','order=report_date.desc');const enriched=await Promise.all(data.map(async r=>{const rows=await sbGet('daily_schedule_rows',`report_id=eq.${r.id}&section=eq.today`);const ts=rows.reduce((s,row)=>s+sumF(row,SCHED_FIELDS),0);const ta=rows.reduce((s,row)=>s+sumF(row,ACTUAL_FIELDS),0);return{...r,adherence:ts>0?(ta/ts)*100:null};}));setReports(enriched);}catch(e){console.error(e);}setHistLoading(false);};
+  // Overall adherence
+  const overallPlanned=cards.reduce((s,c)=>s+sumF(c,ALL_P_FIELDS),0);
+  const overallActual=cards.reduce((s,c)=>s+sumF(c,ALL_A_FIELDS),0);
+  const overallAdh=overallPlanned>0?(overallActual/overallPlanned)*100:null;
 
-  const openDetail=async(id)=>{try{const rArr=await sbGet('daily_schedule_reports',`id=eq.${id}`);if(!rArr||!rArr[0])return;setDetailReport(rArr[0]);const rows=await sbGet('daily_schedule_rows',`report_id=eq.${id}&order=row_order.asc`);const tRows=Array.from({length:8},emptyToday);rows.filter(r=>r.section==='today').forEach((r,i)=>{if(i<tRows.length)tRows[i]=r;});setDetailToday(tRows);const nRows=Array.from({length:6},emptyNext);rows.filter(r=>r.section==='nextday').forEach((r,i)=>{if(i<nRows.length)nRows[i]=r;});setDetailNext(nRows);setReportId(id);}catch(e){console.error(e);}};
+  const adhBadge=(val)=>{if(val===null||val===undefined||isNaN(val))return<span style={{...pill('#6B6056','#E5E3E0'),fontSize:11}}>—</span>;const pct=Math.round(val);const bg=pct>=90?'#3B6D11':pct>=75?'#854F0B':'#A32D2D';return<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:bg,color:'#FFF'}}>{pct}%</span>;};
+  const formatDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
-  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setTodayRows(Array.from({length:8},emptyToday));setNextDayRows(Array.from({length:6},emptyNext));setCommentary({});};
+  const fetchHistory=async()=>{setHistLoading(true);try{const data=await sbGet('daily_schedule_reports','order=report_date.desc');const enriched=await Promise.all(data.map(async r=>{const rows=await sbGet('daily_schedule_rows',`report_id=eq.${r.id}&section=eq.today`);const tp=rows.reduce((s,row)=>s+sumF(row,ALL_P_FIELDS),0);const ta=rows.reduce((s,row)=>s+sumF(row,ALL_A_FIELDS),0);return{...r,adherence:tp>0?(ta/tp)*100:null};}));setReports(enriched);}catch(e){console.error(e);}setHistLoading(false);};
 
-  const submitReport=async()=>{setSubmitting(true);try{const rpt=await sbPost('daily_schedule_reports',{report_date:date,scheduler:scheduler||null,shift:shift||null,...commentary});const rowPayloads=[];todayRows.forEach((r,i)=>{if(!r.job_name&&sumF(r,SCHED_FIELDS)===0&&sumF(r,ACTUAL_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'today',row_order:i,job_name:r.job_name,...Object.fromEntries(SCHED_FIELDS.map(f=>[f,parseInt(r[f])||0])),...Object.fromEntries(ACTUAL_FIELDS.map(f=>[f,parseInt(r[f])||0])),fence_style:r.fence_style||null,fence_color:r.fence_color||null,fence_height:r.fence_height||null,...Object.fromEntries(PRODUCT_NUM_FIELDS.map(f=>[f,parseInt(r[f])||null]))});});nextDayRows.forEach((r,i)=>{if(!r.job_name&&sumF(r,NEXT_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'nextday',row_order:i,job_name:r.job_name,...Object.fromEntries(NEXT_FIELDS.map(f=>[f,parseInt(r[f])||0])),priority:r.priority||'Normal',ship_date:r.ship_date||null,notes:r.notes||null});});if(rowPayloads.length>0)await sbPost('daily_schedule_rows',rowPayloads);showToast(`Production Daily Report submitted for ${date}`,true);resetForm();setTimeout(()=>{setTab('history');fetchHistory();},600);}catch(e){showToast(e.message||'Submit failed',false);}setSubmitting(false);};
+  const openDetail=async(id)=>{try{const rArr=await sbGet('daily_schedule_reports',`id=eq.${id}`);if(!rArr||!rArr[0])return;setDetailReport(rArr[0]);const rows=await sbGet('daily_schedule_rows',`report_id=eq.${id}&section=eq.today&order=row_order.asc`);setDetailCards(rows||[]);setReportId(id);}catch(e){console.error(e);}};
+
+  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setCards(Array.from({length:3},emptyCard));setCommentary({});};
+
+  const submitReport=async()=>{setSubmitting(true);try{const rpt=await sbPost('daily_schedule_reports',{report_date:date,scheduler:scheduler||null,shift:shift||null,...commentary});const rowPayloads=[];cards.forEach((c,i)=>{if(!c.job_name&&sumF(c,ALL_P_FIELDS)===0&&sumF(c,ALL_A_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'today',row_order:i,job_name:c.job_name,fence_style:c.fence_style||null,fence_color:c.fence_color||null,fence_height:c.fence_height||null,...Object.fromEntries(ALL_P_FIELDS.map(f=>[f,parseInt(c[f])||null])),...Object.fromEntries(ALL_A_FIELDS.map(f=>[f,parseInt(c[f])||null]))});});if(rowPayloads.length>0)await sbPost('daily_schedule_rows',rowPayloads);showToast(`Production Daily Report submitted for ${date}`,true);resetForm();setTimeout(()=>{setTab('history');fetchHistory();},600);}catch(e){showToast(e.message||'Submit failed',false);}setSubmitting(false);};
 
   useEffect(()=>{if(tab==='history'&&!reportId)fetchHistory();},[tab,reportId]);
 
-  const updateToday=(i,field,val)=>setTodayRows(prev=>prev.map((r,idx)=>idx===i?{...r,[field]:val}:r));
-  const updateNext=(i,field,val)=>setNextDayRows(prev=>prev.map((r,idx)=>idx===i?{...r,[field]:val}:r));
+  // ─── Shared styles ───
+  const schedBg='#EBF3FB';const actualBg='#EAF3DE';const varBg='#F9FAFB';
+  const nI={width:60,padding:'3px 2px',border:'1px solid #E5E3E0',borderRadius:4,fontSize:12,textAlign:'center',background:'transparent',color:'#1A1A1A',fontFamily:'inherit'};
+  const varColor=(v)=>v>0?'#3B6D11':v<0?'#A32D2D':'#9E9B96';
+  const varText=(v)=>v>0?`+${v}`:v<0?`${v}`:'—';
 
-  const totalSched=todayRows.reduce((s,r)=>s+sumF(r,SCHED_FIELDS),0);
-  const totalActual=todayRows.reduce((s,r)=>s+sumF(r,ACTUAL_FIELDS),0);
-  const adherence=totalSched>0?(totalActual/totalSched)*100:null;
-  const nextTotal=nextDayRows.reduce((s,r)=>s+sumF(r,NEXT_FIELDS),0);
-
-  const adhBadge=(val)=>{if(val===null||val===undefined||isNaN(val))return<span style={{...pill('#6B6056','#E5E3E0'),fontSize:11}}>—</span>;const pct=Math.round(val);const bg=pct>=90?'#3B6D11':pct>=75?'#854F0B':'#A32D2D';return<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:bg,color:'#FFF'}}>{pct}%</span>;};
-
-  const thS={padding:'4px 6px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'center',borderBottom:'2px solid #E5E3E0',whiteSpace:'nowrap'};
-  const tdS={padding:'3px 4px',fontSize:11,borderBottom:'1px solid #F4F4F2',textAlign:'center'};
-  const numInput={width:'100%',padding:'3px 2px',border:'1px solid #E5E3E0',borderRadius:4,fontSize:11,textAlign:'center',background:'transparent',color:'#1A1A1A',MozAppearance:'textfield',WebkitAppearance:'none'};
-  const txtInput={...numInput,textAlign:'left',padding:'3px 6px'};
-  const lockedTd={...tdS,background:'#F3F4F6',fontWeight:600};
-  const schedBg='#EBF3FB';const actualBg='#EAF3DE';
-
-  const formatDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // ─── Render one project card ───
+  const renderProjectCard=(c,i,readOnly,update)=>{
+    const cardPlanned=sumF(c,ALL_P_FIELDS);const cardActual=sumF(c,ALL_A_FIELDS);const cardAdh=cardPlanned>0?(cardActual/cardPlanned)*100:null;
+    return(
+    <div key={i} style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
+      {/* Project header */}
+      <div style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
+        <div style={{flex:'1 1 200px'}}>{readOnly?<span style={{fontSize:14,fontWeight:700}}>{c.job_name||'—'}</span>:<input value={c.job_name||''} onChange={e=>update(i,'job_name',e.target.value)} placeholder="Project Name" style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'4px 10px',fontSize:13,fontWeight:600,width:'100%'}}/>}</div>
+        <div style={{display:'flex',gap:8,alignItems:'center',fontSize:12}}>
+          <span style={{color:'rgba(255,255,255,0.6)'}}>Style:</span>{readOnly?<span>{c.fence_style||'—'}</span>:<input value={c.fence_style||''} onChange={e=>update(i,'fence_style',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
+          <span style={{color:'rgba(255,255,255,0.6)'}}>Color:</span>{readOnly?<span>{c.fence_color||'—'}</span>:<input value={c.fence_color||''} onChange={e=>update(i,'fence_color',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
+          <span style={{color:'rgba(255,255,255,0.6)'}}>Height:</span>{readOnly?<span>{c.fence_height||'—'}</span>:<select value={c.fence_height||''} onChange={e=>update(i,'fence_height',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12}}><option value="">—</option><option value="6">6</option><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="Other">Other</option></select>}
+        </div>
+        {!readOnly&&cards.length>1&&<button onClick={()=>removeCard(i)} title="Remove" style={{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:18,cursor:'pointer',padding:'0 4px'}}>×</button>}
+      </div>
+      {/* Table */}
+      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}>
+        <thead><tr>
+          <th style={{padding:'6px 12px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'left',borderBottom:'2px solid #E5E3E0',width:140}}></th>
+          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#185FA5',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:schedBg,width:80}}>Planned</th>
+          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#3B6D11',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:actualBg,width:80}}>Actual</th>
+          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#6B6056',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:varBg,width:70}}>Variance</th>
+        </tr></thead>
+        <tbody>
+          {DETAIL_GROUPS.map(g=>{
+            const gp=g.rows.reduce((s,r)=>s+(parseInt(c[r.p])||0),0);
+            const ga=g.rows.reduce((s,r)=>s+(parseInt(c[r.a])||0),0);
+            const gv=ga-gp;
+            return<React.Fragment key={g.label}>
+              <tr><td colSpan={4} style={{padding:'8px 12px 4px',fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,borderBottom:'1px solid #E5E3E0',background:'#FAFAF8'}}>{g.label}</td></tr>
+              {g.rows.map(r=>{const pv=parseInt(c[r.p])||0;const av=parseInt(c[r.a])||0;const v=av-pv;return<tr key={r.p}>
+                <td style={{padding:'3px 12px',fontSize:12,color:'#6B6056',borderBottom:'1px solid #F4F4F2'}}>{r.label}</td>
+                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:schedBg}}>{readOnly?<span style={{fontSize:12,fontWeight:500}}>{pv||'—'}</span>:<input type="number" min="0" value={c[r.p]??''} onChange={e=>update(i,r.p,e.target.value)} style={{...nI,background:'transparent'}}/>}</td>
+                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:actualBg}}>{readOnly?<span style={{fontSize:12,fontWeight:500}}>{av||'—'}</span>:<input type="number" min="0" value={c[r.a]??''} onChange={e=>update(i,r.a,e.target.value)} style={{...nI,background:'transparent'}}/>}</td>
+                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:varBg,fontWeight:600,fontSize:12,color:varColor(v)}}>{varText(v)}</td>
+              </tr>;})}
+              <tr style={{fontWeight:700,background:'#F3F4F6'}}><td style={{padding:'4px 12px',fontSize:11,borderBottom:'2px solid #E5E3E0'}}>TOTAL {g.label}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:schedBg}}>{gp}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:actualBg}}>{ga}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:varBg,color:varColor(gv)}}>{varText(gv)}</td></tr>
+            </React.Fragment>;
+          })}
+          <tr style={{fontWeight:700,background:'#EEEDEB'}}><td style={{padding:'8px 12px',fontSize:13}}>TOTAL ALL PIECES</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#185FA5',background:schedBg}}>{cardPlanned}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#3B6D11',background:actualBg}}>{cardActual}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:13,fontWeight:700,background:varBg}}>{adhBadge(cardAdh)}</td></tr>
+        </tbody>
+      </table></div>
+    </div>);
+  };
 
   // ─── DETAIL VIEW ───
   if(tab==='history'&&reportId&&detailReport){
-    const dtSched=detailToday.reduce((s,r)=>s+sumF(r,SCHED_FIELDS),0);
-    const dtActual=detailToday.reduce((s,r)=>s+sumF(r,ACTUAL_FIELDS),0);
-    const dtAdh=dtSched>0?(dtActual/dtSched)*100:null;
-    const dtNextTotal=detailNext.reduce((s,r)=>s+sumF(r,NEXT_FIELDS),0);
-    const submittedAt=new Date(detailReport.submitted_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const dtPlanned=detailCards.reduce((s,c)=>s+sumF(c,ALL_P_FIELDS),0);
+    const dtActual=detailCards.reduce((s,c)=>s+sumF(c,ALL_A_FIELDS),0);
+    const dtAdh=dtPlanned>0?(dtActual/dtPlanned)*100:null;
     return(<div>
       {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <button onClick={()=>setReportId(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer'}}>← Back to History</button>
-        <span style={{fontSize:12,color:'#9E9B96'}}>Submitted {submittedAt}</span>
+        <span style={{fontSize:12,color:'#9E9B96'}}>Submitted {detailReport.submitted_at?new Date(detailReport.submitted_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):''}</span>
       </div>
-      <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',gap:24,alignItems:'center'}}>
-        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Date</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.report_date}</div></div>
+      <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',gap:24,alignItems:'center',flexWrap:'wrap'}}>
+        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Date</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{formatDate(detailReport.report_date)}</div></div>
         <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Scheduler</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.scheduler||'—'}</div></div>
         <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Shift</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.shift||'—'}</div></div>
+        <div style={{marginLeft:'auto'}}><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Overall Adherence</div><div>{adhBadge(dtAdh)}</div></div>
       </div>
-      {/* Section 1 read-only */}
-      <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-        <div style={{background:'#185FA5',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 1 — Today's schedule vs. actual</span>{adhBadge(dtAdh)}</div>
-        <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS} rowSpan={2}>Job</th><th style={{...thS,background:schedBg}} colSpan={7}>Scheduled</th><th style={{...thS,background:actualBg}} colSpan={7}>Actual</th><th style={{...thS,background:'#F3F4F6'}} rowSpan={2}>Var %</th><th style={thS} rowSpan={2}></th></tr><tr>{PIECE_LABELS.map(c=><th key={'s'+c} style={{...thS,background:schedBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th>{PIECE_LABELS.map(c=><th key={'a'+c} style={{...thS,background:actualBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th></tr></thead>
-        <tbody>{detailToday.map((r,i)=>{const st=sumF(r,SCHED_FIELDS);const at=sumF(r,ACTUAL_FIELDS);const v=st>0?((at-st)/st*100):null;const isExp=detailExpandedRow===i;const dv=f=>{const val=r[f];return(val&&parseInt(val)!==0)?val:'—';};return<React.Fragment key={i}><tr><td style={{...tdS,textAlign:'left',fontWeight:500,paddingLeft:8}}>{r.job_name||''}</td>{SCHED_FIELDS.map(f=><td key={f} style={{...tdS,background:schedBg}}>{r[f]||0}</td>)}<td style={lockedTd}>{st}</td>{ACTUAL_FIELDS.map(f=><td key={f} style={{...tdS,background:actualBg}}>{r[f]||0}</td>)}<td style={lockedTd}>{at}</td><td style={lockedTd}>{v===null?'—':<span style={{color:v>=0?'#3B6D11':'#A32D2D'}}>{v>=0?'+':''}{Math.round(v)}%</span>}</td><td style={{...tdS,width:28}}><button onClick={()=>setDetailExpandedRow(isExp?null:i)} style={{background:isExp?'#8B2020':'#F3F4F6',color:isExp?'#FFF':'#6B6056',border:'none',borderRadius:4,width:22,height:22,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>{isExp?'−':'+'}</button></td></tr>
-        {isExp&&<tr><td colSpan={17} style={{padding:0,background:'#F9FAFB',borderBottom:'2px solid #E5E3E0'}}><div style={{padding:'12px 16px'}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-            <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Style</div><span style={{fontSize:13,color:'#1A1A1A'}}>{r.fence_style||'—'}</span></div>
-            <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Color</div><span style={{fontSize:13,color:'#1A1A1A'}}>{r.fence_color||'—'}</span></div>
-            <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Height</div><span style={{fontSize:13,color:'#1A1A1A'}}>{r.fence_height||'—'}</span></div>
-          </div>
-          <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Posts Produced</div>
-          <table style={{borderCollapse:'collapse',marginBottom:12}}><thead><tr><th style={{...thS,textAlign:'left',padding:'2px 8px'}}></th><th style={{...thS,padding:'2px 8px'}}>Line</th><th style={{...thS,padding:'2px 8px'}}>Corner</th><th style={{...thS,padding:'2px 8px'}}>Stop</th></tr></thead><tbody>
-            {[['8ft','8ft'],['10ft','10ft'],['12ft','12ft']].map(([lbl,h])=><tr key={h}><td style={{fontSize:11,fontWeight:600,color:'#6B6056',padding:'2px 8px'}}>{lbl}</td>{['line','corner','stop'].map(t=><td key={t} style={{padding:'2px 8px',textAlign:'center',fontSize:12,fontWeight:600}}>{dv(`posts_${h}_${t}`)}</td>)}</tr>)}
-          </tbody></table>
-          <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total posts: {(()=>{const t=['posts_8ft_line','posts_8ft_corner','posts_8ft_stop','posts_10ft_line','posts_10ft_corner','posts_10ft_stop','posts_12ft_line','posts_12ft_corner','posts_12ft_stop'].reduce((s,f)=>s+(parseInt(r[f])||0),0);return t||'—';})()}</div>
-          <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Panels Produced</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'4px 12px',marginBottom:4}}>
-            {[['Regular','panels_regular'],['Long','panels_long'],['1/2 Regular','panels_half_regular'],['1/2 Long','panels_half_long'],['Center','panels_center'],['Middle','panels_middle'],['Diamond','panels_diamond'],['Bottled','panels_bottled']].map(([lbl,f])=><div key={f} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><span style={{fontSize:12,fontWeight:600,width:60,textAlign:'center'}}>{dv(f)}</span></div>)}
-          </div>
-          <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total panels: {(()=>{const t=['panels_regular','panels_long','panels_half_regular','panels_half_long','panels_center','panels_middle','panels_diamond','panels_bottled'].reduce((s,f)=>s+(parseInt(r[f])||0),0);return t||'—';})()}</div>
-          <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Rails Produced</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:'4px 12px',marginBottom:4}}>
-            {[['Regular','rails_regular'],['Long','rails_long'],['Bottom','rails_bottom'],['Top','rails_top'],['Short','rails_short']].map(([lbl,f])=><div key={f} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><span style={{fontSize:12,fontWeight:600,width:60,textAlign:'center'}}>{dv(f)}</span></div>)}
-          </div>
-          <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total rails: {(()=>{const t=['rails_regular','rails_long','rails_bottom','rails_top','rails_short'].reduce((s,f)=>s+(parseInt(r[f])||0),0);return t||'—';})()}</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Post Caps</div><div style={{display:'flex',gap:12}}>{[['Line Caps','caps_line'],['Stop Caps','caps_stop']].map(([lbl,f])=><div key={f}><span style={{fontSize:11,color:'#6B6056',marginRight:4}}>{lbl}:</span><span style={{fontSize:12,fontWeight:600}}>{dv(f)}</span></div>)}</div></div>
-            <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Other Materials</div><div style={{display:'flex',gap:12}}>{[['Cement Bags','cement_bags'],['Rebar','rebar_count'],['Silicone','silicone_tubes']].map(([lbl,f])=><div key={f}><span style={{fontSize:11,color:'#6B6056',marginRight:4}}>{lbl}:</span><span style={{fontSize:12,fontWeight:600}}>{dv(f)}</span></div>)}</div></div>
-          </div>
-        </div></td></tr>}
-        </React.Fragment>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>TOTAL</td>{SCHED_FIELDS.map(f=>{const c=detailToday.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:schedBg}}>{c}</td>;})}<td style={lockedTd}>{dtSched}</td>{ACTUAL_FIELDS.map(f=>{const c=detailToday.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:actualBg}}>{c}</td>;})}<td style={lockedTd}>{dtActual}</td><td style={lockedTd}>{dtSched>0?<span style={{color:(dtActual-dtSched)>=0?'#3B6D11':'#A32D2D'}}>{dtActual-dtSched>=0?'+':''}{Math.round((dtActual-dtSched)/dtSched*100)}%</span>:'—'}</td><td style={tdS}/></tr><tr style={{background:schedBg,fontWeight:700}}><td style={tdS} colSpan={16}>SCHEDULE ADHERENCE</td><td style={{...tdS,textAlign:'center'}}>{adhBadge(dtAdh)} <span style={{fontSize:10,color:'#9E9B96',fontWeight:400}}>Target ≥ 90%</span></td></tr></tbody></table></div>
-      </div>
-      {/* Section 2 read-only */}
-      <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-        <div style={{background:'#3B6D11',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 2 — Next-day production schedule</span><span style={{fontSize:12,fontWeight:600,background:'rgba(255,255,255,0.2)',padding:'2px 8px',borderRadius:6}}>Total: {dtNextTotal} pieces</span></div>
-        <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS}>Job</th>{PIECE_LABELS.map(c=><th key={c} style={thS}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th><th style={thS}>Priority</th><th style={thS}>Ship Date</th><th style={thS}>Notes</th></tr></thead>
-        <tbody>{detailNext.map((r,i)=>{const t=sumF(r,NEXT_FIELDS);return<tr key={i}><td style={{...tdS,textAlign:'left',fontWeight:500,paddingLeft:8}}>{r.job_name||''}</td>{NEXT_FIELDS.map(f=><td key={f} style={tdS}>{r[f]||0}</td>)}<td style={lockedTd}>{t}</td><td style={{...tdS,color:priorityColor(r.priority)}}>{r.priority||'Normal'}</td><td style={tdS}>{r.ship_date||'—'}</td><td style={{...tdS,textAlign:'left',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||''}</td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>NEXT-DAY TOTAL</td>{NEXT_FIELDS.map(f=>{const c=detailNext.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={tdS}>{c}</td>;})}<td style={lockedTd}>{dtNextTotal}</td><td style={tdS} colSpan={3}/></tr></tbody></table></div>
-      </div>
-      {/* Section 3 read-only */}
+      {detailCards.map((c,i)=>renderProjectCard(c,i,true,()=>{}))}
+      {detailCards.length===0&&<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>No project data in this report.</div>}
+      {/* Commentary read-only */}
       <div style={{...card,padding:0,overflow:'hidden'}}>
-        <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Section 3 — Constraints, readiness & commentary</div>
+        <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Constraints, Readiness & Commentary</div>
         <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {[{k:'blockers',l:'Schedule Blockers / Constraints',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow'},{k:'material_readiness',l:'Material Readiness for Tomorrow'},{k:'equipment_status',l:'Equipment Status'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations'},{k:'other_comments',l:'Other Comments',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}><div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</div><div style={{fontSize:13,color:'#1A1A1A',background:'#FAFAF8',borderRadius:8,padding:10,minHeight:48,whiteSpace:'pre-wrap'}}>{detailReport[f.k]||'—'}</div></div>)}
         </div>
@@ -1889,56 +1902,20 @@ function DailyReportPage(){
 
     {/* Header bar */}
     <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',flexWrap:'wrap',gap:16,alignItems:'center'}}>
-      <div style={{color:'#FFF',flex:'1 1 100%'}}><div style={{fontFamily:'Syne',fontSize:18,fontWeight:800}}>Daily Production Scheduling Report</div><div style={{fontSize:12,opacity:0.8}}>Fencecrete America — San Antonio Plant</div></div>
+      <div style={{color:'#FFF',flex:'1 1 100%',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:800}}>Production Daily Report</div><div style={{fontSize:12,opacity:0.8}}>Fencecrete America — San Antonio Plant</div></div><div>{adhBadge(overallAdh)}<span style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginLeft:6}}>Overall</span></div></div>
       <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Date</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
       <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Scheduler</div><input value={scheduler} onChange={e=>setScheduler(e.target.value)} placeholder="Max" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
       <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Shift</div><input value={shift} onChange={e=>setShift(e.target.value)} placeholder="Day / Eve" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
     </div>
 
-    {/* Section 1 */}
-    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-      <div style={{background:'#185FA5',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 1 — Today's schedule vs. actual</span><div style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>Adherence: {adhBadge(adherence)}</div></div>
-      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS} rowSpan={2}>Job</th><th style={{...thS,background:schedBg}} colSpan={7}>Scheduled (Max)</th><th style={{...thS,background:actualBg}} colSpan={7}>Actual (from Luis Daily Report)</th><th style={{...thS,background:'#F3F4F6'}} rowSpan={2}>Var %</th><th style={thS} rowSpan={2}></th></tr><tr>{PIECE_LABELS.map(c=><th key={'s'+c} style={{...thS,background:schedBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th>{PIECE_LABELS.map(c=><th key={'a'+c} style={{...thS,background:actualBg}}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th></tr></thead>
-      <tbody>{todayRows.map((r,i)=>{const st=sumF(r,SCHED_FIELDS);const at=sumF(r,ACTUAL_FIELDS);const v=st>0?((at-st)/st*100):null;const isExp=expandedRow===i;return<React.Fragment key={i}><tr><td style={{...tdS,minWidth:120}}><input value={r.job_name} onChange={e=>updateToday(i,'job_name',e.target.value)} placeholder="Job name" style={txtInput}/></td>{SCHED_FIELDS.map(f=><td key={f} style={{...tdS,background:schedBg,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{st}</td>{ACTUAL_FIELDS.map(f=><td key={f} style={{...tdS,background:actualBg,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{at}</td><td style={lockedTd}>{v===null?'—':<span style={{color:v>=0?'#3B6D11':'#A32D2D'}}>{v>=0?'+':''}{Math.round(v)}%</span>}</td><td style={{...tdS,width:28}}><button onClick={()=>setExpandedRow(isExp?null:i)} style={{background:isExp?'#8B2020':'#F3F4F6',color:isExp?'#FFF':'#6B6056',border:'none',borderRadius:4,width:22,height:22,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>{isExp?'−':'+'}</button></td></tr>
-      {isExp&&<tr><td colSpan={17} style={{padding:0,background:'#F9FAFB',borderBottom:'2px solid #E5E3E0'}}><div style={{padding:'12px 16px'}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-          <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Style</div><input value={r.fence_style||''} onChange={e=>updateToday(i,'fence_style',e.target.value)} style={{...inputS,padding:'4px 8px',fontSize:12,minHeight:'auto'}}/></div>
-          <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Color</div><input value={r.fence_color||''} onChange={e=>updateToday(i,'fence_color',e.target.value)} style={{...inputS,padding:'4px 8px',fontSize:12,minHeight:'auto'}}/></div>
-          <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:2}}>Height</div><select value={r.fence_height||''} onChange={e=>updateToday(i,'fence_height',e.target.value)} style={{...inputS,padding:'4px 8px',fontSize:12,minHeight:'auto'}}><option value="">—</option><option value="6">6</option><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="Other">Other</option></select></div>
-        </div>
-        <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Posts Produced Today</div>
-        <table style={{borderCollapse:'collapse',marginBottom:12}}><thead><tr><th style={{...thS,textAlign:'left',padding:'2px 8px'}}></th><th style={{...thS,padding:'2px 8px'}}>Line</th><th style={{...thS,padding:'2px 8px'}}>Corner</th><th style={{...thS,padding:'2px 8px'}}>Stop</th></tr></thead><tbody>
-          {[['8ft','8ft'],['10ft','10ft'],['12ft','12ft']].map(([lbl,h])=><tr key={h}><td style={{fontSize:11,fontWeight:600,color:'#6B6056',padding:'2px 8px'}}>{lbl}</td>{['line','corner','stop'].map(t=><td key={t} style={{padding:'2px 4px',textAlign:'center'}}><input type="number" min="0" value={r[`posts_${h}_${t}`]||''} onChange={e=>updateToday(i,`posts_${h}_${t}`,parseInt(e.target.value)||0)} style={{...numInput,width:60}}/></td>)}</tr>)}
-        </tbody></table>
-        <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total posts: {['posts_8ft_line','posts_8ft_corner','posts_8ft_stop','posts_10ft_line','posts_10ft_corner','posts_10ft_stop','posts_12ft_line','posts_12ft_corner','posts_12ft_stop'].reduce((s,f)=>s+(parseInt(r[f])||0),0)}</div>
-        <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Panels Produced Today</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'4px 12px',marginBottom:4}}>
-          {[['Regular','panels_regular'],['Long','panels_long'],['1/2 Regular','panels_half_regular'],['1/2 Long','panels_half_long'],['Center','panels_center'],['Middle','panels_middle'],['Diamond','panels_diamond'],['Bottled','panels_bottled']].map(([lbl,f])=><div key={f} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={{...numInput,width:60}}/></div>)}
-        </div>
-        <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total panels: {['panels_regular','panels_long','panels_half_regular','panels_half_long','panels_center','panels_middle','panels_diamond','panels_bottled'].reduce((s,f)=>s+(parseInt(r[f])||0),0)}</div>
-        <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Rails Produced Today</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:'4px 12px',marginBottom:4}}>
-          {[['Regular','rails_regular'],['Long','rails_long'],['Bottom','rails_bottom'],['Top','rails_top'],['Short','rails_short']].map(([lbl,f])=><div key={f} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={{...numInput,width:60}}/></div>)}
-        </div>
-        <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textAlign:'right',marginBottom:12}}>Total rails: {['rails_regular','rails_long','rails_bottom','rails_top','rails_short'].reduce((s,f)=>s+(parseInt(r[f])||0),0)}</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-          <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Post Caps</div><div style={{display:'flex',gap:12}}>{[['Line Caps','caps_line'],['Stop Caps','caps_stop']].map(([lbl,f])=><div key={f} style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={{...numInput,width:60}}/></div>)}</div></div>
-          <div><div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Other Materials</div><div style={{display:'flex',gap:12}}>{[['Cement Bags','cement_bags'],['Rebar','rebar_count'],['Silicone Tubes','silicone_tubes']].map(([lbl,f])=><div key={f} style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:11,color:'#6B6056'}}>{lbl}</span><input type="number" min="0" value={r[f]||''} onChange={e=>updateToday(i,f,parseInt(e.target.value)||0)} style={{...numInput,width:60}}/></div>)}</div></div>
-        </div>
-      </div></td></tr>}
-      </React.Fragment>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>TOTAL</td>{SCHED_FIELDS.map(f=>{const c=todayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:schedBg}}>{c}</td>;})}<td style={lockedTd}>{totalSched}</td>{ACTUAL_FIELDS.map(f=>{const c=todayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={{...tdS,background:actualBg}}>{c}</td>;})}<td style={lockedTd}>{totalActual}</td><td style={lockedTd}>{totalSched>0?<span style={{color:(totalActual-totalSched)>=0?'#3B6D11':'#A32D2D'}}>{totalActual-totalSched>=0?'+':''}{Math.round((totalActual-totalSched)/totalSched*100)}%</span>:'—'}</td><td style={tdS}/></tr><tr style={{background:schedBg,fontWeight:700}}><td style={tdS} colSpan={16}>SCHEDULE ADHERENCE</td><td style={{...tdS,textAlign:'center'}}>{adhBadge(adherence)} <span style={{fontSize:10,color:'#9E9B96',fontWeight:400}}>Target ≥ 90%</span></td></tr></tbody></table></div>
-    </div>
+    {/* Project cards */}
+    {cards.map((c,i)=>renderProjectCard(c,i,false,updateCard))}
 
-    {/* Section 2 */}
-    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-      <div style={{background:'#3B6D11',color:'#FFF',padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:700,fontSize:13}}>Section 2 — Next-day production schedule</span><span style={{fontSize:12,fontWeight:600,background:'rgba(255,255,255,0.2)',padding:'2px 8px',borderRadius:6}}>Total: {nextTotal} pieces</span></div>
-      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS}>Job</th>{PIECE_LABELS.map(c=><th key={c} style={thS}>{c}</th>)}<th style={{...thS,background:'#F3F4F6'}}>Total</th><th style={thS}>Priority</th><th style={thS}>Ship Date</th><th style={thS}>Notes / Special Instructions</th></tr></thead>
-      <tbody>{nextDayRows.map((r,i)=>{const t=sumF(r,NEXT_FIELDS);return<tr key={i}><td style={{...tdS,minWidth:120}}><input value={r.job_name} onChange={e=>updateNext(i,'job_name',e.target.value)} placeholder="Job name" style={txtInput}/></td>{NEXT_FIELDS.map(f=><td key={f} style={{...tdS,minWidth:50}}><input type="number" min="0" value={r[f]||''} onChange={e=>updateNext(i,f,parseInt(e.target.value)||0)} style={numInput}/></td>)}<td style={lockedTd}>{t}</td><td style={{...tdS,minWidth:80}}><select value={r.priority} onChange={e=>updateNext(i,'priority',e.target.value)} style={{...numInput,color:priorityColor(r.priority),fontWeight:r.priority==='Critical'||r.priority==='High'?600:400}}>{PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}</select></td><td style={{...tdS,minWidth:110}}><input type="date" value={r.ship_date||''} onChange={e=>updateNext(i,'ship_date',e.target.value)} style={numInput}/></td><td style={{...tdS,minWidth:160}}><input value={r.notes||''} onChange={e=>updateNext(i,'notes',e.target.value)} placeholder="Notes" style={txtInput}/></td></tr>;})}<tr style={{fontWeight:700,background:'#FAFAF8'}}><td style={tdS}>NEXT-DAY TOTAL</td>{NEXT_FIELDS.map(f=>{const c=nextDayRows.reduce((s,r)=>s+(parseInt(r[f])||0),0);return<td key={f} style={tdS}>{c}</td>;})}<td style={lockedTd}>{nextTotal}</td><td style={tdS} colSpan={3}/></tr></tbody></table></div>
-    </div>
+    <button onClick={addCard} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #D1CEC9',background:'transparent',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Syne',marginBottom:16}}>+ Add Project</button>
 
-    {/* Section 3 */}
+    {/* Commentary */}
     <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-      <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Section 3 — Constraints, readiness & commentary</div>
+      <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Constraints, Readiness & Commentary</div>
       <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
         {[{k:'blockers',l:'Schedule Blockers / Constraints',h:'What prevented hitting today\'s schedule',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow',h:'Headcount confirmed, gaps, call-outs expected'},{k:'material_readiness',l:'Material Readiness for Tomorrow',h:'Any shortages, deliveries pending'},{k:'equipment_status',l:'Equipment Status',h:'Down units, expected return'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations',h:''},{k:'other_comments',l:'Other Comments',h:'',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}>
           <label style={{display:'block',fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</label>
@@ -1949,7 +1926,7 @@ function DailyReportPage(){
 
     {/* Submit footer */}
     <div style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
-      <div style={{fontSize:11,color:'#9E9B96'}}>Submit by end of shift | Actuals populated from Luis Daily Production Report | Archive: SharePoint &gt; Production &gt; Scheduling &gt; YYYY-MM</div>
+      <div style={{fontSize:11,color:'#9E9B96'}}>Submit by end of shift | Archive: SharePoint &gt; Production &gt; Scheduling &gt; YYYY-MM</div>
       <button onClick={submitReport} disabled={submitting} style={{...btnP,opacity:submitting?0.5:1}}>{submitting?'Submitting...':'Submit Report'}</button>
     </div>
   </div>);
