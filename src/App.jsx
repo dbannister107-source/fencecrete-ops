@@ -729,6 +729,25 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[invoiceModal,setInvoiceModal]=useState(null);const[invoiceAmt,setInvoiceAmt]=useState('');
   const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=billing_period.desc');setAllBillingEntries(d||[]);const p=await sbGet('pm_billing_entries','select=*&status=eq.pending');setPmEntries(p||[]);},[]);
   useEffect(()=>{fetchEntries();},[fetchEntries]);
+  // ═══ AR Exception Dashboard (PM Submissions tab) ═══
+  const[arMonth,setArMonth]=useState(curBillingMonth);
+  const[arSubs,setArSubs]=useState([]);
+  const[arPmF,setArPmF]=useState('');
+  const[arMktF,setArMktF]=useState(null);
+  const[arViewF,setArViewF]=useState('all');
+  const[arDetail,setArDetail]=useState(null);
+  const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:''});
+  const arMonthLabel=monthLabel(arMonth);
+  const arIsCurrent=arMonth===curBillingMonth();
+  const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
+  useEffect(()=>{fetchArSubs();},[fetchArSubs]);
+  const arActiveJobs=useMemo(()=>jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status)),[jobs]);
+  const arSubByJob=useMemo(()=>{const m={};arSubs.forEach(s=>{m[s.job_id]=s;});return m;},[arSubs]);
+  const arStats=useMemo(()=>{const total=arActiveJobs.length;let submitted=0,reviewed=0,missing=0;arActiveJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arActiveJobs,arSubByJob]);
+  const arTableData=useMemo(()=>{let data=arActiveJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arPmF)data=data.filter(d=>d.job.pm===arPmF);if(arMktF)data=data.filter(d=>d.job.market===arMktF);if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arActiveJobs,arSubByJob,arPmF,arMktF,arViewF]);
+  const markArReviewed=async()=>{if(!arDetail)return;try{await sbPatch('pm_bill_submissions',arDetail.sub.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null});setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});fetchArSubs();setToast('Marked as reviewed');}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
+  const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||''});};
+  const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
   // Lookups for LF context from PM Bill Sheet entries
   const thisMonthByJob=useMemo(()=>{const m={};allBillingEntries.forEach(e=>{if(e.billing_period&&e.billing_period.startsWith(defPeriod)&&!m[e.job_id])m[e.job_id]=e;});return m;},[allBillingEntries,defPeriod]);
   const latestPmByJob=useMemo(()=>{const m={};[...allBillingEntries].sort((a,b)=>(b.billing_period||'').localeCompare(a.billing_period||'')||(b.created_at||'').localeCompare(a.created_at||'')).forEach(e=>{if(!m[e.job_id])m[e.job_id]=e;});return m;},[allBillingEntries]);
@@ -764,65 +783,72 @@ function BillingPage({jobs,onRefresh,onNav}){
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['submissions','PM Submissions'],['monthlycycles','Monthly Cycles'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&subPendingCount>0&&<span style={{marginLeft:6,background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{subPendingCount}</span>}</button>)}
+      {[['submissions','PM Submissions'],['monthlycycles','Monthly Cycles'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&arStats.missing>0&&<span style={{marginLeft:6,background:'#FEE2E2',color:'#991B1B',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{arStats.missing} missing</span>}</button>)}
     </div>
 
     {/* ═══ TAB: PM SUBMISSIONS ═══ */}
-    {billingTab==='submissions'&&(()=>{
-      const subPending=subEntries.filter(e=>e.status==='pending');const subInvoiced=subEntries.filter(e=>e.status==='invoiced');
-      const pendAmt=subPending.reduce((s,e)=>s+n(e.net_amount_due||e.amount_this_period),0);
-      const invAmt=subInvoiced.reduce((s,e)=>s+n(e.net_amount_due||e.amount_this_period),0);
-      return<div>
-      {/* Monthly Summary */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:16}}>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{subEntries.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Submissions · {subTotalLF.toLocaleString()} LF</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{$k(pendAmt)}</div><div style={{fontSize:11,color:'#6B6056'}}>{subPending.length} Pending</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#065F46'}}>{$k(invAmt)}</div><div style={{fontSize:11,color:'#6B6056'}}>{subInvoiced.length} Invoiced</div></div>
+    {billingTab==='submissions'&&<div>
+      {/* Month + Filters */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Billing Month</label>
+          <input type="month" value={arMonth} onChange={e=>setArMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
+          <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{arMonthLabel}</span>
+        </div>
       </div>
-      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={subSearch} onChange={e=>setSubSearch(e.target.value)} placeholder="Search job name, number, PM..." style={{...inputS,width:240}}/>
-        <button onClick={()=>setSubPeriodF(defPeriod)} style={fpill(subPeriodF===defPeriod)}>This Month</button>
-        <input type="month" value={subPeriodF} onChange={e=>setSubPeriodF(e.target.value)} style={{...inputS,width:150}}/>
-        {subPeriodF&&<button onClick={()=>setSubPeriodF('')} style={{...btnS,padding:'4px 8px',fontSize:10}}>All Periods</button>}
-        <button onClick={()=>setSubMktF(null)} style={fpill(!subMktF)}>All</button>
-        {MKTS.map(m=><button key={m} onClick={()=>setSubMktF(m)} style={fpill(subMktF===m)}>{MS[m]}</button>)}
-        <select value={subPmF} onChange={e=>setSubPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-        <button onClick={()=>setSubStatusF(null)} style={fpill(!subStatusF)}>All</button>
-        <button onClick={()=>setSubStatusF('pending')} style={fpill(subStatusF==='pending')}>Pending</button>
-        <button onClick={()=>setSubStatusF('invoiced')} style={fpill(subStatusF==='invoiced')}>Invoiced</button>
+      {!arIsCurrent&&<div style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:8,padding:'8px 16px',marginBottom:14,fontSize:13,color:'#92400E',fontWeight:600}}>Viewing historical data — {arMonthLabel}</div>}
+      {/* Filter bar */}
+      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>PM:</span>
+        <button onClick={()=>setArPmF('')} style={fpill(!arPmF)}>All PMs</button>
+        {PM_LIST.map(p=><button key={p.id} onClick={()=>setArPmF(p.id)} style={fpill(arPmF===p.id)}>{p.short}</button>)}
+        <span style={{color:'#E5E3E0'}}>|</span>
+        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
+        <button onClick={()=>setArMktF(null)} style={fpill(!arMktF)}>All</button>
+        {MKTS.map(m=><button key={m} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
+        <span style={{color:'#E5E3E0'}}>|</span>
+        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>View:</span>
+        {[['all','All Jobs'],['missing','Missing Only'],['submitted','Submitted'],['reviewed','Reviewed']].map(([k,l])=><button key={k} onClick={()=>setArViewF(k)} style={fpill(arViewF===k)}>{l}</button>)}
       </div>
-      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 420px)'}}>
+      {/* Summary stats */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#6B6056'}}>Total Active Jobs</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#6B6056'}}>Submitted</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#6B6056'}}>Missing</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arStats.reviewed}</div><div style={{fontSize:11,color:'#6B6056'}}>Reviewed by AR</div></div>
+      </div>
+      {/* Main table */}
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 480px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-            <tr>{['Job Name','Job #','PM','Market','Period','LF','% Complete','Amount','Retainage','Net Due','Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
+            <tr>{['Job #','Job Name','PM','Market','Style','Color','Height','Adj Contract','Bill Sheet Status','Submitted Date','% Complete (PM)','AR Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
           </thead>
-          <tbody>{subEntries.map(e=>{const job=jobs.find(j=>j.id===e.job_id)||{};const pd=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;const periodLabel=pd?pd.toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—';const isPending=e.status==='pending';
-            // % complete — cap at 100%
-            const rawPct=n(e.pct_complete_cumulative)||(n(e.lf_cumulative)>0&&n(job.total_lf)>0?n(e.lf_cumulative)/n(job.total_lf):0);const cappedPct=Math.min(rawPct,1);const pctOver=rawPct>1;const pctLabel=cappedPct>0?(Math.round(cappedPct*1000)/10)+'%':'—';
-            // Amount — calculate on-the-fly if saved as 0
-            let amtP=n(e.amount_this_period);const jcv=n(job.adj_contract_value||job.contract_value);const jtlf=n(job.total_lf);
-            if(amtP===0&&n(e.lf_this_period)>0&&jcv>0&&jtlf>0){const cumPct=Math.min(n(e.lf_cumulative)/jtlf,1);amtP=Math.max(jcv*cumPct-n(job.ytd_invoiced),0);}
-            const retPct2=n(e.retainage_pct)||n(job.retainage_pct)||0;const ret=n(e.retainage_amount)||(amtP>0?amtP*(retPct2/100):0);const netDue=n(e.net_amount_due)||(amtP-ret);
-            const noCV=jcv===0&&n(e.lf_this_period)>0;
-            return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-            <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{e.job_name||'—'}</td>
-            <td style={{padding:'8px 10px',fontSize:11}}>{e.job_number||'—'}</td>
-            <td style={{padding:'8px 10px',fontSize:11}}>{e.pm||'—'}</td>
-            <td style={{padding:'8px 10px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td>
-            <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
-            <td style={{padding:'8px 10px'}}>{n(e.lf_this_period).toLocaleString()}</td>
-            <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:4}}><PBar pct={cappedPct*100} h={4}/><span style={{fontSize:10,whiteSpace:'nowrap'}}>{pctLabel}</span>{pctOver&&<span title="LF exceeds total — capped at 100%" style={{color:'#B45309',fontSize:12}}>⚠</span>}</div></td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{noCV?<span style={{color:'#9E9B96'}} title="Contract value not set">—</span>:$(amtP)}</td>
-            <td style={{padding:'8px 10px',fontSize:11,color:'#991B1B'}}>{ret>0?'-'+$(ret):'—'}</td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:800,color:'#065F46'}}>{noCV?'—':$(netDue)}</td>
-            <td style={{padding:'8px 10px'}}>{isPending?<span style={pill('#B45309','#FEF3C7')}>Ready to Invoice</span>:<span style={pill('#065F46','#D1FAE5')}>Invoiced</span>}</td>
-            <td style={{padding:'8px 10px'}}>{isPending?<button onClick={()=>{setInvoiceModal({...e,_calcAmt:amtP,_calcNet:netDue,_calcRet:ret,_calcRetPct:retPct2,_calcPct:pctLabel});setInvoiceAmt(String(Math.round(netDue)));}} style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>Invoice</button>:<span style={{fontSize:10,color:'#9E9B96'}}>{fD(e.invoiced_date)}</span>}</td>
-          </tr>;})}</tbody>
+          <tbody>{arTableData.map(({job:j,sub,status})=>{
+            const borderColor=status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
+            return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1}}>
+              <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
+              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.style||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.color||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.height_precast||'—'}</td>
+              <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
+              <td style={{padding:'8px 10px'}}>{status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11}}>{sub&&sub.pct_complete!=null?sub.pct_complete+'%':'—'}</td>
+              <td style={{padding:'8px 10px'}}>{sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
+              <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
+                {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
+                {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
+                {sub&&!sub.ar_reviewed&&<button onClick={()=>openArDetail(sub)} style={{background:'#DBEAFE',border:'1px solid #3B82F640',borderRadius:6,color:'#1D4ED8',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Mark Reviewed</button>}
+              </div></td>
+            </tr>;})}
+          </tbody>
         </table>
-        {subEntries.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>$</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:8}}>No PM billing submissions found</div><div style={{fontSize:12,color:'#9E9B96'}}>{subPeriodF?'Try clearing the period filter or selecting a different month':'PMs submit entries from the PM Bill Sheet page'}</div></div>}
+        {arTableData.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{color:'#9E9B96',fontSize:14}}>No jobs match current filters</div></div>}
       </div>
-    </div>;})()}
-
+    </div>}
     {/* ═══ TAB: MONTHLY CYCLES ═══ */}
     {billingTab==='monthlycycles'&&<div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:12,flexWrap:'wrap'}}>
@@ -930,6 +956,58 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
     </div>}
 
+    {/* AR Detail Modal */}
+    {arDetail&&(()=>{const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id)||{};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:600,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{s.job_name}</div>
+          {s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
+        </div>
+        <div style={{fontSize:12,color:'#6B6056',marginBottom:4}}>#{s.job_number} · {s.pm} · {MS[s.market]||s.market||'—'}</div>
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>
+          {s.fence_style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.fence_style}</b></span>}
+          {s.fence_color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.fence_color}</b></span>}
+          {s.fence_height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.fence_height}ft</b></span>}
+          {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
+        </div>
+        <div style={{fontSize:11,color:'#9E9B96',marginBottom:14}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—'}</div>
+        {/* LF Sections */}
+        <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
+          {AR_LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(s[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}>
+            <div style={{fontSize:9,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 6px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>
+              {sec.fields.map(([label,field])=>{const v=n(s[field]);return v>0?<div key={field} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 8px'}}>
+                <div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div>
+                <div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div>
+              </div>:null;}).filter(Boolean)}
+            </div>
+          </div>;})}
+          <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.lf_total).toLocaleString()}</div></div>
+            {s.pct_complete!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete}%</div></div>}
+          </div>
+        </div>
+        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
+        {/* AR Review Section */}
+        <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>AR Review</div>
+          <div style={{marginBottom:10}}>
+            <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>AR Notes</label>
+            <textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={3} placeholder="Review notes, adjustments, flags..." style={{...inputS,resize:'vertical'}} disabled={s.ar_reviewed}/>
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Reviewer Name</label>
+            <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Your name" style={inputS} disabled={s.ar_reviewed}/>
+          </div>
+          {s.ar_reviewed&&<div style={{marginTop:10,fontSize:12,color:'#1D4ED8',fontWeight:600}}>Reviewed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>}
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}} style={btnS}>Close</button>
+          {!s.ar_reviewed&&<button onClick={markArReviewed} style={{...btnP,background:'#1D4ED8'}}>Mark as Reviewed</button>}
+        </div>
+      </div>
+    </div>;})()}
     {/* Invoice Entry Modal */}
     {invoiceModal&&(()=>{const imPd=invoiceModal.billing_period?new Date(invoiceModal.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';const imAmt=n(invoiceModal._calcAmt)||n(invoiceModal.amount_this_period);const imNet=n(invoiceModal._calcNet)||n(invoiceModal.net_amount_due)||imAmt;const imRet=n(invoiceModal._calcRet)||n(invoiceModal.retainage_amount);const imRetPct=n(invoiceModal._calcRetPct)||n(invoiceModal.retainage_pct);const imPctLbl=invoiceModal._calcPct||(invoiceModal.pct_complete_cumulative?fmtPct(invoiceModal.pct_complete_cumulative):'—');return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setInvoiceModal(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:480,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
@@ -1110,134 +1188,42 @@ function BillingPage({jobs,onRefresh,onNav}){
 }
 
 /* ═══ PM BILLING PAGE ═══ */
-const ACTIVE_STATUSES=['in_production','active_installation','installation_complete','complete'];
+const ACTIVE_BILL_STATUSES=['in_production','active_installation','installation_complete','complete'];
 
 function PMBillingPage({jobs,onRefresh}){
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
-  const[tab,setTab]=useState('projects');
-  const[entries,setEntries]=useState([]);
+  const[selMonth,setSelMonth]=useState(curBillingMonth);
+  const[subs,setSubs]=useState([]);
+  const[expanded,setExpanded]=useState(new Set());
+  const[forms,setForms]=useState({});
+  const[editMode,setEditMode]=useState(new Set());
+  const[saving,setSaving]=useState(null);
   const[toast,setToast]=useState(null);
-  const[showLog,setShowLog]=useState(null);
-  const[showJobHist,setShowJobHist]=useState(null);
-  const[duplicateConfirm,setDuplicateConfirm]=useState(null);
-  const[search,setSearch]=useState('');
-  const[mktF,setMktF]=useState(null);
-  const[histF,setHistF]=useState({status:null,market:null,period:''});
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
   const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
-  const[logForm,setLogForm]=useState({billing_period:'',lf_this_period:'',invoice_notes:'',retainage_pct:0,labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''});
-
-  const fetchEntries=useCallback(async()=>{const d=await sbGet('pm_billing_entries','select=*&order=billing_period.desc');setEntries(d||[]);},[]);
-  useEffect(()=>{fetchEntries();},[fetchEntries]);
-
+  const emptyForm=()=>({pct_complete:'',notes:'',...Object.fromEntries(LF_FIELDS.map(f=>[f,'']))});
   const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);};
+  const selMonthLabel=monthLabel(selMonth);
+  const activeJobs=useMemo(()=>{let j2=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));if(selPM)j2=j2.filter(j=>j.pm===selPM);return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));},[jobs,selPM]);
+  const fetchSubs=useCallback(async()=>{if(!selPM)return;const d=await sbGet('pm_bill_submissions',`billing_month=eq.${selMonth}&pm=eq.${selPM}&order=created_at.desc`);setSubs(d||[]);},[selMonth,selPM]);
+  useEffect(()=>{fetchSubs();},[fetchSubs]);
+  const subByJob=useMemo(()=>{const m={};(subs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[subs]);
+  const submittedCount=activeJobs.filter(j=>subByJob[j.id]).length;
+  const totalCount=activeJobs.length;
+  const pct=totalCount>0?Math.round(submittedCount/totalCount*100):0;
+  const pctColor=pct>=100?'#10B981':pct>50?'#F59E0B':'#EF4444';
+  const getForm=(jobId)=>forms[jobId]||emptyForm();
+  const updateForm=(jobId,field,val)=>setForms(prev=>({...prev,[jobId]:{...(prev[jobId]||emptyForm()),[field]:val}}));
+  const toggleCard=(jobId)=>setExpanded(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
+  const expandAll=()=>setExpanded(new Set(activeJobs.map(j=>j.id)));
+  const collapseAll=()=>setExpanded(new Set());
+  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete!=null?String(sub.pct_complete):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditMode(prev=>{const s=new Set(prev);s.add(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.add(job.id);return s;});};
+  const cancelEdit=(jobId)=>setEditMode(prev=>{const s=new Set(prev);s.delete(jobId);return s;});
+  const submitEntry=async(job)=>{const form=getForm(job.id);const lfTotal=calcLFTotal(form);setSaving(job.id);try{const existing=subByJob[job.id];const body={job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:selPM,billing_month:selMonth,fence_style:job.style||null,fence_color:job.color||null,fence_height:job.height_precast||null,adj_contract_value:n(job.adj_contract_value||job.contract_value),...Object.fromEntries(LF_FIELDS.map(f=>[f,n(form[f])])),lf_total:lfTotal,pct_complete:form.pct_complete!==''?n(form.pct_complete):null,notes:form.notes||null,submitted_at:new Date().toISOString()};if(existing){await sbPatch('pm_bill_submissions',existing.id,body);setToast('Bill sheet updated');}else{await sbPost('pm_bill_submissions',body);setToast('Bill sheet submitted');}setEditMode(prev=>{const s=new Set(prev);s.delete(job.id);return s;});await fetchSubs();}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
 
-  const now=new Date();
-  const curMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const curMonthLabel=now.toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  const curMonthFirst=`${curMonth}-01`;
-
-  const activeJobs=useMemo(()=>jobs.filter(j=>['in_production','active_installation','installation_complete','complete'].includes(j.status)),[jobs]);
-
-  const pmEntries=useMemo(()=>selPM?entries.filter(e=>e.pm===selPM):entries,[entries,selPM]);
-
-  const getJobEntries=useCallback((jobId)=>entries.filter(e=>e.job_id===jobId).sort((a,b)=>(b.billing_period||'').localeCompare(a.billing_period||'')),[entries]);
-  const getThisMonthEntry=(jobId)=>pmEntries.find(e=>e.job_id===jobId&&e.billing_period&&e.billing_period.startsWith(curMonth));
-  const getCumulativeLF=(jobId)=>{const je=entries.filter(e=>e.job_id===jobId);return je.reduce((s,e)=>s+n(e.lf_this_period),0);};
-
-  const filteredProjects=useMemo(()=>{let f=activeJobs;if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number}`.toLowerCase().includes(q));}if(mktF)f=f.filter(j=>j.market===mktF);return f;},[activeJobs,search,mktF]);
-
-  // Progress billing calculations (live in form)
-  const getProgressCalc=(job,form)=>{
-    const lfPeriod=calcLFTotal(form);
-    const prevCumLF=n(form._prevCum);
-    const lfCum=prevCumLF+lfPeriod;
-    const totalLF=n(job.total_lf);
-    const cv=n(job.adj_contract_value||job.contract_value);
-    const ytdInv=n(job.ytd_invoiced);
-    const pctPeriod=totalLF>0?lfPeriod/totalLF:0;
-    const pctCum=totalLF>0?lfCum/totalLF:0;
-    const amtCum=cv*pctCum;
-    const amtPeriod=Math.max(amtCum-ytdInv,0);
-    const retPct=n(form.retainage_pct)/100;
-    const retAmt=amtPeriod*retPct;
-    const netDue=amtPeriod-retAmt;
-    return{lfPeriod,lfCum,totalLF,cv,ytdInv,pctPeriod,pctCum,amtCum,amtPeriod,retPct:n(form.retainage_pct),retAmt,netDue};
-  };
-
-  const openLogForm=(job)=>{
-    const prevCum=getCumulativeLF(job.id);
-    const initForm={billing_period:curMonthFirst,lf_this_period:0,invoice_notes:'',retainage_pct:n(job.retainage_pct)||0,_prevCum:prevCum,_totalLF:n(job.total_lf),labor_post_only:'',labor_post_panels:'',labor_complete:'',sw_foundation:'',sw_columns:'',sw_panels:'',sw_complete:'',wi_gates:'',wi_fencing:'',wi_columns:'',line_bonds:'',line_permits:'',remove_existing:'',gate_controls:''};
-    setLogForm(initForm);
-    setShowLog(job);
-  };
-
-  const editEntry=(job,entry)=>{
-    const prevCum=getCumulativeLF(job.id)-n(entry.lf_this_period);
-    const editForm={billing_period:entry.billing_period||curMonthFirst,lf_this_period:entry.lf_this_period||0,invoice_notes:entry.invoice_notes||'',retainage_pct:entry.retainage_pct||0,_prevCum:prevCum,_totalLF:n(job.total_lf),_editId:entry.id,labor_post_only:entry.labor_post_only||'',labor_post_panels:entry.labor_post_panels||'',labor_complete:entry.labor_complete||'',sw_foundation:entry.sw_foundation||'',sw_columns:entry.sw_columns||'',sw_panels:entry.sw_panels||'',sw_complete:entry.sw_complete||'',wi_gates:entry.wi_gates||'',wi_fencing:entry.wi_fencing||'',wi_columns:entry.wi_columns||'',line_bonds:entry.line_bonds||'',line_permits:entry.line_permits||'',remove_existing:entry.remove_existing||'',gate_controls:entry.gate_controls||''};
-    editForm.lf_this_period=calcLFTotal(editForm);
-    setLogForm(editForm);
-    setShowLog(job);
-  };
-
-  const finishSave=(action)=>{fireAlert('billing_logged',{...showLog,pm:selPM,lf_this_period:calcLFTotal(logForm)});logAct(showLog,'billing_update','pm_billing','',[selPM,calcLFTotal(logForm)+'LF'].join(' · '));setShowLog(null);setDuplicateConfirm(null);onRefresh();setToast(`Billing entry ${action} for ${showLog.job_name}`);fetchEntries();};
-  const saveLog=async()=>{
-    const lfPeriod=calcLFTotal(logForm);
-    if(!showLog||!lfPeriod)return;
-    const j=showLog;
-    // Fetch fresh job data and all entries to ensure accurate calculations
-    const freshJobs=await sbGet('jobs',`id=eq.${j.id}&select=adj_contract_value,contract_value,ytd_invoiced,total_lf,retainage_pct`);
-    const fj=freshJobs&&freshJobs[0]?freshJobs[0]:j;
-    const prevEntries=await sbGet('pm_billing_entries',`job_id=eq.${j.id}&select=lf_this_period,id`);
-    const prevLF=(prevEntries||[]).filter(e=>logForm._editId?e.id!==logForm._editId:true).reduce((s,e)=>s+n(e.lf_this_period),0);
-    const lfCum=prevLF+lfPeriod;
-    const totalLF=n(fj.total_lf);
-    const cv=n(fj.adj_contract_value||fj.contract_value);
-    const ytdInv=n(fj.ytd_invoiced);
-    const pctPeriod=totalLF>0?lfPeriod/totalLF:0;
-    const pctCum=totalLF>0?lfCum/totalLF:0;
-    const amtCum=cv*pctCum;
-    const amtPeriod=Math.max(amtCum-ytdInv,0);
-    const retPct=n(logForm.retainage_pct)||n(fj.retainage_pct)||0;
-    const retAmt=amtPeriod*(retPct/100);
-    const netDue=amtPeriod-retAmt;
-    const lfFields={labor_post_only:n(logForm.labor_post_only),labor_post_panels:n(logForm.labor_post_panels),labor_complete:n(logForm.labor_complete),sw_foundation:n(logForm.sw_foundation),sw_columns:n(logForm.sw_columns),sw_panels:n(logForm.sw_panels),sw_complete:n(logForm.sw_complete),wi_gates:n(logForm.wi_gates),wi_fencing:n(logForm.wi_fencing),wi_columns:n(logForm.wi_columns),line_bonds:n(logForm.line_bonds),line_permits:n(logForm.line_permits),remove_existing:n(logForm.remove_existing),gate_controls:n(logForm.gate_controls)};
-    const body={
-      job_id:j.id,job_number:j.job_number,job_name:j.job_name,market:j.market,pm:selPM,
-      billing_period:logForm.billing_period,lf_this_period:lfPeriod,lf_cumulative:lfCum,
-      pct_complete_period:Math.round(pctPeriod*10000)/10000,pct_complete_cumulative:Math.round(pctCum*10000)/10000,
-      amount_this_period:Math.round(amtPeriod*100)/100,amount_cumulative:Math.round(amtCum*100)/100,
-      retainage_pct:retPct,retainage_amount:Math.round(retAmt*100)/100,net_amount_due:Math.round(netDue*100)/100,
-      invoice_notes:logForm.invoice_notes,status:'pending',...lfFields
-    };
-    if(logForm._editId){
-      await sbPatch('pm_billing_entries',logForm._editId,body);
-      finishSave('updated');
-    }else{
-      const existing=await sbGet('pm_billing_entries',`job_id=eq.${j.id}&billing_period=eq.${logForm.billing_period}&select=id`);
-      if(existing&&existing.length>0){
-        const pd=logForm.billing_period?new Date(logForm.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}):'this month';
-        setDuplicateConfirm({existingId:existing[0].id,body,periodLabel:pd});
-      }else{
-        await sbPost('pm_billing_entries',body);
-        finishSave('logged');
-      }
-    }
-  };
-  const handleDupUpdate=async()=>{if(!duplicateConfirm)return;await sbPatch('pm_billing_entries',duplicateConfirm.existingId,duplicateConfirm.body);finishSave('updated');};
-  const handleDupCreate=async()=>{if(!duplicateConfirm)return;await sbPost('pm_billing_entries',duplicateConfirm.body);finishSave('logged');};
-
-  const pendingEntries=pmEntries.filter(e=>e.status==='pending');
-
-  const filteredHistory=useMemo(()=>{let h=pmEntries;if(histF.status)h=h.filter(e=>e.status===histF.status);if(histF.market)h=h.filter(e=>e.market===histF.market);if(histF.period)h=h.filter(e=>e.billing_period&&e.billing_period.startsWith(histF.period));return h;},[pmEntries,histF]);
-
-  const getCardBorder=(job)=>{
-    const thisMonth=getThisMonthEntry(job.id);
-    if(thisMonth)return'#10B981';
-    const anyEntry=entries.some(e=>e.job_id===job.id);
-    if(anyEntry)return'#F59E0B';
-    return'#E5E3E0';
-  };
+  const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
+  const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(sub[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>{sec.fields.map(([label,field])=>{const v=n(sub[field]);return v>0?<div key={field} style={{background:'#F9F8F6',borderRadius:6,padding:'4px 8px'}}><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div></div>:null;}).filter(Boolean)}</div></div>;}).filter(Boolean);
+  const renderLFForm=(jobId)=>{const form=getForm(jobId);return LF_SECTIONS.map(sec=><div key={sec.title} style={{marginBottom:12}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'4px 8px',background:sec.bg,borderRadius:4}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>{sec.fields.map(([label,field])=><div key={field}><label style={{display:'block',fontSize:9,color:'#9E9B96',marginBottom:1}}>{label}</label><input type="number" value={form[field]} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'4px 8px',fontSize:12}}/></div>)}</div></div>);};
 
   if(!selPM)return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Bill Sheet</h1>
@@ -1249,241 +1235,75 @@ function PMBillingPage({jobs,onRefresh}){
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Bill Sheet</h1>
     </div>
-
-    {/* PM Selector */}
+    {/* PM Selector + Month */}
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
       {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 20px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>{pm.short}</button>)}
+      <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
+      <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
+      <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{selMonthLabel}</span>
     </div>
-
-    {/* Tabs */}
-    <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['projects','My Projects'],['history','Billing History']].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?'#8B2020':'#6B6056',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}</button>)}
-    </div>
-
-    {/* TAB 1: MY PROJECTS */}
-    {tab==='projects'&&<div>
-      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by job name or number..." style={{...inputS,width:280}}/>
-        <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
-        {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
-        <span style={{fontSize:12,color:'#6B6056',marginLeft:8}}>{filteredProjects.length} projects</span>
+    {/* Progress bar */}
+    <div style={{...card,marginBottom:16,padding:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <span style={{fontSize:14,fontWeight:700,color:'#1A1A1A'}}>{submittedCount} of {totalCount} jobs submitted for {selMonthLabel}</span>
+        <span style={{fontSize:24,fontWeight:800,color:pctColor}}>{pct}%</span>
       </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340,1fr))',gap:16}}>
-        {filteredProjects.map(j=>{
-          const totalLF=n(j.total_lf);
-          const cumLF=getCumulativeLF(j.id);
-          const pct=totalLF>0?Math.round(cumLF/totalLF*100):0;
-          const cv=n(j.adj_contract_value||j.contract_value);
-          const ytdInv=n(j.ytd_invoiced);
-          const ltb=n(j.left_to_bill);
-          const thisMonth=getThisMonthEntry(j.id);
-          const borderColor=getCardBorder(j);
-
-          return<div key={j.id} style={{...card,borderLeft:`4px solid ${borderColor}`,padding:16}}>
-            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.job_name}</div>
-            <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
-              <span style={{fontSize:12,color:'#6B6056'}}>#{j.job_number}</span>
-              <span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
-            </div>
-            {(j.style||j.color||j.height_precast)&&<div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap',fontSize:11}}>
-              {j.style&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.style}</span>}
-              {j.color&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.color}</span>}
-              {j.height_precast&&<span style={{background:'#F3F4F6',borderRadius:4,padding:'1px 6px',color:'#6B6056'}}>{j.height_precast}ft</span>}
-            </div>}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:11,color:'#6B6056',marginBottom:8}}>
-              <div>Contract: <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(cv)}</span></div>
-              <div>Billed: <span style={{fontWeight:700,color:'#065F46'}}>{$(ytdInv)}</span></div>
-              <div>Left to Bill: <span style={{fontWeight:700,color:'#B45309'}}>{$(ltb)}</span></div>
-              <div>LF: <span style={{fontWeight:700,color:'#1A1A1A'}}>{cumLF.toLocaleString()} / {totalLF.toLocaleString()}</span></div>
-            </div>
-            <div style={{marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#9E9B96',marginBottom:2}}>
-                <span>{pct}% complete</span><span>{fmtPct(j.pct_billed)} billed</span>
+      <div style={{height:10,background:'#E5E3E0',borderRadius:10,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:10,transition:'width .4s ease'}}/></div>
+    </div>
+    {/* Expand/Collapse All */}
+    <div style={{display:'flex',gap:8,marginBottom:12}}>
+      <button onClick={expandAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Expand All</button>
+      <button onClick={collapseAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Collapse All</button>
+      <span style={{fontSize:12,color:'#9E9B96',lineHeight:'30px',marginLeft:8}}>{activeJobs.length} active jobs</span>
+    </div>
+    {/* Job cards */}
+    {activeJobs.map(j=>{const sub=subByJob[j.id];const isExp=expanded.has(j.id);const isEditing=editMode.has(j.id);const arReviewed=sub&&sub.ar_reviewed;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      return<div key={j.id} style={{...card,padding:0,marginBottom:12,overflow:'hidden',borderLeft:sub?arReviewed?'4px solid #3B82F6':'4px solid #10B981':'4px solid #EF4444'}}>
+        {/* Header */}
+        <div onClick={()=>toggleCard(j.id)} style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',gap:10,alignItems:'center',cursor:'pointer',flexWrap:'wrap'}}>
+          <div style={{flex:'1 1 200px',minWidth:0}}>
+            <span style={{fontSize:14,fontWeight:700}}>{j.job_name}</span>
+            <span style={{fontSize:11,color:'rgba(255,255,255,0.5)',marginLeft:8}}>#{j.job_number}</span>
+          </div>
+          <div style={{display:'flex',gap:6,alignItems:'center',fontSize:12,color:'rgba(255,255,255,0.7)'}}>
+            {j.style&&<span>{j.style}</span>}{j.color&&<><span style={{opacity:0.4}}>|</span><span>{j.color}</span></>}{j.height_precast&&<><span style={{opacity:0.4}}>|</span><span>{j.height_precast}ft</span></>}
+          </div>
+          <div>{arReviewed?<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#3B82F6',color:'#FFF'}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>:sub?<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#10B981',color:'#FFF'}}>✓ Submitted {subDate}</span>:<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#EF4444',color:'#FFF'}}>✗ Not Submitted</span>}</div>
+          <span style={{fontSize:12,color:'rgba(255,255,255,0.5)',transition:'transform 0.3s',display:'inline-block',transform:isExp?'rotate(0deg)':'rotate(-90deg)'}}>▼</span>
+        </div>
+        {/* Body */}
+        <div style={{maxHeight:isExp?'5000px':'0',overflow:'hidden',transition:'max-height 0.3s ease-in-out'}}>
+          <div style={{padding:16}}>
+            {arReviewed?<div>
+              <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:12,marginBottom:12}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#1D4ED8',marginBottom:2}}>Reviewed by AR{sub.ar_reviewed_by?' — '+sub.ar_reviewed_by:''} on {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
+                {sub.ar_notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>AR Notes: {sub.ar_notes}</div>}
               </div>
-              <PBar pct={pct} color={pct>=100?'#065F46':'#8B2020'} h={6}/>
-            </div>
-            <div style={{display:'flex',gap:6}}>
-              {thisMonth?<>
-                <span style={{color:'#10B981',fontWeight:600,fontSize:12,flex:1}}>✓ {curMonthLabel}</span>
-                <button onClick={()=>editEntry(j,thisMonth)} style={{...btnS,padding:'4px 10px',fontSize:11}}>Edit</button>
-              </>:<button onClick={()=>openLogForm(j)} style={{...btnP,flex:1,padding:'8px 0',fontSize:12}}>Log This Month</button>}
-              <button onClick={()=>setShowJobHist(j)} style={{...btnS,padding:'4px 10px',fontSize:11}}>History</button>
-            </div>
-          </div>;
-        })}
-      </div>
-      {filteredProjects.length===0&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No active projects found</div>}
-    </div>}
-
-    {/* TAB 2: BILLING HISTORY */}
-    {tab==='history'&&<div>
-      {/* Pending Summary */}
-      {pendingEntries.length>0&&<div style={{...card,borderLeft:'4px solid #F97316',marginBottom:20,padding:16}}>
-        <div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#F97316',marginBottom:8}}>{pendingEntries.length} entries pending · {$(pendingTotal)} total pending invoice</div>
-        <div style={{maxHeight:200,overflow:'auto'}}>
-          {pendingEntries.map(e=><div key={e.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
-            <div style={{flex:1}}>
-              <span style={{fontWeight:600}}>{e.job_name}</span>
-              <span style={{color:'#6B6056',marginLeft:8}}>{n(e.lf_this_period).toLocaleString()} LF · {$(e.amount_to_invoice)}</span>
-            </div>
-            <button onClick={()=>markInvoiced(e)} style={{...btnS,padding:'3px 10px',fontSize:11,color:'#065F46',border:'1px solid #065F4640'}}>Mark as Invoiced</button>
-          </div>)}
-        </div>
-      </div>}
-
-      {/* Filters */}
-      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Status:</span>
-        <button onClick={()=>setHistF(f=>({...f,status:null}))} style={fpill(!histF.status)}>All</button>
-        {['pending','invoiced','approved'].map(s=><button key={s} onClick={()=>setHistF(f=>({...f,status:s}))} style={fpill(histF.status===s)}>{s}</button>)}
-        <span style={{color:'#E5E3E0'}}>|</span>
-        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
-        <button onClick={()=>setHistF(f=>({...f,market:null}))} style={fpill(!histF.market)}>All</button>
-        {MKTS.map(m=><button key={m} onClick={()=>setHistF(f=>({...f,market:m}))} style={fpill(histF.market===m)}>{MS[m]}</button>)}
-        <span style={{color:'#E5E3E0'}}>|</span>
-        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Period:</span>
-        <input type="month" value={histF.period||''} onChange={e=>setHistF(f=>({...f,period:e.target.value}))} style={{...inputS,width:140,padding:'4px 8px',fontSize:11}}/>
-        {histF.period&&<button onClick={()=>setHistF(f=>({...f,period:''}))} style={{...btnS,padding:'2px 8px',fontSize:10}}>Clear</button>}
-      </div>
-
-      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 400px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-            <tr>
-              {['Billing Period','Job Name','Market','LF This Period','Cumulative LF','Amount to Invoice','Status','Notes','Date Logged'].map(h=><th key={h} rowSpan={2} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase',verticalAlign:'bottom'}}>{h}</th>)}
-              <th colSpan={3} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Precast</th>
-              <th colSpan={4} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#DBEAFE',color:'#1E40AF',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Single Wythe</th>
-              <th colSpan={7} style={{textAlign:'center',padding:'6px 4px',borderBottom:'1px solid #E5E3E0',background:'#EDE9FE',color:'#5B21B6',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>One Line Items</th>
-            </tr>
-            <tr>
-              {[['Post Only','#FEF3C7'],['Post+Panels','#FEF3C7'],['Complete','#FEF3C7'],['Foundation','#DBEAFE'],['Columns','#DBEAFE'],['Panels','#DBEAFE'],['Complete','#DBEAFE'],['WI Gates','#EDE9FE'],['WI Fencing','#EDE9FE'],['WI Columns','#EDE9FE'],['Bonds','#EDE9FE'],['Permits','#EDE9FE'],['Remove','#EDE9FE'],['Gate Ctrl','#EDE9FE']].map(([h,bg])=><th key={h} style={{textAlign:'right',padding:'4px 6px',borderBottom:'1px solid #E5E3E0',background:bg,color:'#6B6056',fontSize:9,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredHistory.map(e=>{
-              const statusColors={pending:['#B45309','#FEF3C7'],invoiced:['#065F46','#D1FAE5'],approved:['#1D4ED8','#DBEAFE']};
-              const[sc2,sb2]=statusColors[e.status]||['#6B6056','#F4F4F2'];
-              const periodDate=e.billing_period?new Date(e.billing_period+'T12:00:00'):null;
-              const periodLabel=periodDate?periodDate.toLocaleDateString('en-US',{month:'long',year:'numeric'}):'—';
-              const lfV=f=>n(e[f])?n(e[f]).toLocaleString():'—';
-              return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-                <td style={{padding:'8px 10px',fontWeight:500}}>{periodLabel}</td>
-                <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name}</td>
-                <td style={{padding:'8px 10px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td>
-                <td style={{padding:'8px 10px'}}>{n(e.lf_this_period).toLocaleString()}</td>
-                <td style={{padding:'8px 10px'}}>{n(e.lf_cumulative).toLocaleString()}</td>
-                <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(e.amount_to_invoice)}</td>
-                <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{e.status}</span></td>
-                <td style={{padding:'8px 10px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#9E9B96'}} title={e.invoice_notes}>{e.invoice_notes||'—'}</td>
-                <td style={{padding:'8px 10px',color:'#9E9B96'}}>{fD(e.created_at)}</td>
-                {['labor_post_only','labor_post_panels','labor_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#FFFBEB50'}}>{lfV(f)}</td>)}
-                {['sw_foundation','sw_columns','sw_panels','sw_complete'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#EFF6FF50'}}>{lfV(f)}</td>)}
-                {['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'].map(f=><td key={f} style={{padding:'4px 6px',textAlign:'right',fontSize:11,background:'#F5F3FF50'}}>{lfV(f)}</td>)}
-              </tr>;
-            })}
-          </tbody>
-        </table>
-        {filteredHistory.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No billing entries found</div>}
-      </div>
-    </div>}
-
-    {/* LOG BILLING MODAL — PROGRESS BILLING */}
-    {showLog&&(()=>{const pc=getProgressCalc(showLog,logForm);return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={()=>setShowLog(null)}>
-      <div style={{background:'#fff',borderRadius:'20px 20px 0 0',padding:28,width:'100%',maxWidth:580,maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:4}}>Progress Billing — {showLog.job_name}</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>#{showLog.job_number} · {showLog.market}</div>
-        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056'}}>{showLog.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{showLog.style}</b></span>}{showLog.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{showLog.color}</b></span>}{showLog.height_precast&&<span>Height: <b style={{color:'#1A1A1A'}}>{showLog.height_precast}ft</b></span>}</div>
-        {/* Header info */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:16}}>
-          {[['Contract Value',$(pc.cv)],['Previously Billed',$(pc.ytdInv)],['Left to Bill',$(pc.cv-pc.ytdInv)],['Total LF',pc.totalLF.toLocaleString()],['LF Billed to Date',n(logForm._prevCum).toLocaleString()],['% Complete to Date',pc.totalLF>0?Math.round(n(logForm._prevCum)/pc.totalLF*100)+'%':'0%']].map(([l,v])=><div key={l} style={{background:'#F9F8F6',borderRadius:6,padding:'6px 10px'}}><div style={{fontSize:9,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>{v}</div></div>)}
-        </div>
-        <div style={{marginBottom:12}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Billing Period</label>
-          <input type="month" value={logForm.billing_period?logForm.billing_period.slice(0,7):curMonth} onChange={e=>setLogForm(f=>({...f,billing_period:e.target.value+'-01'}))} style={inputS}/>
-        </div>
-        <div style={{marginBottom:12}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Section / Notes</label>
-          <textarea value={logForm.invoice_notes} onChange={e=>setLogForm(f=>({...f,invoice_notes:e.target.value}))} rows={2} placeholder="e.g. North section complete, gates pending" style={{...inputS,resize:'vertical'}}/>
-        </div>
-        {/* LF Detail Sections */}
-        {[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}].map(sec=><div key={sec.title} style={{marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'4px 8px',background:sec.bg,borderRadius:4}}>{sec.title}</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
-            {sec.fields.map(([label,field])=><div key={field}>
-              <label style={{display:'block',fontSize:9,color:'#9E9B96',marginBottom:1}}>{label}</label>
-              <input type="number" value={logForm[field]} onChange={e=>{const updated={...logForm,[field]:e.target.value};updated.lf_this_period=calcLFTotal(updated);setLogForm(updated);}} placeholder="0" style={{...inputS,padding:'4px 8px',fontSize:12}}/>
-            </div>)}
-          </div>
-        </div>)}
-        {/* Retainage */}
-        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Retainage %</label><input type="number" value={logForm.retainage_pct} onChange={e=>setLogForm(f=>({...f,retainage_pct:e.target.value}))} placeholder="0" style={{...inputS,width:100,padding:'6px 10px'}}/></div>
-        {/* Progress Calculation Summary */}
-        <div style={{background:'#1A1A1A',borderRadius:12,padding:16,marginBottom:16,color:'#fff'}}>
-          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,color:'#9E9B96',marginBottom:10}}>Progress Billing Summary</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,fontSize:12}}>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>LF This Period</span><span style={{fontWeight:700}}>{pc.lfPeriod.toLocaleString()}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>LF Cumulative</span><span style={{fontWeight:700}}>{pc.lfCum.toLocaleString()}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>% This Period</span><span style={{fontWeight:700}}>{(pc.pctPeriod*100).toFixed(1)}%</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>% Cumulative</span><span style={{fontWeight:700}}>{(pc.pctCum*100).toFixed(1)}%</span></div>
-          </div>
-          <div style={{borderTop:'1px solid #333',marginTop:10,paddingTop:10,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,fontSize:12}}>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>Amount This Period</span><span style={{fontWeight:700,color:'#FEF3C7'}}>{$(pc.amtPeriod)}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#9E9B96'}}>Retainage ({pc.retPct}%)</span><span style={{fontWeight:700,color:'#F87171'}}>-{$(pc.retAmt)}</span></div>
-          </div>
-          <div style={{borderTop:'1px solid #555',marginTop:10,paddingTop:10,display:'flex',justifyContent:'space-between',fontSize:16}}>
-            <span style={{fontWeight:700}}>Net Amount Due</span><span style={{fontFamily:'Inter',fontWeight:900,color:'#10B981'}}>{$(pc.netDue)}</span>
+              {renderLFReadOnly(sub)}
+              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.lf_total)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.lf_total).toLocaleString()}</b></span>}{sub.pct_complete!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete}%</b></span>}</div>
+              {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
+            </div>:sub&&!isEditing?<div>
+              {renderLFReadOnly(sub)}
+              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.lf_total)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.lf_total).toLocaleString()}</b></span>}{sub.pct_complete!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete}%</b></span>}</div>
+              {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
+              <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnP,padding:'8px 20px',fontSize:12}}>Edit</button></div>
+            </div>:<div>
+              {renderLFForm(j.id)}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+                <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>% Complete (estimate)</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={inputS}/></div>
+                <div style={{display:'flex',alignItems:'flex-end'}}><div style={{background:'#F9F8F6',borderRadius:8,padding:'8px 12px',fontSize:13}}>Total LF: <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{calcLFTotal(form).toLocaleString()}</span></div></div>
+              </div>
+              <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,resize:'vertical'}}/></div>
+              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'10px 0',opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit Bill Sheet'}</button>{isEditing&&<button onClick={()=>cancelEdit(j.id)} style={btnS}>Cancel</button>}</div>
+            </div>}
           </div>
         </div>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={saveLog} style={{...btnP,flex:1,padding:'12px 0',fontSize:14}}>{logForm._editId?'Update Entry':'Submit for Invoice'}</button>
-          <button onClick={()=>setShowLog(null)} style={{...btnS,padding:'12px 20px'}}>Cancel</button>
-        </div>
-      </div>
-    </div>;})()}
-    {/* Job History Modal */}
-    {showJobHist&&(()=>{const jh=getJobEntries(showJobHist.id);const totalLF=n(showJobHist.total_lf);const cumLF=jh.reduce((s,e)=>s+n(e.lf_this_period),0);const pct=totalLF>0?Math.round(cumLF/totalLF*100):0;const thisMonth=getThisMonthEntry(showJobHist.id);return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowJobHist(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4}}>Billing History — {showJobHist.job_name}</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>#{showJobHist.job_number} · {$(showJobHist.adj_contract_value||showJobHist.contract_value)}</div>
-        <div style={{marginBottom:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#9E9B96',marginBottom:2}}><span>{cumLF.toLocaleString()} / {totalLF.toLocaleString()} LF</span><span>{pct}% complete</span></div>
-          <PBar pct={pct} color={pct>=100?'#065F46':'#8B2020'} h={8}/>
-        </div>
-        {jh.length===0?<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No billing entries yet</div>:<table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:12}}>
-          <thead><tr>{['Period','LF','% Complete','Amount','Status'].map(h=><th key={h} style={{textAlign:'left',padding:'8px',borderBottom:'2px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{jh.map(e=>{const pd=e.billing_period?new Date(e.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'2-digit'}):'—';const isPending=e.status==='pending';return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-            <td style={{padding:'6px 8px',fontWeight:500}}>{pd}</td>
-            <td style={{padding:'6px 8px'}}>{n(e.lf_this_period).toLocaleString()}</td>
-            <td style={{padding:'6px 8px'}}>{e.pct_complete_cumulative?fmtPct(e.pct_complete_cumulative):(n(e.lf_cumulative)>0&&totalLF>0?Math.round(n(e.lf_cumulative)/totalLF*100)+'%':'—')}</td>
-            <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{e.net_amount_due?$(e.net_amount_due):(e.amount_this_period?$(e.amount_this_period):'—')}</td>
-            <td style={{padding:'6px 8px'}}>{isPending?<span style={pill('#B45309','#FEF3C7')}>Pending</span>:<span style={pill('#065F46','#D1FAE5')}>Invoiced</span>}</td>
-          </tr>;})}
-          </tbody>
-        </table>}
-        <div style={{display:'flex',gap:8}}>
-          {thisMonth?<div style={{flex:1,fontSize:12,color:'#10B981',fontWeight:600,padding:'8px 0'}}>Already submitted for {curMonthLabel}</div>:<button onClick={()=>{setShowJobHist(null);openLogForm(showJobHist);}} style={{...btnP,flex:1,padding:'10px 0'}}>Log This Month</button>}
-          <button onClick={()=>setShowJobHist(null)} style={btnS}>Close</button>
-        </div>
-      </div>
-    </div>;})()}
-    {/* Duplicate Entry Confirmation */}
-    {duplicateConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setDuplicateConfirm(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontSize:17,fontWeight:800,marginBottom:8,color:'#1A1A1A'}}>Entry Already Exists</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>
-          A billing entry for <span style={{fontWeight:700,color:'#1A1A1A'}}>{duplicateConfirm.periodLabel}</span> already exists for this job. Do you want to update it or create a new entry?
-        </div>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={handleDupUpdate} style={{...btnP,flex:1,background:'#B45309'}}>Update Existing</button>
-          <button onClick={handleDupCreate} style={{...btnP,flex:1,background:'#065F46'}}>Create New Entry</button>
-          <button onClick={()=>setDuplicateConfirm(null)} style={btnS}>Cancel</button>
-        </div>
-      </div>
-    </div>}
+      </div>;
+    })}
+    {activeJobs.length===0&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No active projects found for {selPM}</div>}
   </div>);
 }
 
