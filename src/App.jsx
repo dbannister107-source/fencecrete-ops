@@ -594,8 +594,8 @@ function Dashboard({jobs,onNav}){
       </div>)}</div>
     </div>;})()}
     {/* ═══ PIPELINE STAGE SUMMARY ═══ */}
-    {(()=>{const stages=[{key:'contract_review',short:'Review'},{key:'production_queue',short:'Prod Queue'},{key:'in_production',short:'In Prod'},{key:'inventory_ready',short:'Inventory'},{key:'active_install',short:'Active Install'},{key:'fence_complete',short:'Fence Done'}];const stData=stages.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+n(j.total_lf),0)};});const fcCount=jobs.filter(j=>j.status==='fully_complete').length;return<div style={{...card,marginBottom:16}}>
-      <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:12}}>Production Pipeline</div>
+    {(()=>{const stages=[{key:'contract_review',short:'Review'},{key:'production_queue',short:'Prod Queue'},{key:'in_production',short:'In Prod'},{key:'inventory_ready',short:'Inventory'},{key:'active_install',short:'Active Install'},{key:'fence_complete',short:'Fence Done'}];const stData=stages.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+n(j.total_lf),0)};});const fcCount=jobs.filter(j=>j.status==='fully_complete').length;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0)+fcCount;const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);return<div style={{...card,marginBottom:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Production Pipeline</div><div style={{fontSize:12,color:'#6B6056'}}>{pipeTotal} active projects | {pipeLF.toLocaleString()} LF</div></div>
       <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
         {stData.map((s,i)=><React.Fragment key={s.key}>
           {i>0&&<span style={{color:'#D1CEC9',fontSize:16}}>→</span>}
