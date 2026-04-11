@@ -61,7 +61,7 @@ function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,backgroun
 function renderCell(j,k){const v=j[k];if(k==='status')return<span style={pill(SC[v]||'#6B6056',SB_[v]||'#F4F4F2')}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#6B6056',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf')return<span>{n(v).toLocaleString()}</span>;if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8B2020',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#6B6056',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
 
 /* ═══ PROJECT QUICK VIEW ═══ */
-function ProjectQuickView({job,onClose,onNav,billSub}){
+function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   if(!job)return null;
   const reqFlags=[{k:'aia_billing',l:'AIA'},{k:'bonds',l:'Bonds'},{k:'certified_payroll',l:'Cert Payroll'},{k:'ocip_ccip',l:'OCIP/CCIP'},{k:'third_party_billing',l:'3rd Party'}];
   const secStyle={marginBottom:16};
@@ -144,6 +144,7 @@ function ProjectQuickView({job,onClose,onNav,billSub}){
       {/* Footer */}
       <div style={{padding:'12px 24px',borderTop:'1px solid #E5E3E0',display:'flex',gap:8,justifyContent:'flex-end'}}>
         {onNav&&<button onClick={()=>{onClose();onNav(job);}} style={{...btnP,background:'#065F46'}}>View Full Project →</button>}
+        {onCalcMaterials&&<button onClick={()=>{onClose();onCalcMaterials(job);}} style={{...btnP,background:'#B45309'}}>🧮 Calculate Materials</button>}
         <button onClick={onClose} style={btnS}>Close</button>
       </div>
     </div>
@@ -1401,6 +1402,186 @@ function ReportsPage({jobs}){
   return(<div><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Reports</h1><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(r=><div key={r.id} style={{...card,display:'flex',flexDirection:'column',justifyContent:'space-between'}}><div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.title}</div><div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>{r.desc}</div></div><button onClick={()=>setActiveRpt(activeRpt===r.id?null:r.id)} style={activeRpt===r.id?btnP:btnS}>{activeRpt===r.id?'Close':'Run'}</button></div>)}</div>{activeRpt&&<div style={card}>{renderReport()}</div>}</div>);
 }
 
+/* ═══ MATERIAL CALCULATOR PAGE ═══ */
+function MaterialCalcPage({jobs,preJob}){
+  const[styles,setStyles]=useState([]);
+  const[selJob,setSelJob]=useState(preJob||null);
+  const[jobSearch,setJobSearch]=useState(preJob?preJob.job_name:'');
+  const[selStyle,setSelStyle]=useState('');
+  const[height,setHeight]=useState('');
+  const[lf,setLf]=useState('');
+  const[result,setResult]=useState(null);
+  const[overrides,setOverrides]=useState({});
+  const[toast,setToast]=useState(null);
+
+  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setStyles(d||[]));},[]);
+  useEffect(()=>{if(preJob){setSelJob(preJob);setJobSearch(preJob.job_name);setSelStyle(preJob.style||'');setHeight(preJob.height_precast||'');setLf(preJob.lf_precast||preJob.total_lf||'');}},[preJob]);
+
+  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
+  const searchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
+
+  const pickJob=j=>{setSelJob(j);setJobSearch(j.job_name);setSelStyle(j.style||'');setHeight(j.height_precast||'');setLf(j.lf_precast||j.total_lf||'');};
+
+  const calculate=()=>{
+    const cfg=styles.find(s=>s.style_name===selStyle);
+    if(!cfg||!n(height)||!n(lf))return;
+    const h=n(height);const linearFt=n(lf);
+    const postHeight=Math.ceil((h+2)/2)*2;
+    const sections=linearFt/cfg.column_spacing;
+    const sectCeil=Math.ceil(sections);
+    const totalPosts=sectCeil+1;
+    const cornerPosts=4;const stopPosts=2;
+    const linePosts=Math.max(totalPosts-cornerPosts-stopPosts,0);
+
+    // Panels
+    let regularPanels=0,halfPanels=0,bottomPanels=0,topPanels=0,middlePanels=0,specialLabel='';
+    const isCMU=selStyle.includes('CMU')||selStyle.includes('Split Faced');
+    const isZPanel=selStyle.includes('Z Panel');
+    const isRanch=selStyle==='Ranch Rail';
+
+    if(isCMU){
+      regularPanels=sectCeil*Math.ceil((h*12)/16)*cfg.panel_multiplier;
+      halfPanels=sectCeil;
+      specialLabel='CMU';
+    }else if(isZPanel){
+      topPanels=sectCeil;bottomPanels=sectCeil;
+      middlePanels=sectCeil*Math.max(h-2,0);
+      regularPanels=middlePanels;specialLabel='Z Panel';
+    }else if(!isRanch){
+      regularPanels=sectCeil*h*cfg.panel_multiplier;
+    }
+    const totalPanels=regularPanels+halfPanels+bottomPanels+topPanels;
+
+    // Rails
+    let capRails=sectCeil*(cfg.cap_rails_per_section||0);
+    let bottomRails=sectCeil*(cfg.bottom_rails||0);
+    let middleRails=sectCeil*(cfg.middle_rails||0);
+    let topRails=sectCeil*(cfg.top_rails||0);
+    let totalRails=capRails+bottomRails+middleRails+topRails;
+
+    if(isRanch){
+      const holes=h<=6?2:h<=8?3:4;
+      totalRails=holes*sectCeil;capRails=0;bottomRails=0;middleRails=totalRails;topRails=0;
+    }
+
+    // Caps
+    const lineCaps=Math.round(totalPosts*(cfg.line_cap_ratio||0));
+    const stopCaps=Math.round(totalPosts*(cfg.stop_cap_ratio||0));
+    const totalCaps=lineCaps+stopCaps;
+
+    setResult({postHeight,sections:Math.round(sections*10)/10,sectCeil,totalPosts,linePosts,cornerPosts,stopPosts,regularPanels:Math.round(regularPanels),halfPanels,bottomPanels,topPanels,middlePanels,totalPanels:Math.round(totalPanels),capRails,bottomRails,middleRails,topRails,totalRails,lineCaps,stopCaps,totalCaps,isCMU,isZPanel,isRanch,specialLabel});
+    setOverrides({});
+  };
+
+  const ov=(key,def)=>overrides[key]!=null?overrides[key]:def;
+  const setOv=(key,val)=>setOverrides(p=>({...p,[key]:val===''?undefined:parseInt(val)}));
+  const isOv=key=>overrides[key]!=null;
+  const ovInput=(key,def)=><input type="number" value={ov(key,def)} onChange={e=>setOv(key,e.target.value)} style={{width:60,padding:'4px 6px',border:'1px solid #D1CEC9',borderRadius:6,fontSize:14,fontWeight:700,textAlign:'center',fontFamily:'Inter',background:isOv(key)?'#FEF3C7':'#FFF'}}/>;
+
+  const secHead=(label,color,bg)=>({background:bg,color,padding:'10px 16px',borderRadius:'10px 10px 0 0',fontFamily:'Inter',fontWeight:800,fontSize:13,textTransform:'uppercase',letterSpacing:0.5});
+  const rowS={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 16px',borderBottom:'1px solid #F4F4F2',fontSize:13};
+
+  return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Material Calculator</h1>
+    {/* Inputs */}
+    <div style={{...card,marginBottom:20,padding:20}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 120px 120px auto',gap:12,alignItems:'end'}}>
+        <div style={{position:'relative'}}>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job (optional)</label>
+          <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setSelJob(null);}} placeholder="Search by name or number..." style={inputS}/>
+          {searchResults.length>0&&!selJob&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:240,overflow:'auto'}}>
+            {searchResults.map(j=><button key={j.id} onClick={()=>pickJob(j)} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}
+          </div>}
+        </div>
+        <div>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style</label>
+          <select value={selStyle} onChange={e=>setSelStyle(e.target.value)} style={inputS}><option value="">— Select Style —</option>{styles.map(s=><option key={s.id} value={s.style_name}>{s.style_name}</option>)}</select>
+        </div>
+        <div>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft)</label>
+          <div style={{display:'flex',gap:4}}>
+            {[6,8,10,12].map(h2=><button key={h2} onClick={()=>setHeight(h2)} style={{padding:'6px 10px',borderRadius:6,border:n(height)===h2?'2px solid #8B2020':'1px solid #D1CEC9',background:n(height)===h2?'#FDF4F4':'#FFF',color:n(height)===h2?'#8B2020':'#6B6056',fontSize:13,fontWeight:700,cursor:'pointer'}}>{h2}</button>)}
+          </div>
+        </div>
+        <div>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Linear Feet</label>
+          <input type="number" value={lf} onChange={e=>setLf(e.target.value)} placeholder="0" style={inputS}/>
+        </div>
+        <div>
+          <button onClick={calculate} disabled={!selStyle||!n(height)||!n(lf)} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:!selStyle||!n(height)||!n(lf)?0.4:1}}>Calculate</button>
+        </div>
+      </div>
+      {selJob&&<div style={{marginTop:8,fontSize:12,color:'#065F46',fontWeight:600}}>Loaded from: {selJob.job_name} (#{selJob.job_number})</div>}
+    </div>
+
+    {/* Results */}
+    {result&&<div>
+      {/* Summary bar */}
+      <div style={{...card,padding:'12px 20px',marginBottom:16,display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',background:'#1A1A1A',color:'#FFF',border:'none'}}>
+        <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Style</span><div style={{fontWeight:700,fontSize:14}}>{selStyle}</div></div>
+        <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Height</span><div style={{fontWeight:700,fontSize:14}}>{height}ft</div></div>
+        <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Linear Feet</span><div style={{fontWeight:700,fontSize:14}}>{n(lf).toLocaleString()}</div></div>
+        <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Sections</span><div style={{fontWeight:700,fontSize:14}}>{result.sections}</div></div>
+        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          {selJob&&<button onClick={async()=>{try{await sbPatch('jobs',selJob.id,{material_calc_posts:ov('totalPosts',result.totalPosts),material_calc_panels:ov('totalPanels',result.totalPanels),material_calc_rails:ov('totalRails',result.totalRails),material_calc_caps:ov('totalCaps',result.totalCaps)});setToast('Saved to '+selJob.job_name);}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save to Job</button>}
+          <button onClick={()=>window.print()} style={{...btnS,padding:'6px 16px',fontSize:12}}>Print</button>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        {/* POSTS */}
+        <div style={{...card,padding:0,overflow:'hidden'}}>
+          <div style={secHead('#FFF','#8B2020')}>Posts</div>
+          <div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Post Height</span><span style={{fontFamily:'Inter',fontWeight:800,fontSize:16}}>{result.postHeight}ft</span></div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Line Posts</span>{ovInput('linePosts',result.linePosts)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Corner Posts</span>{ovInput('cornerPosts',result.cornerPosts)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Stop Posts</span>{ovInput('stopPosts',result.stopPosts)}</div>
+            <div style={{...rowS,background:'#FDF4F4',fontWeight:700,borderBottom:'none'}}><span>Total Posts</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8B2020'}}>{ov('linePosts',result.linePosts)+ov('cornerPosts',result.cornerPosts)+ov('stopPosts',result.stopPosts)}</span></div>
+          </div>
+        </div>
+        {/* PANELS */}
+        <div style={{...card,padding:0,overflow:'hidden'}}>
+          <div style={secHead('#FFF','#1D4ED8')}>Panels{result.specialLabel?' ('+result.specialLabel+')':''}</div>
+          <div>
+            {!result.isRanch&&<><div style={rowS}><span style={{color:'#6B6056'}}>Regular Panels</span>{ovInput('regularPanels',result.regularPanels)}</div>
+            {result.isCMU&&<div style={rowS}><span style={{color:'#6B6056'}}>Half Panels</span>{ovInput('halfPanels',result.halfPanels)}</div>}
+            {result.isZPanel&&<><div style={rowS}><span style={{color:'#6B6056'}}>Top Panels</span>{ovInput('topPanels',result.topPanels)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Bottom Panels</span>{ovInput('bottomPanels',result.bottomPanels)}</div></>}
+            <div style={{...rowS,background:'#EFF6FF',fontWeight:700,borderBottom:'none'}}><span>Total Panels</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#1D4ED8'}}>{ov('regularPanels',result.regularPanels)+(ov('halfPanels',result.halfPanels)||0)+(ov('topPanels',result.topPanels)||0)+(ov('bottomPanels',result.bottomPanels)||0)}</span></div></>}
+            {result.isRanch&&<div style={{padding:16,textAlign:'center',color:'#9E9B96'}}>Ranch Rail — no panels</div>}
+          </div>
+        </div>
+        {/* RAILS */}
+        <div style={{...card,padding:0,overflow:'hidden'}}>
+          <div style={secHead('#FFF','#B45309')}>Rails</div>
+          <div>
+            {!result.isRanch&&<><div style={rowS}><span style={{color:'#6B6056'}}>Cap Rails</span>{ovInput('capRails',result.capRails)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Bottom Rails</span>{ovInput('bottomRails',result.bottomRails)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Middle Rails</span>{ovInput('middleRails',result.middleRails)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Top Rails</span>{ovInput('topRails',result.topRails)}</div></>}
+            {result.isRanch&&<div style={rowS}><span style={{color:'#6B6056'}}>Rails ({n(height)<=6?2:n(height)<=8?3:4}-hole)</span>{ovInput('totalRails',result.totalRails)}</div>}
+            <div style={{...rowS,background:'#FFFBEB',fontWeight:700,borderBottom:'none'}}><span>Total Rails</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#B45309'}}>{result.isRanch?ov('totalRails',result.totalRails):(ov('capRails',result.capRails)+ov('bottomRails',result.bottomRails)+ov('middleRails',result.middleRails)+ov('topRails',result.topRails))}</span></div>
+          </div>
+        </div>
+        {/* CAPS */}
+        <div style={{...card,padding:0,overflow:'hidden'}}>
+          <div style={secHead('#FFF','#065F46')}>Post Caps</div>
+          <div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Line Caps</span>{ovInput('lineCaps',result.lineCaps)}</div>
+            <div style={rowS}><span style={{color:'#6B6056'}}>Stop Caps</span>{ovInput('stopCaps',result.stopCaps)}</div>
+            <div style={{...rowS,background:'#ECFDF5',fontWeight:700,borderBottom:'none'}}><span>Total Caps</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#065F46'}}>{ov('lineCaps',result.lineCaps)+ov('stopCaps',result.stopCaps)}</span></div>
+            {result.totalCaps===0&&<div style={{padding:8,textAlign:'center',fontSize:11,color:'#9E9B96'}}>No caps for this style</div>}
+          </div>
+        </div>
+      </div>
+      {Object.keys(overrides).length>0&&<div style={{marginTop:12,fontSize:11,color:'#B45309',fontWeight:600}}>* Yellow fields have been manually adjusted</div>}
+    </div>}
+    {!result&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}><div style={{fontSize:28,marginBottom:8}}>🧮</div><div style={{fontSize:14}}>Select a style, height, and linear feet to calculate materials</div></div>}
+  </div>);
+}
+
 /* ═══ SCHEDULE PAGE ═══ */
 function SchedulePage({jobs}){
   const[events,setEvents]=useState([]);const[view,setView]=useState('calendar');const[month,setMonth]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1));const[showAdd,setShowAdd]=useState(false);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[editEvt,setEditEvt]=useState(null);
@@ -2252,7 +2433,7 @@ function Topbar({jobs,live,onSearch}){
 const NAV_GROUPS=[
   {label:'',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
-  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'schedule',label:'Schedule',icon:'📅'}]},
+  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'material_calc',label:'Material Calc',icon:'🧮'},{key:'schedule',label:'Schedule',icon:'📅'}]},
   {label:'FIELD',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'daily_report',label:'Production Report',icon:'🏭'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'}]},
 ];
@@ -2291,6 +2472,7 @@ export default function App(){
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
+            {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
