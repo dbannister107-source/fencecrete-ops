@@ -836,7 +836,7 @@ function BillingPage({jobs,onRefresh,onNav}){
               <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
               <td style={{padding:'8px 10px'}}>{status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
-              <td style={{padding:'8px 10px',fontSize:11}}>{sub&&sub.pct_complete!=null?sub.pct_complete+'%':'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11}}>{sub&&sub.pct_complete_pm!=null?sub.pct_complete_pm+'%':'—'}</td>
               <td style={{padding:'8px 10px'}}>{sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
                 {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
@@ -965,9 +965,9 @@ function BillingPage({jobs,onRefresh,onNav}){
         </div>
         <div style={{fontSize:12,color:'#6B6056',marginBottom:4}}>#{s.job_number} · {s.pm} · {MS[s.market]||s.market||'—'}</div>
         <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>
-          {s.fence_style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.fence_style}</b></span>}
-          {s.fence_color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.fence_color}</b></span>}
-          {s.fence_height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.fence_height}ft</b></span>}
+          {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
+          {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
+          {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
         </div>
         <div style={{fontSize:11,color:'#9E9B96',marginBottom:14}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—'}</div>
@@ -984,8 +984,8 @@ function BillingPage({jobs,onRefresh,onNav}){
             </div>
           </div>;})}
           <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
-            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.lf_total).toLocaleString()}</div></div>
-            {s.pct_complete!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete}%</div></div>}
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.total_lf).toLocaleString()}</div></div>
+            {s.pct_complete_pm!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete_pm}%</div></div>}
           </div>
         </div>
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
@@ -1217,9 +1217,9 @@ function PMBillingPage({jobs,onRefresh}){
   const toggleCard=(jobId)=>setExpanded(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
   const expandAll=()=>setExpanded(new Set(activeJobs.map(j=>j.id)));
   const collapseAll=()=>setExpanded(new Set());
-  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete!=null?String(sub.pct_complete):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditMode(prev=>{const s=new Set(prev);s.add(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.add(job.id);return s;});};
+  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditMode(prev=>{const s=new Set(prev);s.add(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.add(job.id);return s;});};
   const cancelEdit=(jobId)=>setEditMode(prev=>{const s=new Set(prev);s.delete(jobId);return s;});
-  const submitEntry=async(job)=>{const form=getForm(job.id);const lfTotal=calcLFTotal(form);setSaving(job.id);try{const existing=subByJob[job.id];const body={job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:selPM,billing_month:selMonth,fence_style:job.style||null,fence_color:job.color||null,fence_height:job.height_precast||null,adj_contract_value:n(job.adj_contract_value||job.contract_value),...Object.fromEntries(LF_FIELDS.map(f=>[f,n(form[f])])),lf_total:lfTotal,pct_complete:form.pct_complete!==''?n(form.pct_complete):null,notes:form.notes||null,submitted_at:new Date().toISOString()};console.log('[PM Bill Sheet] Submitting for',job.job_name,'month=',selMonth,'existing=',!!existing,'body=',body);if(existing){const pRes=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{method:'PATCH',headers:H,body:JSON.stringify(body)});const pText=await pRes.text();console.log('[PM Bill Sheet] PATCH status=',pRes.status,'response=',pText);if(pRes.status!==200&&pRes.status!==204){throw new Error(`Update failed (${pRes.status}): ${pText}`);}const updated=pText?JSON.parse(pText):null;const merged=updated&&updated[0]?updated[0]:{...existing,...body};setSubs(prev=>prev.map(s=>s.id===existing.id?merged:s));setToast('Bill sheet updated');}else{const upsertH={...H,Prefer:'return=representation,resolution=merge-duplicates'};const pRes=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:upsertH,body:JSON.stringify(body)});const pText=await pRes.text();console.log('[PM Bill Sheet] POST status=',pRes.status,'response=',pText);if(pRes.status!==201&&pRes.status!==200){throw new Error(`Save failed (${pRes.status}): ${pText}`);}const result=pText?JSON.parse(pText):null;const newRec=result&&result[0]?result[0]:{...body,id:'temp-'+Date.now()};setSubs(prev=>[newRec,...prev]);setToast('Bill sheet submitted');}setEditMode(prev=>{const s=new Set(prev);s.delete(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.delete(job.id);return s;});}catch(e){console.error('[PM Bill Sheet] Submit error:',e);setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
+  const submitEntry=async(job)=>{const form=getForm(job.id);const lfTotal=calcLFTotal(form);setSaving(job.id);try{const existing=subByJob[job.id];const body={job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:selPM,billing_month:selMonth,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:n(job.adj_contract_value||job.contract_value),...Object.fromEntries(LF_FIELDS.map(f=>[f,n(form[f])])),total_lf:lfTotal,pct_complete_pm:form.pct_complete!==''?n(form.pct_complete):0,notes:form.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:existing?existing.ar_reviewed:false};console.log('[PM Bill Sheet] Submitting for',job.job_name,'month=',selMonth,'existing=',!!existing,'body=',body);if(existing){const pRes=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{method:'PATCH',headers:H,body:JSON.stringify(body)});const pText=await pRes.text();console.log('[PM Bill Sheet] PATCH status=',pRes.status,'response=',pText);if(pRes.status!==200&&pRes.status!==204){throw new Error(`Update failed (${pRes.status}): ${pText}`);}const updated=pText?JSON.parse(pText):null;const merged=updated&&updated[0]?updated[0]:{...existing,...body};setSubs(prev=>prev.map(s=>s.id===existing.id?merged:s));setToast('Bill sheet updated');}else{const upsertH={...H,Prefer:'return=representation,resolution=merge-duplicates'};const pRes=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:upsertH,body:JSON.stringify(body)});const pText=await pRes.text();console.log('[PM Bill Sheet] POST status=',pRes.status,'response=',pText);if(pRes.status!==201&&pRes.status!==200){throw new Error(`Save failed (${pRes.status}): ${pText}`);}const result=pText?JSON.parse(pText):null;const newRec=result&&result[0]?result[0]:{...body,id:'temp-'+Date.now()};setSubs(prev=>[newRec,...prev]);setToast('Bill sheet submitted');}setEditMode(prev=>{const s=new Set(prev);s.delete(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.delete(job.id);return s;});}catch(e){console.error('[PM Bill Sheet] Submit error:',e);setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
 
   const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
   const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(sub[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>{sec.fields.map(([label,field])=>{const v=n(sub[field]);return v>0?<div key={field} style={{background:'#F9F8F6',borderRadius:6,padding:'4px 8px'}}><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div></div>:null;}).filter(Boolean)}</div></div>;}).filter(Boolean);
@@ -1283,11 +1283,11 @@ function PMBillingPage({jobs,onRefresh}){
                 {sub.ar_notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>AR Notes: {sub.ar_notes}</div>}
               </div>
               {renderLFReadOnly(sub)}
-              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.lf_total)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.lf_total).toLocaleString()}</b></span>}{sub.pct_complete!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete}%</b></span>}</div>
+              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
             </div>:sub&&!isEditing?<div>
               {renderLFReadOnly(sub)}
-              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.lf_total)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.lf_total).toLocaleString()}</b></span>}{sub.pct_complete!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete}%</b></span>}</div>
+              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
               <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnP,padding:'8px 20px',fontSize:12}}>Edit</button></div>
             </div>:<div>
@@ -1362,9 +1362,9 @@ function ProductionPage({jobs,onRefresh}){
       <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4}}>{s.job_name} \u2014 Bill Sheet {monthLabel(s.billing_month)}</div>
         <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>
-          {s.fence_style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.fence_style}</b></span>}
-          {s.fence_color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.fence_color}</b></span>}
-          {s.fence_height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.fence_height}ft</b></span>}
+          {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
+          {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
+          {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
         </div>
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
@@ -1379,8 +1379,8 @@ function ProductionPage({jobs,onRefresh}){
             </div>
           </div>;})}
           <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
-            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.lf_total).toLocaleString()}</div></div>
-            {s.pct_complete!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete}%</div></div>}
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.total_lf).toLocaleString()}</div></div>
+            {s.pct_complete_pm!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete_pm}%</div></div>}
           </div>
         </div>
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
