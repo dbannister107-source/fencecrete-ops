@@ -855,7 +855,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[arMktF,setArMktF]=useState(null);
   const[arViewF,setArViewF]=useState('all');
   const[arDetail,setArDetail]=useState(null);
-  const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:''});
+  const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
@@ -865,8 +865,8 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
   const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arFilteredJobs,arSubByJob]);
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
-  const markArReviewed=async()=>{if(!arDetail)return;try{await sbPatch('pm_bill_submissions',arDetail.sub.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null});setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});fetchArSubs();setToast('Marked as reviewed');}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
-  const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||''});};
+  const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
+  const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||'',invoiced_amount:sub.invoiced_amount||'',invoice_number:sub.invoice_number||'',invoice_date:sub.invoice_date||new Date().toISOString().split('T')[0]});};
   const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
@@ -1029,19 +1029,36 @@ function BillingPage({jobs,onRefresh,onNav}){
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
         {/* AR Review Section */}
         <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>AR Review</div>
+          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>AR Review & Invoice</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div>
+              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label>
+              <input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS} disabled={s.ar_reviewed}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label>
+              <input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS} disabled={s.ar_reviewed}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label>
+              <input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS} disabled={s.ar_reviewed}/>
+            </div>
+          </div>
           <div style={{marginBottom:10}}>
             <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>AR Notes</label>
-            <textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={3} placeholder="Review notes, adjustments, flags..." style={{...inputS,resize:'vertical'}} disabled={s.ar_reviewed}/>
+            <textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Review notes, adjustments, flags..." style={{...inputS,resize:'vertical'}} disabled={s.ar_reviewed}/>
           </div>
           <div>
             <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Reviewer Name</label>
             <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Your name" style={inputS} disabled={s.ar_reviewed}/>
           </div>
-          {s.ar_reviewed&&<div style={{marginTop:10,fontSize:12,color:'#1D4ED8',fontWeight:600}}>Reviewed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>}
+          {s.ar_reviewed&&<div style={{marginTop:10,padding:10,background:'#EFF6FF',borderRadius:8}}>
+            <div style={{fontSize:12,color:'#1D4ED8',fontWeight:600}}>Reviewed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
+            {n(s.invoiced_amount)>0&&<div style={{fontSize:12,color:'#065F46',fontWeight:600,marginTop:4}}>Invoice: {$(s.invoiced_amount)}{s.invoice_number?' — #'+s.invoice_number:''}{s.invoice_date?' — '+fD(s.invoice_date):''}</div>}
+          </div>}
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-          <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}} style={btnS}>Close</button>
+          <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}} style={btnS}>Close</button>
           {!s.ar_reviewed&&<button onClick={markArReviewed} style={{...btnP,background:'#1D4ED8'}}>Mark as Reviewed</button>}
         </div>
       </div>
