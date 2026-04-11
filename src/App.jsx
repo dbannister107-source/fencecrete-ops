@@ -830,6 +830,8 @@ function ProjectsPage({jobs,onRefresh,openJob}){
 /* ═══ BILLING PAGE ═══ */
 function BillingPage({jobs,onRefresh,onNav}){
   const[bilQuickView,setBilQuickView]=useState(null);
+  const[bilAdminPin,setBilAdminPin]=useState(null);const[bilPin,setBilPin]=useState('');const[bilPinErr,setBilPinErr]=useState(false);
+  const bilAdminReset=async(sub)=>{try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});try{await sbPost('activity_log',{job_id:sub.job_id,job_number:sub.job_number,job_name:sub.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}setBilAdminPin(null);setBilPin('');setArDetail(null);fetchArSubs();setToast('Submission reset by admin');}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
   const[bilRemindSending,setBilRemindSending]=useState(false);
   const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
@@ -1074,6 +1076,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           </div>}
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          {s.ar_reviewed&&<button onClick={()=>{setBilAdminPin(s);setBilPin('');setBilPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline',marginRight:'auto'}}>Admin Reset</button>}
           <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}} style={btnS}>Close</button>
           {!s.ar_reviewed&&<button onClick={markArReviewed} style={{...btnP,background:'#1D4ED8'}}>Mark as Reviewed</button>}
         </div>
@@ -1100,6 +1103,15 @@ function BillingPage({jobs,onRefresh,onNav}){
           This will reset YTD Invoiced from <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(undoJob.ytd_invoiced)}</span> back to <span style={{fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>$0</span>.
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
+      </div>
+    </div>}
+    {bilAdminPin&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:380,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:6,color:'#1A1A1A'}}>Admin Override Required</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:16}}>This submission for <b>{bilAdminPin.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
+        <input autoFocus type="password" inputMode="numeric" maxLength={4} value={bilPin} onChange={e=>{setBilPin(e.target.value.replace(/\D/g,'').slice(0,4));setBilPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${bilPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
+        {bilPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
       </div>
     </div>}
   </div>);
@@ -1138,7 +1150,8 @@ function PMBillingPage({jobs,onRefresh}){
   const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditMode(prev=>{const s=new Set(prev);s.add(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.add(job.id);return s;});};
   const cancelEdit=(jobId)=>setEditMode(prev=>{const s=new Set(prev);s.delete(jobId);return s;});
   const[confirmReset,setConfirmReset]=useState(null);
-  const resetSub=async(job)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setToast(`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
+  const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
+  const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
   const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload={billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:parseInt(job.total_lf)||0,labor_post_only:parseFloat(form.labor_post_only)||0,labor_post_panels:parseFloat(form.labor_post_panels)||0,labor_complete:parseFloat(form.labor_complete)||0,sw_foundation:parseFloat(form.sw_foundation)||0,sw_columns:parseFloat(form.sw_columns)||0,sw_panels:parseFloat(form.sw_panels)||0,sw_complete:parseFloat(form.sw_complete)||0,wi_gates:parseFloat(form.wi_gates)||0,wi_fencing:parseFloat(form.wi_fencing)||0,wi_columns:parseFloat(form.wi_columns)||0,line_bonds:parseFloat(form.line_bonds)||0,line_permits:parseFloat(form.line_permits)||0,remove_existing:parseFloat(form.remove_existing)||0,gate_controls:parseFloat(form.gate_controls)||0,lf_panels_washed:0,pct_complete_pm:parseFloat(form.pct_complete)||0,notes:form.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};console.log('[PM Bill Sheet] Submitting payload:',JSON.stringify(payload));const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();console.log('[PM Bill Sheet] Response status:',res.status);console.log('[PM Bill Sheet] Response body:',resTxt);if(!res.ok){throw new Error(`Save failed (${res.status}): ${resTxt}`);}const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Bill sheet submitted for ${job.job_name}`);setEditMode(prev=>{const s=new Set(prev);s.delete(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.delete(job.id);return s;});}catch(e){console.error('[PM Bill Sheet] Submit error:',e);setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
 
   const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
@@ -1205,7 +1218,7 @@ function PMBillingPage({jobs,onRefresh}){
               {renderLFReadOnly(sub)}
               <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
-              <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();const pin=window.prompt('Enter admin PIN to reset reviewed submission:');if(pin==='2020')setConfirmReset(j);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button></div>
+              <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();setAdminPinJob(j);setAdminPin('');setAdminPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button></div>
             </div>:sub&&!isEditing?<div>
               {renderLFReadOnly(sub)}
               <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
@@ -1229,7 +1242,16 @@ function PMBillingPage({jobs,onRefresh}){
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:420,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Reset Bill Sheet?</div>
         <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>Are you sure you want to reset the bill sheet for <b style={{color:'#1A1A1A'}}>{confirmReset.job_name}</b>? This will delete your submission and cannot be undone.</div>
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmReset(null)} style={btnS}>Cancel</button><button onClick={()=>resetSub(confirmReset)} style={{...btnP,background:'#991B1B'}}>Yes, Reset</button></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmReset(null)} style={btnS}>Cancel</button><button onClick={()=>resetSub(confirmReset,false)} style={{...btnP,background:'#991B1B'}}>Yes, Reset</button></div>
+      </div>
+    </div>}
+    {adminPinJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:380,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:6,color:'#1A1A1A'}}>Admin Override Required</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:16}}>This submission for <b>{adminPinJob.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
+        <input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminPin} onChange={e=>{setAdminPin(e.target.value.replace(/\D/g,'').slice(0,4));setAdminPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${adminPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
+        {adminPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
       </div>
     </div>}
   </div>);
