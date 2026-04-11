@@ -513,12 +513,12 @@ function Dashboard({jobs,onNav}){
     {(()=>{const aiCount=jobs.filter(j=>j.status==='active_install').length;const icCount=jobs.filter(j=>j.status==='fence_complete').length;const collMo=jobs.filter(j=>j.collected&&j.collected_date&&new Date(j.collected_date).getMonth()===now.getMonth()&&new Date(j.collected_date).getFullYear()===now.getFullYear()).length;const outstanding=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).length;return<div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:24}}>{[['Active',active.length],['Active Install',aiCount],['Fence Done',icCount],['Collected Mo.',collMo],['Outstanding',outstanding],['Completed Mo.',compThisMonth],['Closed',closedJobs.length],['Total',jobs.length]].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>;})()}
     {/* Backlog Health */}
     {(()=>{
-      const blJobs=jobs.filter(j=>['production_queue','in_production'].includes(j.status));
-      const blLTB=blJobs.reduce((s,j)=>s+n(j.left_to_bill),0);
-      const allYTD=jobs.filter(j=>j.status!=='closed').reduce((s,j)=>s+n(j.ytd_invoiced),0);
+      const blJobs=active;
+      const blLTB=tl;
+      const currentMo=new Date().getMonth()+1;
+      const runRate=currentMo>0?ty/currentMo:0;
       const blCount=blJobs.length;
       const blLF=blJobs.reduce((s,j)=>s+n(j.total_lf),0);
-      const runRate=allYTD/3.3;
       const blMonths=runRate>0?blLTB/runRate:0;
       const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
       const blBg=blMonths>=4?'#D1FAE5':blMonths>=2?'#FEF3C7':'#FEE2E2';
@@ -528,8 +528,8 @@ function Dashboard({jobs,onNav}){
         <div style={{display:'flex',gap:24,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
           <div>
             <div style={{fontFamily:'Inter',fontWeight:900,fontSize:36,color:blColor}}>{blMonths.toFixed(1)}</div>
-            <div style={{fontSize:14,fontWeight:700,color:blColor}}>months of backlog</div>
-            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>Target: 4–6 months</div>
+            <div style={{fontSize:14,fontWeight:700,color:blColor}}>Months of Backlog</div>
+            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>Based on {$k(runRate)}/mo run rate</div>
           </div>
           <div style={{display:'flex',gap:20,flex:1,justifyContent:'flex-end',flexWrap:'wrap'}}>
             <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(blLTB)}</div><div style={{fontSize:10,color:'#9E9B96'}}>Left to Bill</div></div>
