@@ -419,10 +419,9 @@ function Dashboard({jobs,onNav}){
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
-  const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
-  // 2026 Revenue Goal — uses the same value as the "YTD Billed" KPI card (ty above):
-  // sum of ytd_invoiced across active jobs. Date-based filters all overcounted because
-  // they pulled in future backlog rather than what's actually been billed this year.
+  const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
+  const tc=active.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tlf=active.reduce((s,j)=>s+n(j.total_lf),0);
+  // 2026 Revenue Goal — includes closed jobs (money already earned)
   const GOAL_2026=36000000;
   const ytd2026=ty;
   const pct2026=Math.min(ytd2026/GOAL_2026,1);
