@@ -635,8 +635,6 @@ function Dashboard({jobs,onNav}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowRemindConfirm(false)} style={btnS}>Cancel</button><button onClick={sendReminders} style={btnP}>Send Reminders</button></div>
       </div>
     </div>}
-    {/* Quick stats */}
-    {(()=>{const aiCount=jobs.filter(j=>j.status==='active_install').length;const icCount=jobs.filter(j=>j.status==='fence_complete').length;const collMo=jobs.filter(j=>j.collected&&j.collected_date&&new Date(j.collected_date).getMonth()===now.getMonth()&&new Date(j.collected_date).getFullYear()===now.getFullYear()).length;const outstanding=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).length;return<div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:24}}>{[['Active',active.length],['Active Install',aiCount],['Fence Done',icCount],['Collected Mo.',collMo],['Outstanding',outstanding],['Completed Mo.',compThisMonth],['Closed',closedJobs.length],['Total',jobs.length]].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>;})()}
     {/* Backlog Health */}
     {(()=>{
       const blJobs=active;
