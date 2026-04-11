@@ -525,10 +525,10 @@ function Dashboard({jobs,onNav}){
   const largest=[...active].sort((a,b)=>n(b.adj_contract_value||b.contract_value)-n(a.adj_contract_value||a.contract_value))[0];
   const oldestUnbilled=alerts[0];
   const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
-  // Current month billing cycle status — small card for the dashboard
+  // Current month bill sheet submissions for dashboard
   const dashBillingMonth=curBillingMonth();
-  const[dashCycles,setDashCycles]=useState([]);useEffect(()=>{sbGet('monthly_billing_cycles',`billing_month=eq.${dashBillingMonth}&select=id,invoice_sent,amount_to_invoice,accounting_approved`).then(d=>setDashCycles(d||[]));},[dashBillingMonth]);
-  const dashCycleStats=useMemo(()=>{const total=dashCycles.length;const invoiced=dashCycles.filter(c=>c.invoice_sent).length;const invoicedAmt=dashCycles.filter(c=>c.invoice_sent).reduce((s,c)=>s+n(c.amount_to_invoice),0);const pending=dashCycles.filter(c=>!c.accounting_approved&&!c.invoice_sent).length;return{total,invoiced,invoicedAmt,pending};},[dashCycles]);
+  const[dashBillSubs,setDashBillSubs]=useState([]);
+  useEffect(()=>{sbGet('pm_bill_submissions',`billing_month=eq.${dashBillingMonth}&select=id,job_id,submitted_by,submitted_at,total_lf,pct_complete_pm`).then(d=>setDashBillSubs(d||[]));},[dashBillingMonth]);
 
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
@@ -574,18 +574,52 @@ function Dashboard({jobs,onNav}){
         </div>
       </div>;
     })()}
-    {/* Billing Cycle status card */}
-    <div style={{...card,marginBottom:16,display:'flex',alignItems:'center',gap:18,flexWrap:'wrap',borderLeft:'4px solid #8B2020'}}>
-      <div style={{flex:'0 0 auto'}}>
-        <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{monthLabel(dashBillingMonth)} Billing Cycle</div>
-        <div style={{fontSize:11,color:'#9E9B96'}}>{dashCycleStats.total>0?'Cycle active':'No cycle started'}</div>
+    {/* ═══ BILL SHEET STATUS CARD ═══ */}
+    {(()=>{const bsActive=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));const bsTotal=bsActive.length;const bsSubs=dashBillSubs;const bsSubIds=new Set(bsSubs.map(s=>s.job_id));const bsSubmitted=bsActive.filter(j=>bsSubIds.has(j.id)).length;const bsPct=bsTotal>0?Math.round(bsSubmitted/bsTotal*100):0;const bsColor=bsPct>80?'#10B981':bsPct>50?'#F59E0B':'#EF4444';const pmCounts=PM_LIST.map(p=>{const pj=bsActive.filter(j=>j.pm===p.id);const ps=pj.filter(j=>bsSubIds.has(j.id)).length;return{...p,total:pj.length,submitted:ps};});return<div style={{...card,marginBottom:16,borderTop:`3px solid ${bsColor}`}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
+        <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Bill Sheets — {monthLabel(dashBillingMonth)}</div>
+        {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
       </div>
-      <div style={{display:'flex',gap:24,flex:1,flexWrap:'wrap'}}>
-        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#1D4ED8'}}>{dashCycleStats.invoiced} of {dashCycleStats.total}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Jobs invoiced</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$k(dashCycleStats.invoicedAmt)}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Invoiced this month</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:dashCycleStats.pending>0?'#B45309':'#9E9B96'}}>{dashCycleStats.pending}</div><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Pending approval</div></div>
+      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
+        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:bsColor}}>{bsSubmitted}</span>
+        <span style={{fontSize:14,color:'#6B6056'}}>/ {bsTotal} Submitted</span>
+        <span style={{fontSize:20,fontWeight:800,color:bsColor,marginLeft:'auto'}}>{bsPct}%</span>
       </div>
-      {onNav&&<button onClick={()=>onNav('billing')} style={{...btnS,fontSize:12,whiteSpace:'nowrap'}}>Go to Monthly Cycles →</button>}
+      <PBar pct={bsPct} color={bsColor} h={10}/>
+      <div style={{display:'flex',gap:12,marginTop:12,flexWrap:'wrap'}}>{pmCounts.map(p=><div key={p.id} style={{flex:'1 1 0',minWidth:100,background:'#F9F8F6',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:2}}>{p.short}</div>
+        <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:p.submitted===p.total&&p.total>0?'#10B981':'#EF4444'}}>{p.submitted}/{p.total}</div>
+      </div>)}</div>
+    </div>;})()}
+    {/* ═══ PIPELINE STAGE SUMMARY ═══ */}
+    {(()=>{const stages=[{key:'contract_review',short:'Review'},{key:'production_queue',short:'Prod Queue'},{key:'in_production',short:'In Prod'},{key:'inventory_ready',short:'Inventory'},{key:'active_install',short:'Active Install'},{key:'fence_complete',short:'Fence Done'}];const stData=stages.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+n(j.total_lf),0)};});const fcCount=jobs.filter(j=>j.status==='fully_complete').length;return<div style={{...card,marginBottom:16}}>
+      <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:12}}>Production Pipeline</div>
+      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+        {stData.map((s,i)=><React.Fragment key={s.key}>
+          {i>0&&<span style={{color:'#D1CEC9',fontSize:16}}>→</span>}
+          <div onClick={()=>onNav&&onNav('production')} style={{flex:'1 1 0',minWidth:90,background:SB_[s.key],border:`1px solid ${SC[s.key]}30`,borderRadius:10,padding:'10px 8px',textAlign:'center',cursor:onNav?'pointer':'default'}}>
+            <div style={{fontSize:10,fontWeight:700,color:SC[s.key],textTransform:'uppercase',marginBottom:2}}>{s.short}</div>
+            <div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:SC[s.key]}}>{s.count}</div>
+            <div style={{fontSize:10,color:'#6B6056',marginTop:2}}>{s.lf.toLocaleString()} LF</div>
+          </div>
+        </React.Fragment>)}
+      </div>
+      <div style={{fontSize:12,color:'#6B6056',marginTop:10}}>Fully Complete: {fcCount} jobs | Closed: {closedJobs.length} jobs</div>
+    </div>;})()}
+    {/* ═══ PM WORKLOAD CARDS ═══ */}
+    <div style={{...card,marginBottom:16}}>
+      <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:12}}>PM Workload</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+        {PM_LIST.map(p=>{const pj=active.filter(j=>j.pm===p.id);const pLF=pj.reduce((s,j)=>s+n(j.total_lf),0);const pCV=pj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const bsSubIds=new Set(dashBillSubs.map(s2=>s2.job_id));const pSub=pj.filter(j=>bsSubIds.has(j.id)).length;const pAll=pj.length;return<div key={p.id} onClick={()=>onNav&&onNav('projects')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,cursor:onNav?'pointer':'default'}}>
+          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8B2020',marginBottom:8}}>{p.label}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:11,color:'#6B6056',marginBottom:8}}>
+            <div>Jobs: <b style={{color:'#1A1A1A'}}>{pAll}</b></div>
+            <div>LF: <b style={{color:'#1A1A1A'}}>{pLF.toLocaleString()}</b></div>
+            <div style={{gridColumn:'1/-1'}}>Contract: <b style={{color:'#1A1A1A'}}>{$k(pCV)}</b></div>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:pSub===pAll&&pAll>0?'#10B981':'#EF4444'}}>{pSub} of {pAll} bill sheets</div>
+        </div>;})}
+      </div>
     </div>
     {/* Quick Actions */}
     {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
