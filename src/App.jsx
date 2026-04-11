@@ -60,6 +60,96 @@ function KPI({label,value,color='#8B2020'}){return<div style={card}><div style={
 function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
 function renderCell(j,k){const v=j[k];if(k==='status')return<span style={pill(SC[v]||'#6B6056',SB_[v]||'#F4F4F2')}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#6B6056',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf')return<span>{n(v).toLocaleString()}</span>;if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8B2020',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#6B6056',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
 
+/* ═══ PROJECT QUICK VIEW ═══ */
+function ProjectQuickView({job,onClose,onNav,billSub}){
+  if(!job)return null;
+  const reqFlags=[{k:'aia_billing',l:'AIA'},{k:'bonds',l:'Bonds'},{k:'certified_payroll',l:'Cert Payroll'},{k:'ocip_ccip',l:'OCIP/CCIP'},{k:'third_party_billing',l:'3rd Party'}];
+  const secStyle={marginBottom:16};
+  const secTitle={fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,paddingBottom:4,borderBottom:'1px solid #E5E3E0'};
+  const grd={display:'grid',gridTemplateColumns:'1fr 1fr',gap:8};
+  const lbl={fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600};
+  const val={fontFamily:'Inter',fontSize:13,fontWeight:700,color:'#1A1A1A'};
+  const addC={G:['#B45309','Gates'],C:['#6D28D9','Columns'],WI:['#374151','WI']};
+  return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div style={{background:'#FFF',borderRadius:16,width:680,maxWidth:'96vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
+      {/* Header */}
+      <div style={{background:'#8B2020',borderRadius:'16px 16px 0 0',padding:'16px 24px',color:'#FFF',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div>
+          <div style={{fontSize:12,opacity:0.7,marginBottom:2}}>#{job.job_number}</div>
+          <div style={{fontFamily:'Syne',fontSize:20,fontWeight:800}}>{job.job_name}</div>
+          <div style={{display:'flex',gap:6,marginTop:8,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:SC[job.status]||'#6B6056',color:job.status==='closed'?'#FFF':'#FFF'}}>{SS[job.status]}</span>
+            <span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:600,background:'rgba(255,255,255,0.2)'}}>{MS[job.market]||job.market||'—'}</span>
+            {job.pm&&<span style={{fontSize:12,opacity:0.9}}>{job.pm}</span>}
+          </div>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:22,cursor:'pointer',padding:'0 4px',lineHeight:1}}>×</button>
+      </div>
+      <div style={{padding:'20px 24px'}}>
+        {/* Section 1: Project Info */}
+        <div style={secStyle}><div style={secTitle}>Project Info</div>
+          <div style={grd}>
+            <div><div style={lbl}>Customer</div><div style={val}>{job.customer_name||'—'}</div></div>
+            <div><div style={lbl}>Job Type</div><div style={val}>{job.job_type||'—'}</div></div>
+            <div><div style={lbl}>Primary Fence Type</div><div style={{marginTop:2}}>{job.primary_fence_type?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:job.primary_fence_type==='Precast'?'#8B2020':job.primary_fence_type==='Masonry'?'#185FA5':'#374151',color:'#FFF'}}>{job.primary_fence_type}</span>:<span style={{color:'#9E9B96'}}>—</span>}{Array.isArray(job.fence_addons)&&job.fence_addons.length>0&&<span style={{marginLeft:6}}>{job.fence_addons.map(a=>{const[bg,l2]=addC[a]||['#6B6056',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF',marginRight:3}}>{l2}</span>;})}</span>}</div></div>
+            <div><div style={lbl}>Address</div><div style={val}>{[job.address,job.city,job.state].filter(Boolean).join(', ')||'—'}</div></div>
+            <div><div style={lbl}>Contract Date</div><div style={val}>{fD(job.contract_date)}</div></div>
+            <div><div style={lbl}>Est. Start Date</div><div style={val}>{fD(job.est_start_date)}</div></div>
+          </div>
+        </div>
+        {/* Section 2: Fence Details */}
+        <div style={secStyle}><div style={secTitle}>Fence Details</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+            <div><div style={lbl}>Style</div><div style={val}>{job.style||'—'}</div></div>
+            <div><div style={lbl}>Color</div><div style={val}>{job.color||'—'}</div></div>
+            <div><div style={lbl}>Height</div><div style={val}>{job.height_precast?job.height_precast+'ft':'—'}</div></div>
+            <div><div style={lbl}>LF Precast</div><div style={val}>{n(job.lf_precast)>0?n(job.lf_precast).toLocaleString():'—'}</div></div>
+            <div><div style={lbl}>LF Single Wythe</div><div style={val}>{n(job.lf_single_wythe)>0?n(job.lf_single_wythe).toLocaleString():'—'}</div></div>
+            <div><div style={lbl}>LF Wrought Iron</div><div style={val}>{n(job.lf_wrought_iron)>0?n(job.lf_wrought_iron).toLocaleString():'—'}</div></div>
+            <div><div style={lbl}>Total LF</div><div style={{...val,color:'#8B2020'}}>{n(job.total_lf).toLocaleString()}</div></div>
+            <div><div style={lbl}># Gates</div><div style={val}>{n(job.number_of_gates)||'—'}</div></div>
+            <div><div style={lbl}>Gate Height</div><div style={val}>{job.gate_height||'—'}</div></div>
+          </div>
+        </div>
+        {/* Section 3: Contract & Billing */}
+        <div style={secStyle}><div style={secTitle}>Contract & Billing</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
+            <div><div style={lbl}>Contract Value</div><div style={val}>{$(job.contract_value)}</div></div>
+            <div><div style={lbl}>Change Orders</div><div style={{...val,color:n(job.change_orders)>0?'#065F46':n(job.change_orders)<0?'#991B1B':'#9E9B96'}}>{n(job.change_orders)?$(job.change_orders):'—'}</div></div>
+            <div><div style={lbl}>Adj Contract</div><div style={{...val,color:'#8B2020'}}>{$(job.adj_contract_value||job.contract_value)}</div></div>
+            <div><div style={lbl}>YTD Invoiced</div><div style={{...val,color:'#065F46'}}>{$(job.ytd_invoiced)}</div></div>
+            <div><div style={lbl}>% Billed</div><div style={val}>{fmtPct(job.pct_billed)}</div></div>
+            <div><div style={lbl}>Left to Bill</div><div style={{...val,color:'#B45309'}}>{$(job.left_to_bill)}</div></div>
+          </div>
+          <div style={{display:'flex',gap:8,marginBottom:8,fontSize:12,color:'#6B6056'}}>
+            <span>Method: <b style={{color:'#1A1A1A'}}>{job.billing_method||'—'}</b></span>
+            {job.billing_date&&<span>Date: <b style={{color:'#1A1A1A'}}>{job.billing_date}</b></span>}
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{reqFlags.map(f=><span key={f.k} style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,color:job[f.k]?'#065F46':'#9E9B96',fontWeight:600}}>{job[f.k]?'✓':'—'} {f.l}</span>)}</div>
+        </div>
+        {/* Section 4: Bill Sheet Status */}
+        <div style={secStyle}><div style={secTitle}>Bill Sheet Status — {monthLabel(curBillingMonth())}</div>
+          {billSub?<div style={{background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:8,padding:10}}>
+            <div style={{fontSize:13,fontWeight:700,color:'#065F46',marginBottom:4}}>✓ Submitted {billSub.submitted_at?new Date(billSub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}{billSub.submitted_by?' by '+billSub.submitted_by:''}</div>
+            <div style={{display:'flex',gap:12,fontSize:12,color:'#6B6056'}}>{n(billSub.total_lf)>0&&<span>Total LF: <b>{n(billSub.total_lf).toLocaleString()}</b></span>}{billSub.pct_complete_pm!=null&&<span>PM % Complete: <b>{billSub.pct_complete_pm}%</b></span>}</div>
+          </div>:<div style={{background:'#FEE2E2',border:'1px solid #EF444440',borderRadius:8,padding:10}}>
+            <div style={{fontSize:13,fontWeight:700,color:'#991B1B'}}>✗ Not submitted for {monthLabel(curBillingMonth())}</div>
+          </div>}
+        </div>
+        {/* Section 5: Notes */}
+        {job.notes&&<div style={secStyle}><div style={secTitle}>Notes</div>
+          <div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap',background:'#F9F8F6',borderRadius:8,padding:12}}>{job.notes}</div>
+        </div>}
+      </div>
+      {/* Footer */}
+      <div style={{padding:'12px 24px',borderTop:'1px solid #E5E3E0',display:'flex',gap:8,justifyContent:'flex-end'}}>
+        {onNav&&<button onClick={()=>{onClose();onNav(job);}} style={{...btnP,background:'#065F46'}}>View Full Project →</button>}
+        <button onClick={onClose} style={btnS}>Close</button>
+      </div>
+    </div>
+  </div>;
+}
+
 /* ═══ COLUMNS ═══ */
 const ALL_COLS=[{key:'status',label:'Status',w:130},{key:'market',label:'Location',w:110},{key:'job_number',label:'Project Code',w:100},{key:'included_on_billing_schedule',label:'Billing Sched.',w:100},{key:'included_on_lf_schedule',label:'LF Sched.',w:90},{key:'job_name',label:'Project Name',w:220},{key:'customer_name',label:'Customer',w:180},{key:'cust_number',label:'Cust #',w:80},{key:'fence_type',label:'Fence Type',w:100},{key:'primary_fence_type',label:'Primary Type',w:110},{key:'fence_addons',label:'Add-ons',w:140},{key:'documents_needed',label:'Docs Needed',w:140},{key:'file_location',label:'File Location',w:110},{key:'billing_method',label:'Billing Method',w:110},{key:'billing_date',label:'Billing Date',w:90},{key:'sales_rep',label:'Sales Rep',w:80},{key:'pm',label:'Project Manager',w:100},{key:'job_type',label:'Type',w:80},{key:'address',label:'Address',w:180},{key:'city',label:'City',w:100},{key:'state',label:'State',w:60},{key:'zip',label:'ZIP',w:70},{key:'lf_precast',label:'LF - Precast',w:90},{key:'height_precast',label:'Height - Precast',w:110},{key:'style',label:'Style - Precast',w:140},{key:'color',label:'Color - Precast',w:120},{key:'contract_rate_precast',label:'Rate - Precast',w:110},{key:'lf_single_wythe',label:'LF - Single Wythe',w:120},{key:'height_single_wythe',label:'Height - SW',w:90},{key:'contract_rate_single_wythe',label:'Rate - SW',w:90},{key:'style_single_wythe',label:'Style - SW',w:110},{key:'lf_wrought_iron',label:'LF - Wrought Iron',w:120},{key:'height_wrought_iron',label:'Height - WI',w:90},{key:'contract_rate_wrought_iron',label:'Rate - WI',w:90},{key:'lf_removal',label:'LF - Removal',w:100},{key:'height_removal',label:'Height - Removal',w:110},{key:'removal_material_type',label:'Removal Material',w:130},{key:'contract_rate_removal',label:'Rate - Removal',w:110},{key:'lf_other',label:'LF - Other',w:90},{key:'height_other',label:'Height - Other',w:100},{key:'other_material_type',label:'Other Material',w:120},{key:'contract_rate_other',label:'Rate - Other',w:100},{key:'number_of_gates',label:'# Gates',w:70},{key:'gate_height',label:'Gate Height',w:90},{key:'gate_description',label:'Gate Description',w:140},{key:'gate_rate',label:'Gate Rate',w:90},{key:'lump_sum_amount',label:'Lump Sum Amt',w:110},{key:'lump_sum_description',label:'Lump Sum Desc',w:150},{key:'total_lf',label:'Total LF Installed',w:130},{key:'average_height_installed',label:'Avg Height Installed',w:140},{key:'total_lf_removed',label:'Total LF Removed',w:130},{key:'average_height_removed',label:'Avg Height Removed',w:140},{key:'net_contract_value',label:'Net Contract Value',w:140},{key:'sales_tax',label:'Sales Tax',w:90},{key:'contract_value',label:'Contract Value',w:120},{key:'change_orders',label:'Change Orders',w:120},{key:'adj_contract_value',label:'Adj. Contract Value',w:140},{key:'contract_value_recalculation',label:'CV Recalc',w:100},{key:'contract_value_recalc_diff',label:'CV Recalc Diff',w:110},{key:'ytd_invoiced',label:'YTD Invoiced',w:110},{key:'pct_billed',label:'% Billed',w:80},{key:'left_to_bill',label:'Left to Bill',w:110},{key:'last_billed',label:'Last Billed',w:100},{key:'contract_date',label:'Contract Date',w:110},{key:'contract_month',label:'Contract Month',w:120},{key:'est_start_date',label:'Est. Start Date',w:120},{key:'start_month',label:'Start Month',w:100},{key:'contract_age',label:'Contract Age',w:100},{key:'active_entry_date',label:'Active Entry Date',w:130},{key:'complete_date',label:'Complete Date',w:110},{key:'complete_month',label:'Complete Month',w:120},{key:'aia_billing',label:'AIA',w:60},{key:'bonds',label:'Bonds',w:60},{key:'certified_payroll',label:'Cert Pay',w:60},{key:'ocip_ccip',label:'OCIP',w:60},{key:'third_party_billing',label:'3rd Party',w:60},{key:'notes',label:'Notes',w:220},{key:'retainage_pct',label:'Retainage %',w:90},{key:'retainage_held',label:'Retainage Held',w:110},{key:'collected',label:'Collected',w:90}];
 const DEF_VIS=['status','market','job_number','job_name','customer_name','fence_type','primary_fence_type','fence_addons','sales_rep','pm','adj_contract_value','left_to_bill','pct_billed','total_lf','contract_date','est_start_date','last_billed','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','notes'];
@@ -743,6 +833,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
 
 /* ═══ BILLING PAGE ═══ */
 function BillingPage({jobs,onRefresh,onNav}){
+  const[bilQuickView,setBilQuickView]=useState(null);
   const[bilRemindSending,setBilRemindSending]=useState(false);
   const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
@@ -833,7 +924,7 @@ function BillingPage({jobs,onRefresh,onNav}){
             const borderColor=status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
             return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1}}>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
-              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
               <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.style||'—'}</td>
@@ -871,7 +962,7 @@ function BillingPage({jobs,onRefresh,onNav}){
         <tr>{['Project','Style','Color','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','Last Billed',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
         </thead>
         <tbody>{shown.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}>{j.job_name}</td>
+          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></td>
           <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.style||''}>{j.style||'—'}</td>
           <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.color||''}>{j.color||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
@@ -906,6 +997,7 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
     </div>}
 
+    {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
     {arDetail&&(()=>{const s=arDetail.sub;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:600,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
@@ -1113,9 +1205,10 @@ function StartDateBadge({date,status}){
   if(isSoon)return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#B45309',border:'1px solid #F9731640'}}>📅 {fD(date)}</span>;
   return<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,color:'#8B2020'}}>📅 {fD(date)}</span>;
 }
-function ProdCard({j,move,locked,billSub,onViewBill}){const ns=NEXT_STATUS[j.status];return<div style={{...card,padding:12,marginBottom:6}}><div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.job_name}</div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{n(j.total_lf).toLocaleString()} LF</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{display:'flex',gap:3,marginBottom:2}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','Gates'],C:['#6D28D9','Columns'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF'}}>{lbl}</span>;})}</div>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2'}}>{billSub?<button onClick={e=>{e.stopPropagation();onViewBill(billSub);}} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:10,fontWeight:700,color:'#10B981'}}>📋 Bill Sheet ✓</button>:<span style={{fontSize:10,fontWeight:600,color:'#EF4444'}}>📋 No Bill Sheet</span>}</div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
+function ProdCard({j,move,locked,billSub,onViewBill,onQuickView}){const ns=NEXT_STATUS[j.status];return<div style={{...card,padding:12,marginBottom:6}}><div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{n(j.total_lf).toLocaleString()} LF</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{display:'flex',gap:3,marginBottom:2}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','Gates'],C:['#6D28D9','Columns'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF'}}>{lbl}</span>;})}</div>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2'}}>{billSub?<button onClick={e=>{e.stopPropagation();onViewBill(billSub);}} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:10,fontWeight:700,color:'#10B981'}}>📋 Bill Sheet ✓</button>:<span style={{fontSize:10,fontWeight:600,color:'#EF4444'}}>📋 No Bill Sheet</span>}</div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
 function ProductionPage({jobs,setJobs,onRefresh}){
+  const[quickViewJob,setQuickViewJob]=useState(null);
   // Bill sheet submissions for current month
   const prodBillingMonth=curBillingMonth();
   const[prodBillSubs,setProdBillSubs]=useState([]);
@@ -1153,7 +1246,8 @@ function ProductionPage({jobs,setJobs,onRefresh}){
     <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} LF</span><span style={{fontSize:12,color:'#6B6056'}}>in pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>{[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}</div>
     <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
-    <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+n(j.total_lf),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)}/>)}</div></div>;})}</div>
+    <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+n(j.total_lf),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob}/>)}</div></div>;})}</div>
+    {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
