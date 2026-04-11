@@ -23,7 +23,9 @@
       "mcp__claude_ai_Supabase__execute_sql",
       "mcp__claude_ai_Supabase__list_projects",
       "Bash(python:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(ls C:\\\\\\\\Users\\\\\\\\dbann\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\patch_statuses.js)",
+      "Bash(wslpath -w /tmp/)"
     ]
   }
 }
