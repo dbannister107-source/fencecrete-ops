@@ -412,6 +412,10 @@ function WeeklyDigest({jobs,active}){
 
 /* ═══ DASHBOARD ═══ */
 function Dashboard({jobs,onNav}){
+  const[showRemindConfirm,setShowRemindConfirm]=useState(false);
+  const[remindSending,setRemindSending]=useState(false);
+  const[dashToast,setDashToast]=useState(null);
+  const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();console.log('[Reminders] status=',res.status,'response=',txt);if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
@@ -438,6 +442,7 @@ function Dashboard({jobs,onNav}){
   const dashCycleStats=useMemo(()=>{const total=dashCycles.length;const invoiced=dashCycles.filter(c=>c.invoice_sent).length;const invoicedAmt=dashCycles.filter(c=>c.invoice_sent).reduce((s,c)=>s+n(c.amount_to_invoice),0);const pending=dashCycles.filter(c=>!c.accounting_approved&&!c.invoice_sent).length;return{total,invoiced,invoicedAmt,pending};},[dashCycles]);
 
   return(<div>
+    {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}><KPI label="Total Contract" value={$k(tc)}/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Active LF" value={tlf.toLocaleString()} color="#1D4ED8"/></div>
     {/* 2026 Revenue Goal */}
@@ -496,6 +501,14 @@ function Dashboard({jobs,onNav}){
     {/* Quick Actions */}
     {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
       {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
+      <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} style={{...btnP,padding:'10px 20px',fontSize:13,opacity:remindSending?0.6:1}}>{remindSending?'Sending...':'📧 Send Bill Sheet Reminders'}</button>
+    </div>}
+    {showRemindConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowRemindConfirm(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Send Bill Sheet Reminders?</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will email all PMs with missing bill sheets for <b style={{color:'#1A1A1A'}}>{monthLabel(curBillingMonth())}</b> and send you an AR summary. Continue?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowRemindConfirm(false)} style={btnS}>Cancel</button><button onClick={sendReminders} style={btnP}>Send Reminders</button></div>
+      </div>
     </div>}
     {/* Quick stats */}
     {(()=>{const aiCount=jobs.filter(j=>j.status==='active_install').length;const icCount=jobs.filter(j=>j.status==='fence_complete').length;const collMo=jobs.filter(j=>j.collected&&j.collected_date&&new Date(j.collected_date).getMonth()===now.getMonth()&&new Date(j.collected_date).getFullYear()===now.getFullYear()).length;const outstanding=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).length;return<div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:24}}>{[['Active',active.length],['Active Install',aiCount],['Fence Done',icCount],['Collected Mo.',collMo],['Outstanding',outstanding],['Completed Mo.',compThisMonth],['Closed',closedJobs.length],['Total',jobs.length]].map(([l,v])=><div key={l} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'8px 12px'}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{v}</div><div style={{fontSize:10,color:'#9E9B96'}}>{l}</div></div>)}</div>;})()}
@@ -731,6 +744,8 @@ function ProjectsPage({jobs,onRefresh,openJob}){
 
 /* ═══ BILLING PAGE ═══ */
 function BillingPage({jobs,onRefresh,onNav}){
+  const[bilRemindSending,setBilRemindSending]=useState(false);
+  const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
@@ -786,6 +801,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           <input type="month" value={arMonth} onChange={e=>setArMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
           <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{arMonthLabel}</span>
         </div>
+        <button onClick={sendBilReminders} disabled={bilRemindSending} style={{...btnP,padding:'8px 16px',fontSize:12,opacity:bilRemindSending?0.6:1}}>{bilRemindSending?'Sending...':'📧 Send Reminders'}</button>
       </div>
       {!arIsCurrent&&<div style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:8,padding:'8px 16px',marginBottom:14,fontSize:13,color:'#92400E',fontWeight:600}}>Viewing historical data — {arMonthLabel}</div>}
       {/* Filter bar */}
