@@ -224,11 +224,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
-  const[coForm,setCOForm]=useState({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
+  const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
   const[latestPmLF,setLatestPmLF]=useState(null);
   useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
   useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
-  const saveCO=async()=>{const body={...coForm,amount:n(coForm.amount),job_id:job.id,job_number:job.job_number,job_name:job.job_name,market:job.market,pm:job.pm};await sbPost('change_orders',body);setShowCOForm(false);setCOForm({co_number:'',date:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));};
+  const saveCO=async()=>{const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));}catch(e){console.error('CO error:',e);}};
   const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
   const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
@@ -285,10 +285,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
           {showCOForm&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:8,border:'1px solid #E5E3E0'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
               <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date</label><input type="date" value={coForm.date} onChange={e=>setCOForm(f=>({...f,date:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
               <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
               <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(f=>({...f,status:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
               <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(f=>({...f,approved_by:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(f=>({...f,date_approved:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
             </div>
             <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
             <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
@@ -2004,30 +2005,37 @@ function WeatherDaysPage({jobs}){
 /* ═══ CHANGE ORDERS PAGE ═══ */
 function ChangeOrdersPage({jobs}){
   const[orders,setOrders]=useState([]);const[loading,setLoading]=useState(true);
-  const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[statusF,setStatusF]=useState(null);
+  const[statusF,setStatusF]=useState(null);
+  const jobsById=useMemo(()=>{const m={};jobs.forEach(j=>{m[j.id]=j;});return m;},[jobs]);
   const fetchOrders=useCallback(async()=>{const d=await sbGet('change_orders','order=created_at.desc');setOrders(d||[]);setLoading(false);},[]);
   useEffect(()=>{fetchOrders();},[fetchOrders]);
-  const filtered=useMemo(()=>{let f=orders;if(mktF)f=f.filter(o=>o.market===mktF);if(pmF)f=f.filter(o=>o.pm===pmF);if(statusF)f=f.filter(o=>o.status===statusF);return f;},[orders,mktF,pmF,statusF]);
+  const enriched=useMemo(()=>orders.map(o=>{const j=jobsById[o.job_id]||{};return{...o,_jobName:j.job_name||'—',_market:j.market||'',_pm:j.pm||''};}),[orders,jobsById]);
+  const filtered=useMemo(()=>{let f=enriched;if(statusF)f=f.filter(o=>o.status===statusF);return f;},[enriched,statusF]);
+  const totalApproved=enriched.filter(o=>o.status==='Approved').reduce((s,o)=>s+n(o.amount),0);
+  const totalPending=enriched.filter(o=>o.status==='Pending').reduce((s,o)=>s+n(o.amount),0);
   const coStatusC={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Change Orders</h1>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{enriched.length}</div><div style={{fontSize:10,color:'#6B6056'}}>Total COs</div></div>
+      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$(totalApproved)}</div><div style={{fontSize:10,color:'#6B6056'}}>Approved</div></div>
+      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#B45309'}}>{$(totalPending)}</div><div style={{fontSize:10,color:'#6B6056'}}>Pending</div></div>
+    </div>
     <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
-      <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
       <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select>
       <span style={{fontSize:12,color:'#6B6056'}}>{filtered.length} change orders</span>
     </div>
-    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 280px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date','Amount','Description','Status','PM','Market'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-        <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-          <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.job_name||'—'}</td>
+    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2',opacity:o.status==='Rejected'?0.5:1}}>
+          <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</td>
           <td style={{padding:'8px 10px'}}>{o.co_number||'—'}</td>
-          <td style={{padding:'8px 10px'}}>{fD(o.date)}</td>
-          <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(o.amount)}</td>
+          <td style={{padding:'8px 10px'}}>{fD(o.date_submitted)}</td>
+          <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,color:o.status==='Rejected'?'#991B1B':n(o.amount)>0?'#065F46':'#1A1A1A'}}>{o.status==='Rejected'?<s>{$(o.amount)}</s>:$(o.amount)}</td>
           <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{o.description||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{o.status||'—'}</span></td>
-          <td style={{padding:'8px 10px'}}>{o.pm||'—'}</td>
-          <td style={{padding:'8px 10px'}}><span style={pill(MC[o.market]||'#6B6056',MB[o.market]||'#F4F4F2')}>{MS[o.market]||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}>{o.approved_by||'—'}</td>
+          <td style={{padding:'8px 10px'}}>{fD(o.date_approved)}</td>
         </tr>;})}
         {filtered.length===0&&<tr><td colSpan={8} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>±</div><div style={{color:'#9E9B96',fontSize:14}}>No change orders found</div></td></tr>}</tbody></table>
     </div>}
