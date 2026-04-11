@@ -1205,11 +1205,12 @@ function PMBillingPage({jobs,onRefresh}){
               {renderLFReadOnly(sub)}
               <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
+              <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();const pin=window.prompt('Enter admin PIN to reset reviewed submission:');if(pin==='2020')setConfirmReset(j);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button></div>
             </div>:sub&&!isEditing?<div>
               {renderLFReadOnly(sub)}
               <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
-              <div style={{marginTop:12,display:'flex',gap:8,alignItems:'center'}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnP,padding:'8px 20px',fontSize:12}}>Edit</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 12px',fontSize:11,color:'#9E9B96',cursor:'pointer'}}>Reset</button></div>
+              <div style={{marginTop:12,display:'flex',gap:8,alignItems:'center'}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'8px 20px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'6px 12px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
             </div>:<div>
               {renderLFForm(j.id)}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
