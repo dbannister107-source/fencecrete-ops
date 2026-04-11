@@ -681,48 +681,6 @@ function Dashboard({jobs,onNav}){
         {blMonths>=2&&blMonths<4&&<div style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#B45309',marginTop:8}}>Backlog below 4-month target — new contracts needed to maintain revenue pace</div>}
       </div>;
     })()}
-    {/* Fence Type Breakdown — grouped job detail */}
-    {(()=>{
-      const ftGroups=[
-        {key:'Precast',label:'Precast',filter:j=>(j.fence_type||'').toLowerCase().includes('pc')||(j.fence_type||'').toLowerCase().includes('precast')},
-        {key:'Masonry',label:'Masonry',filter:j=>(j.fence_type||'').toLowerCase().includes('masonry')||(j.fence_type||'').toLowerCase().includes('sw')},
-        {key:'Wrought Iron',label:'Wrought Iron',filter:j=>(j.fence_type||'').toLowerCase().includes('wi')||(j.fence_type||'').toLowerCase().includes('wrought')},
-        {key:'Other',label:'Other',filter:j=>true},
-      ];
-      const assigned=new Set();
-      const grouped=ftGroups.map(g=>{
-        const gjobs=active.filter(j=>{if(assigned.has(j.id))return false;return g.filter(j);});
-        gjobs.forEach(j=>assigned.add(j.id));
-        return{...g,jobs:gjobs};
-      });
-      const[ftCollapsed,setFtCollapsed]=React.useState({});
-      const toggleFt=k=>setFtCollapsed(p=>({...p,[k]:!p[k]}));
-      const thS={textAlign:'left',padding:'6px 10px',fontSize:10,color:'#6B6056',fontWeight:600,textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'};
-      const tdS={padding:'6px 10px',fontSize:12,borderBottom:'1px solid #F4F4F2',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:180};
-      return <div style={{...card,marginBottom:24}}>
-        <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Fence Type Breakdown — Active Jobs</div>
-        {grouped.filter(g=>g.jobs.length>0).map(g=><div key={g.key} style={{marginBottom:12}}>
-          <button onClick={()=>toggleFt(g.key)} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'#FDF4F4',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',marginBottom:ftCollapsed[g.key]?0:4}}>
-            <span style={{fontSize:13,fontWeight:800,color:'#8B2020'}}>{g.label} ({g.jobs.length} jobs)</span>
-            <span style={{fontSize:16,color:'#8B2020'}}>{ftCollapsed[g.key]?'▸':'▾'}</span>
-          </button>
-          {!ftCollapsed[g.key]&&<div style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr>
-            {['Job Name','Job #','City','Style','Color','Height','LF'].map(h=><th key={h} style={thS}>{h}</th>)}
-          </tr></thead><tbody>{g.jobs.map(j=>{
-            const isPC=g.key==='Precast';
-            return <tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={{...tdS,fontWeight:500}}>{j.job_name||'—'}</td>
-              <td style={tdS}>{j.job_number||'—'}</td>
-              <td style={tdS}>{j.city||'—'}</td>
-              <td style={tdS}>{isPC?(j.style_precast||j.style_clean||'—'):(j.style_clean||'—')}</td>
-              <td style={tdS}>{j.color_precast||'—'}</td>
-              <td style={{...tdS,textAlign:'right'}}>{isPC?(j.height_precast||j.average_height_installed||'—'):(j.average_height_installed||'—')}</td>
-              <td style={{...tdS,textAlign:'right',fontWeight:700}}>{(()=>{const lf=isPC?(n(j.lf_precast)||n(j.total_lf_installed)):n(j.total_lf_installed);return lf?lf.toLocaleString():'—';})()}</td>
-            </tr>;
-          })}</tbody></table></div>}
-        </div>)}
-      </div>;
-    })()}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>!CLOSED_SET.has(s)).map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
