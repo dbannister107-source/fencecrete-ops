@@ -623,7 +623,7 @@ function Dashboard({jobs,onNav}){
 /* ═══ PROJECTS PAGE ═══ */
 const COL_GROUPS=[
   {label:'Job Info',keys:['status','market','job_number','job_name','customer_name','cust_number']},
-  {label:'Product',keys:['fence_type','lf_precast','lf_single_wythe','lf_wrought_iron','total_lf','style','color','height_precast']},
+  {label:'Product',keys:['fence_type','primary_fence_type','fence_addons','lf_precast','lf_single_wythe','lf_wrought_iron','total_lf','style','color','height_precast']},
   {label:'Contract',keys:['contract_value','change_orders','adj_contract_value','net_contract_value','sales_tax','billing_method','billing_date']},
   {label:'Billing',keys:['ytd_invoiced','pct_billed','left_to_bill','last_billed','contract_date','retainage_pct','retainage_held']},
   {label:'Schedule',keys:['est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},
@@ -636,7 +636,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   const[search,setSearch]=useState('');const[statusF,setStatusF]=useState(null);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');
   const[sortCol,setSortCol]=useState('left_to_bill');const[sortDir,setSortDir]=useState('desc');
   const[closedYearF,setClosedYearF]=useState('');
-  const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');return s?JSON.parse(s):DEF_VIS;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
+  const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');if(!s)return DEF_VIS;const saved=JSON.parse(s);const ensure=['primary_fence_type','fence_addons'];const missing=ensure.filter(k=>!saved.includes(k));if(missing.length>0){const ftIdx=saved.indexOf('fence_type');const insertAt=ftIdx>=0?ftIdx+1:saved.length;const updated=[...saved.slice(0,insertAt),...missing,...saved.slice(insertAt)];localStorage.setItem('fc_vis_cols',JSON.stringify(updated));return updated;}return saved;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
   useEffect(()=>{try{localStorage.setItem('fc_vis_cols',JSON.stringify(visCols));}catch(e){}},[visCols]);
   const[editJob,setEditJob]=useState(openJob||null);const[isNew,setIsNew]=useState(false);const[showNewForm,setShowNewForm]=useState(false);
   const[editMode,setEditMode]=useState(false);const[inlE,setInlE]=useState(null);
