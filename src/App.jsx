@@ -379,7 +379,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         {showPC&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#8B2020',marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
           <div>{fLbl('LF - Precast')}<input type="number" value={f.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Height (ft)')}<input type="number" value={f.height_precast} onChange={e=>set('height_precast',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Style')}<input value={f.style} onChange={e=>set('style',e.target.value)} style={inputS}/></div>
+          <div>{fLbl('Style')}<select value={f.style||''} onChange={e=>set('style',e.target.value)} style={inputS}><option value="">— Select —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>
           <div>{fLbl('Color')}<input value={f.color} onChange={e=>set('color',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_precast} onChange={e=>set('contract_rate_precast',e.target.value)} placeholder={rateHint('contract_rate_precast')} style={inputS}/></div>
         </div></div>}
@@ -2491,6 +2491,7 @@ export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
+  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:s.style_name}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
   const live=useRealtime(setJobs);
   const isMobile=typeof window!=='undefined'&&window.innerWidth<768;
   const sideW=sideCollapsed||isMobile?48:220;
