@@ -1478,6 +1478,7 @@ function MaterialCalcPage({jobs,preJob}){
   const[result,setResult]=useState(null);
   const[overrides,setOverrides]=useState({});
   const[toast,setToast]=useState(null);
+  const[showPrint,setShowPrint]=useState(false);
 
   useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setStyles(d||[]));},[]);
   useEffect(()=>{if(preJob){setSelJob(preJob);setJobSearch(preJob.job_name);setSelStyle(preJob.style||'');setHeight(preJob.height_precast||'');setLf(preJob.lf_precast||preJob.total_lf||'');}},[preJob]);
@@ -1589,8 +1590,8 @@ function MaterialCalcPage({jobs,preJob}){
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Linear Feet</span><div style={{fontWeight:700,fontSize:14}}>{n(lf).toLocaleString()}</div></div>
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Sections</span><div style={{fontWeight:700,fontSize:14}}>{result.sections}</div></div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          {selJob&&<button onClick={async()=>{try{await sbPatch('jobs',selJob.id,{material_calc_posts:ov('totalPosts',result.totalPosts),material_calc_panels:ov('totalPanels',result.totalPanels),material_calc_rails:ov('totalRails',result.totalRails),material_calc_caps:ov('totalCaps',result.totalCaps)});setToast('Saved to '+selJob.job_name);}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save to Job</button>}
-          <button onClick={()=>window.print()} style={{...btnS,padding:'6px 16px',fontSize:12}}>Print</button>
+          {selJob&&<button onClick={async()=>{try{await sbPatch('jobs',selJob.id,{material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString()});setToast('Materials saved to '+selJob.job_name);}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save to Job</button>}
+          <button onClick={()=>setShowPrint(true)} style={{...btnP,padding:'6px 16px',fontSize:12}}>Print Production Order</button>
         </div>
       </div>
 
@@ -1644,6 +1645,89 @@ function MaterialCalcPage({jobs,preJob}){
       {Object.keys(overrides).length>0&&<div style={{marginTop:12,fontSize:11,color:'#B45309',fontWeight:600}}>* Yellow fields have been manually adjusted</div>}
     </div>}
     {!result&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}><div style={{fontSize:28,marginBottom:8}}>🧮</div><div style={{fontSize:14}}>Select a style, height, and linear feet to calculate materials</div></div>}
+    {/* Print Preview Modal */}
+    {showPrint&&result&&(()=>{const ph=result.postHeight;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=ov('linePosts',result.linePosts);const cp=ov('cornerPosts',result.cornerPosts);const sp=ov('stopPosts',result.stopPosts);const rp=ov('regularPanels',result.regularPanels);const hp=ov('halfPanels',result.halfPanels)||0;const cr=ov('capRails',result.capRails);const tr2=ov('topRails',result.topRails);const br=ov('bottomRails',result.bottomRails);const mr=ov('middleRails',result.middleRails);const lc=ov('lineCaps',result.lineCaps);const sc2=ov('stopCaps',result.stopCaps);const jobColor=selJob?.color||'';const mktShort=selJob?MS[selJob.market]||selJob.market||'':'';
+    return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPrint(false)}>
+      <div style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
+        {/* Print-only controls */}
+        <div className="no-print" style={{display:'flex',gap:8,justifyContent:'flex-end',padding:'12px 20px',borderBottom:'1px solid #E5E3E0'}}>
+          <button onClick={()=>window.print()} style={{...btnP,padding:'8px 20px',fontSize:13}}>Print</button>
+          <button onClick={()=>setShowPrint(false)} style={{...btnS,padding:'8px 20px',fontSize:13}}>Close</button>
+        </div>
+        {/* Production Order Form */}
+        <div id="production-order" style={{padding:'32px 40px',fontFamily:'Arial,sans-serif',color:'#000'}}>
+          {/* Header */}
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:24}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:'#666',textTransform:'uppercase'}}>Material Custom</div>
+              <div style={{fontSize:22,fontWeight:900,letterSpacing:1}}>PRODUCTION ORDER</div>
+              <div style={{marginTop:12,fontSize:16,fontWeight:700}}>Style: {selStyle}</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#333'}}>Color: {jobColor||'—'}</div>
+            </div>
+            <div style={{border:'2px solid #000',borderRadius:4,padding:'10px 16px',width:180}}>
+              <div style={{fontSize:11,fontWeight:700,textAlign:'center',marginBottom:8}}>Batch</div>
+              {[1,2,3].map(i=><div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{borderBottom:'1px solid #ccc',flex:1}}>&nbsp;</span></div>)}
+              <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{fontWeight:700}}>{jobColor||''}</span></div>
+            </div>
+          </div>
+          {/* POSTS */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+              <thead><tr><td style={{width:30}}></td><td style={{width:140,fontWeight:600}}></td><td style={{width:100,textAlign:'center',fontWeight:700}}>12'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>10'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>8'</td></tr></thead>
+              <tbody>{[['Line Post',lp],['Corner Post',cp],['Stop Post',sp]].map(([label,qty])=><tr key={label} style={{borderBottom:'1px solid #eee'}}>
+                <td style={{padding:'6px 0',fontSize:16}}>{qty>0?'✓':''}</td>
+                <td style={{padding:'6px 0',fontWeight:500}}>{label}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='12'?d(qty):'—'}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='10'?d(qty):'—'}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='8'?d(qty):'—'}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          {/* PANELS */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>PANELS</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+              <tbody>
+                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,width:80,textAlign:'center'}}>{d(rp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Regular Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / <b>Reg</b></td></tr>
+                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(hp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Half Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / Reg</td></tr>
+                <tr><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>—</td><td style={{padding:'6px 0'}}>Each / Pallets</td><td style={{padding:'6px 0',fontWeight:600}}>Diamond/Bottle Panels</td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+          {/* RAILS */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>RAILS</div>
+            <div style={{display:'flex',gap:32,fontSize:14}}>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(cr)}</span> <span style={{color:'#666'}}>Regular</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(tr2)}</span> <span style={{color:'#666'}}>Top</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(br)}</span> <span style={{color:'#666'}}>Bottom</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(mr)}</span> <span style={{color:'#666'}}>Center</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>—</span> <span style={{color:'#666'}}>Top Short</span></div>
+            </div>
+          </div>
+          {/* POST CAPS */}
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POST CAPS</div>
+            <div style={{display:'flex',gap:40,fontSize:14}}>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(lc)}</span> <span style={{color:'#666'}}>Line Caps</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(sc2)}</span> <span style={{color:'#666'}}>Stop Caps</span></div>
+            </div>
+          </div>
+          {/* Footer */}
+          <div style={{border:'2px solid #000',borderRadius:4,padding:'12px 16px',position:'relative'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:13}}>
+              <div>Jobcode: <b>{selJob?.job_number||'___________'}</b></div>
+              <div style={{textAlign:'right',color:'#1D4ED8',fontWeight:700,fontSize:14}}>{n(lf)}x{height}</div>
+              <div>City: <b>{mktShort||'___________'}</b></div>
+              <div></div>
+            </div>
+            <div style={{marginTop:8,fontSize:14}}>PROJECT: <b style={{fontSize:16}}>{selJob?.job_name||'______________________________'}</b></div>
+          </div>
+        </div>
+      </div>
+    </div>;})()}
+    <style>{`@media print{body *{visibility:hidden}#production-order,#production-order *{visibility:visible}#production-order{position:absolute;left:0;top:0;width:100%;padding:24px 32px!important}.no-print{display:none!important}}`}</style>
   </div>);
 }
 
