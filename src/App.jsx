@@ -2028,17 +2028,29 @@ function WeatherDaysPage({jobs}){
 /* ═══ CHANGE ORDERS PAGE ═══ */
 function ChangeOrdersPage({jobs}){
   const[orders,setOrders]=useState([]);const[loading,setLoading]=useState(true);
-  const[statusF,setStatusF]=useState(null);
+  const[statusF,setStatusF]=useState(null);const[toast,setToast]=useState(null);
+  const[showForm,setShowForm]=useState(false);const[editCO,setEditCO]=useState(null);
+  const[coForm,setCOForm]=useState({job_id:'',co_number:'',date_submitted:new Date().toISOString().split('T')[0],amount:'',description:'',status:'Pending',approved_by:'',date_approved:'',notes:''});
+  const[jobSearch,setJobSearch]=useState('');
+  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
+  const searchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
   const jobsById=useMemo(()=>{const m={};jobs.forEach(j=>{m[j.id]=j;});return m;},[jobs]);
   const fetchOrders=useCallback(async()=>{const d=await sbGet('change_orders','order=created_at.desc');setOrders(d||[]);setLoading(false);},[]);
   useEffect(()=>{fetchOrders();},[fetchOrders]);
-  const enriched=useMemo(()=>orders.map(o=>{const j=jobsById[o.job_id]||{};return{...o,_jobName:j.job_name||'—',_market:j.market||'',_pm:j.pm||''};}),[orders,jobsById]);
+  const enriched=useMemo(()=>orders.map(o=>{const j=jobsById[o.job_id]||{};return{...o,_jobName:j.job_name||'—'};}),[orders,jobsById]);
   const filtered=useMemo(()=>{let f=enriched;if(statusF)f=f.filter(o=>o.status===statusF);return f;},[enriched,statusF]);
   const totalApproved=enriched.filter(o=>o.status==='Approved').reduce((s,o)=>s+n(o.amount),0);
   const totalPending=enriched.filter(o=>o.status==='Pending').reduce((s,o)=>s+n(o.amount),0);
   const coStatusC={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
+  const openNew=()=>{setEditCO(null);setCOForm({job_id:'',co_number:'',date_submitted:new Date().toISOString().split('T')[0],amount:'',description:'',status:'Pending',approved_by:'',date_approved:'',notes:''});setJobSearch('');setShowForm(true);};
+  const openEditCO=(o)=>{setEditCO(o);setCOForm({job_id:o.job_id,co_number:o.co_number||'',date_submitted:o.date_submitted||'',amount:o.amount||'',description:o.description||'',status:o.status||'Pending',approved_by:o.approved_by||'',date_approved:o.date_approved||'',notes:o.notes||''});setJobSearch(o._jobName||'');setShowForm(true);};
+  const saveCO=async()=>{const body={job_id:coForm.job_id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};if(!body.job_id){setToast({message:'Select a job',isError:true});return;}try{if(editCO){await fetch(`${SB}/rest/v1/change_orders?id=eq.${editCO.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});}else{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();throw new Error(txt);}}setShowForm(false);fetchOrders();setToast(editCO?'Change order updated':'Change order added');}catch(e){setToast({message:e.message||'Save failed',isError:true});}};
   return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Change Orders</h1>
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Change Orders</h1>
+      <button onClick={openNew} style={btnP}>+ Add Change Order</button>
+    </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
       <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{enriched.length}</div><div style={{fontSize:10,color:'#6B6056'}}>Total COs</div></div>
       <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$(totalApproved)}</div><div style={{fontSize:10,color:'#6B6056'}}>Approved</div></div>
@@ -2049,7 +2061,7 @@ function ChangeOrdersPage({jobs}){
       <span style={{fontSize:12,color:'#6B6056'}}>{filtered.length} change orders</span>
     </div>
     {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2',opacity:o.status==='Rejected'?0.5:1}}>
           <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</td>
           <td style={{padding:'8px 10px'}}>{o.co_number||'—'}</td>
@@ -2059,8 +2071,33 @@ function ChangeOrdersPage({jobs}){
           <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{o.status||'—'}</span></td>
           <td style={{padding:'8px 10px'}}>{o.approved_by||'—'}</td>
           <td style={{padding:'8px 10px'}}>{fD(o.date_approved)}</td>
+          <td style={{padding:'8px 10px'}}><button onClick={()=>openEditCO(o)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Edit</button></td>
         </tr>;})}
-        {filtered.length===0&&<tr><td colSpan={8} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>±</div><div style={{color:'#9E9B96',fontSize:14}}>No change orders found</div></td></tr>}</tbody></table>
+        {filtered.length===0&&<tr><td colSpan={9} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>±</div><div style={{color:'#9E9B96',fontSize:14}}>No change orders found</div></td></tr>}</tbody></table>
+    </div>}
+    {/* CO Form Modal */}
+    {showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowForm(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:520,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:16}}>{editCO?'Edit Change Order':'Add Change Order'}</div>
+        <div style={{marginBottom:12,position:'relative'}}>
+          <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Job *</label>
+          <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);if(coForm.job_id)setCOForm(p=>({...p,job_id:''}));}} placeholder="Search by name or number..." style={inputS} disabled={!!editCO}/>
+          {searchResults.length>0&&!coForm.job_id&&!editCO&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:200,overflow:'auto'}}>
+            {searchResults.map(j=><button key={j.id} onClick={()=>{setCOForm(p=>({...p,job_id:j.id}));setJobSearch(j.job_name);}} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}
+          </div>}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(p=>({...p,co_number:e.target.value}))} placeholder="CO-001" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(p=>({...p,date_submitted:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(p=>({...p,amount:e.target.value}))} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(p=>({...p,status:e.target.value}))} style={inputS}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(p=>({...p,approved_by:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(p=>({...p,date_approved:e.target.value}))} style={inputS}/></div>
+        </div>
+        <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(p=>({...p,description:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(p=>({...p,notes:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowForm(false)} style={btnS}>Cancel</button><button onClick={saveCO} style={btnP}>{editCO?'Update':'Save'}</button></div>
+      </div>
     </div>}
   </div>);
 }
