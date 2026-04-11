@@ -529,7 +529,7 @@ function Dashboard({jobs,onNav}){
           <div>
             <div style={{fontFamily:'Inter',fontWeight:900,fontSize:36,color:blColor}}>{blMonths.toFixed(1)}</div>
             <div style={{fontSize:14,fontWeight:700,color:blColor}}>Months of Backlog</div>
-            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>Based on {$k(runRate)}/mo run rate</div>
+            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>at {$k(runRate)}/mo run rate</div>
           </div>
           <div style={{display:'flex',gap:20,flex:1,justifyContent:'flex-end',flexWrap:'wrap'}}>
             <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(blLTB)}</div><div style={{fontSize:10,color:'#9E9B96'}}>Left to Bill</div></div>
