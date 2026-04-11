@@ -867,6 +867,11 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||'',invoiced_amount:sub.invoiced_amount||'',invoice_number:sub.invoice_number||'',invoice_date:sub.invoice_date||new Date().toISOString().split('T')[0]});};
+  const[resetConfirm,setResetConfirm]=useState(null);
+  const arUnreviewed=useMemo(()=>arSubs.filter(s=>!s.ar_reviewed),[arSubs]);
+  const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
+  const hasAnyReviewed=arReviewedCount>0;
+  const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${s.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
   const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
@@ -887,14 +892,17 @@ function BillingPage({jobs,onRefresh,onNav}){
           <input type="month" value={arMonth} onChange={e=>setArMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
           <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{arMonthLabel}</span>
         </div>
-        <button onClick={sendBilReminders} disabled={bilRemindSending} style={{...btnP,padding:'8px 16px',fontSize:12,opacity:bilRemindSending?0.6:1}}>{bilRemindSending?'Sending...':'📧 Send Reminders'}</button>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={sendBilReminders} disabled={bilRemindSending} style={{...btnP,padding:'8px 16px',fontSize:12,opacity:bilRemindSending?0.6:1}}>{bilRemindSending?'Sending...':'📧 Send Reminders'}</button>
+          {arIsCurrent&&<button onClick={()=>setResetConfirm({type:'month'})} disabled={arUnreviewed.length===0} style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 12px',fontSize:11,color:'#9E9B96',cursor:arUnreviewed.length===0?'not-allowed':'pointer',opacity:arUnreviewed.length===0?0.4:1}}>Reset Month</button>}
+        </div>
       </div>
       {!arIsCurrent&&<div style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:8,padding:'8px 16px',marginBottom:14,fontSize:13,color:'#92400E',fontWeight:600}}>Viewing historical data — {arMonthLabel}</div>}
       {/* Filter bar */}
       <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>PM:</span>
         <button onClick={()=>setArPmF('')} style={fpill(!arPmF)}>All PMs</button>
-        {PM_LIST.map(p=><button key={p.id} onClick={()=>setArPmF(p.id)} style={fpill(arPmF===p.id)}>{p.short}</button>)}
+        {PM_LIST.map(p=><span key={p.id} style={{display:'inline-flex',alignItems:'center',gap:2}}><button onClick={()=>setArPmF(p.id)} style={fpill(arPmF===p.id)}>{p.short}</button>{arIsCurrent&&arUnreviewed.some(s=>s.pm===p.id)&&<button onClick={()=>setResetConfirm({type:'pm',pm:p.id,label:p.short})} title={`Reset ${p.short}'s unreviewed`} style={{background:'none',border:'none',color:'#9E9B96',fontSize:12,cursor:'pointer',padding:'0 2px',lineHeight:1}}>↺</button>}</span>)}
         <span style={{color:'#E5E3E0'}}>|</span>
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
         <button onClick={()=>setArMktF(null)} style={fpill(!arMktF)}>All</button>
@@ -993,6 +1001,13 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
     </div>}
 
+    {resetConfirm&&(()=>{const isPm=resetConfirm.type==='pm';const toDelete=isPm?arUnreviewed.filter(s=>s.pm===resetConfirm.pm):arUnreviewed;const preserved=isPm?arSubs.filter(s=>s.ar_reviewed&&s.pm===resetConfirm.pm).length:arReviewedCount;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setResetConfirm(null)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>{isPm?`Reset ${resetConfirm.label}'s Bill Sheets?`:`Reset All Bill Sheets for ${arMonthLabel}?`}</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will delete <b style={{color:'#991B1B'}}>{toDelete.length}</b> unreviewed submission{toDelete.length!==1?'s':''}. {preserved>0?<><b style={{color:'#1D4ED8'}}>{preserved}</b> reviewed submission{preserved!==1?'s':''} will NOT be affected. </>:''}PMs will need to resubmit. This cannot be undone.</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setResetConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>resetMonth(isPm?resetConfirm.pm:null)} style={{...btnP,background:'#991B1B'}}>Reset Unreviewed ({toDelete.length})</button></div>
+      </div>
+    </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
     {arDetail&&(()=>{const s=arDetail.sub;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
