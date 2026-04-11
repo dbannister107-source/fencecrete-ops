@@ -1418,8 +1418,10 @@ function SchedulePage({jobs}){
   const getMonday=d=>{const dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay()+1);return dt;};
   const weeks8=useMemo(()=>{const w=[];const s=getMonday(new Date());for(let i=0;i<8;i++){const d=new Date(s);d.setDate(d.getDate()+i*7);w.push(d);}return w;},[]);
   return(<div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button></div></div>
-    <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>setView('weather')} style={gpill(view==='weather')}>Weather Days</button><button onClick={()=>setView('changeorders')} style={gpill(view==='changeorders')}>Change Orders</button>{view!=='weather'&&view!=='changeorders'&&<button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button>}</div></div>
+    {view==='weather'&&<WeatherDaysPage jobs={jobs}/>}
+    {view==='changeorders'&&<ChangeOrdersPage jobs={jobs}/>}
+    {view!=='weather'&&view!=='changeorders'&&<><div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
       <div style={{display:'flex',gap:6}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
       <div style={{display:'flex',gap:6,alignItems:'center'}}><label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>PM</label><select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:180}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}{pmJobCounts[p.id]?` (${pmJobCounts[p.id]})`:''}</option>)}</select></div>
     </div>
@@ -1490,6 +1492,7 @@ function SchedulePage({jobs}){
         <div style={{display:'flex',gap:8,marginTop:16}}><button type="submit" style={btnP}>{editEvt?'Update':'Save'}</button>{editEvt&&<button type="button" onClick={()=>deleteEvent(editEvt.id)} style={{...btnP,background:'#991B1B'}}>Delete</button>}<button type="button" onClick={()=>{setShowAdd(false);setEditEvt(null);}} style={btnS}>Cancel</button></div>
       </form>
     </div></div>}
+    </>}
   </div>);
 }
 
@@ -2247,12 +2250,11 @@ function Topbar({jobs,live,onSearch}){
 
 /* ═══ APP ═══ */
 const NAV_GROUPS=[
-  {label:'Overview',items:[{key:'dashboard',label:'Dashboard',icon:'▣'},{key:'map',label:'Map',icon:'📍'}]},
-  {label:'Sales',items:[{key:'estimating',label:'Estimating',icon:'📊'},{key:'projects',label:'Projects',icon:'◧'}]},
-  {label:'Operations',items:[{key:'production',label:'Production',icon:'⚙'},{key:'schedule',label:'Schedule',icon:'◷'},{key:'weather_days',label:'Weather Days',icon:'☁'}]},
-  {label:'Finance',items:[{key:'billing',label:'Billing',icon:'$'},{key:'pm_billing',label:'PM Bill Sheet',icon:'◧'},{key:'change_orders',label:'Change Orders',icon:'±'}]},
-  {label:'Field',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'daily_report',label:'Production Daily Report',icon:'📋'}]},
-  {label:'Reports',items:[{key:'reports',label:'Reports',icon:'◑'}]}
+  {label:'',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
+  {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
+  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'schedule',label:'Schedule',icon:'📅'}]},
+  {label:'FIELD',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'daily_report',label:'Production Report',icon:'🏭'}]},
+  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'}]},
 ];
 
 export default function App(){
@@ -2270,7 +2272,7 @@ export default function App(){
           {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FENCECRETE</div><div style={{fontSize:10,color:'#9E9B96',letterSpacing:2,textTransform:'uppercase',whiteSpace:'nowrap'}}>Operations</div></>}
           {sideCollapsed&&<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
         </div>
-        <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label}>{!sideCollapsed&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:1,fontWeight:600,padding:'12px 12px 4px'}}>{g.label}</div>}{sideCollapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</div>)}</nav>
+        <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>{!sideCollapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{sideCollapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</div>)}</nav>
         <div style={{padding:sideCollapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
           {!sideCollapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
           <button onClick={()=>setSideCollapsed(!sideCollapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{sideCollapsed?'→':'←'}</button>
