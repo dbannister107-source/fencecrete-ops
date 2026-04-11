@@ -1505,6 +1505,7 @@ function MaterialCalcPage({jobs,preJob}){
     const isZPanel=selStyle.includes('Z Panel');
     const isRanch=selStyle==='Ranch Rail';
 
+    const hasVertPanels=cfg.panel_multiplier===0&&(n(cfg.bottom_panels)>0||n(cfg.top_panels)>0);
     if(isCMU){
       regularPanels=sectCeil*Math.ceil((h*12)/16)*cfg.panel_multiplier;
       halfPanels=sectCeil;
@@ -1513,6 +1514,10 @@ function MaterialCalcPage({jobs,preJob}){
       topPanels=sectCeil;bottomPanels=sectCeil;
       middlePanels=sectCeil*Math.max(h-2,0);
       regularPanels=middlePanels;specialLabel='Z Panel';
+    }else if(hasVertPanels){
+      bottomPanels=sectCeil*n(cfg.bottom_panels);
+      topPanels=sectCeil*n(cfg.top_panels);
+      specialLabel='Vertical';
     }else if(!isRanch){
       regularPanels=sectCeil*h*cfg.panel_multiplier;
     }
@@ -1535,7 +1540,7 @@ function MaterialCalcPage({jobs,preJob}){
     const stopCaps=Math.round(totalPosts*(cfg.stop_cap_ratio||0));
     const totalCaps=lineCaps+stopCaps;
 
-    setResult({postHeight,sections:Math.round(sections*10)/10,sectCeil,totalPosts,linePosts,cornerPosts,stopPosts,regularPanels:Math.round(regularPanels),halfPanels,bottomPanels,topPanels,middlePanels,totalPanels:Math.round(totalPanels),capRails,bottomRails,middleRails,topRails,totalRails,lineCaps,stopCaps,totalCaps,isCMU,isZPanel,isRanch,specialLabel});
+    setResult({postHeight,sections:Math.round(sections*10)/10,sectCeil,totalPosts,linePosts,cornerPosts,stopPosts,regularPanels:Math.round(regularPanels),halfPanels,bottomPanels,topPanels,middlePanels,totalPanels:Math.round(totalPanels),capRails,bottomRails,middleRails,topRails,totalRails,lineCaps,stopCaps,totalCaps,isCMU,isZPanel,isRanch,hasVertPanels,specialLabel});
     setOverrides({});
   };
 
@@ -1611,11 +1616,11 @@ function MaterialCalcPage({jobs,preJob}){
         <div style={{...card,padding:0,overflow:'hidden'}}>
           <div style={secHead('#FFF','#1D4ED8')}>Panels{result.specialLabel?' ('+result.specialLabel+')':''}</div>
           <div>
-            {!result.isRanch&&<><div style={rowS}><span style={{color:'#6B6056'}}>Regular Panels</span>{ovInput('regularPanels',result.regularPanels)}</div>
+            {!result.isRanch&&<>{result.regularPanels>0&&<div style={rowS}><span style={{color:'#6B6056'}}>Regular Panels</span>{ovInput('regularPanels',result.regularPanels)}</div>}
             {result.isCMU&&<div style={rowS}><span style={{color:'#6B6056'}}>Half Panels</span>{ovInput('halfPanels',result.halfPanels)}</div>}
-            {result.isZPanel&&<><div style={rowS}><span style={{color:'#6B6056'}}>Top Panels</span>{ovInput('topPanels',result.topPanels)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Bottom Panels</span>{ovInput('bottomPanels',result.bottomPanels)}</div></>}
-            <div style={{...rowS,background:'#EFF6FF',fontWeight:700,borderBottom:'none'}}><span>Total Panels</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#1D4ED8'}}>{ov('regularPanels',result.regularPanels)+(ov('halfPanels',result.halfPanels)||0)+(ov('topPanels',result.topPanels)||0)+(ov('bottomPanels',result.bottomPanels)||0)}</span></div></>}
+            {(result.isZPanel||result.bottomPanels>0)&&<div style={rowS}><span style={{color:'#6B6056'}}>Bottom Panels</span>{ovInput('bottomPanels',result.bottomPanels)}</div>}
+            {(result.isZPanel||result.topPanels>0)&&<div style={rowS}><span style={{color:'#6B6056'}}>Top Panels</span>{ovInput('topPanels',result.topPanels)}</div>}
+            <div style={{...rowS,background:'#EFF6FF',fontWeight:700,borderBottom:'none'}}><span>Total Panels</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#1D4ED8'}}>{(ov('regularPanels',result.regularPanels)||0)+(ov('halfPanels',result.halfPanels)||0)+(ov('topPanels',result.topPanels)||0)+(ov('bottomPanels',result.bottomPanels)||0)}</span></div></>}
             {result.isRanch&&<div style={{padding:16,textAlign:'center',color:'#9E9B96'}}>Ranch Rail — no panels</div>}
           </div>
         </div>
