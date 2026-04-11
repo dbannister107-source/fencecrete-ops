@@ -2103,346 +2103,160 @@ function ChangeOrdersPage({jobs}){
 }
 
 /* ═══ PM DAILY REPORT PAGE ═══ */
-// Hoisted to module scope so its component identity is stable across PMDailyReportPage
-// re-renders. If this were defined inside the parent's render, every keystroke would
-// remount the section subtree and cause focused inputs/textareas to lose their cursor.
 function PMReportSection({sk,title,filled,isOpen,onToggle,children}){
   return <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,marginBottom:12,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
     <button onClick={onToggle} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',background:'#FDF4F4',border:'none',borderBottom:isOpen?'1px solid #F0E0E0':'none',cursor:'pointer',minHeight:52}}>
-      <span style={{fontSize:14,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>✓</span>}</span>
-      <span style={{fontSize:18,color:'#8B2020',fontWeight:700}}>{isOpen?'▾':'▸'}</span>
+      <span style={{fontSize:14,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>OK</span>}</span>
+      <span style={{fontSize:18,color:'#8B2020',fontWeight:700}}>{isOpen?'OK':'>'}</span>
     </button>
     {isOpen&&<div style={{padding:18}}>{children}</div>}
   </div>;
 }
 function PMDailyReportPage({jobs}){
-  const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
-  const[selPM,setSelPM]=useState(()=>localStorage.getItem('selected_pm')||'');
-  const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);
-  const[showAllPMs,setShowAllPMs]=useState(false);
-  const todayISO=new Date().toISOString().split('T')[0];
-  const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO});
-  const[form,setForm]=useState(emptyForm);
-  const[collapsed,setCollapsed]=useState({});
-  const SECTIONS=[
-    {key:'job',title:'Job Info',fields:['job_number','repair_location','crew','num_employees','daily_target']},
-    {key:'gates',title:'Gates',fields:['gate_height','num_gates_installed']},
-    {key:'posts',title:'Posts & Foundation',fields:['num_holes_dug','num_posts_placed']},
-    {key:'panels',title:'Panels & Fence',fields:['lf_panels_installed','fence_height','num_cut_sections','num_sections_leveled','lf_panels_washed','precast_style_onsite']},
-    {key:'sw',title:'Single Wythe Fields',fields:['drill_piercing_lf','num_columns_laid_out','num_columns_34_built','num_columns_capped','lf_panels_shoulder','lf_panels_completed']},
-    {key:'site',title:'Site Conditions',fields:['machinery_used']},
-    {key:'weather',title:'Weather Conditions',fields:['weather_condition','weather_temp_f','weather_notes']},
-    {key:'delays',title:'Delays',fields:['lf_impacted_delays','num_defective_panels','num_defective_posts','other_defective_materials','delay_notes']},
-  ];
-  const sectionFilled=(s)=>s.fields.some(f=>{const v=form[f];return v!==''&&v!==undefined&&v!==null&&v!=='0'&&v!==0;});
-  const sectionsFilledCount=SECTIONS.filter(sectionFilled).length;
-  const clearForm=()=>{if(window.confirm('Clear all fields? This cannot be undone.')){setForm(emptyForm());setSelJobId('');setJobTotals(null);}};
-  const set=(f,v)=>setForm(p=>({...p,[f]:v}));
-  const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
-  const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.pm===selPM),[jobs,selPM]);
-  const selectJob=(jobId)=>{setSelJobId(jobId);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
-  const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
-  useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
-  const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
-  const submitReport=async()=>{
-    // Body keys must match the pm_daily_reports schema exactly. Form uses legacy field
-    // names (num_*, lf_panels_completed, etc.); we map them to actual DB column names here.
-    const body={
-      report_date:form.report_date||todayISO,
-      job_number:form.job_number,
-      repair_location:form.repair_location,
-      job_type:form.job_type,
-      crew:form.crew,
-      employee_count:n(form.num_employees),
-      daily_target:form.daily_target,
-      gate_style:form.gate_style,
-      gate_height:n(form.gate_height),
-      gates_installed:n(form.num_gates_installed),
-      holes_dug:n(form.num_holes_dug),
-      posts_placed:n(form.num_posts_placed),
-      lf_panels_installed:n(form.lf_panels_installed),
-      fence_style:form.fence_style,
-      fence_height:n(form.fence_height),
-      cut_sections:n(form.num_cut_sections),
-      sections_leveled:n(form.num_sections_leveled),
-      lf_panels_washed:n(form.lf_panels_washed),
-      precast_style_onsite:form.precast_style_onsite||null,
-      drill_piercing_lf:n(form.drill_piercing_lf),
-      columns_laid_out:n(form.num_columns_laid_out),
-      columns_three_quarter:n(form.num_columns_34_built),
-      columns_capped:n(form.num_columns_capped),
-      lf_panels_shoulder:n(form.lf_panels_shoulder),
-      lf_panels_capped:n(form.lf_panels_completed),
-      machinery_used:form.machinery_used,
-      soil_type:form.soil_type,
-      soil_quality:parseInt(form.soil_quality)||0,
-      terrain_rating:parseInt(form.terrain_rating)||0,
-      delay_reason:form.delay_reason,
-      delay_time:form.delay_time,
-      lf_impacted_by_delays:n(form.lf_impacted_delays),
-      defective_panels:n(form.num_defective_panels),
-      defective_posts:n(form.num_defective_posts),
-      other_defective:form.other_defective_materials,
-      delay_notes:form.delay_notes,
-      weather_condition:form.weather_condition||null,
-      weather_temp_f:form.weather_temp_f?n(form.weather_temp_f):null,
-      weather_notes:form.weather_notes||null,
-      submitted_by:selPM||form.submitted_by,
-    };
-    if(form.crew)localStorage.setItem('last_crew',form.crew);
-    if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
-    try{
-      const res=await fetch(`${SB}/rest/v1/pm_daily_reports`,{method:'POST',headers:H,body:JSON.stringify(body)});
-      if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
-      setToast({message:'Report submitted',isError:false});
-      setSelJobId('');setJobTotals(null);setForm(emptyForm());
-      setTimeout(()=>{setTab('history');fetchReports();},600);
-    }catch(err){
-      console.error('PM Daily Report submit failed:',err,'body:',body);
-      setToast({message:`Submit failed: ${err.message||err}`,isError:true});
-    }
-  };
-  const mInp={...inputS,minHeight:44,fontSize:16};const mSel={...mInp};const mTxt={...mInp,resize:'vertical'};
-  const secStyle={fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
-  const lblStyle={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
-  const gridR='repeat(auto-fit,minmax(240px,1fr))';
-  // Detail view
-  if(detailRpt)return(<div>
-    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
-    <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
-    <div style={{...card,marginBottom:16}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,fontSize:13}}>
-        {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['Precast Style on Site',detailRpt.precast_style_onsite],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Weather',detailRpt.weather_condition],['Temperature (°F)',detailRpt.weather_temp_f],['Weather Notes',detailRpt.weather_notes],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
-      </div>
-      {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
+  const[tab,setTab]=useState('new');
+  const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
+  const[reportDate,setReportDate]=useState(()=>new Date().toISOString().split('T')[0]);
+  const[entries,setEntries]=useState([{job_id:'',job_name:'',crew_lead:'',crew_size:'',lf_total:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',work_completed:'',delays_issues:'',notes:''}]);
+  const[overallNotes,setOverallNotes]=useState('');
+  const[existingId,setExistingId]=useState(null);
+  const[submitting,setSubmitting]=useState(false);
+  const[toast,setToast]=useState(null);
+  const[jobSearchIdx,setJobSearchIdx]=useState(null);
+  const[jobSearchQ,setJobSearchQ]=useState('');
+  // History
+  const[reports,setReports]=useState([]);const[histLoading,setHistLoading]=useState(false);
+  const[histPmF,setHistPmF]=useState('');const[expandedRpt,setExpandedRpt]=useState(null);
+  const[rptEntries,setRptEntries]=useState({});
+
+  const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);};
+  const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&(!selPM||j.pm===selPM)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs,selPM]);
+  const searchResults=jobSearchQ.length>=2?pmJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearchQ.toLowerCase())).slice(0,8):[];
+
+  // Auto-save draft
+  const draftKey=`fc_pmdaily_${selPM}_${reportDate}`;
+  useEffect(()=>{if(!selPM)return;try{const d=localStorage.getItem(draftKey);if(d){const p=JSON.parse(d);setEntries(p.entries||[{job_id:'',job_name:'',crew_lead:'',crew_size:'',lf_total:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',work_completed:'',delays_issues:'',notes:''}]);setOverallNotes(p.overallNotes||'');}}catch(e){}},[draftKey,selPM]);
+  useEffect(()=>{if(!selPM)return;try{localStorage.setItem(draftKey,JSON.stringify({entries,overallNotes}));}catch(e){}},[entries,overallNotes,draftKey,selPM]);
+
+  // Check for existing report
+  useEffect(()=>{if(!selPM||!reportDate)return;setExistingId(null);sbGet('pm_daily_reports_v2',`pm=eq.${selPM}&report_date=eq.${reportDate}&select=id`).then(d=>{if(d&&d[0]){setExistingId(d[0].id);sbGet('pm_daily_report_entries',`report_id=eq.${d[0].id}&order=created_at.asc`).then(e=>{if(e&&e.length){setEntries(e.map(r=>({job_id:r.job_id||'',job_name:r.job_name||'',crew_lead:r.crew_lead||'',crew_size:r.crew_size||'',lf_total:r.lf_total||'',lf_precast:r.lf_precast||'',lf_single_wythe:r.lf_single_wythe||'',lf_wrought_iron:r.lf_wrought_iron||'',work_completed:r.work_completed||'',delays_issues:r.delays_issues||'',notes:r.notes||''})));}});}}).catch(()=>{});},[selPM,reportDate]);
+
+  const updateEntry=(idx,field,val)=>setEntries(prev=>prev.map((e,i)=>i===idx?{...e,[field]:val}:e));
+  const addEntry=()=>setEntries(prev=>[...prev,{job_id:'',job_name:'',crew_lead:'',crew_size:'',lf_total:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',work_completed:'',delays_issues:'',notes:''}]);
+  const removeEntry=idx=>setEntries(prev=>prev.filter((_,i)=>i!==idx));
+  const pickJob=(idx,j)=>{updateEntry(idx,'job_id',j.id);updateEntry(idx,'job_name',j.job_name);setJobSearchIdx(null);setJobSearchQ('');};
+
+  const submit=async()=>{const valid=entries.filter(e=>e.job_id);if(!valid.length){setToast({message:'Add at least one project',isError:true});return;}setSubmitting(true);try{let rptId=existingId;if(rptId){await fetch(`${SB}/rest/v1/pm_daily_reports_v2?id=eq.${rptId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({overall_notes:overallNotes||null,submitted_at:new Date().toISOString()})});await fetch(`${SB}/rest/v1/pm_daily_report_entries?report_id=eq.${rptId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});}else{const res=await fetch(`${SB}/rest/v1/pm_daily_reports_v2`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({report_date:reportDate,pm:selPM,overall_notes:overallNotes||null})});const txt=await res.text();if(!res.ok)throw new Error(txt);const rpt=JSON.parse(txt);rptId=rpt[0]?.id;}const rows=valid.map(e=>({report_id:rptId,job_id:e.job_id,job_number:jobs.find(j=>j.id===e.job_id)?.job_number||'',job_name:e.job_name,crew_lead:e.crew_lead||null,crew_size:n(e.crew_size)||0,lf_total:n(e.lf_total)||0,lf_precast:n(e.lf_precast)||0,lf_single_wythe:n(e.lf_single_wythe)||0,lf_wrought_iron:n(e.lf_wrought_iron)||0,work_completed:e.work_completed||null,delays_issues:e.delays_issues||null,notes:e.notes||null}));const eRes=await fetch(`${SB}/rest/v1/pm_daily_report_entries`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});if(!eRes.ok){const t=await eRes.text();throw new Error(t);}try{localStorage.removeItem(draftKey);}catch(e2){}setExistingId(rptId);setToast(`Daily report submitted for ${new Date(reportDate+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric'})}`);setTab('history');fetchHistory();}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSubmitting(false);};
+
+  // History
+  const fetchHistory=useCallback(async()=>{setHistLoading(true);const q=histPmF?`pm=eq.${histPmF}&order=report_date.desc&limit=30`:'order=report_date.desc&limit=30';const d=await sbGet('pm_daily_reports_v2',q);setReports(d||[]);setHistLoading(false);},[histPmF]);
+  useEffect(()=>{if(tab==='history')fetchHistory();},[tab,fetchHistory]);
+  const loadEntries=async(rptId)=>{if(rptEntries[rptId])return;const d=await sbGet('pm_daily_report_entries',`report_id=eq.${rptId}&order=created_at.asc`);setRptEntries(prev=>({...prev,[rptId]:d||[]}));};
+  const toggleExpand=rptId=>{if(expandedRpt===rptId){setExpandedRpt(null);}else{setExpandedRpt(rptId);loadEntries(rptId);}};
+  const histStats=useMemo(()=>{const now=new Date();const weekAgo=new Date(now);weekAgo.setDate(weekAgo.getDate()-7);const thisWeek=reports.filter(r=>new Date(r.report_date)>=weekAgo);return{weekCount:thisWeek.length};},[reports]);
+
+  if(!selPM)return(<div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Daily Report</h1>
+    <div style={{...card,textAlign:'center',padding:40}}>
+      <div style={{fontSize:16,color:'#6B6056',marginBottom:20}}>Select your name to get started</div>
+      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8B2020';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8B2020';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
     </div>
   </div>);
+
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Daily Report</h1>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#8B2020',borderColor:'#E5C4C4'}}>Clear Form</button>}</div>
+      <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchHistory();}} style={gpill(tab==='history')}>History</button></div>
     </div>
-    {/* PM Selector - always visible */}
-    <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'12px 28px',borderRadius:12,border:selPM===pm.id?'2px solid #8B2020':'2px solid #E5E3E0',background:selPM===pm.id?'#8B2020':'#FFF',color:selPM===pm.id?'#fff':'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',minHeight:44,transition:'all .15s'}}>{pm.short}</button>)}
+    {/* PM + Date selector */}
+    <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 20px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer'}}>{pm.short}</button>)}
+      <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
+      <input type="date" value={reportDate} onChange={e=>setReportDate(e.target.value)} style={{...inputS,width:170}}/>
+      {existingId&&tab==='new'&&<span style={{fontSize:12,color:'#B45309',fontWeight:600}}>Editing existing report</span>}
     </div>
-    {!selPM&&<div style={{...card,textAlign:'center',padding:40,color:'#6B6056'}}>Select your name above to get started</div>}
-    {selPM&&tab==='history'&&<div>
-      <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}><button onClick={()=>setShowAllPMs(false)} style={fpill(!showAllPMs)}>My Reports</button><button onClick={()=>setShowAllPMs(true)} style={fpill(showAllPMs)}>All PMs</button><span style={{fontSize:12,color:'#6B6056'}}>{filteredReports.length} reports</span></div>
-      {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:filteredReports.length===0?<div style={{textAlign:'center',padding:40}}><div style={{fontSize:28,marginBottom:8}}>📋</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No reports submitted yet</div><button onClick={()=>setTab('new')} style={{...btnP,fontSize:12}}>+ New Report</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'12px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{filteredReports.map(r=><tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',minHeight:48}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-            <td style={{padding:'14px 10px'}}>{fD(r.report_date||r.created_at)}</td>
-            <td style={{padding:'14px 10px',fontWeight:500}}>{r.job_number||'—'}</td>
-            <td style={{padding:'14px 10px'}}>{r.job_type||'—'}</td>
-            <td style={{padding:'14px 10px'}}>{r.crew||'—'}</td>
-            <td style={{padding:'14px 10px',fontWeight:700}}>{n(r.lf_panels_installed).toLocaleString()}</td>
-            <td style={{padding:'14px 10px'}}>{r.submitted_by||'—'}</td>
-            <td style={{padding:'14px 10px',textAlign:'right',color:'#8B2020',fontSize:20,fontWeight:700,width:32}}>›</td>
-          </tr>)}</tbody></table>
+
+    {/* NEW REPORT TAB */}
+    {tab==='new'&&<div>
+      {entries.map((entry,idx)=><div key={idx} style={{...card,padding:0,marginBottom:12,overflow:'hidden'}}>
+        <div style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontWeight:700,fontSize:13}}>Project {idx+1}{entry.job_name?' — '+entry.job_name:''}</span>
+          {entries.length>1&&<button onClick={()=>removeEntry(idx)} style={{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:16,cursor:'pointer'}}>x</button>}
+        </div>
+        <div style={{padding:16}}>
+          {/* Job selector */}
+          <div style={{marginBottom:12,position:'relative'}}>
+            <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Project *</label>
+            {entry.job_id?<div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontWeight:600,fontSize:13}}>{entry.job_name}</span><button onClick={()=>{updateEntry(idx,'job_id','');updateEntry(idx,'job_name','');}} style={{background:'none',border:'none',color:'#9E9B96',fontSize:12,cursor:'pointer'}}>Change</button></div>:<><input value={jobSearchIdx===idx?jobSearchQ:''} onFocus={()=>setJobSearchIdx(idx)} onChange={e=>{setJobSearchIdx(idx);setJobSearchQ(e.target.value);}} placeholder="Search by name or number..." style={inputS}/>{jobSearchIdx===idx&&searchResults.length>0&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:200,overflow:'auto'}}>{searchResults.map(j=><button key={j.id} onClick={()=>pickJob(idx,j)} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}</div>}</>}
+          </div>
+          {/* Crew */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Lead</label><input value={entry.crew_lead} onChange={e=>updateEntry(idx,'crew_lead',e.target.value)} style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={entry.crew_size} onChange={e=>updateEntry(idx,'crew_size',e.target.value)} placeholder="0" style={inputS}/></div>
+          </div>
+          {/* LF */}
+          <div style={{background:'#EBF3FB',borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#185FA5',textTransform:'uppercase',marginBottom:8}}>LF Installed Today</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:8}}>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Total LF</label><input type="number" value={entry.lf_total} onChange={e=>updateEntry(idx,'lf_total',e.target.value)} placeholder="0" style={{...inputS,fontWeight:700}}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Precast</label><input type="number" value={entry.lf_precast} onChange={e=>updateEntry(idx,'lf_precast',e.target.value)} placeholder="0" style={inputS}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Single Wythe</label><input type="number" value={entry.lf_single_wythe} onChange={e=>updateEntry(idx,'lf_single_wythe',e.target.value)} placeholder="0" style={inputS}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Wrought Iron</label><input type="number" value={entry.lf_wrought_iron} onChange={e=>updateEntry(idx,'lf_wrought_iron',e.target.value)} placeholder="0" style={inputS}/></div>
+            </div>
+          </div>
+          {/* Text fields */}
+          <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Work Completed Today</label><textarea value={entry.work_completed} onChange={e=>updateEntry(idx,'work_completed',e.target.value)} rows={2} placeholder="Posts set, panels installed sections 4-7..." style={{...inputS,resize:'vertical'}}/></div>
+          <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Delays / Issues</label><textarea value={entry.delays_issues} onChange={e=>updateEntry(idx,'delays_issues',e.target.value)} rows={2} placeholder="Weather delay 2hrs, material short 10 panels..." style={{...inputS,resize:'vertical'}}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={entry.notes} onChange={e=>updateEntry(idx,'notes',e.target.value)} rows={1} style={{...inputS,resize:'vertical'}}/></div>
+        </div>
+      </div>)}
+      <button onClick={addEntry} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #D1CEC9',background:'transparent',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Syne',marginBottom:16}}>+ Add Project</button>
+      <div style={{marginBottom:16}}>
+        <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Overall Notes</label>
+        <textarea value={overallNotes} onChange={e=>setOverallNotes(e.target.value)} rows={3} placeholder="General notes for the day..." style={{...inputS,resize:'vertical'}}/>
+      </div>
+      <button onClick={submit} disabled={submitting} style={{...btnP,width:'100%',padding:14,fontSize:15,opacity:submitting?0.5:1}}>{submitting?'Submitting...':'Submit Daily Report'}</button>
+    </div>}
+
+    {/* HISTORY TAB */}
+    {tab==='history'&&<div>
+      <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}>
+        <button onClick={()=>setHistPmF('')} style={fpill(!histPmF)}>All PMs</button>
+        {PM_LIST.map(p=><button key={p.id} onClick={()=>setHistPmF(p.id)} style={fpill(histPmF===p.id)}>{p.short}</button>)}
+        <span style={{fontSize:12,color:'#6B6056',marginLeft:8}}>This week: {histStats.weekCount} reports</span>
+      </div>
+      {histLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:reports.length===0?<div style={{...card,padding:40,textAlign:'center',color:'#9E9B96'}}>No reports found</div>:<div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {reports.map(r=><div key={r.id} style={card}>
+          <div onClick={()=>toggleExpand(r.id)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>{new Date(r.report_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
+              <div style={{fontSize:12,color:'#6B6056'}}>{r.pm}</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <span style={{fontSize:11,color:'#9E9B96'}}>{r.submitted_at?new Date(r.submitted_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>
+              <span style={{fontSize:14,color:'#8B2020'}}>{expandedRpt===r.id?'v':'>'}</span>
+            </div>
+          </div>
+          {expandedRpt===r.id&&<div style={{marginTop:12,borderTop:'1px solid #E5E3E0',paddingTop:12}}>
+            {rptEntries[r.id]?rptEntries[r.id].map((e,i)=><div key={e.id||i} style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>{e.job_name||'—'} <span style={{color:'#9E9B96',fontWeight:400,fontSize:11}}>#{e.job_number}</span></div>
+              <div style={{display:'flex',gap:12,fontSize:12,color:'#6B6056',marginBottom:4}}>
+                {e.crew_lead&&<span>Crew: {e.crew_lead}</span>}
+                {n(e.crew_size)>0&&<span>Size: {e.crew_size}</span>}
+                {n(e.lf_total)>0&&<span style={{fontWeight:700,color:'#1A1A1A'}}>LF: {n(e.lf_total).toLocaleString()}</span>}
+              </div>
+              {e.work_completed&&<div style={{fontSize:12,marginBottom:2}}><b style={{color:'#6B6056'}}>Work:</b> {e.work_completed}</div>}
+              {e.delays_issues&&<div style={{fontSize:12,color:'#991B1B'}}><b>Delays:</b> {e.delays_issues}</div>}
+              {e.notes&&<div style={{fontSize:12,color:'#9E9B96'}}>Notes: {e.notes}</div>}
+            </div>):<div style={{color:'#9E9B96',fontSize:12}}>Loading entries...</div>}
+            {r.overall_notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Overall: {r.overall_notes}</div>}
+          </div>}
+        </div>)}
       </div>}
     </div>}
-    {selPM&&tab==='new'&&(()=>{
-      const secProps=(sk)=>{const s=SECTIONS.find(x=>x.key===sk);return{sk,isOpen:!collapsed[sk],filled:!!(s&&sectionFilled(s)),onToggle:()=>setCollapsed(p=>({...p,[sk]:!p[sk]}))};};
-      return<div style={{paddingBottom:120}}>
-      {/* Progress indicator */}
-      <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
-        <div style={{flex:1}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}><span>Progress</span><span>{sectionsFilledCount} of {SECTIONS.length} sections complete</span></div>
-          <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}><div style={{width:`${(sectionsFilledCount/SECTIONS.length)*100}%`,height:'100%',background:'#8B2020',transition:'width .2s'}}/></div>
-        </div>
-      </div>
-      <PMReportSection {...secProps('job')} title="Job Info">
-        <div style={{marginBottom:12}}><label style={lblStyle}>Select Job</label>
-          <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={mSel}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
-        </div>
-        {jobTotals&&<div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:14,marginBottom:16,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10}}>
-          <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>LF Installed to Date</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.lf.toLocaleString()}</div></div>
-          <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Gates to Date</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.gates}</div></div>
-          <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Posts to Date</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.posts}</div></div>
-          <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Reports Filed</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.count}</div></div>
-        </div>}
-        {selJobId&&(()=>{const sj=jobs.find(j=>j.id===selJobId);return sj?<div style={{display:'flex',gap:12,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}><span>Market: <span style={pill(MC[sj.market]||'#6B6056',MB[sj.market]||'#F4F4F2')}>{MS[sj.market]||sj.market||'—'}</span></span><span>Fence Type: <strong>{sj.fence_type||'—'}</strong></span></div>:null;})()}
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={mSel}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Crew</label><input value={form.crew} onChange={e=>set('crew',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={mInp}/></div>
-        </div>
-        <div style={{display:'flex',gap:8,alignItems:'flex-end',marginTop:12}}>
-          <div style={{flex:1}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
-          <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('gates')} title="Gates">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('posts')} title="Posts & Foundation">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('panels')} title="Panels & Fence">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Linear Feet of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Fence Height (ft)</label><input type="number" value={form.fence_height} onChange={e=>set('fence_height',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Precast Style at Time of Visit</label><input value={form.precast_style_onsite} onChange={e=>set('precast_style_onsite',e.target.value)} placeholder="e.g. Vertical Wood 6, Santa Barbara 8" style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('site')} title="Site Conditions">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Types of Machinery Used</label><input value={form.machinery_used} onChange={e=>set('machinery_used',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Soil Type</label><select value={form.soil_type} onChange={e=>set('soil_type',e.target.value)} style={mSel}>{['Soil','Rock'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Soil Quality</label><select value={form.soil_quality} onChange={e=>set('soil_quality',e.target.value)} style={mSel}>{['1 - Worst','2','3','4','5 - Best'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Terrain Rating</label><select value={form.terrain_rating} onChange={e=>set('terrain_rating',e.target.value)} style={mSel}>{['1 - Most Difficult','2','3','4','5 - Easiest'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('weather')} title="Weather Conditions">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Weather Condition</label><select value={form.weather_condition} onChange={e=>set('weather_condition',e.target.value)} style={mSel}><option value="">— Select —</option>{['Clear','Partly Cloudy','Overcast','Light Rain','Heavy Rain','Light Wind','High Wind','Extreme Heat','Fog','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Temperature (°F)</label><input type="number" value={form.weather_temp_f} onChange={e=>set('weather_temp_f',e.target.value)} placeholder="°F" style={mInp}/></div>
-        </div>
-        <div style={{marginTop:12}}><label style={lblStyle}>Weather Notes</label><textarea value={form.weather_notes} onChange={e=>set('weather_notes',e.target.value)} rows={2} placeholder="Describe conditions affecting work" style={{...mInp,resize:'vertical'}}/></div>
-      </PMReportSection>
-      <PMReportSection {...secProps('delays')} title="Delays">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={mSel}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={mSel}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Other Defective Materials</label><input value={form.other_defective_materials} onChange={e=>set('other_defective_materials',e.target.value)} style={mInp}/></div>
-        </div>
-        <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
-      </PMReportSection>
-      {/* Sticky submit bar — fixed to viewport bottom */}
-      <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8B2020',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
-        <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
-        <button onClick={submitReport} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:'#8B2020',color:'#fff'}}>Submit Report</button>
-      </div>
-    </div>;})()}
   </div>);
 }
 
-/* ═══ ESTIMATING PAGE ═══ */
-const EST_SC={draft:['#6B6056','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2']};
-const RATE_PCTILES={pc:{Houston:{p25:89,med:92,p75:136,min:83,max:195},Austin:{p25:92,med:106,p75:146,min:88,max:455},'Dallas-Fort Worth':{p25:105,med:120,p75:148,min:93,max:192},'San Antonio':{p25:95,med:108,p75:160,min:85,max:180}},sw:{Houston:{p25:123,med:126,p75:192,min:118,max:192},Austin:{p25:138,med:148,p75:158,min:138,max:158},'Dallas-Fort Worth':{p25:192,med:192,p75:192,min:192,max:192}}};
-function RateBar({rate,market,type}){
-  if(!rate||!market)return null;const d=RATE_PCTILES[type]?.[market];if(!d)return<div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>Limited data for {market}</div>;
-  const r=n(rate);const range=d.max-d.min;if(range<=0)return null;const pct=Math.max(0,Math.min(100,(r-d.min)/range*100));
-  const color=r<d.p25?'#2563EB':r<=d.p75?'#065F46':r<=d.p75+(d.max-d.p75)*0.6?'#B45309':'#991B1B';
-  const label=r<d.p25?'Below market':r<=d.p75?'Competitive':r<=d.p75+(d.max-d.p75)*0.6?'Premium':'Very high';
-  return<div style={{marginTop:4}}>
-    <div style={{position:'relative',height:8,background:'#E5E3E0',borderRadius:4,overflow:'visible'}}>
-      <div style={{position:'absolute',left:`${(d.p25-d.min)/range*100}%`,width:`${(d.p75-d.p25)/range*100}%`,height:'100%',background:'#D1FAE5',borderRadius:2}}/>
-      <div style={{position:'absolute',left:`${(d.med-d.min)/range*100}%`,width:2,height:'100%',background:'#065F46'}}/>
-      <div style={{position:'absolute',left:`${pct}%`,top:-2,width:12,height:12,borderRadius:6,background:color,border:'2px solid #fff',transform:'translateX(-6px)',boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
-    </div>
-    <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'#9E9B96',marginTop:1}}><span>${d.min}</span><span>${d.med} med</span><span>${d.max}</span></div>
-    <div style={{fontSize:9,fontWeight:600,color,marginTop:1}}>${r} — {label}</div>
-  </div>;
-}
-function EstimatingPage(){
-  const[view,setView]=useState('list');
-  const[estimates,setEstimates]=useState([]);
-  const[loading,setLoading]=useState(true);
-  const[toast,setToast]=useState(null);
-  const[saving,setSaving]=useState(false);
-  const emptyForm={customer_name:'',market:'',sales_rep:'',job_type:'Commercial',lf_precast:0,rate_precast:0,lf_sw:0,rate_sw:0,gate_qty:0,rate_gate:0,notes:'',estimate_number:'',status:'draft'};
-  const[f,setF]=useState(emptyForm);
-  const set=(k,v)=>setF(p=>({...p,[k]:v}));
-  const fetchEst=useCallback(async()=>{setLoading(true);try{const d=await sbGet('estimates','select=*&order=created_at.desc');setEstimates(Array.isArray(d)?d:[]);}catch(e){setEstimates([]);}setLoading(false);},[]);
-  useEffect(()=>{fetchEst();},[fetchEst]);
-  const pcSub=n(f.lf_precast)*n(f.rate_precast);
-  const swSub=n(f.lf_sw)*n(f.rate_sw);
-  const gtSub=n(f.gate_qty)*n(f.rate_gate);
-  const netEst=pcSub+swSub+gtSub;
-  const nextNum=`EST-${new Date().getFullYear()}-${String(estimates.length+1).padStart(3,'0')}`;
-  const saveEst=async(status)=>{setSaving(true);try{const body={estimate_number:f.estimate_number||nextNum,customer_name:f.customer_name,market:f.market,sales_rep:f.sales_rep,job_type:f.job_type,lf_precast:n(f.lf_precast),rate_precast:n(f.rate_precast),lf_sw:n(f.lf_sw),rate_sw:n(f.rate_sw),gate_qty:n(f.gate_qty),rate_gate:n(f.rate_gate),net_estimate:netEst,total_estimate:netEst,notes:f.notes,status:status};await sbPost('estimates',body);setToast('Estimate saved');setView('list');setF(emptyForm);fetchEst();}catch(e){setToast('Error saving estimate');}setSaving(false);};
-  return(<div>
-    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Estimating</h1>
-      {view==='list'&&<button onClick={()=>{setF({...emptyForm,estimate_number:nextNum});setView('form');}} style={btnP}>+ New Estimate</button>}
-    </div>
-    {view==='list'&&<div>
-      {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:estimates.length===0?<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>📊</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No estimates yet</div><button onClick={()=>{setF({...emptyForm,estimate_number:nextNum});setView('form');}} style={{...btnP,fontSize:12}}>+ Create First Estimate</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Estimate #','Customer','Market','Sales Rep','Total','Status','Date'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{estimates.map(e=>{const[sc2,sb2]=EST_SC[e.status]||['#6B6056','#F4F4F2'];return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
-            <td style={{padding:'8px 10px',fontWeight:600}}>{e.estimate_number||'—'}</td>
-            <td style={{padding:'8px 10px'}}>{e.customer_name||'—'}</td>
-            <td style={{padding:'8px 10px'}}>{e.market?<span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||e.market}</span>:'—'}</td>
-            <td style={{padding:'8px 10px'}}>{e.sales_rep||'—'}</td>
-            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(e.total_estimate||e.net_estimate)}</td>
-            <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{e.status||'draft'}</span></td>
-            <td style={{padding:'8px 10px',color:'#9E9B96'}}>{fD(e.created_at)}</td>
-          </tr>;})}</tbody></table>
-      </div>}
-    </div>}
-    {view==='form'&&<div style={{maxWidth:600}}>
-      <button onClick={()=>setView('list')} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← All Estimates</button>
-      <div style={card}>
-        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Customer Name</label><input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Market</label><select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Sales Rep</label><select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job Type</label><select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-        </div>
-        <div style={{fontSize:12,fontWeight:700,color:'#8B2020',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>LF</label><input type="number" value={f.lf_precast||''} onChange={e=>set('lf_precast',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_precast||''} onChange={e=>set('rate_precast',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(pcSub)}</div></div>
-        </div>
-        <div style={{fontSize:12,fontWeight:700,color:'#1D4ED8',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#DBEAFE',borderRadius:6}}>SINGLE WYTHE</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>LF</label><input type="number" value={f.lf_sw||''} onChange={e=>set('lf_sw',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_sw||''} onChange={e=>set('rate_sw',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(swSub)}</div></div>
-        </div>
-        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>GATES</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}># of Gates</label><input type="number" value={f.gate_qty||''} onChange={e=>set('gate_qty',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate per Gate ($)</label><input type="number" value={f.rate_gate||''} onChange={e=>set('rate_gate',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(gtSub)}</div></div>
-        </div>
-        <div style={{background:'#1A1A1A',borderRadius:10,padding:16,marginTop:20,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span style={{color:'#9E9B96',fontSize:14,fontWeight:600}}>NET ESTIMATE</span>
-          <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:'#8B2020'}}>{$(netEst)}</span>
-        </div>
-        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={f.notes||''} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>saveEst('draft')} disabled={saving} style={btnS}>{saving?'Saving...':'Save Draft'}</button>
-          <button onClick={()=>saveEst('sent')} disabled={saving} style={{...btnP,background:'#1D4ED8'}}>Mark as Sent</button>
-        </div>
-      </div>
-    </div>}
-  </div>);
-}
 /* ═══ MAP PAGE ═══ */
 const MKT_COORDS={Austin:[30.2672,-97.7431],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
 const MKT_PIN={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
