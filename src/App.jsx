@@ -1505,16 +1505,57 @@ function MaterialCalcPage({jobs,preJob}){
   const[overrides,setOverrides]=useState({});
   const[toast,setToast]=useState(null);
   const[showPrint,setShowPrint]=useState(false);
+  const[autoFilled,setAutoFilled]=useState({style:false,height:false,lf:false});
+  const[autoCalculated,setAutoCalculated]=useState(false);
+  const[loadedSaved,setLoadedSaved]=useState(false);
 
   useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setStyles(d||[]));},[]);
-  useEffect(()=>{if(preJob){setSelJob(preJob);setJobSearch(preJob.job_name);setSelStyle(preJob.style||'');setColor(preJob.color||'');setHeight(preJob.height_precast||'');setLf(preJob.lf_precast||preJob.total_lf||'');}else{try{const preId=localStorage.getItem('fc_matcalc_prejob');if(preId){const j=jobs.find(x=>x.id===preId);if(j){setSelJob(j);setJobSearch(j.job_name);setSelStyle(j.style||'');setColor(j.color||'');setHeight(j.height_precast||'');setLf(j.lf_precast||j.total_lf||'');}localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}}},[preJob,jobs]);
+
+  const applyJob=useCallback((j)=>{
+    setSelJob(j);setJobSearch(j.job_name);
+    const hasStyle=!!j.style,hasHeight=n(j.height_precast)>0,hasLf=n(j.lf_precast)>0;
+    setSelStyle(j.style||'');
+    setColor(j.color||'');
+    setHeight(hasHeight?j.height_precast:'');
+    setLf(hasLf?j.lf_precast:'');
+    setAutoFilled({style:hasStyle,height:hasHeight,lf:hasLf});
+    setResult(null);setOverrides({});setAutoCalculated(false);setLoadedSaved(false);
+  },[]);
+
+  useEffect(()=>{if(preJob){applyJob(preJob);}else{try{const preId=localStorage.getItem('fc_matcalc_prejob');if(preId){const j=jobs.find(x=>x.id===preId);if(j)applyJob(j);localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}}},[preJob,jobs,applyJob]);
+
   const[autoCalcPending,setAutoCalcPending]=useState(false);
-  useEffect(()=>{if(selJob&&selStyle&&n(height)>0&&n(lf)>0&&!result&&styles.length>0){setAutoCalcPending(true);}},[selJob,selStyle,height,lf,styles.length,result]);
+  const styleInCalc=useMemo(()=>!!styles.find(s=>s.style_name===selStyle),[styles,selStyle]);
+  useEffect(()=>{if(selJob&&selStyle&&styleInCalc&&n(height)>0&&n(lf)>0&&!result&&styles.length>0&&!loadedSaved){setAutoCalcPending(true);}},[selJob,selStyle,styleInCalc,height,lf,styles.length,result,loadedSaved]);
 
   const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
   const searchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
 
-  const pickJob=j=>{setSelJob(j);setJobSearch(j.job_name);setSelStyle(j.style||'');setColor(j.color||'');setHeight(j.height_precast||'');setLf(j.lf_precast||j.total_lf||'');};
+  const pickJob=j=>applyJob(j);
+
+  const loadSavedResult=()=>{
+    if(!selJob)return;
+    const j=selJob;
+    setSelStyle(j.material_calc_style||j.style||'');
+    setHeight(j.material_calc_height||j.height_precast||'');
+    setLf(j.material_calc_lf||j.lf_precast||'');
+    setResult({
+      postHeight:n(j.material_post_height),
+      sections:0,sectCeil:0,
+      totalPosts:n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop),
+      linePosts:n(j.material_posts_line),cornerPosts:n(j.material_posts_corner),stopPosts:n(j.material_posts_stop),
+      regularPanels:n(j.material_panels_regular),halfPanels:n(j.material_panels_half),
+      bottomPanels:n(j.material_panels_bottom),topPanels:n(j.material_panels_top),middlePanels:0,
+      totalPanels:n(j.material_panels_regular)+n(j.material_panels_half)+n(j.material_panels_bottom)+n(j.material_panels_top),
+      capRails:n(j.material_rails_regular),bottomRails:n(j.material_rails_bottom),
+      middleRails:n(j.material_rails_center),topRails:n(j.material_rails_top),
+      totalRails:n(j.material_rails_regular)+n(j.material_rails_bottom)+n(j.material_rails_center)+n(j.material_rails_top),
+      lineCaps:n(j.material_caps_line),stopCaps:n(j.material_caps_stop),
+      totalCaps:n(j.material_caps_line)+n(j.material_caps_stop),
+      isCMU:false,isZPanel:false,isRanch:false,hasVertPanels:false,specialLabel:'Saved'
+    });
+    setOverrides({});setLoadedSaved(true);setAutoCalculated(false);
+  };
 
   const calculate=()=>{
     const cfg=styles.find(s=>s.style_name===selStyle);
@@ -1571,7 +1612,7 @@ function MaterialCalcPage({jobs,preJob}){
     setResult({postHeight,sections:Math.round(sections*10)/10,sectCeil,totalPosts,linePosts,cornerPosts,stopPosts,regularPanels:Math.round(regularPanels),halfPanels,bottomPanels,topPanels,middlePanels,totalPanels:Math.round(totalPanels),capRails,bottomRails,middleRails,topRails,totalRails,lineCaps,stopCaps,totalCaps,isCMU,isZPanel,isRanch,hasVertPanels,specialLabel});
     setOverrides({});
   };
-  useEffect(()=>{if(autoCalcPending&&styles.length>0&&selStyle&&n(height)>0&&n(lf)>0){setAutoCalcPending(false);calculate();}},[autoCalcPending,styles,selStyle,height,lf]);
+  useEffect(()=>{if(autoCalcPending&&styles.length>0&&selStyle&&n(height)>0&&n(lf)>0){setAutoCalcPending(false);calculate();setAutoCalculated(true);}},[autoCalcPending,styles,selStyle,height,lf]);
 
   const ov=(key,def)=>overrides[key]!=null?overrides[key]:def;
   const setOv=(key,val)=>setOverrides(p=>({...p,[key]:val===''?undefined:parseInt(val)}));
@@ -1586,41 +1627,53 @@ function MaterialCalcPage({jobs,preJob}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Material Calculator</h1>
     {/* Inputs */}
     <div style={{...card,marginBottom:20,padding:20}}>
-      <div style={{display:'grid',gridTemplateColumns:'1.2fr 1fr 1fr 120px 120px auto',gap:12,alignItems:'end'}}>
+      <div style={{display:'grid',gridTemplateColumns:'1.3fr 1.1fr 1.2fr 1fr auto',gap:12,alignItems:'start'}}>
         <div style={{position:'relative'}}>
           <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job (optional)</label>
-          <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setSelJob(null);}} placeholder="Search by name or number..." style={inputS}/>
+          <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setSelJob(null);setAutoFilled({style:false,height:false,lf:false});}} placeholder="Search by name or number..." style={inputS}/>
           {searchResults.length>0&&!selJob&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:240,overflow:'auto'}}>
             {searchResults.map(j=><button key={j.id} onClick={()=>pickJob(j)} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}
           </div>}
+          {selJob&&<div style={{marginTop:6,fontSize:11,color:'#065F46',fontWeight:600}}>Loaded: {selJob.job_name} (#{selJob.job_number})</div>}
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style</label>
-          <select value={selStyle} onChange={e=>setSelStyle(e.target.value)} style={inputS}><option value="">— Select Style —</option>{styles.map(s=><option key={s.id} value={s.style_name}>{s.style_name}</option>)}</select>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style {autoFilled.style&&styleInCalc&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <select value={selStyle} onChange={e=>{setSelStyle(e.target.value);setAutoFilled(a=>({...a,style:false}));}} style={{...inputS,background:autoFilled.style&&styleInCalc?'#EFF6FF':'#FFF'}}><option value="">— Select Style —</option>{styles.map(s=><option key={s.id} value={s.style_name}>{s.style_name}</option>)}</select>
+          {selJob&&selJob.style&&!styleInCalc&&<div style={{marginTop:4,fontSize:10,color:'#B45309',fontWeight:600}}>⚠ "{selJob.style}" not in calculator — select manually</div>}
+          {selJob&&<div style={{marginTop:4,fontSize:11,color:'#6B6056'}}>Color: <span style={{fontWeight:700,color:'#1A1A1A'}}>{color||'—'}</span></div>}
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Color {selJob&&<span style={{color:'#065F46',fontWeight:700}}>(from job)</span>}</label>
-          <input value={color} onChange={e=>setColor(e.target.value)} readOnly={!!selJob} placeholder={selJob?'—':'Enter color'} style={{...inputS,background:selJob?'#F4F4F2':'#FFF',cursor:selJob?'default':'text'}}/>
-        </div>
-        <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft)</label>
-          <div style={{display:'flex',gap:4}}>
-            {[6,8,10,12].map(h2=><button key={h2} onClick={()=>setHeight(h2)} style={{padding:'6px 10px',borderRadius:6,border:n(height)===h2?'2px solid #8B2020':'1px solid #D1CEC9',background:n(height)===h2?'#FDF4F4':'#FFF',color:n(height)===h2?'#8B2020':'#6B6056',fontSize:13,fontWeight:700,cursor:'pointer'}}>{h2}</button>)}
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft) {autoFilled.height&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+            {[6,8,10,12].map(h2=><button key={h2} onClick={()=>{setHeight(h2);setAutoFilled(a=>({...a,height:false}));}} style={{padding:'6px 10px',borderRadius:6,border:n(height)===h2?'2px solid #8B2020':'1px solid #D1CEC9',background:n(height)===h2?(autoFilled.height?'#EFF6FF':'#FDF4F4'):'#FFF',color:n(height)===h2?'#8B2020':'#6B6056',fontSize:13,fontWeight:700,cursor:'pointer'}}>{h2}</button>)}
+            <input type="number" value={[6,8,10,12].includes(n(height))?'':height} onChange={e=>{setHeight(e.target.value);setAutoFilled(a=>({...a,height:false}));}} placeholder="Custom" style={{...inputS,width:70,padding:'6px 8px',background:autoFilled.height&&![6,8,10,12].includes(n(height))?'#EFF6FF':'#FFF'}}/>
           </div>
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Linear Feet</label>
-          <input type="number" value={lf} onChange={e=>setLf(e.target.value)} placeholder="0" style={inputS}/>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Linear Feet {autoFilled.lf&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <input type="number" value={lf} onChange={e=>{setLf(e.target.value);setAutoFilled(a=>({...a,lf:false}));}} placeholder="0" style={{...inputS,background:autoFilled.lf?'#EFF6FF':'#FFF'}}/>
         </div>
-        <div>
-          <button onClick={calculate} disabled={!selStyle||!n(height)||!n(lf)} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:!selStyle||!n(height)||!n(lf)?0.4:1}}>Calculate</button>
+        <div style={{paddingTop:18}}>
+          <button onClick={()=>{calculate();setLoadedSaved(false);setAutoCalculated(false);}} disabled={!selStyle||!n(height)||!n(lf)} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:!selStyle||!n(height)||!n(lf)?0.4:1}}>Calculate</button>
         </div>
       </div>
-      {selJob&&<div style={{marginTop:8,fontSize:12,color:'#065F46',fontWeight:600}}>Loaded from: {selJob.job_name} (#{selJob.job_number})</div>}
+      {selJob&&selJob.material_calc_date&&<div style={{marginTop:12,padding:'10px 14px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div style={{fontSize:12,color:'#78350F'}}>
+          <span style={{fontWeight:700}}>📋 Materials previously calculated</span> on {new Date(selJob.material_calc_date).toLocaleDateString()}
+          {selJob.material_calc_style&&<span> — {selJob.material_calc_style}</span>}
+          {selJob.material_calc_lf&&<span> | {selJob.material_calc_lf} LF</span>}
+          {selJob.material_calc_height&&<span> | {selJob.material_calc_height}ft</span>}
+        </div>
+        <div style={{display:'flex',gap:6}}>
+          <button onClick={loadSavedResult} style={{...btnP,padding:'6px 12px',fontSize:11,background:'#B45309'}}>Use saved values →</button>
+          <button onClick={()=>{setLoadedSaved(false);calculate();}} style={{...btnS,padding:'6px 12px',fontSize:11}}>Recalculate</button>
+        </div>
+      </div>}
     </div>
 
     {/* Results */}
     {result&&<div>
+      {(autoCalculated||loadedSaved)&&<div style={{marginBottom:10,padding:'6px 12px',background:loadedSaved?'#FFFBEB':'#EFF6FF',border:`1px solid ${loadedSaved?'#FCD34D':'#BFDBFE'}`,borderRadius:6,fontSize:11,fontWeight:700,color:loadedSaved?'#78350F':'#1D4ED8',display:'inline-block'}}>{loadedSaved?'📋 Showing saved values from project':'⚡ Auto-calculated from project data'}</div>}
       {/* Summary bar */}
       <div style={{...card,padding:'12px 20px',marginBottom:16,display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',background:'#1A1A1A',color:'#FFF',border:'none'}}>
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Style</span><div style={{fontWeight:700,fontSize:14}}>{selStyle}</div></div>
