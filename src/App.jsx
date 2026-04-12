@@ -551,10 +551,10 @@ function Dashboard({jobs,onNav}){
   const largest=[...active].sort((a,b)=>n(b.adj_contract_value||b.contract_value)-n(a.adj_contract_value||a.contract_value))[0];
   const oldestUnbilled=alerts[0];
   const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
-  // Capacity snapshot (mold + batch CY) for today — correct math: panels × cy × 1.4, mold capacity = molds × cav × 0.88
+  // Capacity snapshot (mold + batch CY) for today — correct math: panels × cy × 1.4, mold capacity = molds × panels × 0.88
   const[capSnap,setCapSnap]=useState({panelsPlanned:0,panelCapacity:0,cyPlanned:0,cyCap:52.8});
   useEffect(()=>{(async()=>{try{
-    const cavitiesFor=(style)=>!style?12:style.toLowerCase().includes('vertical wood')?1:12;
+    const panelsPerMoldFor=(style)=>!style?12:style.toLowerCase().includes('vertical wood')?1:12;
     const cfgRows=await sbGet('plant_config','select=key,value');const cfg={};(cfgRows||[]).forEach(r=>{cfg[r.key]=n(r.value);});
     const UTIL=n(cfg.mold_utilization_rate)||0.88;
     const ACC=n(cfg.accessory_overhead_multiplier)||1.4;
@@ -562,7 +562,7 @@ function Dashboard({jobs,onNav}){
     const molds=await sbGet('mold_inventory','select=style_name,total_molds');
     // Only count physical mold sets — exclude child styles that share molds
     const physical=(molds||[]).filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name));
-    const panelCapacity=physical.reduce((s,r)=>s+Math.floor(n(r.total_molds)*cavitiesFor(r.style_name)*UTIL),0);
+    const panelCapacity=physical.reduce((s,r)=>s+Math.floor(n(r.total_molds)*panelsPerMoldFor(r.style_name)*UTIL),0);
     const stylesRows=await sbGet('material_calc_styles','select=style_name,cy_per_panel');const sMap={};(stylesRows||[]).forEach(s=>{sMap[s.style_name]=s;});
     const today=new Date().toISOString().split('T')[0];
     const plans=await sbGet('production_plans',`plan_date=eq.${today}&select=id&limit=1`);
@@ -1896,7 +1896,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     (async()=>{try{const plans=await sbGet('production_plans',`plan_date=eq.${todayStr}&select=id&limit=1`);if(plans&&plans[0]){setTodayHasPlan(true);const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);setTodayPlanLines(lines||[]);const acts=await sbGet('production_actuals',`production_date=eq.${todayStr}&select=*`);setTodayActuals(acts||[]);}else{setTodayHasPlan(false);setTodayPlanLines([]);setTodayActuals([]);}}catch(e){console.error('Today plan load failed',e);}})();
   },[todayStr]);
   const todayByLine=useMemo(()=>{const m={};todayActuals.forEach(a=>{const k=a.plan_line_id;if(!k)return;if(!m[k])m[k]={1:0,2:0};const p=n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top);m[k][n(a.shift)||1]=(m[k][n(a.shift)||1]||0)+p;});return m;},[todayActuals]);
-  const cavitiesFor=useCallback((style)=>{if(!style)return 12;return style.toLowerCase().includes('vertical wood')?1:12;},[]);
+  const panelsPerMoldFor=useCallback((style)=>{if(!style)return 12;return style.toLowerCase().includes('vertical wood')?1:12;},[]);
   const MOLD_UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
   const SCRAP_RATE=n(plantCfg.scrap_rate_warm)||0.03;
   // Only rows that represent physical mold sets (not shared child styles)
@@ -1909,16 +1909,16 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
       let used=n(inUseByParent[m.style_name]);
       // Fuzzy fallback for any canonical key that isn't an exact match
       if(!used){Object.keys(inUseByParent).forEach(k=>{if(k&&m.style_name&&k!==m.style_name&&(k.toLowerCase().includes(m.style_name.toLowerCase())||m.style_name.toLowerCase().includes(k.toLowerCase())))used+=inUseByParent[k];});}
-      const cav=cavitiesFor(m.style_name);
-      const capacity=Math.floor(m.total_molds*cav*MOLD_UTIL_RATE);
-      const panelsPerDay=Math.floor((m.total_molds*cav*MOLD_UTIL_RATE)/(1+SCRAP_RATE));
+      const ppm=panelsPerMoldFor(m.style_name);
+      const capacity=Math.floor(m.total_molds*ppm*MOLD_UTIL_RATE);
+      const panelsPerDay=Math.floor((m.total_molds*ppm*MOLD_UTIL_RATE)/(1+SCRAP_RATE));
       const avail=Math.max(capacity-used,0);
       const pct=capacity>0?Math.round(used/capacity*100):0;
       const children=MOLD_CHILDREN[m.style_name]||[];
       const label=children.length>0?`${m.style_name} / ${children.join(' / ')}`:m.style_name;
-      return{style:m.style_name,label,molds:m.total_molds,cavities:cav,capacity,panelsPerDay,inUse:used,available:avail,pct,notPlanned:used===0,children};
+      return{style:m.style_name,label,molds:m.total_molds,panelsPerMold:ppm,capacity,panelsPerDay,inUse:used,available:avail,pct,notPlanned:used===0,children};
     });
-  },[physicalMoldInv,todayPlanLines,cavitiesFor,MOLD_UTIL_RATE,SCRAP_RATE]);
+  },[physicalMoldInv,todayPlanLines,panelsPerMoldFor,MOLD_UTIL_RATE,SCRAP_RATE]);
   const moldTotals=useMemo(()=>{const molds=moldUtilization.reduce((s,r)=>s+r.molds,0);const capacity=moldUtilization.reduce((s,r)=>s+r.capacity,0);const panelsPerDay=moldUtilization.reduce((s,r)=>s+r.panelsPerDay,0);const inUse=moldUtilization.reduce((s,r)=>s+r.inUse,0);const avail=capacity-inUse;const pct=capacity>0?Math.round(inUse/capacity*100):0;return{molds,capacity,panelsPerDay,inUse,avail,pct};},[moldUtilization]);
 
   const ordersJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&j.status!=='closed').sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
@@ -1967,12 +1967,12 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     {moldUtilization.length>0&&<div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #7C3AED'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🔧 Mold Utilization — Today</div>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-        <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Cav','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>
           {moldUtilization.map(r=>{const col=r.pct>90?'#DC2626':r.pct>=70?'#B45309':'#15803D';const emoji=r.notPlanned?'':r.pct>90?'🔴':r.pct>=70?'🟡':'🟢';return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
             <td style={{padding:'6px 8px',textAlign:'right'}}>{r.molds}</td>
-            <td style={{padding:'6px 8px',textAlign:'right',color:'#9E9B96'}}>{r.cavities}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',color:'#9E9B96'}}>{r.panelsPerMold}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#7C3AED'}}>{r.capacity.toLocaleString()}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#DC2626':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
@@ -2332,17 +2332,17 @@ function DailyReportPage({jobs}){
   // Only count physical mold sets — exclude child styles that share a parent's molds
   const physicalMolds=useMemo(()=>moldInventory.filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name)),[moldInventory]);
   const moldsByStyle=useMemo(()=>{const m={};physicalMolds.forEach(r=>{m[r.style_name]=n(r.total_molds);});return m;},[physicalMolds]);
-  // Vertical Wood uses 1 cavity per mold (full height panel); all other styles use 12 cavities/mold
-  const cavitiesForStyle=useCallback((style)=>{if(!style)return 12;return style.toLowerCase().includes('vertical wood')?1:12;},[]);
+  // Vertical Wood uses 1 panel per mold (full height panel); all other styles use 12 panels/mold
+  const panelsPerMoldForStyle=useCallback((style)=>{if(!style)return 12;return style.toLowerCase().includes('vertical wood')?1:12;},[]);
   const MOLD_UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
   const SCRAP_RATE=n(plantCfg.scrap_rate_warm)||0.03;
   const ACCESSORY_MULT=n(plantCfg.accessory_overhead_multiplier)||1.4;
   // moldsForStyle canonicalizes first, then looks up the parent's physical mold count
   const moldsForStyle=useCallback((style)=>{if(!style)return 0;const c=canonicalStyle(style);if(moldsByStyle[c])return moldsByStyle[c];const k=Object.keys(moldsByStyle).find(key=>key.toLowerCase().includes((c||'').toLowerCase())||(c||'').toLowerCase().includes(key.toLowerCase()));return k?moldsByStyle[k]:0;},[moldsByStyle]);
-  // mold_capacity_panels = molds × cavities × util_rate (uses parent's molds via canonicalStyle)
-  const moldCapacityPanels=useCallback((style)=>{const molds=moldsForStyle(style);const cav=cavitiesForStyle(canonicalStyle(style));return Math.floor(molds*cav*MOLD_UTIL_RATE);},[moldsForStyle,cavitiesForStyle,MOLD_UTIL_RATE]);
-  // panels_per_day = molds × cavities × 0.88 / 1.03 (scrap adjustment)
-  const panelsPerDayForStyle=useCallback((style)=>{const molds=moldsForStyle(style);const cav=cavitiesForStyle(canonicalStyle(style));return Math.floor((molds*cav*MOLD_UTIL_RATE)/(1+SCRAP_RATE));},[moldsForStyle,cavitiesForStyle,MOLD_UTIL_RATE,SCRAP_RATE]);
+  // mold_capacity_panels = molds × panels × util_rate (uses parent's molds via canonicalStyle)
+  const moldCapacityPanels=useCallback((style)=>{const molds=moldsForStyle(style);const ppm=panelsPerMoldForStyle(canonicalStyle(style));return Math.floor(molds*ppm*MOLD_UTIL_RATE);},[moldsForStyle,panelsPerMoldForStyle,MOLD_UTIL_RATE]);
+  // panels_per_day = molds × panels × 0.88 / 1.03 (scrap adjustment)
+  const panelsPerDayForStyle=useCallback((style)=>{const molds=moldsForStyle(style);const ppm=panelsPerMoldForStyle(canonicalStyle(style));return Math.floor((molds*ppm*MOLD_UTIL_RATE)/(1+SCRAP_RATE));},[moldsForStyle,panelsPerMoldForStyle,MOLD_UTIL_RATE,SCRAP_RATE]);
   // CYD = panels × cy_per_panel × 1.4 (1.4 accessory multiplier covers posts/rails/caps)
   const cyForLine=useCallback((l)=>{
     const panels=n(l.planned_panels);
@@ -2353,7 +2353,7 @@ function DailyReportPage({jobs}){
   // Physical molds owned = sum across non-child rows only (≈113 not 273)
   const totalMoldsOwned=useMemo(()=>physicalMolds.reduce((s,r)=>s+n(r.total_molds),0)||n(plantCfg.total_molds),[physicalMolds,plantCfg]);
   // Total panel capacity across physical mold sets only
-  const totalPanelCapacity=useMemo(()=>physicalMolds.reduce((s,r)=>s+Math.floor(n(r.total_molds)*cavitiesForStyle(r.style_name)*MOLD_UTIL_RATE),0),[physicalMolds,cavitiesForStyle,MOLD_UTIL_RATE]);
+  const totalPanelCapacity=useMemo(()=>physicalMolds.reduce((s,r)=>s+Math.floor(n(r.total_molds)*panelsPerMoldForStyle(r.style_name)*MOLD_UTIL_RATE),0),[physicalMolds,panelsPerMoldForStyle,MOLD_UTIL_RATE]);
   const dailyCyCap=n(plantCfg.daily_cy_capacity)||52.8;
 
   // Mold utilization grouped by PHYSICAL mold set (canonical style) — combined planned panels across all child styles
@@ -2363,13 +2363,13 @@ function DailyReportPage({jobs}){
       const canonical=canonicalStyle(l.style||'—');
       if(!m[canonical]){
         const children=MOLD_CHILDREN[canonical]||[];
-        m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),cavities:cavitiesForStyle(canonical),childStyles:[...children,canonical],actualStyles:new Set()};
+        m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),panelsPerMold:panelsPerMoldForStyle(canonical),childStyles:[...children,canonical],actualStyles:new Set()};
       }
       m[canonical].panels+=n(l.planned_panels);
       if(l.style)m[canonical].actualStyles.add(l.style);
     });
     return Object.values(m).filter(x=>x.panels>0||x.capacity>0).sort((a,b)=>b.panels-a.panels);
-  },[planLines,moldCapacityPanels,moldsForStyle,cavitiesForStyle]);
+  },[planLines,moldCapacityPanels,moldsForStyle,panelsPerMoldForStyle]);
   const totalPanelsPlanned=useMemo(()=>planLines.reduce((s,l)=>s+n(l.planned_panels),0),[planLines]);
   const totalCyPlanned=useMemo(()=>planLines.reduce((s,l)=>s+cyForLine(l),0),[planLines,cyForLine]);
 
@@ -2704,7 +2704,7 @@ function DailyReportPage({jobs}){
           {/* MOLD UTILIZATION */}
           <div style={{paddingRight:16,borderRight:'1px solid #E5E3E0'}}>
             <div style={{fontSize:10,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase'}}>Mold Utilization</div>
-            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Primary constraint — panels / (molds × cavities × 88%)</div>
+            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Primary constraint — panels / (molds × panels × 88%)</div>
             {moldUsageByStyle.length===0?<div style={{fontSize:11,color:'#9E9B96'}}>No panels planned</div>:moldUsageByStyle.map(u=>{const pct=u.capacity>0?Math.round(u.panels/u.capacity*100):0;const over=u.panels>u.capacity&&u.capacity>0;const col=over?'#DC2626':pct>90?'#DC2626':pct>=70?'#B45309':'#15803D';const emoji=over||pct>90?'🔴':pct>=70?'🟡':'🟢';const usedLabel=[...u.actualStyles].join(' + ')||u.style;return<div key={u.style} style={{marginBottom:8}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
                 <span style={{fontWeight:600,color:'#1A1A1A'}}>{u.label}</span>
@@ -2713,7 +2713,7 @@ function DailyReportPage({jobs}){
               <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}>
                 <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/>
               </div>
-              <div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>{u.molds} molds × {u.cavities} cav × 88% = {u.capacity} panels/day · planned from: {usedLabel}</div>
+              <div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>{u.molds} molds × {u.panelsPerMold} panels × 88% = {u.capacity} panels/day · planned from: {usedLabel}</div>
               {over&&<div style={{fontSize:10,color:'#DC2626',fontWeight:700,marginTop:3}}>⚠️ {u.label}: {u.panels} panels planned but only {u.capacity} panels/day capacity. Reduce by {u.panels-u.capacity} or split across {Math.ceil(u.panels/u.capacity)} days.</div>}
             </div>;})}
             <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700}}>
@@ -2765,7 +2765,7 @@ function DailyReportPage({jobs}){
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:4}}>#{j.job_number}</div>
             <div style={{fontSize:10,color:'#6B6056',marginBottom:4}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>
             <div style={{fontSize:10,color:'#6B6056',marginBottom:6}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{pcs}</b> pcs</span>} {n(j.total_lf)>0&&<span style={{marginLeft:8}}><b style={{color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}</b> LF</span>}</div>
-            {gt2.panels>0&&ppd>0&&<div style={{fontSize:10,color:'#7C3AED',fontWeight:600,marginBottom:3}}>📦 {gt2.panels.toLocaleString()} panels | {molds} molds × {cavitiesForStyle(j.style)} cav = {ppd}/day → ~{days} prod days</div>}
+            {gt2.panels>0&&ppd>0&&<div style={{fontSize:10,color:'#7C3AED',fontWeight:600,marginBottom:3}}>📦 {gt2.panels.toLocaleString()} panels | {molds} molds × {panelsPerMoldForStyle(j.style)} panels = {ppd}/day → ~{days} prod days</div>}
             {jobCy>0&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginBottom:4}}>~{jobCy.toFixed(1)} CYD total concrete</div>}
             {j.est_start_date&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:6}}>Est start: {fD(j.est_start_date)}</div>}
             <button onClick={()=>addJobToPlan(j)} style={{width:'100%',padding:'5px 10px',background:'#7C3AED',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan</button>
