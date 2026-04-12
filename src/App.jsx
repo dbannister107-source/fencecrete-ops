@@ -2635,7 +2635,12 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
       const plans=await sbGet('production_plans',`plan_date=eq.${date}&select=*&limit=1`);
       if(plans&&plans[0]){
         setPlanId(plans[0].id);setPlanNotes(plans[0].plan_notes||'');
-        const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
+        // Explicit column list forces PostgREST to return per-piece columns even if schema cache is stale
+        const pieceCols=PLAN_PIECE_KEYS.map(k=>'planned_'+k).join(',');
+        const selectList=`id,plan_id,job_id,job_number,job_name,style,color,height,sort_order,planned_pieces,planned_lf,planned_post_height,${pieceCols},planned_posts,planned_panels,planned_rails,planned_caps,is_partial_run,partial_run_reason,notes,material_calc_date_at_plan,quantities_stale`;
+        let lines=null;
+        try{lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&select=${selectList}&order=sort_order.asc`);}
+        catch(e1){console.warn('Explicit column fetch failed, falling back to select=*',e1);lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);}
         // Pass the raw DB row as "existing" so buildPlanLine picks up all per-piece planned_* columns
         setPlanLines((lines||[]).map(l=>{const j=jobs.find(x=>x.id===l.job_id);return buildPlanLine(j||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},l);}));
       }else{setPlanId(null);setPlanLines([]);setPlanNotes('');}
@@ -3245,30 +3250,33 @@ function DailyReportPage({jobs,onNav}){
 
   const buildActualsLine=useCallback((opts)=>{
     const{plan_line_id,job,planned_lf,unplanned,planLineRow}=opts;
+    // Resolve job from live jobs array if caller passed a plan-line-stub (which has no material_* fields)
+    const liveJob=job?.material_posts_line!=null||job?.material_panels_regular!=null?job:(jobs.find(x=>x.id===(job?.id||planLineRow?.job_id))||job);
     const planned={};const actual={};
     // Prefer per-piece planned values from the plan_line row; fall back to job's full material order
     PIECE_TYPES.forEach(pt=>{
       const fromPlan=planLineRow?.['planned_'+pt.key];
-      planned[pt.key]=fromPlan!=null?n(fromPlan):n(job?.[pt.jobCol])||0;
+      const hasPlanVal=fromPlan!=null&&fromPlan!=='';
+      planned[pt.key]=hasPlanVal?n(fromPlan):n(liveJob?.[pt.jobCol])||0;
       actual[pt.key]='';
     });
     return{
       plan_line_id:plan_line_id||null,
-      job_id:job?.id||null,
-      job_number:job?.job_number||'',
-      job_name:job?.job_name||'',
-      style:job?.style||'',
-      color:job?.color||'',
-      height:job?.height_precast||'',
-      post_height:n(planLineRow?.planned_post_height)||n(job?.material_post_height)||0,
+      job_id:liveJob?.id||job?.id||null,
+      job_number:liveJob?.job_number||job?.job_number||planLineRow?.job_number||'',
+      job_name:liveJob?.job_name||job?.job_name||planLineRow?.job_name||'',
+      style:liveJob?.style||job?.style||planLineRow?.style||'',
+      color:liveJob?.color||job?.color||planLineRow?.color||'',
+      height:liveJob?.height_precast||job?.height_precast||planLineRow?.height||'',
+      post_height:n(planLineRow?.planned_post_height)||n(liveJob?.material_post_height)||0,
       planned,actual,
-      planned_lf:n(planned_lf)||n(job?.total_lf)||0,
+      planned_lf:n(planLineRow?.planned_lf)||n(planned_lf)||n(liveJob?.total_lf)||0,
       actual_lf:'',
       adjustment_reason:'',
       notes:'',
       unplanned:!!unplanned,
     };
-  },[PIECE_TYPES]);
+  },[PIECE_TYPES,jobs]);
 
   // ─── LOAD PLAN FOR ACTUALS TAB ───
   const loadActualsPlan=useCallback(async(date)=>{
@@ -3276,7 +3284,15 @@ function DailyReportPage({jobs,onNav}){
       const plans=await sbGet('production_plans',`plan_date=eq.${date}&select=*&limit=1`);
       if(plans&&plans[0]){
         setActualsPlanId(plans[0].id);
-        const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
+        // Explicit column list — forces PostgREST to return per-piece columns even if schema cache is stale
+        const pieceSelectCols=PIECE_TYPES.map(pt=>'planned_'+pt.key).join(',');
+        const selectList=`id,plan_id,job_id,job_number,job_name,style,color,height,sort_order,planned_pieces,planned_lf,planned_post_height,${pieceSelectCols},planned_posts,planned_panels,planned_rails,planned_caps,is_partial_run,partial_run_reason,notes,material_calc_date_at_plan,quantities_stale`;
+        let lines=null;
+        try{lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&select=${selectList}&order=sort_order.asc`);}
+        catch(e1){
+          console.warn('Explicit column fetch failed, falling back to select=*',e1);
+          lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
+        }
         setActualsLines((lines||[]).map(l=>{
           const j=jobs.find(x=>x.id===l.job_id);
           return buildActualsLine({plan_line_id:l.id,job:j||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height},planned_lf:l.planned_lf,unplanned:false,planLineRow:l});
@@ -3285,23 +3301,28 @@ function DailyReportPage({jobs,onNav}){
         setActualsPlanId(null);setActualsLines([]);
       }
     }catch(e){console.error('Load actuals plan failed:',e);}
-  },[jobs,buildActualsLine]);
+  },[jobs,buildActualsLine,PIECE_TYPES]);
   useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan]);
 
   // ─── LOAD SHIFT SUBMISSIONS for actuals date ───
   const loadShiftSubs=useCallback(async(date)=>{
     try{
-      // Try ordering by submitted_at first; fall back to id if the column doesn't exist yet
+      // Explicit column list forces PostgREST to return every per-piece column
+      const actualPieceCols=PIECE_TYPES.map(pt=>'actual_'+pt.key).join(',');
+      const actualsSelect=`id,plan_id,plan_line_id,job_id,job_number,job_name,production_date,shift,submitted_at,${actualPieceCols},actual_lf,actual_panels,actual_posts,actual_rails,actual_caps,actual_pieces,variance_reason,adjustment_reason,notes`;
       let acts=null;
-      try{acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=submitted_at.asc`);}
-      catch(e1){acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=id.asc`);}
+      try{acts=await sbGet('production_actuals',`production_date=eq.${date}&select=${actualsSelect}&order=submitted_at.asc`);}
+      catch(e1){
+        try{acts=await sbGet('production_actuals',`production_date=eq.${date}&select=${actualsSelect}&order=id.asc`);}
+        catch(e2){acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*`);}
+      }
       const s1=[],s2=[];(acts||[]).forEach(a=>{if(n(a.shift)===1)s1.push(a);else if(n(a.shift)===2)s2.push(a);});
       setShiftSubs({
         1:s1.length>0?{count:s1.length,submittedAt:s1[s1.length-1].submitted_at||s1[s1.length-1].created_at||null,lines:s1,totalPanels:s1.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
         2:s2.length>0?{count:s2.length,submittedAt:s2[s2.length-1].submitted_at||s2[s2.length-1].created_at||null,lines:s2,totalPanels:s2.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
       });
     }catch(e){console.error('Load shift subs failed:',e);setShiftSubs({1:null,2:null});}
-  },[]);
+  },[PIECE_TYPES]);
   useEffect(()=>{if(tab==='actuals'){loadShiftSubs(actualsDate);setEditingShift(false);}},[tab,actualsDate,loadShiftSubs]);
 
   // Shift 1 actuals keyed by plan_line_id (for shift 2 "already produced" column)
