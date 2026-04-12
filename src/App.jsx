@@ -3333,9 +3333,9 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
   {label:'OPERATIONS',items:[{key:'production',label:'Production Plan',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'production_orders',label:'Production Orders',icon:'📦'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
-  {label:'FIELD',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'install_schedule',label:'Install Schedule',icon:'📅'}]},
+  {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
-  {label:'ADMIN',items:[{key:'help',label:'Help',icon:'❓'}]},
+  {label:'HELP',items:[{key:'help',label:'Help',icon:'❓'}]},
 ];
 
 export default function App(){
