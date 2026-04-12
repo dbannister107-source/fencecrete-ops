@@ -25,7 +25,9 @@
       "Bash(python:*)",
       "Bash(node:*)",
       "Bash(ls C:\\\\\\\\Users\\\\\\\\dbann\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\patch_statuses.js)",
-      "Bash(wslpath -w /tmp/)"
+      "Bash(wslpath -w /tmp/)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ]
   }
 }
