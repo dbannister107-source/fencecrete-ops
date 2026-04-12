@@ -2146,6 +2146,44 @@ function DailyReportPage({jobs}){
   const jobSearchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
   const unplanSearchResults=unplanSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(unplanSearch.toLowerCase())).slice(0,8):[];
 
+  // ─── MATERIAL GROUP TOTALS HELPER ───
+  const groupTotals=useCallback((j)=>({
+    posts:n(j?.material_posts_line)+n(j?.material_posts_corner)+n(j?.material_posts_stop),
+    panels:n(j?.material_panels_regular)+n(j?.material_panels_half)+n(j?.material_panels_bottom)+n(j?.material_panels_top),
+    rails:n(j?.material_rails_regular)+n(j?.material_rails_top)+n(j?.material_rails_bottom)+n(j?.material_rails_center),
+    caps:n(j?.material_caps_line)+n(j?.material_caps_stop),
+  }),[]);
+
+  const buildPlanLine=useCallback((job,existing)=>{
+    const gt=groupTotals(job);
+    const material={
+      posts_line:n(job?.material_posts_line),posts_corner:n(job?.material_posts_corner),posts_stop:n(job?.material_posts_stop),
+      panels_regular:n(job?.material_panels_regular),panels_half:n(job?.material_panels_half),panels_bottom:n(job?.material_panels_bottom),panels_top:n(job?.material_panels_top),
+      rails_regular:n(job?.material_rails_regular),rails_top:n(job?.material_rails_top),rails_bottom:n(job?.material_rails_bottom),rails_center:n(job?.material_rails_center),
+      caps_line:n(job?.material_caps_line),caps_stop:n(job?.material_caps_stop),
+    };
+    return{
+      id:existing?.id||null,
+      job_id:job?.id||existing?.job_id||null,
+      job_number:job?.job_number||existing?.job_number||'',
+      job_name:job?.job_name||existing?.job_name||'',
+      style:job?.style||existing?.style||'',
+      color:job?.color||existing?.color||'',
+      height:job?.height_precast||existing?.height||'',
+      post_height:n(job?.material_post_height)||0,
+      material_calc_date:job?.material_calc_date||null,
+      material,
+      material_totals:gt,
+      planned_posts:existing?.planned_posts!=null?String(existing.planned_posts):(gt.posts?String(gt.posts):''),
+      planned_panels:existing?.planned_panels!=null?String(existing.planned_panels):(gt.panels?String(gt.panels):''),
+      planned_rails:existing?.planned_rails!=null?String(existing.planned_rails):(gt.rails?String(gt.rails):''),
+      planned_caps:existing?.planned_caps!=null?String(existing.planned_caps):(gt.caps?String(gt.caps):''),
+      planned_lf:existing?.planned_lf!=null?String(existing.planned_lf):(n(job?.total_lf)?String(n(job.total_lf)):''),
+      partial_run_reason:existing?.partial_run_reason||'',
+      notes:existing?.notes||'',
+    };
+  },[groupTotals]);
+
   // ─── LOAD PLAN FOR SELECTED DATE ───
   const loadPlan=useCallback(async(date)=>{
     try{
@@ -2154,12 +2192,15 @@ function DailyReportPage({jobs}){
         setPlanId(plans[0].id);
         setPlanNotes(plans[0].plan_notes||'');
         const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
-        setPlanLines((lines||[]).map(l=>({id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||'',color:l.color||'',height:l.height||'',planned_pieces:l.planned_pieces||'',planned_lf:l.planned_lf||'',notes:l.notes||''})));
+        setPlanLines((lines||[]).map(l=>{
+          const job=jobs.find(x=>x.id===l.job_id);
+          return buildPlanLine(job||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},{id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height:l.height,planned_posts:l.planned_posts,planned_panels:l.planned_panels,planned_rails:l.planned_rails,planned_caps:l.planned_caps,planned_lf:l.planned_lf,partial_run_reason:l.partial_run_reason,notes:l.notes});
+        }));
       }else{
         setPlanId(null);setPlanLines([]);setPlanNotes('');
       }
     }catch(e){console.error('Load plan failed:',e);setPlanId(null);setPlanLines([]);setPlanNotes('');}
-  },[]);
+  },[jobs,buildPlanLine]);
   useEffect(()=>{if(tab==='plan')loadPlan(planDate);},[tab,planDate,loadPlan]);
 
   // ─── PIECE TYPE DEFINITIONS (for per-piece actuals) ───
@@ -2221,9 +2262,7 @@ function DailyReportPage({jobs}){
 
   // ─── PLAN BUILDER HELPERS ───
   const addJobToPlan=(j)=>{
-    // If job already has material calcs, use totalPieces / total_lf
-    const totalPcs=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||n(j.material_panels_regular);
-    setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,{job_id:j.id,job_number:j.job_number,job_name:j.job_name,style:j.style||'',color:j.color||'',height:j.height_precast||'',planned_pieces:totalPcs?String(totalPcs):'',planned_lf:n(j.total_lf)?String(n(j.total_lf)):'',notes:''}]);
+    setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);
     setShowAddPicker(false);setJobSearch('');
   };
   // Pick up job from kanban handoff via localStorage
@@ -2232,7 +2271,9 @@ function DailyReportPage({jobs}){
   const removePlanLine=(idx)=>setPlanLines(prev=>prev.filter((_,i)=>i!==idx));
   const movePlanLine=(idx,dir)=>setPlanLines(prev=>{const n2=[...prev];const target=idx+dir;if(target<0||target>=n2.length)return n2;[n2[idx],n2[target]]=[n2[target],n2[idx]];return n2;});
 
-  const planTotals=useMemo(()=>{let pcs=0,lf=0;planLines.forEach(l=>{pcs+=n(l.planned_pieces);lf+=n(l.planned_lf);});return{pcs,lf,count:planLines.length};},[planLines]);
+  const lineDailyTotal=(l)=>n(l.planned_posts)+n(l.planned_panels)+n(l.planned_rails)+n(l.planned_caps);
+  const lineIsPartial=(l)=>{const gt=l.material_totals||{posts:0,panels:0,rails:0,caps:0};return (gt.posts>0&&n(l.planned_posts)<gt.posts)||(gt.panels>0&&n(l.planned_panels)<gt.panels)||(gt.rails>0&&n(l.planned_rails)<gt.rails)||(gt.caps>0&&n(l.planned_caps)<gt.caps);};
+  const planTotals=useMemo(()=>{let pcs=0,lf=0;planLines.forEach(l=>{pcs+=lineDailyTotal(l);lf+=n(l.planned_lf);});return{pcs,lf,count:planLines.length};},[planLines]);
 
   const savePlan=async()=>{
     setSavingPlan(true);
@@ -2247,7 +2288,7 @@ function DailyReportPage({jobs}){
         const saved=await res.json();curId=saved[0].id;setPlanId(curId);
       }
       if(planLines.length>0){
-        const lineRows=planLines.map((l,i)=>({plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:n(l.planned_pieces)||0,planned_lf:n(l.planned_lf)||0,notes:l.notes||null}));
+        const lineRows=planLines.map((l,i)=>({plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),planned_posts:n(l.planned_posts)||0,planned_panels:n(l.planned_panels)||0,planned_rails:n(l.planned_rails)||0,planned_caps:n(l.planned_caps)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null}));
         const res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         if(!res2.ok)throw new Error(await res2.text());
       }
@@ -2361,7 +2402,7 @@ function DailyReportPage({jobs}){
       {(()=>{const queueJobs=jobs.filter(j=>j.status==='production_queue'&&j.material_calc_date&&!planLines.some(l=>l.job_id===j.id)).sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')).slice(0,20);if(queueJobs.length===0)return null;return<div style={{...card,marginBottom:12,borderLeft:'4px solid #7C3AED'}}>
         <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:8}}>Production Queue ({queueJobs.length} jobs with orders)</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:8,maxHeight:260,overflow:'auto'}}>
-          {queueJobs.map(j=>{const pcs=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||n(j.material_panels_regular);return<div key={j.id} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10}}>
+          {queueJobs.map(j=>{const gt2=groupTotals(j);const pcs=gt2.posts+gt2.panels+gt2.rails+gt2.caps;const tipParts=[];if(gt2.posts)tipParts.push(`Posts: ${gt2.posts}`);if(gt2.panels)tipParts.push(`Panels: ${gt2.panels}`);if(gt2.rails)tipParts.push(`Rails: ${gt2.rails}`);if(gt2.caps)tipParts.push(`Caps: ${gt2.caps}`);return<div key={j.id} title={tipParts.join(' | ')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10}}>
             <div style={{fontSize:12,fontWeight:700}}>{j.job_name}</div>
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:4}}>#{j.job_number}</div>
             <div style={{fontSize:10,color:'#6B6056',marginBottom:4}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>
@@ -2399,27 +2440,75 @@ function DailyReportPage({jobs}){
           <button onClick={()=>{setShowAddPicker(false);setJobSearch('');}} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:6}}>Cancel</button>
         </div>}
         {/* Plan lines */}
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          {planLines.map((l,idx)=><div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:'4px solid #7C3AED',borderRadius:8,padding:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-              <div style={{display:'flex',flexDirection:'column',gap:2}}>
-                <button onClick={()=>movePlanLine(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',fontSize:10,cursor:idx===0?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▲</button>
-                <button onClick={()=>movePlanLine(idx,1)} disabled={idx===planLines.length-1} style={{background:'none',border:'none',fontSize:10,cursor:idx===planLines.length-1?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▼</button>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {planLines.map((l,idx)=>{
+            const m=l.material||{};const gt=l.material_totals||{posts:0,panels:0,rails:0,caps:0};
+            const partial=lineIsPartial(l);
+            const row=(label,val)=>val>0?<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'2px 0'}}><span style={{color:'#6B6056'}}>{label}:</span><b style={{color:'#1A1A1A'}}>{val.toLocaleString()}</b></div>:null;
+            const phLabel=l.post_height?`${l.post_height}ft`:(l.height?`${l.height}ft`:'');
+            return<div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:`4px solid ${partial?'#B45309':'#7C3AED'}`,borderRadius:8,padding:12,background:'#FFF'}}>
+              {/* Header */}
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                  <button onClick={()=>movePlanLine(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',fontSize:10,cursor:idx===0?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▲</button>
+                  <button onClick={()=>movePlanLine(idx,1)} disabled={idx===planLines.length-1} style={{background:'none',border:'none',fontSize:10,cursor:idx===planLines.length-1?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▼</button>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <b style={{fontSize:14}}>{l.job_name}</b>
+                    <span style={{color:'#9E9B96',fontSize:11}}>#{l.job_number}</span>
+                    {partial&&<span style={{background:'#FEF3C7',color:'#B45309',fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4}}>⚡ PARTIAL RUN</span>}
+                  </div>
+                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null,n(l.planned_lf)?`${n(l.planned_lf).toLocaleString()} LF`:null].filter(Boolean).join(' | ')||'—'}</div>
+                  {l.material_calc_date&&<div style={{fontSize:10,color:'#065F46',fontWeight:600,marginTop:2}}>📋 Material order calculated {new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}
+                </div>
+                <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:16,cursor:'pointer'}}>✕</button>
               </div>
-              <div style={{flex:1}}><b style={{fontSize:14}}>{l.job_name}</b> <span style={{color:'#9E9B96',fontSize:11}}>#{l.job_number}</span></div>
-              <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:16,cursor:'pointer'}}>✕</button>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:8}}>
-              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Style</label><input value={l.style} onChange={e=>updatePlanLine(idx,'style',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
-              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Color</label><input value={l.color} onChange={e=>updatePlanLine(idx,'color',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
-              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Height</label><input value={l.height} onChange={e=>updatePlanLine(idx,'height',e.target.value)} placeholder="8'" style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Planned Pieces</label><input type="number" value={l.planned_pieces} onChange={e=>updatePlanLine(idx,'planned_pieces',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:14,fontWeight:700}}/></div>
-              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Planned LF</label><input type="number" value={l.planned_lf} onChange={e=>updatePlanLine(idx,'planned_lf',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:14,fontWeight:700}}/></div>
-            </div>
-            <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Notes</label><input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
-          </div>)}
+              {/* Material breakdown grid */}
+              {(gt.posts+gt.panels+gt.rails+gt.caps)>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,padding:'8px 0',borderTop:'1px solid #F4F4F2',borderBottom:'1px solid #F4F4F2'}}>
+                {/* POSTS */}
+                <div style={{padding:'0 10px',borderRight:'1px solid #F4F4F2'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>POSTS {phLabel&&<span style={{color:'#6B6056',fontWeight:600}}>({phLabel})</span>}</div>
+                  {row('Line',m.posts_line)}{row('Corner',m.posts_corner)}{row('Stop',m.posts_stop)}
+                  {gt.posts>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.posts.toLocaleString()}</span></div>}
+                </div>
+                {/* PANELS */}
+                <div style={{padding:'0 10px'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>PANELS</div>
+                  {row('Regular',m.panels_regular)}{row('Half',m.panels_half)}{row('Bottom',m.panels_bottom)}{row('Top',m.panels_top)}
+                  {gt.panels>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.panels.toLocaleString()}</span></div>}
+                </div>
+                {/* RAILS */}
+                <div style={{padding:'0 10px',borderRight:'1px solid #F4F4F2',borderTop:'1px solid #F4F4F2',paddingTop:6,marginTop:4}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>RAILS</div>
+                  {row('Cap',m.rails_regular)}{row('Top',m.rails_top)}{row('Bottom',m.rails_bottom)}{row('Center',m.rails_center)}
+                  {gt.rails>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.rails.toLocaleString()}</span></div>}
+                </div>
+                {/* POST CAPS */}
+                <div style={{padding:'0 10px',borderTop:'1px solid #F4F4F2',paddingTop:6,marginTop:4}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>POST CAPS</div>
+                  {row('Line',m.caps_line)}{row('Stop',m.caps_stop)}
+                  {gt.caps>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.caps.toLocaleString()}</span></div>}
+                </div>
+              </div>:<div style={{padding:'8px 0',fontSize:11,color:'#B45309',borderTop:'1px solid #F4F4F2',marginTop:6}}>⚠ No material order on file — calculate materials first for full breakdown</div>}
+              {/* Plan adjustments */}
+              <div style={{marginTop:10,padding:'10px 12px',background:'#F5F3FF',borderRadius:6}}>
+                <div style={{fontSize:10,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:6}}>Plan Adjustments (for today's run)</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
+                  <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Panels today</label><input type="number" value={l.planned_panels} onChange={e=>updatePlanLine(idx,'planned_panels',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:13,fontWeight:700,background:gt.panels>0&&n(l.planned_panels)<gt.panels?'#FEF3C7':'#FFF'}}/></div>
+                  <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Posts today</label><input type="number" value={l.planned_posts} onChange={e=>updatePlanLine(idx,'planned_posts',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:13,fontWeight:700,background:gt.posts>0&&n(l.planned_posts)<gt.posts?'#FEF3C7':'#FFF'}}/></div>
+                  <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Rails today</label><input type="number" value={l.planned_rails} onChange={e=>updatePlanLine(idx,'planned_rails',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:13,fontWeight:700,background:gt.rails>0&&n(l.planned_rails)<gt.rails?'#FEF3C7':'#FFF'}}/></div>
+                  <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Caps today</label><input type="number" value={l.planned_caps} onChange={e=>updatePlanLine(idx,'planned_caps',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:13,fontWeight:700,background:gt.caps>0&&n(l.planned_caps)<gt.caps?'#FEF3C7':'#FFF'}}/></div>
+                  <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>LF today</label><input type="number" value={l.planned_lf} onChange={e=>updatePlanLine(idx,'planned_lf',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:13,fontWeight:700}}/></div>
+                </div>
+                {partial&&<div style={{marginTop:8}}>
+                  <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:700,marginBottom:2}}>⚡ Reason for partial run</label>
+                  <input value={l.partial_run_reason} onChange={e=>updatePlanLine(idx,'partial_run_reason',e.target.value)} placeholder="Why less than full order today?" style={{...inputS,padding:'5px 8px',fontSize:12}}/>
+                </div>}
+              </div>
+              <div style={{marginTop:8}}><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Notes</label><input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
+            </div>;
+          })}
           {planLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12}}>No jobs planned yet. Add jobs above to build the plan.</div>}
         </div>
         {/* Summary */}
