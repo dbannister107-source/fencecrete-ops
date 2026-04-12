@@ -1295,9 +1295,9 @@ function StartDateBadge({date,status}){
 }
 const STAGE_THRESHOLDS={contract_review:[30,60],production_queue:[21,45],in_production:[30,60],inventory_ready:[14,30],active_install:[30,60],fence_complete:[7,14],fully_complete:[7,14]};
 const STAGE_DATE_KEY={inventory_ready:'inventory_ready_date',active_install:'active_install_date',fence_complete:'fence_complete_date',fully_complete:'fully_complete_date',in_production:'production_start_date'};
-function ProdCard({j,move,locked,billSub,onViewBill,onQuickView}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{n(j.total_lf).toLocaleString()} LF</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div>{billSub?<button onClick={e=>{e.stopPropagation();onViewBill(billSub);}} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:10,fontWeight:700,color:'#10B981'}}>📋 Bill Sheet ✓</button>:<span style={{fontSize:10,fontWeight:600,color:'#EF4444'}}>📋 No Bill Sheet</span>}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
+function ProdCard({j,move,locked,billSub,onViewBill,onQuickView,onPrintOrder}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{n(j.total_lf).toLocaleString()} LF</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{billSub?<button onClick={e=>{e.stopPropagation();onViewBill(billSub);}} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:10,fontWeight:700,color:'#10B981'}}>Bill ✓</button>:<span style={{fontSize:10,fontWeight:600,color:'#EF4444'}}>No Bill</span>}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
-function ProductionPage({jobs,setJobs,onRefresh}){
+function ProductionPage({jobs,setJobs,onRefresh,onNav}){
   const[quickViewJob,setQuickViewJob]=useState(null);
   // Bill sheet submissions for current month
   const prodBillingMonth=curBillingMonth();
@@ -1338,7 +1338,7 @@ function ProductionPage({jobs,setJobs,onRefresh}){
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>{[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}</div>
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
     <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8B2020':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8B2020':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#6D28D9',bg:'#EDE9FE'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#6B6056',marginLeft:4}}>{filtered.length} jobs</span>}</div>
-    <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+n(j.total_lf),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob}/>)}</div></div>;})}</div>
+    <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+n(j.total_lf),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null}/>)}</div></div>;})}</div>
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
@@ -1624,7 +1624,7 @@ function MaterialCalcPage({jobs,preJob}){
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Linear Feet</span><div style={{fontWeight:700,fontSize:14}}>{n(lf).toLocaleString()}</div></div>
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Sections</span><div style={{fontWeight:700,fontSize:14}}>{result.sections}</div></div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          {selJob&&<button onClick={async()=>{try{await sbPatch('jobs',selJob.id,{material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString()});setToast('Materials saved to '+selJob.job_name);}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save to Job</button>}
+          {selJob&&<button onClick={async()=>{try{const matBody={material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString()};await sbPatch('jobs',selJob.id,matBody);setToast('Materials saved to '+selJob.job_name);fetch(`${SB}/functions/v1/production-order-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{...selJob,...matBody}})}).catch(e=>console.error('Production order notification failed:',e));}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save to Job</button>}
           <button onClick={()=>setShowPrint(true)} style={{...btnP,padding:'6px 16px',fontSize:12}}>Print Production Order</button>
         </div>
       </div>
@@ -1762,6 +1762,189 @@ function MaterialCalcPage({jobs,preJob}){
       </div>
     </div>;})()}
     <style>{`@media print{body *{visibility:hidden}#production-order,#production-order *{visibility:visible}#production-order{position:absolute;left:0;top:0;width:100%;padding:24px 32px!important}.no-print{display:none!important}}`}</style>
+  </div>);
+}
+
+/* ═══ PRODUCTION ORDERS PAGE ═══ */
+function ProductionOrdersPage({jobs,setJobs,onNav}){
+  const[filterTab,setFilterTab]=useState('all');
+  const[expanded,setExpanded]=useState(null);
+  const[toast,setToast]=useState(null);
+  const[printJob,setPrintJob]=useState(null);
+
+  const ordersJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&j.status!=='closed').sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
+
+  const needsProd=ordersJobs.filter(j=>['contract_review','production_queue'].includes(j.status));
+  const inProd=ordersJobs.filter(j=>j.status==='in_production');
+  const complete=ordersJobs.filter(j=>['inventory_ready','active_install','fence_complete','fully_complete'].includes(j.status));
+  const today=new Date();const weekOut=new Date();weekOut.setDate(weekOut.getDate()+7);
+  const thisWeek=ordersJobs.filter(j=>j.est_start_date&&new Date(j.est_start_date+'T12:00:00')<=weekOut&&new Date(j.est_start_date+'T12:00:00')>=today);
+
+  const filtered=useMemo(()=>{
+    if(filterTab==='needs')return needsProd;
+    if(filterTab==='in_prod')return inProd;
+    if(filterTab==='complete')return complete;
+    return ordersJobs;
+  },[filterTab,ordersJobs]);
+
+  const updateStatus=async(job,newStatus)=>{const u={status:newStatus};const t=new Date().toISOString().split('T')[0];if(newStatus==='inventory_ready')u.inventory_ready_date=t;if(newStatus==='active_install')u.active_install_date=t;if(newStatus==='fence_complete')u.fence_complete_date=t;if(newStatus==='fully_complete')u.fully_complete_date=t;if(newStatus==='closed')u.closed_date=t;try{const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(u)});if(!res.ok)throw new Error(await res.text());setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));setToast(`${job.job_name} → ${SL[newStatus]}`);}catch(e){setToast({message:e.message||'Update failed',isError:true});}};
+
+  return(<div>
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
+    <div style={{marginBottom:8}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:2}}>Production Orders</h1>
+      <div style={{fontSize:12,color:'#9E9B96'}}>Jobs with saved material calculations</div>
+    </div>
+    {/* Summary cards */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16,marginTop:12}}>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{ordersJobs.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Total Orders</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #7C3AED'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#7C3AED'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Needs Production</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{inProd.length}</div><div style={{fontSize:11,color:'#6B6056'}}>In Production</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{thisWeek.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Starting This Week</div></div>
+    </div>
+    {/* Filter tabs */}
+    <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+      {[['all','All',ordersJobs.length],['needs','Needs Production',needsProd.length],['in_prod','In Production',inProd.length],['complete','Complete',complete.length]].map(([k,l,c])=><button key={k} onClick={()=>setFilterTab(k)} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?'2px solid #8B2020':'1px solid #E5E3E0',background:filterTab===k?'#FDF4F4':'#FFF',color:filterTab===k?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
+    </div>
+    {/* Job list */}
+    {filtered.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No production orders in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {filtered.map(j=>{const isExp=expanded===j.id;const lp=n(j.material_posts_line),cp=n(j.material_posts_corner),sp=n(j.material_posts_stop);const totalPosts=lp+cp+sp;const rp=n(j.material_panels_regular),hp=n(j.material_panels_half);const totalPanels=rp+hp;const cr=n(j.material_rails_regular),tr2=n(j.material_rails_top),br=n(j.material_rails_bottom),mr=n(j.material_rails_center);const totalRails=cr+tr2+br+mr;const lc=n(j.material_caps_line),sc=n(j.material_caps_stop);const totalCaps=lc+sc;const calcDate=j.material_calc_date?new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+        return<div key={j.id} style={{...card,padding:0,overflow:'hidden'}}>
+          <div onClick={()=>setExpanded(isExp?null:j.id)} style={{padding:'12px 16px',cursor:'pointer'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,flexWrap:'wrap'}}>
+              <span style={{fontSize:16}}>📋</span>
+              <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>{j.job_number||'—'}</span>
+              <span style={{fontWeight:700,fontSize:14,flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
+              <span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
+              <select value={j.status} onClick={e=>e.stopPropagation()} onChange={e=>updateStatus(j,e.target.value)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status],cursor:'pointer'}}>{STS.filter(s=>s!=='closed').map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
+              <span style={{fontSize:12,color:'#9E9B96'}}>{isExp?'▲':'▼'}</span>
+            </div>
+            <div style={{display:'flex',gap:14,fontSize:11,color:'#6B6056',marginLeft:26,flexWrap:'wrap'}}>
+              {j.est_start_date&&<span>Est Start: <b style={{color:'#1A1A1A'}}>{fD(j.est_start_date)}</b></span>}
+              {n(j.total_lf)>0&&<span>{n(j.total_lf).toLocaleString()} LF</span>}
+              {j.style&&<span>{j.style}</span>}
+              {j.color&&<span>{j.color}</span>}
+              {j.height_precast&&<span>{j.height_precast}ft</span>}
+              <span>Calculated: <b style={{color:'#1A1A1A'}}>{calcDate}</b></span>
+            </div>
+            {!isExp&&<div style={{marginLeft:26,marginTop:8,fontSize:12,color:'#6B6056',display:'flex',gap:16,flexWrap:'wrap'}}>
+              <span><b style={{color:'#8B2020'}}>POSTS:</b> {lp}/{cp}/{sp}{j.material_post_height?` — ${j.material_post_height}ft`:''}</span>
+              <span><b style={{color:'#1D4ED8'}}>PANELS:</b> {totalPanels}</span>
+              <span><b style={{color:'#B45309'}}>RAILS:</b> {totalRails}</span>
+              <span><b style={{color:'#065F46'}}>CAPS:</b> {lc}/{sc}</span>
+            </div>}
+          </div>
+          {isExp&&<div style={{padding:'14px 16px',borderTop:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12,marginBottom:12}}>
+              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #8B202020'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:6}}>Posts{j.material_post_height?` (${j.material_post_height}ft)`:''}</div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lp||'—'}</b></div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Corner: <b style={{color:'#1A1A1A',fontSize:16}}>{cp||'—'}</b></div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sp||'—'}</b></div>
+                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPosts}</div>
+              </div>
+              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #1D4ED820'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#1D4ED8',textTransform:'uppercase',marginBottom:6}}>Panels</div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{rp||'—'}</b></div>
+                {hp>0&&<div style={{fontSize:12,color:'#6B6056'}}>Half: <b style={{color:'#1A1A1A',fontSize:16}}>{hp}</b></div>}
+                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPanels}</div>
+              </div>
+              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #B4530920'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>Rails</div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{cr||'—'}</b></div>
+                {tr2>0&&<div style={{fontSize:12,color:'#6B6056'}}>Top: <b style={{color:'#1A1A1A',fontSize:16}}>{tr2}</b></div>}
+                {br>0&&<div style={{fontSize:12,color:'#6B6056'}}>Bottom: <b style={{color:'#1A1A1A',fontSize:16}}>{br}</b></div>}
+                {mr>0&&<div style={{fontSize:12,color:'#6B6056'}}>Center: <b style={{color:'#1A1A1A',fontSize:16}}>{mr}</b></div>}
+                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalRails}</div>
+              </div>
+              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #065F4620'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#065F46',textTransform:'uppercase',marginBottom:6}}>Post Caps</div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lc||'—'}</b></div>
+                <div style={{fontSize:12,color:'#6B6056'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sc||'—'}</b></div>
+                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalCaps}</div>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setPrintJob(j)} style={{...btnP,padding:'7px 16px',fontSize:12}}>🖨 Print Production Order</button>
+              {onNav&&<button onClick={()=>onNav('material_calc')} style={{...btnS,padding:'7px 16px',fontSize:12}}>Recalculate</button>}
+            </div>
+          </div>}
+        </div>;
+      })}
+    </div>}
+    {/* Print Preview Modal */}
+    {printJob&&(()=>{const j=printJob;const ph=n(j.material_post_height)||8;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=n(j.material_posts_line),cp=n(j.material_posts_corner),sp=n(j.material_posts_stop);const rp=n(j.material_panels_regular),hp=n(j.material_panels_half);const cr=n(j.material_rails_regular),tr2=n(j.material_rails_top),br=n(j.material_rails_bottom),mr=n(j.material_rails_center);const lc=n(j.material_caps_line),sc=n(j.material_caps_stop);const mktShort=MS[j.market]||j.market||'';
+    return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setPrintJob(null)}>
+      <div style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
+        <div className="no-print" style={{display:'flex',gap:8,justifyContent:'flex-end',padding:'12px 20px',borderBottom:'1px solid #E5E3E0'}}>
+          <button onClick={()=>window.print()} style={{...btnP,padding:'8px 20px',fontSize:13}}>Print</button>
+          <button onClick={()=>setPrintJob(null)} style={{...btnS,padding:'8px 20px',fontSize:13}}>Close</button>
+        </div>
+        <div id="production-order" style={{padding:'32px 40px',fontFamily:'Arial,sans-serif',color:'#000'}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:24}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:'#666',textTransform:'uppercase'}}>Material Custom</div>
+              <div style={{fontSize:22,fontWeight:900,letterSpacing:1}}>PRODUCTION ORDER</div>
+              <div style={{marginTop:12,fontSize:16,fontWeight:700}}>Style: {j.style||'—'}</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#333'}}>Color: {j.color||'—'}</div>
+            </div>
+            <div style={{border:'2px solid #000',borderRadius:4,padding:'10px 16px',width:180}}>
+              <div style={{fontSize:11,fontWeight:700,textAlign:'center',marginBottom:8}}>Batch</div>
+              {[1,2,3].map(i=><div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{borderBottom:'1px solid #ccc',flex:1}}>&nbsp;</span></div>)}
+              <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{fontWeight:700}}>{j.color||''}</span></div>
+            </div>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+              <thead><tr><td style={{width:30}}></td><td style={{width:140,fontWeight:600}}></td><td style={{width:100,textAlign:'center',fontWeight:700}}>12'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>10'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>8'</td></tr></thead>
+              <tbody>{[['Line Post',lp],['Corner Post',cp],['Stop Post',sp]].map(([label,qty])=><tr key={label} style={{borderBottom:'1px solid #eee'}}>
+                <td style={{padding:'6px 0',fontSize:16}}>{qty>0?'✓':''}</td>
+                <td style={{padding:'6px 0',fontWeight:500}}>{label}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='12'?d(qty):'—'}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='10'?d(qty):'—'}</td>
+                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='8'?d(qty):'—'}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>PANELS</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+              <tbody>
+                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,width:80,textAlign:'center'}}>{d(rp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Regular Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / <b>Reg</b></td></tr>
+                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(hp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Half Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / Reg</td></tr>
+                <tr><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>—</td><td style={{padding:'6px 0'}}>Each / Pallets</td><td style={{padding:'6px 0',fontWeight:600}}>Diamond/Bottle Panels</td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>RAILS</div>
+            <div style={{display:'flex',gap:32,fontSize:14}}>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(cr)}</span> <span style={{color:'#666'}}>Regular</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(tr2)}</span> <span style={{color:'#666'}}>Top</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(br)}</span> <span style={{color:'#666'}}>Bottom</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(mr)}</span> <span style={{color:'#666'}}>Center</span></div>
+            </div>
+          </div>
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POST CAPS</div>
+            <div style={{display:'flex',gap:40,fontSize:14}}>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(lc)}</span> <span style={{color:'#666'}}>Line Caps</span></div>
+              <div><span style={{fontSize:28,fontWeight:900}}>{d(sc)}</span> <span style={{color:'#666'}}>Stop Caps</span></div>
+            </div>
+          </div>
+          <div style={{border:'2px solid #000',borderRadius:4,padding:'12px 16px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:13}}>
+              <div>Jobcode: <b>{j.job_number||'___________'}</b></div>
+              <div style={{textAlign:'right',color:'#1D4ED8',fontWeight:700,fontSize:14}}>{n(j.total_lf)}x{j.height_precast||'—'}</div>
+              <div>City: <b>{mktShort||'___________'}</b></div>
+              <div></div>
+            </div>
+            <div style={{marginTop:8,fontSize:14}}>PROJECT: <b style={{fontSize:16}}>{j.job_name||'______________________________'}</b></div>
+          </div>
+        </div>
+      </div>
+    </div>;})()}
   </div>);
 }
 
@@ -2661,7 +2844,7 @@ function Topbar({jobs,live,onSearch}){
 const NAV_GROUPS=[
   {label:'',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
-  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'material_calc',label:'Material Calc',icon:'🧮'},{key:'schedule',label:'Schedule',icon:'📅'}]},
+  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'material_calc',label:'Material Calc',icon:'🧮'},{key:'production_orders',label:'Production Orders',icon:'📋'},{key:'schedule',label:'Schedule',icon:'📅'}]},
   {label:'FIELD',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'daily_report',label:'Production Report',icon:'🏭'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'}]},
 ];
@@ -2698,10 +2881,11 @@ export default function App(){
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
-            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs}/>}
+            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
+            {page==='production_orders'&&<ProductionOrdersPage jobs={jobs} setJobs={setJobs} onNav={setPage}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
