@@ -1869,12 +1869,15 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
   const[moldInventory,setMoldInventory]=useState([]);
   const[todayPlanLines,setTodayPlanLines]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
+  const[todayActuals,setTodayActuals]=useState([]);
+  const[todayHasPlan,setTodayHasPlan]=useState(false);
+  const todayStr=new Date().toISOString().split('T')[0];
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds&order=style_name').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
-    const today=new Date().toISOString().split('T')[0];
-    (async()=>{try{const plans=await sbGet('production_plans',`plan_date=eq.${today}&select=id&limit=1`);if(plans&&plans[0]){const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&select=style,planned_panels`);setTodayPlanLines(lines||[]);}}catch(e){console.error('Today plan load failed',e);}})();
-  },[]);
+    (async()=>{try{const plans=await sbGet('production_plans',`plan_date=eq.${todayStr}&select=id&limit=1`);if(plans&&plans[0]){setTodayHasPlan(true);const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);setTodayPlanLines(lines||[]);const acts=await sbGet('production_actuals',`production_date=eq.${todayStr}&select=*`);setTodayActuals(acts||[]);}else{setTodayHasPlan(false);setTodayPlanLines([]);setTodayActuals([]);}}catch(e){console.error('Today plan load failed',e);}})();
+  },[todayStr]);
+  const todayByLine=useMemo(()=>{const m={};todayActuals.forEach(a=>{const k=a.plan_line_id;if(!k)return;if(!m[k])m[k]={1:0,2:0};const p=n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top);m[k][n(a.shift)||1]=(m[k][n(a.shift)||1]||0)+p;});return m;},[todayActuals]);
   const cavitiesFor=useCallback((style)=>{if(!style)return 12;return style.toLowerCase().includes('vertical wood')?1:12;},[]);
   const MOLD_UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
   const SCRAP_RATE=n(plantCfg.scrap_rate_warm)||0.03;
@@ -1895,7 +1898,8 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
 
   const ordersJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&j.status!=='closed').sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
 
-  const needsProd=ordersJobs.filter(j=>['contract_review','production_queue'].includes(j.status));
+  // Queue only includes jobs in production_queue with a saved material order — auto-clears as status advances
+  const needsProd=ordersJobs.filter(j=>j.status==='production_queue'&&j.material_calc_date);
   const inProd=ordersJobs.filter(j=>j.status==='in_production');
   const complete=ordersJobs.filter(j=>['inventory_ready','active_install','fence_complete','fully_complete'].includes(j.status));
   const today=new Date();const weekOut=new Date();weekOut.setDate(weekOut.getDate()+7);
@@ -1971,6 +1975,36 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
         </tbody>
       </table>
     </div>}
+    {/* Today's Plan section */}
+    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #8B2020'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+        <span>📅 Today's Plan — {new Date(todayStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
+        {!todayHasPlan&&<button onClick={()=>onNav&&onNav('daily')} style={{...btnS,padding:'4px 10px',fontSize:11}}>View Tomorrow's Plan →</button>}
+      </div>
+      {!todayHasPlan?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>No plan for today. Plans are created by Max for the next day (default).</div>:
+      todayPlanLines.length===0?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>Plan exists but has no lines.</div>:
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {todayPlanLines.map(l=>{const planned=n(l.planned_panels);const s1=n(todayByLine[l.id]?.[1]);const s2=n(todayByLine[l.id]?.[2]);const total=s1+s2;const pct=planned>0?Math.round(total/planned*100):0;const col=pct>=100?'#065F46':pct>=70?'#B45309':'#1D4ED8';return<div key={l.id} style={{padding:10,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:6}}>
+            <div style={{fontWeight:700,fontSize:13}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{l.job_number}</span></div>
+            <div style={{fontSize:11,color:col,fontWeight:700}}>{total.toLocaleString()} / {planned.toLocaleString()} panels ({pct}%)</div>
+          </div>
+          <div style={{fontSize:10,color:'#6B6056',marginBottom:6}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')}</div>
+          {/* Shift bars */}
+          <div style={{display:'flex',gap:12,marginBottom:4}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:'#6B6056',marginBottom:2}}>Shift 1: <b>{s1.toLocaleString()}</b></div>
+              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s1/planned*100:0,100)}%`,height:'100%',background:'#1D4ED8'}}/></div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:'#6B6056',marginBottom:2}}>Shift 2: <b>{s2.toLocaleString()}</b></div>
+              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s2/planned*100:0,100)}%`,height:'100%',background:'#7C3AED'}}/></div>
+            </div>
+          </div>
+          <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:4}}><div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/></div>
+        </div>;})}
+      </div>}
+    </div>
     {/* Filter tabs */}
     <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
       {[['all','All',ordersJobs.length],['needs','Needs Production',needsProd.length],['in_prod','In Production',inProd.length],['complete','Complete',complete.length]].map(([k,l,c])=><button key={k} onClick={()=>setFilterTab(k)} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?'2px solid #8B2020':'1px solid #E5E3E0',background:filterTab===k?'#FDF4F4':'#FFF',color:filterTab===k?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
@@ -2242,6 +2276,10 @@ function DailyReportPage({jobs}){
   const[submittingActuals,setSubmittingActuals]=useState(false);
   const[showUnplanPicker,setShowUnplanPicker]=useState(false);
   const[unplanSearch,setUnplanSearch]=useState('');
+  const[shiftSubs,setShiftSubs]=useState({1:null,2:null});  // {1: {count, submittedAt, lines[]}, 2: ...}
+  const[editingShift,setEditingShift]=useState(false);
+  // ─── CARRY FORWARD STATE ───
+  const[carryForward,setCarryForward]=useState([]);
 
   // ─── HISTORY TAB STATE ───
   const[histRange,setHistRange]=useState('week');
@@ -2408,7 +2446,64 @@ function DailyReportPage({jobs}){
   },[jobs,buildActualsLine]);
   useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan]);
 
+  // ─── LOAD SHIFT SUBMISSIONS for actuals date ───
+  const loadShiftSubs=useCallback(async(date)=>{
+    try{
+      const acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=submitted_at.asc`);
+      const s1=[],s2=[];(acts||[]).forEach(a=>{if(n(a.shift)===1)s1.push(a);else if(n(a.shift)===2)s2.push(a);});
+      setShiftSubs({
+        1:s1.length>0?{count:s1.length,submittedAt:s1[s1.length-1].submitted_at,lines:s1,totalPanels:s1.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
+        2:s2.length>0?{count:s2.length,submittedAt:s2[s2.length-1].submitted_at,lines:s2,totalPanels:s2.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
+      });
+    }catch(e){console.error('Load shift subs failed:',e);}
+  },[]);
+  useEffect(()=>{if(tab==='actuals'){loadShiftSubs(actualsDate);setEditingShift(false);}},[tab,actualsDate,loadShiftSubs]);
+
+  // Shift 1 actuals keyed by plan_line_id (for shift 2 "already produced" column)
+  const shift1ByLine=useMemo(()=>{
+    const map={};if(!shiftSubs[1])return map;
+    shiftSubs[1].lines.forEach(a=>{
+      const k=a.plan_line_id||a.job_id;if(!map[k]){map[k]={};PIECE_TYPES.forEach(pt=>{map[k][pt.key]=0;});map[k].lf=0;}
+      PIECE_TYPES.forEach(pt=>{map[k][pt.key]+=n(a['actual_'+pt.key]);});
+      map[k].lf+=n(a.actual_lf);
+    });
+    return map;
+  },[shiftSubs,PIECE_TYPES]);
+
+  // ─── LOAD CARRY FORWARD from previous day's plan ───
+  const loadCarryForward=useCallback(async(forDate)=>{
+    try{
+      const pd=new Date(forDate+'T12:00:00');pd.setDate(pd.getDate()-1);
+      const prevISO=pd.toISOString().split('T')[0];
+      const plans=await sbGet('production_plans',`plan_date=eq.${prevISO}&select=id&limit=1`);
+      if(!plans||!plans[0]){setCarryForward([]);return;}
+      const yLines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}`);
+      const yActs=await sbGet('production_actuals',`production_date=eq.${prevISO}&select=plan_line_id,job_id,actual_panels_regular,actual_panels_half,actual_panels_bottom,actual_panels_top`);
+      const actualsByLine={};(yActs||[]).forEach(a=>{const k=a.plan_line_id;actualsByLine[k]=(actualsByLine[k]||0)+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top);});
+      const incomplete=(yLines||[]).map(l=>{
+        const plannedPanels=n(l.planned_panels);
+        const actualPanels=actualsByLine[l.id]||0;
+        return{
+          plan_line_id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,
+          plannedPanels,actualPanels,remaining:Math.max(plannedPanels-actualPanels,0),
+          prevDate:prevISO,
+        };
+      }).filter(cf=>cf.plannedPanels>0&&cf.remaining>0);
+      setCarryForward(incomplete);
+    }catch(e){console.error('Carry forward load failed:',e);setCarryForward([]);}
+  },[]);
+  useEffect(()=>{if(tab==='plan')loadCarryForward(planDate);},[tab,planDate,loadCarryForward]);
+
   // ─── PLAN BUILDER HELPERS ───
+  const addJobFromCarryForward=(cf)=>{
+    const j=jobs.find(x=>x.id===cf.job_id);if(!j)return;
+    if(planLines.some(l=>l.job_id===cf.job_id))return;
+    const line=buildPlanLine(j,null);
+    // Override planned_panels to REMAINING (not full material order)
+    line.planned_panels=String(cf.remaining);
+    setPlanLines(prev=>[...prev,line]);
+    setCarryForward(prev=>prev.filter(c=>c.job_id!==cf.job_id));
+  };
   const addJobToPlan=(j)=>{
     setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);
     setShowAddPicker(false);setJobSearch('');
@@ -2504,9 +2599,11 @@ function DailyReportPage({jobs}){
       }catch(e){console.error('Auto-advance inventory check failed:',e);}
       setToast({msg:`Shift ${shift} report submitted for ${actualsDate}`,ok:true});
       fetch(`${SB}/functions/v1/production-actuals-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actuals_date:actualsDate,shift,logged_by:loggedBy,crew_size:crewSize,lines:toSubmit,totals:actualsTotals,shift_notes:actualsNotes})}).catch(e=>console.error('Actuals notification failed:',e));
-      // Clear for next shift
+      // Clear for next shift + refresh shift submissions
       setActualsLines(prev=>prev.map(l=>{const blankAct={};PIECE_TYPES.forEach(pt=>{blankAct[pt.key]='';});return{...l,actual:blankAct,actual_lf:'',adjustment_reason:'',notes:''};}));
       setActualsNotes('');
+      setEditingShift(false);
+      loadShiftSubs(actualsDate);
     }catch(e){console.error('Submit actuals error:',e);setToast({msg:'Submit failed: '+e.message,ok:false});}
     setSubmittingActuals(false);
   };
@@ -2597,6 +2694,20 @@ function DailyReportPage({jobs}){
               </div>
             </>;})()}
           </div>
+        </div>
+      </div>}
+      {/* Carry Forward from yesterday */}
+      {carryForward.length>0&&<div style={{...card,marginBottom:12,borderLeft:'4px solid #B45309',padding:14}}>
+        <div style={{fontSize:12,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>↩ Carry Forward From Yesterday</div>
+        <div style={{fontSize:11,color:'#6B6056',marginBottom:10}}>These jobs weren't completed yesterday</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:8}}>
+          {carryForward.map(cf=>{const alreadyAdded=planLines.some(l=>l.job_id===cf.job_id);return<div key={cf.job_id} style={{background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:10}}>
+            <div style={{fontSize:12,fontWeight:700}}>{cf.job_name}</div>
+            <div style={{fontSize:10,color:'#9E9B96',marginBottom:4}}>#{cf.job_number} · {cf.style||'—'}</div>
+            <div style={{fontSize:11,color:'#6B6056',marginBottom:4}}>{cf.actualPanels.toLocaleString()} of {cf.plannedPanels.toLocaleString()} done yesterday</div>
+            <div style={{fontSize:13,fontWeight:800,color:'#B45309',marginBottom:6}}>{cf.remaining.toLocaleString()} panels remaining</div>
+            <button onClick={()=>addJobFromCarryForward(cf)} disabled={alreadyAdded} style={{width:'100%',padding:'5px 10px',background:alreadyAdded?'#E5E3E0':'#B45309',border:'none',borderRadius:6,color:alreadyAdded?'#9E9B96':'#FFF',fontSize:11,fontWeight:700,cursor:alreadyAdded?'default':'pointer'}}>{alreadyAdded?'✓ Added to plan':'+ Add to Today\'s Plan'}</button>
+          </div>;})}
         </div>
       </div>}
       {/* Smart Production Queue panel */}
@@ -2712,7 +2823,11 @@ function DailyReportPage({jobs}){
               <div style={{marginTop:8}}><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Notes</label><input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
             </div>;
           })}
-          {planLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12}}>No jobs planned yet. Add jobs above to build the plan.</div>}
+          {planLines.length===0&&<div style={{textAlign:'center',padding:32,color:'#9E9B96',fontSize:13}}>
+            <div style={{fontSize:24,marginBottom:6}}>📋</div>
+            <div style={{fontWeight:700,color:'#6B6056',marginBottom:4}}>No plan yet for {new Date(planDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+            <div style={{fontSize:11}}>Add jobs from the Production Queue above or use "+ Add Job Manually" to start building the plan.</div>
+          </div>}
         </div>
         {/* Summary */}
         {planLines.length>0&&<div style={{marginTop:12,padding:10,background:'#F5F3FF',borderRadius:8,display:'flex',gap:20,fontSize:12,fontWeight:600,color:'#7C3AED',flexWrap:'wrap'}}>
@@ -2748,7 +2863,23 @@ function DailyReportPage({jobs}){
           <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={loggedBy} onChange={e=>setLoggedBy(e.target.value)} style={inputS}/></div>
           <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={crewSize} onChange={e=>setCrewSize(e.target.value)} placeholder="0" style={inputS}/></div>
         </div>
+        {/* Shift status / handoff banners */}
+        {shiftSubs[1]&&shiftSubs[2]&&<div style={{padding:'10px 14px',background:'#DCFCE7',border:'1px solid #15803D',borderRadius:8,marginBottom:12,fontSize:12}}>
+          <div style={{fontWeight:800,color:'#15803D',marginBottom:4}}>✓ Both shifts submitted for {actualsDate}</div>
+          <div style={{color:'#065F46'}}>Shift 1: <b>{shiftSubs[1].totalPanels.toLocaleString()}</b> panels + Shift 2: <b>{shiftSubs[2].totalPanels.toLocaleString()}</b> panels = <b>{(shiftSubs[1].totalPanels+shiftSubs[2].totalPanels).toLocaleString()}</b> total today</div>
+        </div>}
+        {shiftSubs[shift]&&!editingShift&&<div style={{padding:'12px 16px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:8,marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{fontWeight:800,color:'#B45309',fontSize:13}}>Shift {shift} already submitted {shiftSubs[shift].submittedAt?'at '+new Date(shiftSubs[shift].submittedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</div>
+            <div style={{fontSize:11,color:'#78350F',marginTop:2}}>{shiftSubs[shift].totalPanels.toLocaleString()} panels logged across {shiftSubs[shift].count} lines</div>
+          </div>
+          <button onClick={()=>{if(window.confirm(`Edit Shift ${shift} actuals? This will add new entries — previous entries remain in history.`))setEditingShift(true);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Shift {shift} →</button>
+        </div>}
+        {shift===2&&shiftSubs[1]&&<div style={{padding:'10px 14px',background:'#EFF6FF',border:'1px solid #1D4ED8',borderRadius:8,marginBottom:12,fontSize:12,color:'#1D4ED8'}}>
+          <b>↪ Shift handoff:</b> Shift 1 produced {shiftSubs[1].totalPanels.toLocaleString()} panels. Enter only what Shift 2 produced below — the "Already Produced" column shows Shift 1's contribution.
+        </div>}
         {/* Actuals cards — full piece breakdown per job */}
+        {(!shiftSubs[shift]||editingShift)&&<>
         <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:12}}>
           {actualsLines.map((l,idx)=>{
             const plannedTot=linePlannedTotal(l);const actualTot=lineActualTotal(l);
@@ -2767,25 +2898,29 @@ function DailyReportPage({jobs}){
                 {l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#9E9B96',fontSize:11,cursor:'pointer'}}>Remove</button>}
               </div>
               {/* Column headers */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'}}>
-                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase'}}>Planned (from production order)</div>
-                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase'}}>Actual (Luis enters)</div>
-              </div>
+              {(()=>{const s1=shift===2?shift1ByLine[l.plan_line_id]:null;const threeCol=!!s1;return<div style={{display:'grid',gridTemplateColumns:threeCol?'1fr 1fr 1fr':'1fr 1fr',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'}}>
+                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase'}}>Planned</div>
+                {threeCol&&<div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#1D4ED8',textTransform:'uppercase'}}>Shift 1 (Already Produced)</div>}
+                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase'}}>Shift {shift} (Luis enters)</div>
+              </div>;})()}
               {/* Piece groups */}
               {groups.map(g=>{
                 const pts=PIECE_TYPES.filter(pt=>pt.group===g);
                 const visible=pts.filter(pt=>n(l.planned[pt.key])>0);
                 if(visible.length===0)return null;
+                const s1=shift===2?shift1ByLine[l.plan_line_id]:null;
+                const threeCol=!!s1;
                 return<div key={g} style={{padding:'8px 16px',borderBottom:'1px solid #F4F4F2'}}>
                   <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:6}}>{g}</div>
-                  {visible.map(pt=><div key={pt.key} style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,alignItems:'center',padding:'4px 0'}}>
+                  {visible.map(pt=>{const s1val=s1?n(s1[pt.key]):0;const remaining=Math.max(n(l.planned[pt.key])-s1val,0);return<div key={pt.key} style={{display:'grid',gridTemplateColumns:threeCol?'1fr 1fr 1fr':'1fr 1fr',gap:8,alignItems:'center',padding:'4px 0'}}>
                     <div style={{fontSize:12,color:'#6B6056'}}>{pt.label}: <b style={{color:'#1A1A1A',fontSize:13}}>{n(l.planned[pt.key])}</b></div>
+                    {threeCol&&<div style={{fontSize:12,color:'#1D4ED8'}}><b style={{fontSize:13}}>{s1val}</b> <span style={{fontSize:10,color:'#6B6056'}}>(rem {remaining})</span></div>}
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <span style={{color:'#9E9B96'}}>→</span>
                       <input type="number" value={l.actual[pt.key]} onChange={e=>updateActualsPiece(idx,pt.key,e.target.value)} placeholder="0" style={{width:70,padding:'5px 8px',fontSize:13,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/>
                       {n(l.actual[pt.key])>0&&pieceIcon(l.planned[pt.key],l.actual[pt.key])}
                     </div>
-                  </div>)}
+                  </div>;})}
                   {g==='POSTS'&&n(l.post_height)>0&&<div style={{fontSize:11,color:'#9E9B96',marginTop:4}}>Post Height: <b style={{color:'#6B6056'}}>{l.post_height}ft</b></div>}
                 </div>;
               })}
@@ -2840,6 +2975,7 @@ function DailyReportPage({jobs}){
         </div>}
         <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Shift Notes</label><textarea value={actualsNotes} onChange={e=>setActualsNotes(e.target.value)} rows={2} placeholder="General notes for this shift..." style={{...inputS,resize:'vertical'}}/></div>
         <button onClick={submitActuals} disabled={submittingActuals||actualsLines.length===0} style={{...btnP,width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:submittingActuals||actualsLines.length===0?0.5:1}}>{submittingActuals?'Submitting...':`Submit Shift ${shift} Report`}</button>
+        </>}
       </div>
     </div>}
 
