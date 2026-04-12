@@ -2717,17 +2717,22 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
   // Update one piece's planned value on a specific plan line
   const updatePlanPiece=(idx,pieceKey,val)=>setPlanLines(prev=>prev.map((l,i)=>i===idx?{...l,planned:{...l.planned,[pieceKey]:val}}:l));
 
-  // Queue jobs — production_queue with material_calc_date
-  const queueJobs=useMemo(()=>{
-    const base=jobs.filter(j=>j.material_calc_date&&j.status==='production_queue'&&!planLines.some(l=>l.job_id===j.id));
+  // Queue jobs — ALL production_queue jobs, split into "ready to plan" (has material calc) and "needs calc" (missing)
+  const queueGroups=useMemo(()=>{
+    const all=jobs.filter(j=>j.status==='production_queue'&&!planLines.some(l=>l.job_id===j.id));
     const weekOut=new Date();weekOut.setDate(weekOut.getDate()+7);const today=new Date();today.setHours(0,0,0,0);
-    const filtered=base.filter(j=>{
+    const applyFilter=(list)=>list.filter(j=>{
       if(queueFilter==='urgent'){if(!j.est_start_date)return false;const d=new Date(j.est_start_date+'T12:00:00');return d<=weekOut;}
       if(queueFilter==='this_week'){if(!j.est_start_date)return false;const d=new Date(j.est_start_date+'T12:00:00');return d>=today&&d<=weekOut;}
       return true;
     });
-    return filtered.sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
+    const sortByEst=(a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999');
+    const ready=applyFilter(all.filter(j=>j.material_calc_date)).sort(sortByEst);
+    const needsCalc=applyFilter(all.filter(j=>!j.material_calc_date)).sort(sortByEst);
+    return{ready,needsCalc,total:ready.length+needsCalc.length};
   },[jobs,planLines,queueFilter]);
+  // Legacy alias so the rest of the page keeps working while we refactor the render
+  const queueJobs=queueGroups.ready;
 
   // Plan totals
   // Sum all piece totals for a single line (today's run total)
@@ -2847,34 +2852,71 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
       {/* LEFT — QUEUE */}
       <div style={{...card,padding:14,borderTop:'3px solid #7C3AED'}}>
         <div style={{marginBottom:8}}>
-          <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#7C3AED',textTransform:'uppercase'}}>Production Queue</div>
-            <span style={{background:'#EDE9FE',color:'#7C3AED',padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700}}>{queueJobs.length}</span>
+            <span style={{background:'#EDE9FE',color:'#7C3AED',padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700}}>{queueGroups.total}</span>
           </div>
-          <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>Jobs ready to produce — sorted by est. start date</div>
+          <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>All jobs in production queue — sorted by est. start date</div>
         </div>
         <div style={{display:'flex',gap:4,marginBottom:10}}>
           {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #7C3AED':'1px solid #E5E3E0',background:queueFilter===k?'#EDE9FE':'#FFF',color:queueFilter===k?'#7C3AED':'#6B6056',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
         </div>
-        <div style={{maxHeight:720,overflow:'auto',display:'flex',flexDirection:'column',gap:8}}>
-          {queueJobs.length===0?<div style={{textAlign:'center',padding:20,color:'#9E9B96',fontSize:12}}>No jobs in queue</div>:queueJobs.map(j=>{
-            const gt=groupTotals(j);const pcs=gt.posts+gt.panels+gt.rails+gt.caps;
-            const molds=moldsForStyle(j.style);const ppd=panelsPerDayForStyle(j.style);const days=ppd>0&&gt.panels>0?Math.ceil(gt.panels/ppd):0;
-            const est=j.est_start_date?new Date(j.est_start_date+'T12:00:00'):null;
-            const overdue=est&&est<todayIsoStart;const urgent=est&&!overdue&&est<=sevenOut;
-            const borderCol=overdue?'#DC2626':urgent?'#B45309':'#E5E3E0';
-            return<div key={j.id} style={{border:'1px solid #E5E3E0',borderLeft:`3px solid ${borderCol}`,borderRadius:8,padding:10,background:'#FAFAF8'}}>
-              <div style={{fontSize:13,fontWeight:700}}>{j.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{j.job_number}</span></div>
-              <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
-              <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{gt.panels.toLocaleString()}</b> panels</span>} {n(j.total_lf)>0&&<span style={{marginLeft:8}}><b style={{color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}</b> LF</span>}</div>
-              <div style={{fontSize:10,color:overdue?'#DC2626':urgent?'#B45309':'#9E9B96',fontWeight:600,marginTop:2}}>
-                {j.est_start_date?`Est start: ${fD(j.est_start_date)}`:'No est start'} {days>0&&<span>· ~{days} prod days</span>}
-                {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
-                {urgent&&!overdue&&<span style={{marginLeft:6}}>🟡 URGENT</span>}
-              </div>
-              <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:'#7C3AED',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
-            </div>;
-          })}
+        <div style={{maxHeight:720,overflow:'auto',display:'flex',flexDirection:'column',gap:12}}>
+          {queueGroups.total===0&&<div style={{textAlign:'center',padding:20,color:'#9E9B96',fontSize:12}}>No jobs in queue</div>}
+
+          {/* GROUP 1 — Ready to Plan */}
+          {queueGroups.ready.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:800,color:'#15803D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+              <span>✓ Ready to Plan</span>
+              <span style={{background:'#DCFCE7',color:'#15803D',padding:'1px 6px',borderRadius:8,fontSize:10,fontWeight:700}}>{queueGroups.ready.length}</span>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {queueGroups.ready.map(j=>{
+                const gt=groupTotals(j);const pcs=gt.posts+gt.panels+gt.rails+gt.caps;
+                const molds=moldsForStyle(j.style);const ppd=panelsPerDayForStyle(j.style);const days=ppd>0&&gt.panels>0?Math.ceil(gt.panels/ppd):0;
+                const est=j.est_start_date?new Date(j.est_start_date+'T12:00:00'):null;
+                const overdue=est&&est<todayIsoStart;const urgent=est&&!overdue&&est<=sevenOut;
+                return<div key={j.id} style={{border:'1px solid #E5E3E0',borderLeft:`3px solid ${overdue?'#DC2626':urgent?'#B45309':'#15803D'}`,borderRadius:8,padding:10,background:'#FAFAF8'}}>
+                  <div style={{fontSize:13,fontWeight:700}}>{j.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{j.job_number}</span></div>
+                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
+                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{gt.panels.toLocaleString()}</b> panels</span>} {n(j.total_lf)>0&&<span style={{marginLeft:8}}><b style={{color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}</b> LF</span>}</div>
+                  <div style={{fontSize:10,color:overdue?'#DC2626':urgent?'#B45309':'#9E9B96',fontWeight:600,marginTop:2}}>
+                    {j.est_start_date?`Est start: ${fD(j.est_start_date)}`:'No est start'} {days>0&&<span>· ~{days} prod days</span>}
+                    {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
+                    {urgent&&!overdue&&<span style={{marginLeft:6}}>🟡 URGENT</span>}
+                  </div>
+                  <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:'#7C3AED',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
+                </div>;
+              })}
+            </div>
+          </div>}
+
+          {/* GROUP 2 — Needs Production Order */}
+          {queueGroups.needsCalc.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:800,color:'#B45309',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+              <span>⚠ Needs Production Order</span>
+              <span style={{background:'#FEF3C7',color:'#B45309',padding:'1px 6px',borderRadius:8,fontSize:10,fontWeight:700}}>{queueGroups.needsCalc.length}</span>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {queueGroups.needsCalc.map(j=>{
+                const est=j.est_start_date?new Date(j.est_start_date+'T12:00:00'):null;
+                const overdue=est&&est<todayIsoStart;const urgent=est&&!overdue&&est<=sevenOut;
+                const hasStyleColor=!!(j.style&&j.color);
+                return<div key={j.id} style={{border:'1px solid #FCD34D',borderLeft:`3px solid ${overdue?'#DC2626':'#B45309'}`,borderRadius:8,padding:10,background:'#FFFBEB'}}>
+                  <div style={{fontSize:13,fontWeight:700}}>{j.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{j.job_number}</span></div>
+                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[j.style||<span key="s" style={{color:'#DC2626'}}>no style</span>,j.color||<span key="c" style={{color:'#DC2626'}}>no color</span>,j.height_precast?j.height_precast+'ft':null].filter(Boolean).reduce((acc,el,i)=>i===0?[el]:[...acc,' | ',el],[])}</div>
+                  {n(j.total_lf)>0&&<div style={{fontSize:11,color:'#6B6056',marginTop:2}}><b style={{color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}</b> LF</div>}
+                  <div style={{fontSize:10,color:overdue?'#DC2626':urgent?'#B45309':'#9E9B96',fontWeight:600,marginTop:2}}>
+                    {j.est_start_date?`Est start: ${fD(j.est_start_date)}`:'No est start'}
+                    {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
+                    {urgent&&!overdue&&<span style={{marginLeft:6}}>🟡 URGENT</span>}
+                  </div>
+                  <div style={{fontSize:10,color:'#B45309',fontWeight:600,marginTop:4,fontStyle:'italic'}}>⚠ No production order — run Material Calculator first</div>
+                  <button onClick={()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}if(onNav)onNav('material_calc');}} disabled={!hasStyleColor} title={!hasStyleColor?'Set style and color on the project first':'Open Material Calculator with this job pre-loaded'} style={{width:'100%',marginTop:6,padding:'5px 10px',background:hasStyleColor?'#B45309':'#E5E3E0',border:'none',borderRadius:6,color:hasStyleColor?'#FFF':'#9E9B96',fontSize:11,fontWeight:700,cursor:hasStyleColor?'pointer':'not-allowed'}}>{hasStyleColor?'Calculate Materials →':'Missing style/color'}</button>
+                </div>;
+              })}
+            </div>
+          </div>}
         </div>
       </div>
 
