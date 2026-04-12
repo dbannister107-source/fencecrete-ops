@@ -629,7 +629,7 @@ function Dashboard({jobs,onNav}){
       </div>
     </div>
     {/* Capacity KPIs — mold + batch plant */}
-    {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>90?'#DC2626':moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>90?'#DC2626':cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+    {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
       <div style={{...card,padding:14,borderLeft:`4px solid ${moldCol}`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
           <div style={{fontSize:11,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
@@ -2484,8 +2484,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
   const cyPct=dailyCyCap>0?Math.round(planTotals.cy/dailyCyCap*100):0;
   const totalPlannedPanels=planTotals.panels;
   const moldPct=totalPanelCapacity>0?Math.round(totalPlannedPanels/totalPanelCapacity*100):0;
-  const cyCol=cyPct>90?'#DC2626':cyPct>=70?'#B45309':'#15803D';
-  const moldCol=moldPct>90?'#DC2626':moldPct>=70?'#B45309':'#15803D';
+  // Over-capacity is informational (amber) not alarming (red) — bar visually caps at 100%, number shown as-is
+  const cyCol=cyPct>=70?'#B45309':'#15803D';
+  const moldCol=moldPct>=70?'#B45309':'#15803D';
+  // Detect plan lines where Today's Run still matches the full material order (likely unadjusted)
+  const hasUnadjustedLines=useMemo(()=>planLines.some(l=>{const full=l.material_totals?.panels||0;const today=n(l.planned_panels);return full>0&&today>=full;}),[planLines]);
 
   const todayIsoStart=new Date();todayIsoStart.setHours(0,0,0,0);
   const sevenOut=new Date();sevenOut.setDate(sevenOut.getDate()+7);
@@ -2500,20 +2503,21 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
     {/* CAPACITY BAR */}
     <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #7C3AED'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🏭 Plant Capacity — {fmtDateLabel(planDate)}</div>
+      {hasUnadjustedLines&&<div style={{fontSize:11,color:'#1D4ED8',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,padding:'6px 10px',marginBottom:10}}>ℹ️ One or more plan lines still show the full material order. Adjust "Today's Run" quantities on each plan card to see accurate daily capacity — these numbers reflect today's run, not the entire job.</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
         <div>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
             <span style={{fontWeight:700}}>🏭 Batch Plant</span>
-            <span style={{fontWeight:700,color:cyCol}}>{planTotals.cy.toFixed(1)} / {dailyCyCap} CYD {cyPct}%</span>
+            <span style={{fontWeight:700,color:cyCol}}>{planTotals.cy.toFixed(1)} / {dailyCyCap} CYD · {cyPct}%</span>
           </div>
-          <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:cyCol}}/></div>
+          <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:cyCol,transition:'width 0.3s'}}/></div>
         </div>
         <div>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
             <span style={{fontWeight:700}}>🔧 Mold Utilization</span>
-            <span style={{fontWeight:700,color:moldCol}}>{totalPlannedPanels.toLocaleString()} / {totalPanelCapacity.toLocaleString()} panels {moldPct}%</span>
+            <span style={{fontWeight:700,color:moldCol}}>{totalPlannedPanels.toLocaleString()} / {totalPanelCapacity.toLocaleString()} panels · {moldPct}%</span>
           </div>
-          <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${Math.min(moldPct,100)}%`,height:'100%',background:moldCol}}/></div>
+          <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${Math.min(moldPct,100)}%`,height:'100%',background:moldCol,transition:'width 0.3s'}}/></div>
         </div>
       </div>
     </div>
@@ -3170,17 +3174,18 @@ function DailyReportPage({jobs}){
           {/* MOLD UTILIZATION */}
           <div style={{paddingRight:16,borderRight:'1px solid #E5E3E0'}}>
             <div style={{fontSize:10,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase'}}>Mold Utilization</div>
-            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Primary constraint — panels / (molds × panels × 88%)</div>
-            {moldUsageByStyle.length===0?<div style={{fontSize:11,color:'#9E9B96'}}>No panels planned</div>:moldUsageByStyle.map(u=>{const pct=u.capacity>0?Math.round(u.panels/u.capacity*100):0;const over=u.panels>u.capacity&&u.capacity>0;const col=over?'#DC2626':pct>90?'#DC2626':pct>=70?'#B45309':'#15803D';const emoji=over||pct>90?'🔴':pct>=70?'🟡':'🟢';const usedLabel=[...u.actualStyles].join(' + ')||u.style;return<div key={u.style} style={{marginBottom:8}}>
+            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Primary constraint — today's run / (molds × panels × 88%)</div>
+            {(()=>{const hasUnadjusted=planLines.some(l=>{const full=l.material_totals?.panels||0;const today=n(l.planned_panels);return full>0&&today>=full;});return hasUnadjusted?<div style={{fontSize:10,color:'#1D4ED8',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,padding:'6px 8px',marginBottom:8}}>ℹ️ Set "Today's Run" quantities on each plan line to see accurate daily capacity</div>:null;})()}
+            {moldUsageByStyle.length===0?<div style={{fontSize:11,color:'#9E9B96'}}>No panels planned</div>:moldUsageByStyle.map(u=>{const pct=u.capacity>0?Math.round(u.panels/u.capacity*100):0;const over=u.panels>u.capacity&&u.capacity>0;const col=over?'#B45309':pct>90?'#B45309':pct>=70?'#B45309':'#15803D';const emoji=over||pct>90?'🟡':pct>=70?'🟡':'🟢';const usedLabel=[...u.actualStyles].join(' + ')||u.style;const daysNeeded=u.capacity>0?Math.ceil(u.panels/u.capacity):0;return<div key={u.style} style={{marginBottom:8}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
                 <span style={{fontWeight:600,color:'#1A1A1A'}}>{u.label}</span>
-                <span style={{fontWeight:700,color:col}}>{u.panels}/{u.capacity} panels {emoji}</span>
+                <span style={{fontWeight:700,color:col}}>{u.panels.toLocaleString()}/{u.capacity.toLocaleString()} panels · {pct}% {emoji}</span>
               </div>
               <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}>
                 <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/>
               </div>
               <div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>{u.molds} molds × {u.panelsPerMold} panels × 88% = {u.capacity} panels/day · planned from: {usedLabel}</div>
-              {over&&<div style={{fontSize:10,color:'#DC2626',fontWeight:700,marginTop:3}}>⚠️ {u.label}: {u.panels} panels planned but only {u.capacity} panels/day capacity. Reduce by {u.panels-u.capacity} or split across {Math.ceil(u.panels/u.capacity)} days.</div>}
+              {over&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginTop:3,background:'#EFF6FF',padding:'4px 6px',borderRadius:4}}>📅 At {u.capacity} panels/day for {u.label}, this job needs ~{daysNeeded.toLocaleString()} production days total. Adjust "Today's Run" on the plan line to show only what you'll actually run this shift.</div>}
             </div>;})}
             <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700}}>
               <span>Total:</span>
@@ -3191,7 +3196,7 @@ function DailyReportPage({jobs}){
           <div>
             <div style={{fontSize:10,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase'}}>Batch Plant (CYD)</div>
             <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Secondary — panels × cy × 1.4 / 52.8 CYD</div>
-            {(()=>{const cyPct=dailyCyCap>0?Math.round(totalCyPlanned/dailyCyCap*100):0;const col=cyPct>90?'#DC2626':cyPct>=70?'#B45309':'#15803D';return<>
+            {(()=>{const cyPct=dailyCyCap>0?Math.round(totalCyPlanned/dailyCyCap*100):0;const col=cyPct>=70?'#B45309':'#15803D';return<>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
                 <span style={{fontWeight:600}}>Total CYD today</span>
                 <span style={{fontWeight:700,color:col}}>{totalCyPlanned.toFixed(1)}/{dailyCyCap} CYD</span>
