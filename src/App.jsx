@@ -4042,9 +4042,26 @@ const IMPORT_COL_MAP={
   'Net Contract Value':'contract_value','Change Orders':'change_orders','Adj Contract Value':'adj_contract_value','Sales Tax':'sales_tax','YTD Amt Invoiced':'ytd_invoiced',
   'Contract Date':'contract_date','Est. Start Date':'est_start_date','Notes':'notes','Documents Needed':'documents_needed','Billing Method':'billing_method','Billing Date':'billing_date'
 };
-const IMPORT_STATUS_MAP={'Active Project':'active_install','Booked-Not Started':'inventory_ready','Pending':'contract_review','Contract Review':'contract_review','Closed':'closed','Pass':'closed','Cancelled':'closed'};
+// Status mapping for NEW jobs only — existing jobs keep their current app status (kanban owns it)
+const IMPORT_STATUS_MAP={
+  // Active jobs
+  'Active Project':'active_install','Active':'active_install',
+  // Booked but not started
+  'Booked-Not Started':'inventory_ready','Booked Not Started':'inventory_ready','Booked':'inventory_ready',
+  // In contract review / pending
+  'Pending':'contract_review','Contract Review':'contract_review','New':'contract_review',
+  // In production
+  'In Production':'in_production','Production':'in_production',
+  // Closed / complete
+  'Closed':'closed','Complete':'closed','Pass':'closed','Cancelled':'closed','Lost':'closed',
+};
+const IMPORT_STATUS_DEFAULT='contract_review';
+const mapImportStatus=(raw)=>{if(raw==null||raw==='')return{mapped:IMPORT_STATUS_DEFAULT,matched:false,raw:''};const s=String(raw).trim();return{mapped:IMPORT_STATUS_MAP[s]||IMPORT_STATUS_DEFAULT,matched:!!IMPORT_STATUS_MAP[s],raw:s};};
 const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth'};
+// Fields protected from UPDATES on existing jobs (kanban/AR/material calc own these — never overwritten from Excel)
 const PROTECTED_FIELDS=new Set(['ytd_invoiced','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
+// Fields stripped on INSERT of new jobs (derived/computed fields only — status IS set on insert so it's NOT here)
+const INSERT_PROTECTED_FIELDS=new Set(['ytd_invoiced','pct_billed','left_to_bill','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
 const IMPORT_NUMERIC_FIELDS=new Set(['lf_precast','height_precast','contract_rate_precast','lf_single_wythe','height_single_wythe','contract_rate_single_wythe','lf_wrought_iron','number_of_gates','gate_height','gate_rate','contract_value','change_orders','adj_contract_value','sales_tax','ytd_invoiced']);
 const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date']);
 
@@ -4104,11 +4121,16 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     const newJobs=[];const updates=[];const warnings=[];
     rawRows.forEach((row,idx)=>{
       const mapped={};
+      let statusRaw='';let statusMatched=true;
       Object.entries(mapping).forEach(([excelCol,dbCol])=>{
         if(!dbCol)return;
         let v=row[excelCol];
         if(v==null||v==='')return;
-        if(dbCol==='status'){v=IMPORT_STATUS_MAP[String(v).trim()]||null;}
+        if(dbCol==='status'){
+          const r=mapImportStatus(v);
+          statusRaw=r.raw;statusMatched=r.matched;
+          v=r.mapped;
+        }
         else if(dbCol==='market'){v=IMPORT_MARKET_MAP[String(v).trim()]||String(v).trim();}
         else if(IMPORT_NUMERIC_FIELDS.has(dbCol)){v=parseNum(v);}
         else if(IMPORT_DATE_FIELDS.has(dbCol)){v=parseDate(v);}
@@ -4118,9 +4140,11 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       const jobNumber=mapped.job_number;
       if(!jobNumber){warnings.push({row:idx+7,issue:'Missing job_number',data:JSON.stringify(row).substring(0,80)});return;}
       if(!mapped.job_name){warnings.push({row:idx+7,issue:'Missing job_name',data:jobNumber});return;}
+      // Default status for new jobs when no status column or empty
+      if(!mapped.status)mapped.status=IMPORT_STATUS_DEFAULT;
       const existing=jobsByNumber[jobNumber]||jobsByName[mapped.job_name.toLowerCase()];
       if(existing){
-        // Find changed fields (excluding protected)
+        // Existing jobs: never change status. Find other changed fields (excluding protected)
         const changes=[];
         Object.entries(mapped).forEach(([k,v])=>{
           if(PROTECTED_FIELDS.has(k))return;
@@ -4128,9 +4152,13 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
           if(cur==null&&v==null)return;
           if(String(cur||'')!==String(v||'')){changes.push({field:k,cur,newVal:v});}
         });
-        if(changes.length>0)updates.push({rowNum:idx+7,existing,mapped,changes});
+        if(changes.length>0)updates.push({rowNum:idx+7,existing,mapped,changes,statusRaw,keepingStatus:existing.status});
       }else{
-        newJobs.push({rowNum:idx+7,mapped});
+        // New jobs: status IS set — warn if Excel status was unrecognized
+        if(statusRaw&&!statusMatched){
+          warnings.push({row:idx+7,issue:`Status "${statusRaw}" not recognized → will default to Contract Review`,data:`${jobNumber} · ${mapped.job_name}`});
+        }
+        newJobs.push({rowNum:idx+7,mapped,statusRaw,statusMatched});
       }
     });
     setPreview({newJobs,updates,warnings});
@@ -4146,7 +4174,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     setProgress({done:0,total});
     // Insert new jobs (batch of 50)
     for(let i=0;i<preview.newJobs.length;i+=50){
-      const batch=preview.newJobs.slice(i,i+50).map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};PROTECTED_FIELDS.forEach(f=>{delete body[f];});return body;});
+      const batch=preview.newJobs.slice(i,i+50).map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};INSERT_PROTECTED_FIELDS.forEach(f=>{delete body[f];});if(!body.status)body.status=IMPORT_STATUS_DEFAULT;return body;});
       try{
         const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(batch)});
         if(res.ok){inserted+=batch.length;}else{const txt=await res.text();errors.push({type:'insert_batch',error:txt.substring(0,200)});}
@@ -4186,7 +4214,14 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Import Projects</h1>
-    <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Safely import the Master Project Tracker from Excel</div>
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:12}}>Safely import the Master Project Tracker from Excel</div>
+    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1D4ED8'}}>
+      <div style={{fontWeight:800,marginBottom:4}}>ℹ️ Status mapping for new jobs:</div>
+      <div style={{color:'#1E40AF',lineHeight:1.6}}>
+        <b>Active Project</b> → Active Install · <b>Booked-Not Started</b> → Inventory Ready · <b>Pending / Contract Review / New</b> → Contract Review · <b>In Production</b> → In Production · <b>Closed / Complete / Pass / Cancelled / Lost</b> → Closed
+      </div>
+      <div style={{marginTop:6,fontSize:11,color:'#1E40AF',fontStyle:'italic'}}>Note: Status is only set on import for <b>new</b> jobs. Existing jobs keep their current app status — the kanban owns it.</div>
+    </div>
     {stepIndicator}
     {error&&<div style={{background:'#FEE2E2',border:'1px solid #EF4444',borderRadius:8,padding:12,marginBottom:16,color:'#991B1B',fontSize:13,fontWeight:600}}>{error}</div>}
 
@@ -4233,7 +4268,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B7280'}}>{PROTECTED_FIELDS.size}</div><div style={{fontSize:11,color:'#6B6056'}}>🔒 Protected fields</div></div>
       </div>
       <div style={{fontSize:11,color:'#6B6056',background:'#F9F8F6',padding:'8px 12px',borderRadius:8,marginBottom:12}}>
-        <b>Protected fields (never overwritten):</b> ytd_invoiced, pct_billed, left_to_bill, status, material_calc_*, stage dates. The kanban, AR review, and material calculator own these fields.
+        <b>Protected on update (never overwritten for existing jobs):</b> status, ytd_invoiced, pct_billed, left_to_bill, material_calc_*, stage dates. The kanban, AR review, and material calculator own these fields. <b>Status IS set on insert</b> for new jobs (mapped from Excel above).
       </div>
       {/* Tabs */}
       <div style={{display:'flex',gap:4,marginBottom:12,borderBottom:'2px solid #E5E3E0'}}>
@@ -4242,11 +4277,16 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       {/* Tab content */}
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 460px)'}}>
         {previewTab==='new'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Customer','Market','PM','Contract Value','Style'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Status (Excel → App)','Market','PM','Contract Value','Style'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{preview.newJobs.map(nj=><tr key={nj.rowNum} style={{borderBottom:'1px solid #F4F4F2',background:'#F0FDF4'}}>
             <td style={{padding:'8px 10px',fontWeight:600}}>{nj.mapped.job_number||'—'}</td>
             <td style={{padding:'8px 10px'}}>{nj.mapped.job_name||'—'}</td>
-            <td style={{padding:'8px 10px',color:'#6B6056'}}>{nj.mapped.customer_name||'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11}}>
+              {nj.statusRaw?<span style={{color:'#6B6056'}}>{nj.statusRaw}</span>:<span style={{color:'#9E9B96',fontStyle:'italic'}}>(blank)</span>}
+              <span style={{color:'#9E9B96'}}> → </span>
+              <span style={{color:nj.statusMatched===false?'#B45309':'#065F46',fontWeight:700}}>{SL[nj.mapped.status]||nj.mapped.status}</span>
+              {nj.statusMatched===false&&nj.statusRaw&&<span style={{marginLeft:4,fontSize:10,color:'#B45309'}}>(default)</span>}
+            </td>
             <td style={{padding:'8px 10px'}}>{nj.mapped.market||'—'}</td>
             <td style={{padding:'8px 10px'}}>{nj.mapped.pm||'—'}</td>
             <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{nj.mapped.contract_value?$(nj.mapped.contract_value):'—'}</td>
@@ -4259,7 +4299,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
           <tbody>{preview.updates.flatMap(u=>u.changes.map((c,ci)=><tr key={u.rowNum+'-'+ci} style={{borderBottom:'1px solid #F4F4F2',opacity:skipUpdates.has(u.rowNum)?0.4:1}}>
             {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top'}}><input type="checkbox" checked={!skipUpdates.has(u.rowNum)} onChange={()=>toggleSkipUpdate(u.rowNum)} style={{width:16,height:16,accentColor:'#8B2020'}}/></td>}
             {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',fontWeight:600,verticalAlign:'top'}}>{u.existing.job_number}</td>}
-            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.existing.job_name}</td>}
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top',maxWidth:220}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.existing.job_name}</div><div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>Keeping: <b style={{color:'#6B6056'}}>{SL[u.existing.status]||u.existing.status||'—'}</b></div></td>}
             <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.field}</td>
             <td style={{padding:'8px 10px',fontSize:11,color:'#991B1B',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.cur!=null?String(c.cur):'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11,fontWeight:700,background:'#FEF3C7',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{String(c.newVal)}</td>
