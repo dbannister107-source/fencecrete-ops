@@ -1290,7 +1290,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav}){
   const[prodActuals,setProdActuals]=useState([]);
   const[prodPlanLines,setProdPlanLines]=useState([]);
   const todayIsoProd=new Date().toISOString().split('T')[0];
-  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(d||[])).catch(e=>console.error('Fetch actuals failed:',e));},[]);
+  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(Array.isArray(d)?d:[])).catch(e=>console.error('Fetch actuals failed:',e));},[]);
   useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id,planned_pieces&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[]);
   const plannedByJob=useMemo(()=>{const m={};prodPlanLines.forEach(l=>{if(!m[l.job_id])m[l.job_id]=0;m[l.job_id]=Math.max(m[l.job_id],n(l.planned_pieces));});return m;},[prodPlanLines]);
   const actualsByJob=useMemo(()=>{const m={};prodActuals.forEach(a=>{if(!m[a.job_id])m[a.job_id]={actual:0,planned:0,loggedToday:false};m[a.job_id].actual+=n(a.actual_pieces);if(a.production_date===todayIsoProd)m[a.job_id].loggedToday=true;});Object.entries(m).forEach(([jobId,x])=>{x.planned=plannedByJob[jobId]||0;x.pct=x.planned>0?Math.round(x.actual/x.planned*100):0;});return m;},[prodActuals,plannedByJob,todayIsoProd]);
