@@ -1497,9 +1497,47 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav}){
 }
 
 /* ═══ REPORTS PAGE ═══ */
-function ReportsPage({jobs}){
+function ReportsPage({jobs,onNav,onOpenJob}){
   const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
+  // Production data (molds + plant config + per-style CY) — fetched once for the production reports
+  const[moldInventory,setMoldInventory]=useState([]);
+  const[plantCfg,setPlantCfg]=useState({});
+  const[calcStyles,setCalcStyles]=useState([]);
+  const[reportsLoadedAt,setReportsLoadedAt]=useState(null);
+  useEffect(()=>{
+    Promise.all([
+      sbGet('mold_inventory','select=style_name,total_molds'),
+      sbGet('plant_config','select=key,value'),
+      sbGet('material_calc_styles','select=style_name,cy_per_panel'),
+    ]).then(([molds,cfg,cs])=>{
+      setMoldInventory(molds||[]);
+      const m={};(cfg||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);
+      setCalcStyles(cs||[]);
+      setReportsLoadedAt(new Date());
+    }).catch(e=>console.error('Reports data load failed:',e));
+  },[]);
+  // Only physical mold sets — drop child styles that share a parent's molds
+  const physicalMolds=useMemo(()=>moldInventory.filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name)),[moldInventory]);
+  const moldsByCanonical=useMemo(()=>{const m={};physicalMolds.forEach(r=>{m[r.style_name]=n(r.total_molds);});return m;},[physicalMolds]);
+  const cyByStyle=useMemo(()=>{const m={};calcStyles.forEach(s=>{m[s.style_name]=n(s.cy_per_panel);});return m;},[calcStyles]);
+  const UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
+  const SCRAP=n(plantCfg.scrap_rate_warm)||0.03;
+  const ACC=n(plantCfg.accessory_overhead_multiplier)||1.4;
+  const dailyCapacityFor=(style)=>{const c=canonicalStyle(style);const molds=moldsByCanonical[c]||0;if(!molds)return 0;return Math.floor(molds*12*UTIL_RATE);};
+  const sumJobMaterial=(j,group)=>{const keys=PLAN_PIECE_TYPES.filter(pt=>pt.group===group).map(pt=>'material_'+pt.key);return keys.reduce((s,k)=>s+n(j[k]),0);};
+
   const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
+  const productionReports=[
+    {id:'prod_backlog',title:'Production Backlog by Style',desc:'LF, panels, CYD, and estimated production days for all queued and in-production jobs grouped by style.'},
+    {id:'prod_missing',title:'Jobs Not Ready for Production',desc:'Active jobs missing material calculation, style, or color — blocking them from being added to a production plan.'},
+    {id:'prod_outlook',title:'Production Schedule Outlook',desc:'Projected ready date per job vs install start date — flags jobs at risk of missing their install window.'},
+  ];
+  const comingSoonReports=[
+    {id:'daily_pva',title:'Daily Planned vs Actual',desc:'Shift-by-shift plan achievement over time'},
+    {id:'mold_util',title:'Mold Utilization Over Time',desc:'Historical capacity usage trend'},
+    {id:'prod_eff',title:'Production Efficiency by Shift',desc:'Shift 1 vs Shift 2 throughput comparison'},
+    {id:'lf_prod_vs_install',title:'LF Produced vs LF Installed',desc:'Gap between plant output and field consumption'},
+  ];
   const[prodSec,setProdSec]=useState({pc:false,sw:false,wi:false});
   const renderReport=()=>{
     if(activeRpt==='ltb_rep'){const reps={};active.forEach(j=>{const r=j.sales_rep||'Unassigned';if(!reps[r])reps[r]={rep:r,count:0,tc:0,ytd:0,ltb:0};reps[r].count++;reps[r].tc+=n(j.adj_contract_value||j.contract_value);reps[r].ytd+=n(j.ytd_invoiced);reps[r].ltb+=n(j.left_to_bill);});const data=Object.values(reps).sort((a,b)=>b.ltb-a.ltb);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Rep','Projects','Contract','YTD','LTB','%'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{data.map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:8,fontWeight:600}}>{r.rep}</td><td style={{padding:8}}>{r.count}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700}}>{$(r.tc)}</td><td style={{padding:8}}>{$(r.ytd)}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(r.ltb)}</td><td style={{padding:8}}>{r.tc>0?Math.round(r.ytd/r.tc*100):0}%</td></tr>)}</tbody></table><div style={{marginTop:16}}><ResponsiveContainer width="100%" height={200}><BarChart data={data} barSize={30}><XAxis dataKey="rep" tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="ltb" fill="#8B2020" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div></div>;}
@@ -1598,9 +1636,182 @@ function ReportsPage({jobs}){
       </div>;
     }
     if(activeRpt==='outstanding'){const oc=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).sort((a,b)=>{const ad=a.complete_date?Math.round((Date.now()-new Date(a.complete_date).getTime())/86400000):0;const bd=b.complete_date?Math.round((Date.now()-new Date(b.complete_date).getTime())/86400000):0;return bd-ad;});const totalOut=oc.reduce((s,j)=>s+n(j.left_to_bill),0);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Project','Job #','PM','Market','Contract','Left to Bill','Complete Date','Days Since'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{oc.map(j=>{const days=j.complete_date?Math.round((Date.now()-new Date(j.complete_date).getTime())/86400000):0;return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}>{j.job_number||'—'}</td><td style={{padding:'6px 8px'}}>{j.pm||'—'}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>{$(j.left_to_bill)}</td><td style={{padding:'6px 8px'}}>{fD(j.complete_date)}</td><td style={{padding:'6px 8px',fontWeight:700,color:days>90?'#991B1B':days>30?'#B45309':'#6B6056'}}>{days}d</td></tr>;})}</tbody></table>{oc.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No outstanding collections</div>}<div style={{marginTop:12,padding:12,background:'#F9F8F6',borderRadius:8,fontFamily:'Inter',fontWeight:700}}>Total Outstanding: <span style={{color:'#991B1B'}}>{$(totalOut)}</span> across {oc.length} jobs</div></div>;}
+    // ═══ PRODUCTION REPORTS ═══
+    if(activeRpt==='prod_backlog'){
+      const backlogJobs=jobs.filter(j=>['production_queue','in_production'].includes(j.status));
+      const byStyle={};
+      backlogJobs.forEach(j=>{
+        const s=j.style||'(Unknown)';
+        if(!byStyle[s])byStyle[s]={style:s,jobs:0,lf:0,panels:0,cyd:0,capacity:dailyCapacityFor(s)};
+        byStyle[s].jobs++;
+        byStyle[s].lf+=n(j.total_lf);
+        const panelsJob=sumJobMaterial(j,'PANELS');
+        byStyle[s].panels+=panelsJob;
+        byStyle[s].cyd+=panelsJob*n(cyByStyle[j.style])*ACC;
+      });
+      const rows=Object.values(byStyle).map(r=>({...r,days:r.capacity>0&&r.panels>0?Math.ceil(r.panels/r.capacity):null})).sort((a,b)=>b.lf-a.lf);
+      const totJobs=rows.reduce((s,r)=>s+r.jobs,0);
+      const totLf=rows.reduce((s,r)=>s+r.lf,0);
+      const totPanels=rows.reduce((s,r)=>s+r.panels,0);
+      const totCyd=rows.reduce((s,r)=>s+r.cyd,0);
+      const maxLf=Math.max(...rows.map(r=>r.lf),1);
+      return<div>
+        <div style={{fontSize:13,color:'#6B6056',marginBottom:12}}>All jobs in <b style={{color:'#1A1A1A'}}>production_queue</b> or <b style={{color:'#1A1A1A'}}>in_production</b> — grouped by style, with daily mold capacity and estimated production days.</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Style','Jobs','Total LF','Total Panels','Daily Capacity','Est Prod Days','CYD Required'].map(h=><th key={h} style={{textAlign:h==='Style'?'left':'right',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{rows.map(r=><tr key={r.style} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'6px 8px',fontWeight:600}}>{r.style}</td>
+            <td style={{padding:'6px 8px',textAlign:'right'}}>{r.jobs}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.lf.toLocaleString()}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.panels.toLocaleString()}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',color:'#6B6056'}}>{r.capacity>0?`${r.capacity}/day`:'—'}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#7C3AED'}}>{r.days!=null?`~${r.days.toLocaleString()} days`:'—'}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#1D4ED8'}}>{r.cyd>0?r.cyd.toFixed(1)+' CYD':'—'}</td>
+          </tr>)}
+          <tr style={{borderTop:'2px solid #1A1A1A',background:'#F9F8F6'}}>
+            <td style={{padding:'8px',fontWeight:800}}>TOTAL</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totJobs}</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totLf.toLocaleString()}</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totPanels.toLocaleString()}</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#6B6056'}}>—</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#7C3AED'}}>—</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#1D4ED8'}}>{totCyd.toFixed(1)} CYD</td>
+          </tr>
+          </tbody>
+        </table>
+        <div style={{marginTop:20}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>LF by Style</div>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>{rows.map(r=><div key={r.style}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}>
+              <span style={{fontWeight:600}}>{r.style}</span>
+              <span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{r.lf.toLocaleString()} LF</span>
+            </div>
+            <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${r.lf/maxLf*100}%`,height:'100%',background:'#8B2020'}}/></div>
+          </div>)}</div>
+        </div>
+        <div style={{marginTop:16,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,fontSize:12,color:'#6B6056'}}>
+          Total: <b style={{color:'#1A1A1A'}}>{totJobs} jobs</b> · <b style={{color:'#1A1A1A'}}>{totLf.toLocaleString()} LF</b> · <b style={{color:'#1A1A1A'}}>{totPanels.toLocaleString()} panels</b> · <b style={{color:'#1D4ED8'}}>{totCyd.toFixed(1)} CYD required</b> at current mold capacity
+        </div>
+      </div>;
+    }
+    if(activeRpt==='prod_missing'){
+      const activeForProd=jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.status!=='fully_complete'&&j.status!=='fence_complete');
+      const missingCalc=activeForProd.filter(j=>!j.material_calc_date&&j.style&&j.color);
+      const missingStyle=activeForProd.filter(j=>!j.style||!String(j.style).trim());
+      const missingColor=activeForProd.filter(j=>j.style&&String(j.style).trim()&&(!j.color||!String(j.color).trim()));
+      const total=missingCalc.length+missingStyle.length+missingColor.length;
+      const sec=(title,color,bg,rows,cols,emptyMsg)=>rows.length===0?<div style={{padding:10,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>{emptyMsg}</div>:<div style={{marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:800,color,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5}}>{title} ({rows.length})</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead><tr style={{background:bg}}>{[...cols.map(c=>c[0]),'Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{rows.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+            {cols.map(([label,get])=><td key={label} style={{padding:'6px 10px',fontSize:12}}>{get(j)||'—'}</td>)}
+            <td style={{padding:'6px 10px'}}><button onClick={()=>{if(onOpenJob)onOpenJob(j);}} style={{background:'none',border:`1px solid ${color}40`,color,padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer'}}>Edit Job →</button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>;
+      return<div>
+        <div style={{padding:'12px 16px',background:total>0?'#FEF3C7':'#D1FAE5',border:`1px solid ${total>0?'#B45309':'#065F46'}`,borderRadius:8,marginBottom:16,fontSize:13,fontWeight:700,color:total>0?'#B45309':'#065F46'}}>
+          {total>0?`⚠️ ${total} ${total===1?'job needs':'jobs need'} attention before production can start`:'✓ All active jobs are ready for production'}
+        </div>
+        <div style={{fontSize:11,fontWeight:800,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>A) Missing Style ({missingStyle.length})</div>
+        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Can't calculate materials without style confirmed.</div>
+        {sec('',(''),'#FEE2E2',missingStyle,[['Job #',j=>j.job_number],['Job Name',j=>j.job_name],['PM',j=>j.pm],['Market',j=>MS[j.market]||j.market],['LF',j=>n(j.total_lf).toLocaleString()]],'All active jobs have a style assigned')}
+        <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>B) Missing Color ({missingColor.length})</div>
+        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Style confirmed but color not yet chosen.</div>
+        {sec('',(''),'#FEF3C7',missingColor,[['Job #',j=>j.job_number],['Job Name',j=>j.job_name],['Style',j=>j.style],['PM',j=>j.pm],['LF',j=>n(j.total_lf).toLocaleString()]],'All active jobs with a style also have a color')}
+        <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>C) Missing Material Calculation ({missingCalc.length})</div>
+        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Style + color are set but materials haven't been calculated yet — can't be added to a production plan.</div>
+        {missingCalc.length===0?<div style={{padding:10,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>All eligible jobs have material calculations</div>:
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead><tr style={{background:'#EDE9FE'}}>{['Job #','Job Name','PM','Style','Color','LF','Est Start','Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{missingCalc.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'6px 10px'}}>{j.job_number}</td>
+            <td style={{padding:'6px 10px',fontWeight:500}}>{j.job_name}</td>
+            <td style={{padding:'6px 10px'}}>{j.pm||'—'}</td>
+            <td style={{padding:'6px 10px'}}>{j.style||'—'}</td>
+            <td style={{padding:'6px 10px'}}>{j.color||'—'}</td>
+            <td style={{padding:'6px 10px'}}>{n(j.total_lf).toLocaleString()}</td>
+            <td style={{padding:'6px 10px'}}>{j.est_start_date?fD(j.est_start_date):'—'}</td>
+            <td style={{padding:'6px 10px'}}><button onClick={()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}if(onNav)onNav('material_calc');}} style={{background:'none',border:'1px solid #7C3AED40',color:'#7C3AED',padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer'}}>Calculate Materials →</button></td>
+          </tr>)}</tbody>
+        </table>}
+      </div>;
+    }
+    if(activeRpt==='prod_outlook'){
+      const jobsList=jobs.filter(j=>['production_queue','in_production'].includes(j.status)&&j.material_calc_date).sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
+      const today0=new Date();today0.setHours(0,0,0,0);
+      const rows=jobsList.map(j=>{
+        const panels=sumJobMaterial(j,'PANELS');
+        const cap=dailyCapacityFor(j.style);
+        const days=cap>0&&panels>0?Math.ceil(panels/cap):null;
+        let projReady=null;
+        if(days!=null){const d=new Date(today0);d.setDate(d.getDate()+days+1);projReady=d;}
+        const estStart=j.est_start_date?new Date(j.est_start_date+'T12:00:00'):null;
+        let status='no_date',daysLate=0;
+        if(estStart){
+          if(projReady&&projReady<=estStart)status='on_track';
+          else if(projReady){status='at_risk';daysLate=Math.ceil((projReady-estStart)/86400000);}
+        }
+        return{job:j,panels,cap,days,projReady,estStart,status,daysLate};
+      });
+      const onTrack=rows.filter(r=>r.status==='on_track').length;
+      const atRisk=rows.filter(r=>r.status==='at_risk').length;
+      const noDate=rows.filter(r=>r.status==='no_date').length;
+      return<div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{onTrack}</div><div style={{fontSize:11,color:'#6B6056'}}>✓ On track</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #991B1B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#991B1B'}}>{atRisk}</div><div style={{fontSize:11,color:'#6B6056'}}>⚠ At risk</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #9E9B96'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B6056'}}>{noDate}</div><div style={{fontSize:11,color:'#6B6056'}}>No install date</div></div>
+        </div>
+        <div style={{fontSize:11,color:'#6B6056',marginBottom:10}}>Projected ready date = today + estimated production days (assumes production starts tomorrow at current mold capacity).</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Job','Style','Panels','Prod Days','Projected Ready','Est Install Start','Status'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{rows.map((r,i)=>{const bg=r.status==='at_risk'?'#FEE2E2':r.status==='on_track'?'#F0FDF4':'#FFF';const col=r.status==='at_risk'?'#991B1B':r.status==='on_track'?'#065F46':'#9E9B96';return<tr key={r.job.id} style={{borderBottom:'1px solid #F4F4F2',background:bg}}>
+            <td style={{padding:'6px 8px'}}><div style={{fontWeight:600}}>{r.job.job_name}</div><div style={{fontSize:10,color:'#9E9B96'}}>#{r.job.job_number}</div></td>
+            <td style={{padding:'6px 8px'}}>{r.job.style||'—'}</td>
+            <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{r.panels.toLocaleString()}</td>
+            <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#7C3AED'}}>{r.days!=null?`~${r.days} days`:'—'}</td>
+            <td style={{padding:'6px 8px'}}>{r.projReady?r.projReady.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</td>
+            <td style={{padding:'6px 8px'}}>{r.job.est_start_date?fD(r.job.est_start_date):<span style={{color:'#9E9B96'}}>—</span>}</td>
+            <td style={{padding:'6px 8px',fontWeight:700,color:col}}>{r.status==='on_track'?'✓ On Track':r.status==='at_risk'?`⚠ At Risk — ${r.daysLate} ${r.daysLate===1?'day':'days'} late`:'No install date set'}</td>
+          </tr>;})}</tbody>
+        </table>
+        {rows.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:13}}>No jobs in production queue or in-production with material calculations.</div>}
+      </div>;
+    }
     return null;
   };
-  return(<div><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Reports</h1><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(r=><div key={r.id} style={{...card,display:'flex',flexDirection:'column',justifyContent:'space-between'}}><div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.title}</div><div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>{r.desc}</div></div><button onClick={()=>setActiveRpt(activeRpt===r.id?null:r.id)} style={activeRpt===r.id?btnP:btnS}>{activeRpt===r.id?'Close':'Run'}</button></div>)}</div>{activeRpt&&<div style={card}>{renderReport()}</div>}</div>);
+  const fmtLoadedAt=reportsLoadedAt?reportsLoadedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'—';
+  const renderReportCard=(r)=><div key={r.id} style={{...card,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+    <div>
+      <div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.title}</div>
+      <div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>{r.desc}</div>
+    </div>
+    <button onClick={()=>setActiveRpt(activeRpt===r.id?null:r.id)} style={activeRpt===r.id?btnP:btnS}>{activeRpt===r.id?'Close':'View Report'}</button>
+  </div>;
+  return(<div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:6}}>Reports</h1>
+    {/* PRODUCTION REPORTS */}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5}}>🏭 Production</div>
+      <div style={{fontSize:10,color:'#9E9B96'}}>Data refreshed at {fmtLoadedAt}</div>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:16}}>{productionReports.map(renderReportCard)}</div>
+    {/* PRODUCTION COMING SOON */}
+    <div style={{...card,padding:14,background:'#F9F8F6',borderStyle:'dashed',marginBottom:24}}>
+      <div style={{fontSize:11,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>📊 Coming Soon</div>
+      <div style={{fontSize:11,color:'#9E9B96',marginBottom:10}}>These reports activate once production actuals are being logged consistently:</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>{comingSoonReports.map(r=><div key={r.id} style={{border:'1px dashed #D1CEC9',borderRadius:8,padding:10,background:'#FFF',opacity:0.6}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:2}}>{r.title}</div>
+        <div style={{fontSize:10,color:'#9E9B96'}}>{r.desc}</div>
+      </div>)}</div>
+    </div>
+    {/* FINANCIAL + EXISTING REPORTS */}
+    <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>💰 Sales, Finance & Operations</div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(renderReportCard)}</div>
+    {activeRpt&&<div style={card}>{renderReport()}</div>}
+  </div>);
 }
 
 /* ═══ MATERIAL CALCULATOR PAGE ═══ */
@@ -4593,7 +4804,7 @@ export default function App(){
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='production_planning'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage}/>}
-            {page==='reports'&&<ReportsPage jobs={jobs}/>}
+            {page==='reports'&&<ReportsPage jobs={jobs} onNav={setPage} onOpenJob={j=>{setOpenJob(j);setPage('projects');}}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
