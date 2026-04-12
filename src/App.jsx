@@ -2978,13 +2978,16 @@ function DailyReportPage({jobs}){
   // ─── LOAD SHIFT SUBMISSIONS for actuals date ───
   const loadShiftSubs=useCallback(async(date)=>{
     try{
-      const acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=submitted_at.asc`);
+      // Try ordering by submitted_at first; fall back to id if the column doesn't exist yet
+      let acts=null;
+      try{acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=submitted_at.asc`);}
+      catch(e1){acts=await sbGet('production_actuals',`production_date=eq.${date}&select=*&order=id.asc`);}
       const s1=[],s2=[];(acts||[]).forEach(a=>{if(n(a.shift)===1)s1.push(a);else if(n(a.shift)===2)s2.push(a);});
       setShiftSubs({
-        1:s1.length>0?{count:s1.length,submittedAt:s1[s1.length-1].submitted_at,lines:s1,totalPanels:s1.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
-        2:s2.length>0?{count:s2.length,submittedAt:s2[s2.length-1].submitted_at,lines:s2,totalPanels:s2.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
+        1:s1.length>0?{count:s1.length,submittedAt:s1[s1.length-1].submitted_at||s1[s1.length-1].created_at||null,lines:s1,totalPanels:s1.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
+        2:s2.length>0?{count:s2.length,submittedAt:s2[s2.length-1].submitted_at||s2[s2.length-1].created_at||null,lines:s2,totalPanels:s2.reduce((s,a)=>s+n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top),0)}:null,
       });
-    }catch(e){console.error('Load shift subs failed:',e);}
+    }catch(e){console.error('Load shift subs failed:',e);setShiftSubs({1:null,2:null});}
   },[]);
   useEffect(()=>{if(tab==='actuals'){loadShiftSubs(actualsDate);setEditingShift(false);}},[tab,actualsDate,loadShiftSubs]);
 
@@ -3130,10 +3133,29 @@ function DailyReportPage({jobs}){
     try{
       const rows=toSubmit.map(l=>{
         const pieceCols={};PIECE_TYPES.forEach(pt=>{pieceCols['actual_'+pt.key]=n(l.actual[pt.key])||0;});
-        return{production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:lineActualTotal(l),actual_lf:n(l.actual_lf)||0,...pieceCols,adjustment_reason:l.adjustment_reason||null,variance_reason:l.adjustment_reason||null,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()};
+        // Aggregated group totals — required by the spec
+        const actualPosts=n(l.actual.posts_line)+n(l.actual.posts_corner)+n(l.actual.posts_stop);
+        const actualPanels=n(l.actual.panels_regular)+n(l.actual.panels_half)+n(l.actual.panels_bottom)+n(l.actual.panels_top);
+        const actualRails=n(l.actual.rails_regular)+n(l.actual.rails_top)+n(l.actual.rails_bottom)+n(l.actual.rails_center);
+        const actualCaps=n(l.actual.caps_line)+n(l.actual.caps_stop);
+        return{production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:lineActualTotal(l),actual_posts:actualPosts,actual_panels:actualPanels,actual_rails:actualRails,actual_caps:actualCaps,actual_lf:n(l.actual_lf)||0,...pieceCols,adjustment_reason:l.adjustment_reason||null,variance_reason:l.adjustment_reason||null,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()};
       });
-      const res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
-      if(!res.ok)throw new Error(await res.text());
+      // POST — if PostgREST rejects an unknown column, progressively strip optional columns and retry
+      const OPTIONAL_COLS=['variance_reason','submitted_at','actual_posts','actual_panels','actual_rails','actual_caps','shift_notes','crew_size','unplanned'];
+      let res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
+      if(!res.ok){
+        const errTxt=await res.text();
+        // Detect "column ... does not exist" errors and retry by stripping the offending column
+        const missingCol=OPTIONAL_COLS.find(c=>errTxt.includes(`'${c}'`)||errTxt.includes(`"${c}"`)||errTxt.includes(` ${c} `));
+        if(missingCol){
+          console.warn(`Retrying production_actuals POST without column "${missingCol}"`);
+          const cleanRows=rows.map(r=>{const c={...r};delete c[missingCol];return c;});
+          res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(cleanRows)});
+          if(!res.ok)throw new Error(await res.text());
+        }else{
+          throw new Error(errTxt);
+        }
+      }
       // Auto-advance in_production → inventory_ready when cumulative actuals >= planned
       try{
         const jobIds=[...new Set(toSubmit.map(l=>l.job_id).filter(Boolean))];
@@ -3430,7 +3452,7 @@ function DailyReportPage({jobs}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
           <div>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#8B2020'}}>Log Production Actuals</div>
-            <div style={{fontSize:11,color:'#9E9B96'}}>{actualsPlanId?'Plan loaded — fill in what was actually produced':'No plan for this date — add lines manually below'}</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>{actualsPlanId?`Plan loaded — ${actualsLines.length} ${actualsLines.length===1?'job':'jobs'} · fill in what was actually produced`:'No production plan for this date'}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
             <button onClick={()=>setActualsDate(shiftDate(actualsDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>←</button>
@@ -3461,8 +3483,18 @@ function DailyReportPage({jobs}){
         {shift===2&&shiftSubs[1]&&<div style={{padding:'10px 14px',background:'#EFF6FF',border:'1px solid #1D4ED8',borderRadius:8,marginBottom:12,fontSize:12,color:'#1D4ED8'}}>
           <b>↪ Shift handoff:</b> Shift 1 produced {shiftSubs[1].totalPanels.toLocaleString()} panels. Enter only what Shift 2 produced below — the "Already Produced" column shows Shift 1's contribution.
         </div>}
+        {/* Empty state when no plan exists for the selected date */}
+        {!actualsPlanId&&<div style={{...card,textAlign:'center',padding:40,background:'#F9F8F6',border:'1px dashed #D1CEC9'}}>
+          <div style={{fontSize:40,marginBottom:12}}>📋</div>
+          <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A',marginBottom:6}}>No production plan found for {new Date(actualsDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
+          <div style={{fontSize:12,color:'#6B6056',marginBottom:16,maxWidth:440,margin:'0 auto 16px'}}>Max needs to save a plan for this date before actuals can be logged. You can create one now or switch to a date that already has a plan.</div>
+          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+            <button onClick={()=>{try{localStorage.setItem('fc_daily_goto',JSON.stringify({tab:'plan',date:actualsDate}));}catch(e){}setTab('plan');setPlanDate(actualsDate);window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnP,padding:'10px 18px',fontSize:13}}>← Go to Production Planning</button>
+            <button onClick={()=>setActualsDate(todayISO)} style={{...btnS,padding:'10px 18px',fontSize:13}}>Jump to Today</button>
+          </div>
+        </div>}
         {/* Actuals cards — full piece breakdown per job */}
-        {(!shiftSubs[shift]||editingShift)&&<>
+        {actualsPlanId&&(!shiftSubs[shift]||editingShift)&&<>
         <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:12}}>
           {actualsLines.map((l,idx)=>{
             const plannedTot=linePlannedTotal(l);const actualTot=lineActualTotal(l);
