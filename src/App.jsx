@@ -549,20 +549,36 @@ function WeeklyDigest({jobs,active}){
     const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
     const zeroBilled=active.filter(j=>n(j.ytd_invoiced)===0).length;
     const now=new Date();const weekAgo=new Date(now.getTime()-7*86400000).toISOString();
+    const weekAgoDate=weekAgo.split('T')[0];
     const newJobs=jobs.filter(j=>j.created_at&&j.created_at>=weekAgo).length;
-    const compJobs=jobs.filter(j=>j.complete_date&&j.complete_date>=weekAgo.split('T')[0]).length;
+    const compJobs=jobs.filter(j=>j.complete_date&&j.complete_date>=weekAgoDate).length;
     Promise.all([
-      sbGet('weather_days',`weather_date=gte.${weekAgo.split('T')[0]}&select=id`).catch(()=>[]),
-      sbGet('change_orders',`status=eq.Pending&select=id`)
-    ]).then(([wd,co])=>{
-      setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs});
+      sbGet('weather_days',`weather_date=gte.${weekAgoDate}&select=id`).catch(()=>[]),
+      sbGet('change_orders',`status=eq.Pending&select=id`).catch(()=>[]),
+      sbGet('production_removals',`removed_date=gte.${weekAgoDate}&select=reason`).catch(()=>[]),
+    ]).then(([wd,co,rem])=>{
+      // Compute top reason from removals
+      const reasonCounts={};(rem||[]).forEach(r=>{const k=r.reason||'Unspecified';reasonCounts[k]=(reasonCounts[k]||0)+1;});
+      let topReason=null,topCount=0;Object.entries(reasonCounts).forEach(([k,c])=>{if(c>topCount){topReason=k;topCount=c;}});
+      setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs,productionRemovals:{count:(rem||[]).length,topReason}});
     });
   },[jobs,active]);
-  const sendDigest=async()=>{setSending(true);try{await fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${KEY}`}});setLastSent(new Date().toLocaleString());}catch(e){}setSending(false);};
+  const sendDigest=async()=>{setSending(true);try{
+    await fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${KEY}`},body:JSON.stringify(digestStats?{productionRemovals:digestStats.productionRemovals}:{})});
+    setLastSent(new Date().toLocaleString());
+  }catch(e){}setSending(false);};
+  const pr=digestStats?.productionRemovals;
   return(<div style={card}>
     <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Weekly Digest</div>
     {digestStats&&<div style={{marginBottom:12}}>
       {[['Total Left to Bill',$(digestStats.leftToBill)],['Jobs with 0% billed (active)',digestStats.zeroBilled+' jobs'],['Weather days logged this week',digestStats.weatherDays],['Change orders pending approval',digestStats.pendingCO],['New jobs added this week',digestStats.newJobs],['Jobs completed this week',digestStats.compJobs]].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>)}
+      <div style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
+        <div style={{display:'flex',justifyContent:'space-between'}}>
+          <span style={{color:'#6B6056'}}>Jobs pulled from production this week</span>
+          <span style={{fontWeight:700,color:pr&&pr.count>0?'#B45309':'#1A1A1A'}}>{pr?pr.count:0}</span>
+        </div>
+        {pr&&pr.count>0&&pr.topReason&&<div style={{fontSize:10,color:'#9E9B96',fontStyle:'italic',marginTop:2}}>Most common: {pr.topReason}</div>}
+      </div>
     </div>}
     <div style={{fontSize:11,color:'#9E9B96',marginBottom:8}}>Recipients: david@fencecrete.com, alex@fencecrete.com</div>
     {lastSent&&<div style={{fontSize:11,color:'#065F46',marginBottom:8}}>Last sent: {lastSent}</div>}
@@ -3139,6 +3155,8 @@ function DailyReportPage({jobs,onNav}){
   const[editingShift,setEditingShift]=useState(false);
   const[removeConfirmIdx,setRemoveConfirmIdx]=useState(null); // which line is in "confirm remove" state
   const[removeBusyIdx,setRemoveBusyIdx]=useState(null); // which line is currently PATCHing
+  const[removeReason,setRemoveReason]=useState(''); // selected reason for the pending removal
+  const[removeNotes,setRemoveNotes]=useState(''); // optional notes for the pending removal
   // ─── CARRY FORWARD STATE ───
   const[carryForward,setCarryForward]=useState([]);
   // Pick up cross-page handoff (e.g. "View Tomorrow's Plan" from Production Orders)
@@ -3513,28 +3531,45 @@ function DailyReportPage({jobs,onNav}){
   const updateActualsLine=(idx,field,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
   const updateActualsPiece=(idx,key,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,actual:{...l.actual,[key]:val}}:l));
   const removeActualsLine=(idx)=>setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
-  // Confirmed remove: PATCH job status back to production_queue, then drop the line from local state.
-  // If the DB write fails, do NOT remove the line — show an error toast and revert to the default Remove button.
+  // Confirmed remove: PATCH job status back to production_queue, log the removal with reason, then drop the line from local state.
+  // If the PATCH fails, do NOT remove the line — show an error toast and revert to the default Remove button.
+  // If the production_removals log POST fails, still complete the removal but log to console — don't block Luis.
   const confirmRemoveActualsLine=async(idx)=>{
     const line=actualsLines[idx];if(!line)return;
     const jobId=line.job_id;const jobName=line.job_name||'Job';
-    if(!jobId){setActualsLines(prev=>prev.filter((_,i)=>i!==idx));setRemoveConfirmIdx(null);setToast({msg:`${jobName} removed from today's log`,ok:true});return;}
+    const reason=removeReason;
+    const notes=removeNotes.trim()||null;
+    if(!reason){setToast({msg:'Please select a reason for removal',ok:false});return;}
+    if(!jobId){setActualsLines(prev=>prev.filter((_,i)=>i!==idx));setRemoveConfirmIdx(null);setRemoveReason('');setRemoveNotes('');setToast({msg:`${jobName} removed from today's log`,ok:true});return;}
     setRemoveBusyIdx(idx);
     try{
       const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${jobId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'production_queue'})});
       if(!res.ok)throw new Error(await res.text());
+      // Log the removal to production_removals — non-blocking, failures only go to console
+      try{
+        const logRes=await fetch(`${SB}/rest/v1/production_removals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({
+          job_id:jobId,job_number:line.job_number||null,job_name:jobName,
+          removed_date:actualsDate,shift:`Shift ${shift}`,reason,removed_by:loggedBy||'Luis Rodriguez',notes
+        })});
+        if(!logRes.ok){const t=await logRes.text();console.error('production_removals log failed (non-blocking):',t);}
+      }catch(logErr){console.error('production_removals log failed (non-blocking):',logErr);}
       // Success — drop from local state and toast
       setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
       setRemoveConfirmIdx(null);
       setRemoveBusyIdx(null);
-      setToast({msg:`${jobName} removed from today's log and returned to Production Queue.`,ok:true});
+      setRemoveReason('');
+      setRemoveNotes('');
+      setToast({msg:`${jobName} removed and returned to Production Queue.`,ok:true});
     }catch(e){
       console.error('Remove job status PATCH failed:',e);
       setRemoveBusyIdx(null);
       setRemoveConfirmIdx(null); // revert confirmation UI back to default Remove button
+      setRemoveReason('');
+      setRemoveNotes('');
       setToast({msg:'Failed to update job status. Please try again.',ok:false});
     }
   };
+  const REMOVAL_REASONS=['Material Shortage','Equipment Down','Customer Request / Delay','Re-prioritized','Weather','Other'];
   const addUnplannedLine=(j)=>{
     setActualsLines(prev=>[...prev,buildActualsLine({plan_line_id:null,job:j,planned_lf:0,unplanned:true})]);
     setShowUnplanPicker(false);setUnplanSearch('');
@@ -3719,12 +3754,21 @@ function DailyReportPage({jobs,onNav}){
                   <div style={{fontWeight:800,fontSize:14}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500}}>— #{l.job_number}</span>{l.unplanned&&<span style={{marginLeft:6,fontSize:9,padding:'2px 6px',background:'#DBEAFE',color:'#1D4ED8',borderRadius:4,fontWeight:700,textTransform:'uppercase'}}>Unplanned</span>}</div>
                   <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
                 </div>
-                {/* Remove job — two-step confirm. Success flips DB status back to production_queue, error reverts UI. */}
-                {removeConfirmIdx===idx?<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-                  <span style={{fontSize:11,color:'#991B1B',fontWeight:700}}>Remove and return to Production Queue?</span>
-                  <button disabled={removeBusyIdx===idx} onClick={()=>confirmRemoveActualsLine(idx)} style={{background:'#991B1B',border:'none',borderRadius:6,padding:'4px 10px',color:'#FFF',fontSize:11,fontWeight:700,cursor:removeBusyIdx===idx?'not-allowed':'pointer',opacity:removeBusyIdx===idx?0.6:1}}>{removeBusyIdx===idx?'Removing...':'Yes, remove'}</button>
-                  <button disabled={removeBusyIdx===idx} onClick={()=>setRemoveConfirmIdx(null)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>Cancel</button>
-                </div>:<button onClick={()=>setRemoveConfirmIdx(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontSize:11,cursor:'pointer',fontWeight:600}}>× Remove Job</button>}
+                {/* Remove job — two-step confirm w/ reason capture. PATCHes job status back to production_queue on success. */}
+                {removeConfirmIdx===idx?<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:10,minWidth:280,maxWidth:380}}>
+                  <div style={{fontSize:11,color:'#991B1B',fontWeight:700,marginBottom:6}}>Remove and return to Production Queue?</div>
+                  <label style={{display:'block',fontSize:10,color:'#991B1B',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>Reason *</label>
+                  <select value={removeReason} onChange={e=>setRemoveReason(e.target.value)} disabled={removeBusyIdx===idx} style={{...inputS,padding:'6px 8px',fontSize:12,marginBottom:6}}>
+                    <option value="">— Select reason —</option>
+                    {REMOVAL_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <label style={{display:'block',fontSize:10,color:'#6B6056',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>Notes (optional)</label>
+                  <textarea value={removeNotes} onChange={e=>setRemoveNotes(e.target.value)} disabled={removeBusyIdx===idx} rows={2} placeholder="Additional detail..." style={{...inputS,padding:'6px 8px',fontSize:12,resize:'vertical',marginBottom:8}}/>
+                  <div style={{display:'flex',gap:6}}>
+                    <button disabled={removeBusyIdx===idx||!removeReason} onClick={()=>confirmRemoveActualsLine(idx)} style={{background:!removeReason?'#E5E3E0':'#991B1B',border:'none',borderRadius:6,padding:'6px 12px',color:!removeReason?'#9E9B96':'#FFF',fontSize:11,fontWeight:700,cursor:(removeBusyIdx===idx||!removeReason)?'not-allowed':'pointer',opacity:removeBusyIdx===idx?0.6:1,flex:1}}>{removeBusyIdx===idx?'Removing...':'Yes, Remove'}</button>
+                    <button disabled={removeBusyIdx===idx} onClick={()=>{setRemoveConfirmIdx(null);setRemoveReason('');setRemoveNotes('');}} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 12px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>Cancel</button>
+                  </div>
+                </div>:<button onClick={()=>{setRemoveConfirmIdx(idx);setRemoveReason('');setRemoveNotes('');}} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontSize:11,cursor:'pointer',fontWeight:600}}>× Remove Job</button>}
               </div>
               {/* Planned vs Actual vs Variance table */}
               {(()=>{
