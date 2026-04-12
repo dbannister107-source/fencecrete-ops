@@ -128,6 +128,28 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
             <div><div style={lbl}>Gate Height</div><div style={val}>{job.gate_height||'—'}</div></div>
           </div>
         </div>
+        {/* Section 2.5: Install Progress */}
+        {(n(job.lf_precast)>0||n(job.lf_installed_to_date)>0)&&(()=>{
+          const contracted=n(job.lf_precast)||n(job.total_lf);
+          const installed=n(job.lf_installed_to_date);
+          const remaining=Math.max(contracted-installed,0);
+          const pct=contracted>0?Math.min(Math.round(installed/contracted*100),100):n(job.pct_lf_complete);
+          const barCol=pct>=100?'#065F46':pct>=70?'#B45309':'#1D4ED8';
+          return<div style={secStyle}><div style={secTitle}>Install Progress</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:8}}>
+              <div><div style={lbl}>LF Contracted</div><div style={val}>{contracted.toLocaleString()} LF</div></div>
+              <div><div style={lbl}>LF Installed</div><div style={{...val,color:'#065F46'}}>{installed.toLocaleString()} LF</div></div>
+              <div><div style={lbl}>LF Remaining</div><div style={{...val,color:'#B45309'}}>{remaining.toLocaleString()} LF</div></div>
+            </div>
+            <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden',marginBottom:4}}>
+              <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:barCol,transition:'width 0.3s'}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056'}}>
+              <span style={{fontWeight:700,color:barCol}}>{pct}% complete</span>
+              {job.lf_last_billed_date&&<span>Last billed: {fD(job.lf_last_billed_date)}</span>}
+            </div>
+          </div>;
+        })()}
         {/* Section 3: Contract & Billing */}
         <div style={secStyle}><div style={secTitle}>Contract & Billing</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
@@ -1052,7 +1074,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
-    {arDetail&&(()=>{const s=arDetail.sub;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
+    {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:600,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
           <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{s.job_name}</div>
@@ -1082,6 +1104,9 @@ function BillingPage({jobs,onRefresh,onNav}){
             <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.total_lf).toLocaleString()}</div></div>
             {s.pct_complete_pm!=null&&<div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>PM % Complete</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800}}>{s.pct_complete_pm}%</div></div>}
           </div>
+          {(n(arJob.lf_precast)>0||n(arJob.lf_installed_to_date)>0)&&(()=>{const existing=n(arJob.lf_installed_to_date);const thisSub=n(s.total_lf);const afterTotal=s.ar_reviewed?existing:existing+thisSub;const contracted=n(arJob.lf_precast)||n(arJob.total_lf);const pctAfter=contracted>0?Math.round(afterTotal/contracted*100):0;return<div style={{marginTop:8,padding:'8px 10px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
+            {s.ar_reviewed?<span>📊 <b>LF installed to date:</b> {existing.toLocaleString()} LF ({pctAfter}% of {contracted.toLocaleString()} LF contracted)</span>:<span>📊 <b>LF installed after this submission:</b> {existing.toLocaleString()} + {thisSub.toLocaleString()} = <b>{afterTotal.toLocaleString()} LF</b> ({pctAfter}% of {contracted.toLocaleString()} contracted)</span>}
+          </div>;})()}
         </div>
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
         {/* AR Review Section */}
@@ -1282,6 +1307,9 @@ function PMBillingPage({jobs,onRefresh}){
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
               <div style={{marginTop:10,display:'flex',gap:8}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
             </>:<>
+              {(n(j.lf_installed_to_date)>0||n(j.lf_precast)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=n(j.lf_precast)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
+                📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#6B6056'}}> · last {fD(j.lf_last_billed_date)}</span>}
+              </div>;})()}
               {renderLFForm(j.id)}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
                 <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={{...inputS,padding:'6px 10px',fontSize:13}}/></div>
@@ -2325,9 +2353,14 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
   const buildPlanLine=useCallback((job,existing)=>{
     const gt=groupTotals(job);
     const material={posts_line:n(job?.material_posts_line),posts_corner:n(job?.material_posts_corner),posts_stop:n(job?.material_posts_stop),panels_regular:n(job?.material_panels_regular),panels_half:n(job?.material_panels_half),panels_bottom:n(job?.material_panels_bottom),panels_top:n(job?.material_panels_top),rails_regular:n(job?.material_rails_regular),rails_top:n(job?.material_rails_top),rails_bottom:n(job?.material_rails_bottom),rails_center:n(job?.material_rails_center),caps_line:n(job?.material_caps_line),caps_stop:n(job?.material_caps_stop)};
+    // Stale detection: if existing plan line records a calc date, compare to job's current material_calc_date
+    const savedCalcDate=existing?.material_calc_date_at_plan||null;
+    const currentCalcDate=job?.material_calc_date||null;
+    const staleFromDB=!!existing?.quantities_stale;
+    const staleFromCompare=!!(savedCalcDate&&currentCalcDate&&new Date(currentCalcDate).getTime()>new Date(savedCalcDate).getTime());
     return{
       id:existing?.id||null,job_id:job?.id||existing?.job_id||null,job_number:job?.job_number||existing?.job_number||'',job_name:job?.job_name||existing?.job_name||'',
-      style:job?.style||existing?.style||'',color:job?.color||existing?.color||'',height:job?.height_precast||existing?.height||'',post_height:n(job?.material_post_height)||0,material_calc_date:job?.material_calc_date||null,
+      style:job?.style||existing?.style||'',color:job?.color||existing?.color||'',height:job?.height_precast||existing?.height||'',post_height:n(job?.material_post_height)||0,material_calc_date:currentCalcDate,
       material,material_totals:gt,
       planned_posts:existing?.planned_posts!=null?String(existing.planned_posts):(gt.posts?String(gt.posts):''),
       planned_panels:existing?.planned_panels!=null?String(existing.planned_panels):(gt.panels?String(gt.panels):''),
@@ -2336,6 +2369,8 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
       planned_lf:existing?.planned_lf!=null?String(existing.planned_lf):(n(job?.total_lf)?String(n(job.total_lf)):''),
       shift_assignment:existing?.shift_assignment||'both',
       partial_run_reason:existing?.partial_run_reason||'',notes:existing?.notes||'',
+      material_calc_date_at_plan:existing?existing.material_calc_date_at_plan||null:currentCalcDate,
+      quantities_stale:staleFromDB||staleFromCompare,
     };
   },[groupTotals]);
 
@@ -2346,7 +2381,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
       if(plans&&plans[0]){
         setPlanId(plans[0].id);setPlanNotes(plans[0].plan_notes||'');
         const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
-        setPlanLines((lines||[]).map(l=>{const j=jobs.find(x=>x.id===l.job_id);return buildPlanLine(j||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},{id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height:l.height,planned_posts:l.planned_posts,planned_panels:l.planned_panels,planned_rails:l.planned_rails,planned_caps:l.planned_caps,planned_lf:l.planned_lf,partial_run_reason:l.partial_run_reason,notes:l.notes});}));
+        setPlanLines((lines||[]).map(l=>{const j=jobs.find(x=>x.id===l.job_id);return buildPlanLine(j||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},{id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height:l.height,planned_posts:l.planned_posts,planned_panels:l.planned_panels,planned_rails:l.planned_rails,planned_caps:l.planned_caps,planned_lf:l.planned_lf,partial_run_reason:l.partial_run_reason,notes:l.notes,material_calc_date_at_plan:l.material_calc_date_at_plan,quantities_stale:l.quantities_stale});}));
       }else{setPlanId(null);setPlanLines([]);setPlanNotes('');}
     }catch(e){console.error('Load plan failed:',e);}
   },[jobs,buildPlanLine]);
@@ -2373,6 +2408,18 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
   const movePlanLine=(idx,dir)=>setPlanLines(prev=>{const n2=[...prev];const t=idx+dir;if(t<0||t>=n2.length)return n2;[n2[idx],n2[t]]=[n2[t],n2[idx]];return n2;});
   const addJobToPlan=(j)=>{setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);};
   const addJobFromCarryForward=(cf)=>{const j=jobs.find(x=>x.id===cf.job_id);if(!j)return;if(planLines.some(l=>l.job_id===cf.job_id))return;const line=buildPlanLine(j,null);line.planned_panels=String(cf.remaining);setPlanLines(prev=>[...prev,line]);setCarryForward(prev=>prev.filter(c=>c.job_id!==cf.job_id));};
+
+  // Refresh a plan line's material quantities to match current job record — clears stale flag
+  const updatePlanLineToLatest=(idx)=>{
+    setPlanLines(prev=>prev.map((l,i)=>{
+      if(i!==idx)return l;
+      const job=jobs.find(x=>x.id===l.job_id);if(!job)return l;
+      const gt=groupTotals(job);
+      const material={posts_line:n(job.material_posts_line),posts_corner:n(job.material_posts_corner),posts_stop:n(job.material_posts_stop),panels_regular:n(job.material_panels_regular),panels_half:n(job.material_panels_half),panels_bottom:n(job.material_panels_bottom),panels_top:n(job.material_panels_top),rails_regular:n(job.material_rails_regular),rails_top:n(job.material_rails_top),rails_bottom:n(job.material_rails_bottom),rails_center:n(job.material_rails_center),caps_line:n(job.material_caps_line),caps_stop:n(job.material_caps_stop)};
+      return{...l,material,material_totals:gt,post_height:n(job.material_post_height)||l.post_height,material_calc_date:job.material_calc_date||l.material_calc_date,planned_posts:gt.posts?String(gt.posts):'',planned_panels:gt.panels?String(gt.panels):'',planned_rails:gt.rails?String(gt.rails):'',planned_caps:gt.caps?String(gt.caps):'',material_calc_date_at_plan:job.material_calc_date||l.material_calc_date_at_plan,quantities_stale:false};
+    }));
+    setToast({msg:'Plan line refreshed to latest material calc',ok:true});
+  };
 
   // Queue jobs — production_queue with material_calc_date
   const queueJobs=useMemo(()=>{
@@ -2412,7 +2459,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
         const saved=await res.json();curId=saved[0].id;setPlanId(curId);
       }
       if(planLines.length>0){
-        const lineRows=planLines.map((l,i)=>({plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),planned_posts:n(l.planned_posts)||0,planned_panels:n(l.planned_panels)||0,planned_rails:n(l.planned_rails)||0,planned_caps:n(l.planned_caps)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null}));
+        const lineRows=planLines.map((l,i)=>{const jobForLine=jobs.find(x=>x.id===l.job_id);const calcAtPlan=l.material_calc_date_at_plan||jobForLine?.material_calc_date||l.material_calc_date||null;return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),planned_posts:n(l.planned_posts)||0,planned_panels:n(l.planned_panels)||0,planned_rails:n(l.planned_rails)||0,planned_caps:n(l.planned_caps)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};});
         const res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         if(!res2.ok)throw new Error(await res2.text());
       }
@@ -2558,6 +2605,10 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
                 </div>
                 <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>
               </div>
+              {l.quantities_stale&&<div style={{marginTop:6,padding:'8px 10px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:6,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                <div style={{fontSize:11,color:'#B45309',fontWeight:700}}>⚠️ Material calculation was updated{l.material_calc_date?' on '+new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''} — plan quantities may be outdated</div>
+                <button onClick={()=>updatePlanLineToLatest(idx)} style={{...btnP,background:'#B45309',padding:'4px 10px',fontSize:10}}>Update to Latest →</button>
+              </div>}
               {(gt.posts+gt.panels+gt.rails+gt.caps)>0&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginTop:6,padding:'6px 0',borderTop:'1px solid #F4F4F2'}}>
                 <div style={{padding:'0 8px',borderRight:'1px solid #F4F4F2'}}>
                   <div style={{fontSize:9,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:2}}>POSTS {phLabel&&<span style={{color:'#6B6056'}}>({phLabel})</span>}</div>
@@ -2778,6 +2829,10 @@ function DailyReportPage({jobs}){
       rails_regular:n(job?.material_rails_regular),rails_top:n(job?.material_rails_top),rails_bottom:n(job?.material_rails_bottom),rails_center:n(job?.material_rails_center),
       caps_line:n(job?.material_caps_line),caps_stop:n(job?.material_caps_stop),
     };
+    const savedCalcDate=existing?.material_calc_date_at_plan||null;
+    const currentCalcDate=job?.material_calc_date||null;
+    const staleFromDB=!!existing?.quantities_stale;
+    const staleFromCompare=!!(savedCalcDate&&currentCalcDate&&new Date(currentCalcDate).getTime()>new Date(savedCalcDate).getTime());
     return{
       id:existing?.id||null,
       job_id:job?.id||existing?.job_id||null,
@@ -2787,7 +2842,7 @@ function DailyReportPage({jobs}){
       color:job?.color||existing?.color||'',
       height:job?.height_precast||existing?.height||'',
       post_height:n(job?.material_post_height)||0,
-      material_calc_date:job?.material_calc_date||null,
+      material_calc_date:currentCalcDate,
       material,
       material_totals:gt,
       planned_posts:existing?.planned_posts!=null?String(existing.planned_posts):(gt.posts?String(gt.posts):''),
@@ -2797,6 +2852,8 @@ function DailyReportPage({jobs}){
       planned_lf:existing?.planned_lf!=null?String(existing.planned_lf):(n(job?.total_lf)?String(n(job.total_lf)):''),
       partial_run_reason:existing?.partial_run_reason||'',
       notes:existing?.notes||'',
+      material_calc_date_at_plan:existing?existing.material_calc_date_at_plan||null:currentCalcDate,
+      quantities_stale:staleFromDB||staleFromCompare,
     };
   },[groupTotals]);
 
@@ -2810,7 +2867,7 @@ function DailyReportPage({jobs}){
         const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
         setPlanLines((lines||[]).map(l=>{
           const job=jobs.find(x=>x.id===l.job_id);
-          return buildPlanLine(job||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},{id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height:l.height,planned_posts:l.planned_posts,planned_panels:l.planned_panels,planned_rails:l.planned_rails,planned_caps:l.planned_caps,planned_lf:l.planned_lf,partial_run_reason:l.partial_run_reason,notes:l.notes});
+          return buildPlanLine(job||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height,total_lf:l.planned_lf},{id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height:l.height,planned_posts:l.planned_posts,planned_panels:l.planned_panels,planned_rails:l.planned_rails,planned_caps:l.planned_caps,planned_lf:l.planned_lf,partial_run_reason:l.partial_run_reason,notes:l.notes,material_calc_date_at_plan:l.material_calc_date_at_plan,quantities_stale:l.quantities_stale});
         }));
       }else{
         setPlanId(null);setPlanLines([]);setPlanNotes('');
@@ -2934,6 +2991,17 @@ function DailyReportPage({jobs}){
     setPlanLines(prev=>[...prev,line]);
     setCarryForward(prev=>prev.filter(c=>c.job_id!==cf.job_id));
   };
+  // Refresh a plan line's material quantities to match current job record — clears stale flag
+  const updatePlanLineToLatest=(idx)=>{
+    setPlanLines(prev=>prev.map((l,i)=>{
+      if(i!==idx)return l;
+      const job=jobs.find(x=>x.id===l.job_id);if(!job)return l;
+      const gt=groupTotals(job);
+      const material={posts_line:n(job.material_posts_line),posts_corner:n(job.material_posts_corner),posts_stop:n(job.material_posts_stop),panels_regular:n(job.material_panels_regular),panels_half:n(job.material_panels_half),panels_bottom:n(job.material_panels_bottom),panels_top:n(job.material_panels_top),rails_regular:n(job.material_rails_regular),rails_top:n(job.material_rails_top),rails_bottom:n(job.material_rails_bottom),rails_center:n(job.material_rails_center),caps_line:n(job.material_caps_line),caps_stop:n(job.material_caps_stop)};
+      return{...l,material,material_totals:gt,post_height:n(job.material_post_height)||l.post_height,material_calc_date:job.material_calc_date||l.material_calc_date,planned_posts:gt.posts?String(gt.posts):'',planned_panels:gt.panels?String(gt.panels):'',planned_rails:gt.rails?String(gt.rails):'',planned_caps:gt.caps?String(gt.caps):'',material_calc_date_at_plan:job.material_calc_date||l.material_calc_date_at_plan,quantities_stale:false};
+    }));
+    setToast({msg:'Plan line refreshed to latest material calc',ok:true});
+  };
   const addJobToPlan=(j)=>{
     setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);
     setShowAddPicker(false);setJobSearch('');
@@ -2961,7 +3029,7 @@ function DailyReportPage({jobs}){
         const saved=await res.json();curId=saved[0].id;setPlanId(curId);
       }
       if(planLines.length>0){
-        const lineRows=planLines.map((l,i)=>({plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),planned_posts:n(l.planned_posts)||0,planned_panels:n(l.planned_panels)||0,planned_rails:n(l.planned_rails)||0,planned_caps:n(l.planned_caps)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null}));
+        const lineRows=planLines.map((l,i)=>{const jobForLine=jobs.find(x=>x.id===l.job_id);const calcAtPlan=l.material_calc_date_at_plan||jobForLine?.material_calc_date||l.material_calc_date||null;return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),planned_posts:n(l.planned_posts)||0,planned_panels:n(l.planned_panels)||0,planned_rails:n(l.planned_rails)||0,planned_caps:n(l.planned_caps)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};});
         const res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         if(!res2.ok)throw new Error(await res2.text());
       }
@@ -3212,6 +3280,10 @@ function DailyReportPage({jobs}){
                 </div>
                 <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:16,cursor:'pointer'}}>✕</button>
               </div>
+              {l.quantities_stale&&<div style={{marginTop:8,padding:'8px 12px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:6,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <div style={{fontSize:11,color:'#B45309',fontWeight:700}}>⚠️ Material calculation was updated{l.material_calc_date?' on '+new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''} — plan quantities may be outdated</div>
+                <button onClick={()=>updatePlanLineToLatest(idx)} style={{...btnP,background:'#B45309',padding:'5px 12px',fontSize:11}}>Update to Latest →</button>
+              </div>}
               {/* Material breakdown grid */}
               {(gt.posts+gt.panels+gt.rails+gt.caps)>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,padding:'8px 0',borderTop:'1px solid #F4F4F2',borderBottom:'1px solid #F4F4F2'}}>
                 {/* POSTS */}
