@@ -62,12 +62,10 @@ const isChildStyle = (s) => !!(s && MOLD_SHARING[s]);
 // Inverse map: parent → [children]
 const MOLD_CHILDREN = Object.entries(MOLD_SHARING).reduce((acc,[child,parent])=>{if(!acc[parent])acc[parent]=[];acc[parent].push(child);return acc;},{});
 
-// Styles where panels-per-mold is NOT yet confirmed by engineering — displayed as "TBD / Verify with Max"
-// All Vertical Wood variants canonicalize to "Vertical Wood 6'" so one entry covers the group.
-const UNCONFIRMED_PANELS_PER_MOLD = new Set(["Vertical Wood 6'"]);
+// All styles (including Vertical Wood) confirmed at 12 panels per gang mold by engineering.
+// Set kept as extension point if any future style turns out to be unconfirmed.
+const UNCONFIRMED_PANELS_PER_MOLD = new Set();
 const isPanelsPerMoldConfirmed = (style) => !UNCONFIRMED_PANELS_PER_MOLD.has(canonicalStyle(style));
-// panels/mold lookup — returns null when unconfirmed so arithmetic skips / UI can render "[?]"
-// All confirmed horizontal styles use 12 panels per gang mold.
 const panelsPerMoldLookup = (style) => isPanelsPerMoldConfirmed(style) ? 12 : null;
 
 /* ═══ STYLES ═══ */
