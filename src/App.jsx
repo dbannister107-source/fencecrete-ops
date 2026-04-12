@@ -3238,12 +3238,49 @@ function Topbar({jobs,live,onSearch}){
 }
 
 /* ═══ APP ═══ */
+/* ═══ INSTALL SCHEDULE PAGE ═══ */
+function InstallSchedulePage({jobs}){
+  return(<div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Install Schedule</h1>
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Field install scheduling and crew coordination</div>
+    <div style={{...card,textAlign:'center',padding:60}}>
+      <div style={{fontSize:48,marginBottom:12}}>📅</div>
+      <div style={{fontSize:16,fontWeight:700,color:'#1A1A1A',marginBottom:6}}>Install Schedule</div>
+      <div style={{fontSize:13,color:'#6B6056'}}>Coming soon — this page will show field install schedules, crew assignments, and upcoming installs.</div>
+    </div>
+  </div>);
+}
+
+/* ═══ HELP PAGE ═══ */
+function HelpPage(){
+  return(<div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Help</h1>
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Documentation and support</div>
+    <div style={{...card,padding:24}}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:'#8B2020'}}>Quick Help</div>
+      <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7}}>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Dashboard</b> — overview of active projects, KPIs, pipeline status, and PM workload.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Projects</b> — full project database with filters, inline edit, and CSV export. Active and Closed tabs.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Production Plan</b> — kanban board showing jobs by stage. Unlock with PIN 2020 to move cards.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Material Calculator</b> — calculates posts/panels/rails/caps from style, height, and LF. Save to job creates a production order.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Production Orders</b> — Max's view of all jobs with saved material calculations.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Daily Production Report</b> — Max builds tomorrow's plan; Luis logs actuals per shift; leadership reviews history.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>PM Bill Sheet</b> — PMs submit monthly LF reports per project. AR reviews and marks invoiced.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Billing</b> — AR exception dashboard showing submitted vs missing bill sheets.</div>
+        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Import Projects</b> — 4-step Excel import for the Master Project Tracker with preview and safety guards.</div>
+      </div>
+      <div style={{fontSize:13,color:'#6B6056',marginTop:20,paddingTop:16,borderTop:'1px solid #E5E3E0'}}>For issues or feature requests, contact <b style={{color:'#8B2020'}}>david@fencecrete.com</b></div>
+    </div>
+  </div>);
+}
+
 const NAV_GROUPS=[
-  {label:'',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
+  {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
-  {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'material_calc',label:'Material Calc',icon:'🧮'},{key:'production_orders',label:'Production Orders',icon:'📋'},{key:'schedule',label:'Schedule',icon:'📅'}]},
-  {label:'FIELD',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'daily_report',label:'Production Report',icon:'🏭'}]},
-  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
+  {label:'OPERATIONS',items:[{key:'production',label:'Production Plan',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'production_orders',label:'Production Orders',icon:'📦'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
+  {label:'FIELD',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'install_schedule',label:'Install Schedule',icon:'📅'}]},
+  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
+  {label:'ADMIN',items:[{key:'help',label:'Help',icon:'❓'}]},
 ];
 
 export default function App(){
@@ -3259,7 +3296,7 @@ export default function App(){
       <style>{`@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
       <div style={{width:sideW,minWidth:sideW,maxWidth:sideW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
         <div style={{padding:sideCollapsed?'16px 8px':'24px 20px 20px',textAlign:sideCollapsed?'center':'left'}}>
-          {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FENCECRETE</div><div style={{fontSize:10,color:'#9E9B96',letterSpacing:2,textTransform:'uppercase',whiteSpace:'nowrap'}}>Operations</div></>}
+          {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FCA Command Center</div></>}
           {sideCollapsed&&<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
         </div>
         <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>{!sideCollapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{sideCollapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</div>)}</nav>
@@ -3288,6 +3325,8 @@ export default function App(){
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs}/>}
+            {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
+            {page==='help'&&<HelpPage/>}
           </>}
         </div>
       </div>
