@@ -1122,39 +1122,54 @@ function PMBillingPage({jobs,onRefresh}){
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
   const[selMonth,setSelMonth]=useState(curBillingMonth);
   const[subs,setSubs]=useState([]);
-  const[expanded,setExpanded]=useState(new Set());
+  const[expandedRow,setExpandedRow]=useState(null);
   const[forms,setForms]=useState({});
-  const[editMode,setEditMode]=useState(new Set());
+  const[editingRow,setEditingRow]=useState(null);
   const[saving,setSaving]=useState(null);
   const[toast,setToast]=useState(null);
+  const[filterTab,setFilterTab]=useState('missing');
+  const[selected,setSelected]=useState(new Set());
+  const[showBatchConfirm,setShowBatchConfirm]=useState(false);
+  const[batchSubmitting,setBatchSubmitting]=useState(false);
+  const[confirmReset,setConfirmReset]=useState(null);
+  const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
+
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
   const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
   const emptyForm=()=>({pct_complete:'',notes:'',...Object.fromEntries(LF_FIELDS.map(f=>[f,'']))});
-  const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);};
+  const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);setExpandedRow(null);setEditingRow(null);setSelected(new Set());};
   const selMonthLabel=monthLabel(selMonth);
   const activeJobs=useMemo(()=>{let j2=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));if(selPM)j2=j2.filter(j=>j.pm===selPM);return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));},[jobs,selPM]);
   const fetchSubs=useCallback(async()=>{if(!selPM)return;const d=await sbGet('pm_bill_submissions',`billing_month=eq.${selMonth}&pm=eq.${selPM}&order=created_at.desc`);setSubs(d||[]);},[selMonth,selPM]);
   useEffect(()=>{fetchSubs();},[fetchSubs]);
   const subByJob=useMemo(()=>{const m={};(subs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[subs]);
   const submittedCount=activeJobs.filter(j=>subByJob[j.id]).length;
+  const reviewedCount=activeJobs.filter(j=>{const s=subByJob[j.id];return s&&s.ar_reviewed;}).length;
+  const submittedNotReviewed=submittedCount-reviewedCount;
+  const missingCount=activeJobs.length-submittedCount;
   const totalCount=activeJobs.length;
   const pct=totalCount>0?Math.round(submittedCount/totalCount*100):0;
   const pctColor=pct>=100?'#10B981':pct>50?'#F59E0B':'#EF4444';
+  const totalLFSubmitted=useMemo(()=>(subs||[]).reduce((s,x)=>s+n(x.total_lf),0),[subs]);
+
+  const getStatus=(j)=>{const s=subByJob[j.id];if(!s)return'missing';if(s.ar_reviewed)return'reviewed';return'submitted';};
+  const filteredJobs=useMemo(()=>{if(filterTab==='all')return activeJobs;return activeJobs.filter(j=>getStatus(j)===filterTab);},[activeJobs,filterTab,subByJob]);
+
   const getForm=(jobId)=>forms[jobId]||emptyForm();
   const updateForm=(jobId,field,val)=>setForms(prev=>({...prev,[jobId]:{...(prev[jobId]||emptyForm()),[field]:val}}));
-  const toggleCard=(jobId)=>setExpanded(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
-  const expandAll=()=>setExpanded(new Set(activeJobs.map(j=>j.id)));
-  const collapseAll=()=>setExpanded(new Set());
-  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditMode(prev=>{const s=new Set(prev);s.add(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.add(job.id);return s;});};
-  const cancelEdit=(jobId)=>setEditMode(prev=>{const s=new Set(prev);s.delete(jobId);return s;});
-  const[confirmReset,setConfirmReset]=useState(null);
-  const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
-  const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
-  const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload={billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:parseInt(job.total_lf)||0,labor_post_only:parseFloat(form.labor_post_only)||0,labor_post_panels:parseFloat(form.labor_post_panels)||0,labor_complete:parseFloat(form.labor_complete)||0,sw_foundation:parseFloat(form.sw_foundation)||0,sw_columns:parseFloat(form.sw_columns)||0,sw_panels:parseFloat(form.sw_panels)||0,sw_complete:parseFloat(form.sw_complete)||0,wi_gates:parseFloat(form.wi_gates)||0,wi_fencing:parseFloat(form.wi_fencing)||0,wi_columns:parseFloat(form.wi_columns)||0,line_bonds:parseFloat(form.line_bonds)||0,line_permits:parseFloat(form.line_permits)||0,remove_existing:parseFloat(form.remove_existing)||0,gate_controls:parseFloat(form.gate_controls)||0,lf_panels_washed:0,pct_complete_pm:parseFloat(form.pct_complete)||0,notes:form.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};console.log('[PM Bill Sheet] Submitting payload:',JSON.stringify(payload));const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();console.log('[PM Bill Sheet] Response status:',res.status);console.log('[PM Bill Sheet] Response body:',resTxt);if(!res.ok){throw new Error(`Save failed (${res.status}): ${resTxt}`);}const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Bill sheet submitted for ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job:{job_name:job.job_name,job_number:job.job_number,market:job.market,pm:job.pm,style:job.style,total_lf:job.total_lf,adj_contract_value:job.adj_contract_value}})}).catch(e=>console.error('Bill sheet notification failed:',e));setEditMode(prev=>{const s=new Set(prev);s.delete(job.id);return s;});setExpanded(prev=>{const s=new Set(prev);s.delete(job.id);return s;});}catch(e){console.error('[PM Bill Sheet] Submit error:',e);setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
+  const expandRow=(jobId)=>{if(expandedRow===jobId){setExpandedRow(null);setEditingRow(null);}else{setExpandedRow(jobId);setEditingRow(null);}};
+  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditingRow(job.id);setExpandedRow(job.id);};
 
-  const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
-  const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(sub[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>{sec.fields.map(([label,field])=>{const v=n(sub[field]);return v>0?<div key={field} style={{background:'#F9F8F6',borderRadius:6,padding:'4px 8px'}}><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div></div>:null;}).filter(Boolean)}</div></div>;}).filter(Boolean);
-  const renderLFForm=(jobId)=>{const form=getForm(jobId);return LF_SECTIONS.map(sec=><div key={sec.title} style={{marginBottom:12}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'4px 8px',background:sec.bg,borderRadius:4}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>{sec.fields.map(([label,field])=><div key={field}><label style={{display:'block',fontSize:9,color:'#9E9B96',marginBottom:1}}>{label}</label><input type="number" value={form[field]} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'4px 8px',fontSize:12}}/></div>)}</div></div>);};
+  const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
+
+  const buildPayload=(job,formVals)=>({billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:parseInt(job.total_lf)||0,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,lf_panels_washed:0,pct_complete_pm:parseFloat(formVals.pct_complete)||0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false});
+
+  const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload=buildPayload(job,form);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Submitted: ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));setEditingRow(null);setExpandedRow(null);}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
+
+  const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
+  const toggleSelect=(jobId)=>setSelected(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
+  const toggleSelectAll=()=>{if(selected.size===missingJobs.length)setSelected(new Set());else setSelected(new Set(missingJobs.map(j=>j.id)));};
+  const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={pct_complete:'0',notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});if(res.ok){const txt=await res.text();const saved=JSON.parse(txt);newRecs.push(saved[0]||saved);success++;}}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
 
   if(!selPM)return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Bill Sheet</h1>
@@ -1164,82 +1179,96 @@ function PMBillingPage({jobs,onRefresh}){
     </div>
   </div>);
 
+  const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
+  const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(sub[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>{sec.fields.map(([label,field])=>{const v=n(sub[field]);return v>0?<div key={field} style={{background:'#F9F8F6',borderRadius:6,padding:'4px 8px'}}><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div></div>:null;}).filter(Boolean)}</div></div>;}).filter(Boolean);
+  const renderLFForm=(jobId)=>{const form=getForm(jobId);return LF_SECTIONS.map(sec=><div key={sec.title} style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:6}}>{sec.fields.map(([label,field])=><div key={field}><label style={{display:'block',fontSize:9,color:'#9E9B96',marginBottom:1}}>{label}</label><input type="number" value={form[field]} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/></div>)}</div></div>);};
+
+  const filterTabs=[['all','All',activeJobs.length,'#6B6056','#F4F4F2'],['missing','Missing',missingCount,'#991B1B','#FEE2E2'],['submitted','Submitted',submittedNotReviewed,'#065F46','#D1FAE5'],['reviewed','Reviewed',reviewedCount,'#1D4ED8','#DBEAFE']];
+
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Bill Sheet</h1>
     </div>
     {/* PM Selector + Month */}
-    <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
-      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 20px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>{pm.short}</button>)}
+    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer'}}>{pm.short}</button>)}
       <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
       <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
       <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{selMonthLabel}</span>
     </div>
     {/* Progress bar */}
-    <div style={{...card,marginBottom:16,padding:16}}>
+    <div style={{...card,marginBottom:12,padding:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <span style={{fontSize:14,fontWeight:700,color:'#1A1A1A'}}>{submittedCount} of {totalCount} jobs submitted for {selMonthLabel}</span>
-        <span style={{fontSize:24,fontWeight:800,color:pctColor}}>{pct}%</span>
+        <span style={{fontSize:13,fontWeight:700,color:'#1A1A1A'}}>{submittedCount} of {totalCount} submitted — {pct}%</span>
+        <span style={{fontSize:12,color:'#6B6056'}}>Total LF submitted: <b style={{color:'#1A1A1A'}}>{totalLFSubmitted.toLocaleString()}</b></span>
       </div>
-      <div style={{height:10,background:'#E5E3E0',borderRadius:10,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:10,transition:'width .4s ease'}}/></div>
+      <div style={{height:8,background:'#E5E3E0',borderRadius:8,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:8,transition:'width .4s ease'}}/></div>
     </div>
-    {/* Expand/Collapse All */}
-    <div style={{display:'flex',gap:8,marginBottom:12}}>
-      <button onClick={expandAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Expand All</button>
-      <button onClick={collapseAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Collapse All</button>
-      <span style={{fontSize:12,color:'#9E9B96',lineHeight:'30px',marginLeft:8}}>{activeJobs.length} active jobs</span>
-    </div>
-    {/* Job cards */}
-    {activeJobs.map(j=>{const sub=subByJob[j.id];const isExp=expanded.has(j.id);const isEditing=editMode.has(j.id);const arReviewed=sub&&sub.ar_reviewed;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-      return<div key={j.id} style={{...card,padding:0,marginBottom:12,overflow:'hidden',borderLeft:sub?arReviewed?'4px solid #3B82F6':'4px solid #10B981':'4px solid #EF4444'}}>
-        {/* Header */}
-        <div onClick={()=>toggleCard(j.id)} style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',gap:10,alignItems:'center',cursor:'pointer',flexWrap:'wrap'}}>
-          <div style={{flex:'1 1 200px',minWidth:0}}>
-            <span style={{fontSize:14,fontWeight:700}}>{j.job_name}</span>
-            <span style={{fontSize:11,color:'rgba(255,255,255,0.5)',marginLeft:8}}>#{j.job_number}</span>
+    {/* Filter tabs */}
+    <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>{filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}</div>
+    {/* Batch submit for Missing tab */}
+    {filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#6B6056',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8B2020'}}/>Select all missing jobs</label>
+      {selected.size>0&&<button onClick={()=>setShowBatchConfirm(true)} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309'}}>Submit {selected.size} as $0 / No Activity</button>}
+    </div>}
+    {/* Job list — compact rows */}
+    {filteredJobs.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No jobs in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:6}}>
+      {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const rowBg=status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const borderColor=status==='reviewed'?'#3B82F6':status==='submitted'?'#10B981':'#EF4444';const icon=status==='reviewed'?'✅':status==='submitted'?'✓':'✗';const iconColor=status==='reviewed'?'#1D4ED8':status==='submitted'?'#10B981':'#EF4444';
+        return<div key={j.id} style={{background:rowBg,borderLeft:`3px solid ${borderColor}`,borderRadius:6,border:'1px solid #E5E3E0',overflow:'hidden'}}>
+          {/* Compact row */}
+          <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:48}}>
+            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,accentColor:'#8B2020'}}/>}
+            <span style={{fontSize:16,color:iconColor,fontWeight:700,width:18,textAlign:'center'}}>{icon}</span>
+            <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
+            <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
+            <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
+              {j.style&&<span>{j.style}</span>}
+              {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
+              {n(j.total_lf)>0&&<span style={{fontWeight:700,color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}LF</span>}
+            </span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button>}
+              {status==='submitted'&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
+              {status==='reviewed'&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>}
+            </div>
           </div>
-          <div style={{display:'flex',gap:6,alignItems:'center',fontSize:12,color:'rgba(255,255,255,0.7)'}}>
-            {j.style&&<span>{j.style}</span>}{j.color&&<><span style={{opacity:0.4}}>|</span><span>{j.color}</span></>}{j.height_precast&&<><span style={{opacity:0.4}}>|</span><span>{j.height_precast}ft</span></>}
-          </div>
-          <div>{arReviewed?<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#3B82F6',color:'#FFF'}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>:sub?<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#10B981',color:'#FFF'}}>✓ Submitted {subDate}</span>:<span style={{display:'inline-block',padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:700,background:'#EF4444',color:'#FFF'}}>✗ Not Submitted</span>}</div>
-          <span style={{fontSize:12,color:'rgba(255,255,255,0.5)',transition:'transform 0.3s',display:'inline-block',transform:isExp?'rotate(0deg)':'rotate(-90deg)'}}>▼</span>
-        </div>
-        {/* Body */}
-        <div style={{maxHeight:isExp?'5000px':'0',overflow:'hidden',transition:'max-height 0.3s ease-in-out'}}>
-          <div style={{padding:16}}>
-            {arReviewed?<div>
-              <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:12,marginBottom:12}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#1D4ED8',marginBottom:2}}>Reviewed by AR{sub.ar_reviewed_by?' — '+sub.ar_reviewed_by:''} on {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
-                {sub.ar_notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>AR Notes: {sub.ar_notes}</div>}
-              </div>
+          {/* Expanded inline form */}
+          {isExp&&status!=='reviewed'&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#FFF'}}>
+            {status==='submitted'&&!isEditing?<>
               {renderLFReadOnly(sub)}
               <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
               {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
-              <div style={{marginTop:12}}><button onClick={e=>{e.stopPropagation();setAdminPinJob(j);setAdminPin('');setAdminPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button></div>
-            </div>:sub&&!isEditing?<div>
-              {renderLFReadOnly(sub)}
-              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}{sub.pct_complete_pm!=null&&<span>% Complete: <b style={{color:'#1A1A1A'}}>{sub.pct_complete_pm}%</b></span>}</div>
-              {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
-              <div style={{marginTop:12,display:'flex',gap:8,alignItems:'center'}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'8px 20px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'6px 12px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
-            </div>:<div>
+              <div style={{marginTop:10,display:'flex',gap:8}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
+            </>:<>
               {renderLFForm(j.id)}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-                <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>% Complete (estimate)</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={inputS}/></div>
-                <div style={{display:'flex',alignItems:'flex-end'}}><div style={{background:'#F9F8F6',borderRadius:8,padding:'8px 12px',fontSize:13}}>Total LF: <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{calcLFTotal(form).toLocaleString()}</span></div></div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={{...inputS,padding:'6px 10px',fontSize:13}}/></div>
+                <div style={{display:'flex',alignItems:'flex-end'}}><div style={{background:'#F9F8F6',borderRadius:6,padding:'6px 10px',fontSize:12}}>Total LF: <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{calcLFTotal(form).toLocaleString()}</span></div></div>
               </div>
-              <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,resize:'vertical'}}/></div>
-              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'10px 0',opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit Bill Sheet'}</button>{isEditing&&<button onClick={()=>cancelEdit(j.id)} style={btnS}>Cancel</button>}</div>
-            </div>}
-          </div>
-        </div>
-      </div>;
-    })}
-    {activeJobs.length===0&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No active projects found for {selPM}</div>}
+              <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
+              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'8px 0',fontSize:13,opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
+            </>}
+          </div>}
+          {status==='reviewed'&&<div style={{padding:'8px 14px',borderTop:'1px solid #BFDBFE',background:'#EFF6FF',fontSize:11,color:'#1D4ED8',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>Reviewed by AR{sub.ar_reviewed_by?' — '+sub.ar_reviewed_by:''}</span>
+            <button onClick={()=>{setAdminPinJob(j);setAdminPin('');setAdminPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button>
+          </div>}
+        </div>;
+      })}
+    </div>}
+    {/* Batch confirm modal */}
+    {showBatchConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!batchSubmitting&&setShowBatchConfirm(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Submit {selected.size} jobs with no activity?</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will submit <b>{selected.size}</b> bill sheets for <b>{selMonthLabel}</b> with all LF fields set to 0 and notes "No activity this month". This cannot be undone individually but can be reset per-job.</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowBatchConfirm(false)} disabled={batchSubmitting} style={btnS}>Cancel</button><button onClick={batchSubmitNoActivity} disabled={batchSubmitting} style={{...btnP,background:'#B45309'}}>{batchSubmitting?'Submitting...':'Yes, Submit'}</button></div>
+      </div>
+    </div>}
     {confirmReset&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmReset(null)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:420,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Reset Bill Sheet?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>Are you sure you want to reset the bill sheet for <b style={{color:'#1A1A1A'}}>{confirmReset.job_name}</b>? This will delete your submission and cannot be undone.</div>
+        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>Reset bill sheet for <b style={{color:'#1A1A1A'}}>{confirmReset.job_name}</b>? This cannot be undone.</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmReset(null)} style={btnS}>Cancel</button><button onClick={()=>resetSub(confirmReset,false)} style={{...btnP,background:'#991B1B'}}>Yes, Reset</button></div>
       </div>
     </div>}
