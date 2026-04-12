@@ -3137,6 +3137,8 @@ function DailyReportPage({jobs,onNav}){
   const[unplanSearch,setUnplanSearch]=useState('');
   const[shiftSubs,setShiftSubs]=useState({1:null,2:null});  // {1: {count, submittedAt, lines[]}, 2: ...}
   const[editingShift,setEditingShift]=useState(false);
+  const[removeConfirmIdx,setRemoveConfirmIdx]=useState(null); // which line is in "confirm remove" state
+  const[removeBusyIdx,setRemoveBusyIdx]=useState(null); // which line is currently PATCHing
   // ─── CARRY FORWARD STATE ───
   const[carryForward,setCarryForward]=useState([]);
   // Pick up cross-page handoff (e.g. "View Tomorrow's Plan" from Production Orders)
@@ -3511,6 +3513,28 @@ function DailyReportPage({jobs,onNav}){
   const updateActualsLine=(idx,field,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
   const updateActualsPiece=(idx,key,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,actual:{...l.actual,[key]:val}}:l));
   const removeActualsLine=(idx)=>setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
+  // Confirmed remove: PATCH job status back to production_queue, then drop the line from local state.
+  // If the DB write fails, do NOT remove the line — show an error toast and revert to the default Remove button.
+  const confirmRemoveActualsLine=async(idx)=>{
+    const line=actualsLines[idx];if(!line)return;
+    const jobId=line.job_id;const jobName=line.job_name||'Job';
+    if(!jobId){setActualsLines(prev=>prev.filter((_,i)=>i!==idx));setRemoveConfirmIdx(null);setToast({msg:`${jobName} removed from today's log`,ok:true});return;}
+    setRemoveBusyIdx(idx);
+    try{
+      const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${jobId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'production_queue'})});
+      if(!res.ok)throw new Error(await res.text());
+      // Success — drop from local state and toast
+      setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
+      setRemoveConfirmIdx(null);
+      setRemoveBusyIdx(null);
+      setToast({msg:`${jobName} removed from today's log and returned to Production Queue.`,ok:true});
+    }catch(e){
+      console.error('Remove job status PATCH failed:',e);
+      setRemoveBusyIdx(null);
+      setRemoveConfirmIdx(null); // revert confirmation UI back to default Remove button
+      setToast({msg:'Failed to update job status. Please try again.',ok:false});
+    }
+  };
   const addUnplannedLine=(j)=>{
     setActualsLines(prev=>[...prev,buildActualsLine({plan_line_id:null,job:j,planned_lf:0,unplanned:true})]);
     setShowUnplanPicker(false);setUnplanSearch('');
@@ -3695,7 +3719,12 @@ function DailyReportPage({jobs,onNav}){
                   <div style={{fontWeight:800,fontSize:14}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500}}>— #{l.job_number}</span>{l.unplanned&&<span style={{marginLeft:6,fontSize:9,padding:'2px 6px',background:'#DBEAFE',color:'#1D4ED8',borderRadius:4,fontWeight:700,textTransform:'uppercase'}}>Unplanned</span>}</div>
                   <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
                 </div>
-                {l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#9E9B96',fontSize:11,cursor:'pointer'}}>Remove</button>}
+                {/* Remove job — two-step confirm. Success flips DB status back to production_queue, error reverts UI. */}
+                {removeConfirmIdx===idx?<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                  <span style={{fontSize:11,color:'#991B1B',fontWeight:700}}>Remove and return to Production Queue?</span>
+                  <button disabled={removeBusyIdx===idx} onClick={()=>confirmRemoveActualsLine(idx)} style={{background:'#991B1B',border:'none',borderRadius:6,padding:'4px 10px',color:'#FFF',fontSize:11,fontWeight:700,cursor:removeBusyIdx===idx?'not-allowed':'pointer',opacity:removeBusyIdx===idx?0.6:1}}>{removeBusyIdx===idx?'Removing...':'Yes, remove'}</button>
+                  <button disabled={removeBusyIdx===idx} onClick={()=>setRemoveConfirmIdx(null)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>Cancel</button>
+                </div>:<button onClick={()=>setRemoveConfirmIdx(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontSize:11,cursor:'pointer',fontWeight:600}}>× Remove Job</button>}
               </div>
               {/* Planned vs Actual vs Variance table */}
               {(()=>{
