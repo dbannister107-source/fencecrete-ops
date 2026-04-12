@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -2731,6 +2732,286 @@ function EstimatingPage(){
   </div>);
 }
 
+/* ═══ IMPORT PROJECTS PAGE ═══ */
+const IMPORT_COL_MAP={
+  'Job Code':'job_number','Job Name':'job_name','Customer Name':'customer_name','Status':'status','Location':'market','Sales Rep':'sales_rep','Type':'job_type','Address':'address','City':'city','State':'state','Zip':'zip',
+  'LF - Precast':'lf_precast','Height - Precast':'height_precast','Style - Clean':'style','Color - Precast':'color','Contract Rate - Precast':'contract_rate_precast',
+  'LF - Single Wythe':'lf_single_wythe','Height - Single Wythe':'height_single_wythe','Contract Rate - Single Wythe':'contract_rate_single_wythe',
+  'LF - Wrought Iron':'lf_wrought_iron','Number of Gates':'number_of_gates','Gate Height':'gate_height','Gate Description':'gate_description','Gate Rate':'gate_rate',
+  'Net Contract Value':'contract_value','Change Orders':'change_orders','Adj Contract Value':'adj_contract_value','Sales Tax':'sales_tax','YTD Amt Invoiced':'ytd_invoiced',
+  'Contract Date':'contract_date','Est. Start Date':'est_start_date','Notes':'notes','Documents Needed':'documents_needed','Billing Method':'billing_method','Billing Date':'billing_date'
+};
+const IMPORT_STATUS_MAP={'Active Project':'active_install','Booked-Not Started':'inventory_ready','Pending':'contract_review','Contract Review':'contract_review','Closed':'closed','Pass':'closed','Cancelled':'closed'};
+const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth'};
+const PROTECTED_FIELDS=new Set(['ytd_invoiced','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
+const IMPORT_NUMERIC_FIELDS=new Set(['lf_precast','height_precast','contract_rate_precast','lf_single_wythe','height_single_wythe','contract_rate_single_wythe','lf_wrought_iron','number_of_gates','gate_height','gate_rate','contract_value','change_orders','adj_contract_value','sales_tax','ytd_invoiced']);
+const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date']);
+
+function ImportProjectsPage({jobs,onRefresh,onNav}){
+  const[step,setStep]=useState(1);
+  const[fileName,setFileName]=useState('');
+  const[rawRows,setRawRows]=useState([]);
+  const[headers,setHeaders]=useState([]);
+  const[mapping,setMapping]=useState({});
+  const[preview,setPreview]=useState(null);
+  const[previewTab,setPreviewTab]=useState('new');
+  const[skipUpdates,setSkipUpdates]=useState(new Set());
+  const[importing,setImporting]=useState(false);
+  const[progress,setProgress]=useState({done:0,total:0});
+  const[results,setResults]=useState(null);
+  const[error,setError]=useState('');
+  const[toast,setToast]=useState(null);
+  const fileInputRef=useRef();
+
+  const parseFile=(file)=>{
+    setError('');
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const data=new Uint8Array(e.target.result);
+        const wb=XLSX.read(data,{type:'array',cellDates:true});
+        const sheetName=wb.SheetNames[0];
+        const sheet=wb.Sheets[sheetName];
+        // Header row is row 6 (0-indexed 5)
+        const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false});
+        if(rows.length<7){setError('File must have at least 7 rows (headers at row 6)');return;}
+        const hdrs=rows[5].map(h=>h?String(h).trim():'');
+        const dataRows=rows.slice(6).filter(r=>r.some(c=>c!=null&&String(c).trim()!==''));
+        const objRows=dataRows.map(r=>{const o={};hdrs.forEach((h,i)=>{if(h)o[h]=r[i];});return o;});
+        setHeaders(hdrs.filter(Boolean));
+        setRawRows(objRows);
+        setFileName(file.name);
+        // Auto-map
+        const autoMap={};
+        hdrs.forEach(h=>{if(h&&IMPORT_COL_MAP[h])autoMap[h]=IMPORT_COL_MAP[h];});
+        setMapping(autoMap);
+        setStep(2);
+      }catch(err){setError('Failed to parse file: '+err.message);}
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleFile=(e)=>{const f=e.target.files[0];if(f)parseFile(f);};
+  const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)parseFile(f);};
+
+  const parseNum=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n2=parseFloat(s);return isNaN(n2)?null:n2;};
+  const parseDate=(v)=>{if(!v)return null;if(v instanceof Date)return v.toISOString().split('T')[0];const s=String(v).trim();if(!s)return null;const d=new Date(s);if(!isNaN(d.getTime()))return d.toISOString().split('T')[0];return null;};
+
+  const buildPreview=()=>{
+    const jobsByNumber={};jobs.forEach(j=>{if(j.job_number)jobsByNumber[j.job_number.trim()]=j;});
+    const jobsByName={};jobs.forEach(j=>{if(j.job_name)jobsByName[j.job_name.trim().toLowerCase()]=j;});
+    const newJobs=[];const updates=[];const warnings=[];
+    rawRows.forEach((row,idx)=>{
+      const mapped={};
+      Object.entries(mapping).forEach(([excelCol,dbCol])=>{
+        if(!dbCol)return;
+        let v=row[excelCol];
+        if(v==null||v==='')return;
+        if(dbCol==='status'){v=IMPORT_STATUS_MAP[String(v).trim()]||null;}
+        else if(dbCol==='market'){v=IMPORT_MARKET_MAP[String(v).trim()]||String(v).trim();}
+        else if(IMPORT_NUMERIC_FIELDS.has(dbCol)){v=parseNum(v);}
+        else if(IMPORT_DATE_FIELDS.has(dbCol)){v=parseDate(v);}
+        else{v=String(v).trim();}
+        if(v!=null&&v!=='')mapped[dbCol]=v;
+      });
+      const jobNumber=mapped.job_number;
+      if(!jobNumber){warnings.push({row:idx+7,issue:'Missing job_number',data:JSON.stringify(row).substring(0,80)});return;}
+      if(!mapped.job_name){warnings.push({row:idx+7,issue:'Missing job_name',data:jobNumber});return;}
+      const existing=jobsByNumber[jobNumber]||jobsByName[mapped.job_name.toLowerCase()];
+      if(existing){
+        // Find changed fields (excluding protected)
+        const changes=[];
+        Object.entries(mapped).forEach(([k,v])=>{
+          if(PROTECTED_FIELDS.has(k))return;
+          const cur=existing[k];
+          if(cur==null&&v==null)return;
+          if(String(cur||'')!==String(v||'')){changes.push({field:k,cur,newVal:v});}
+        });
+        if(changes.length>0)updates.push({rowNum:idx+7,existing,mapped,changes});
+      }else{
+        newJobs.push({rowNum:idx+7,mapped});
+      }
+    });
+    setPreview({newJobs,updates,warnings});
+    setSkipUpdates(new Set());
+    setStep(3);
+  };
+
+  const runImport=async()=>{
+    if(!preview)return;
+    setImporting(true);
+    const errors=[];let inserted=0;let updated=0;
+    const total=preview.newJobs.length+preview.updates.filter(u=>!skipUpdates.has(u.rowNum)).length;
+    setProgress({done:0,total});
+    // Insert new jobs (batch of 50)
+    for(let i=0;i<preview.newJobs.length;i+=50){
+      const batch=preview.newJobs.slice(i,i+50).map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};PROTECTED_FIELDS.forEach(f=>{delete body[f];});return body;});
+      try{
+        const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(batch)});
+        if(res.ok){inserted+=batch.length;}else{const txt=await res.text();errors.push({type:'insert_batch',error:txt.substring(0,200)});}
+      }catch(e){errors.push({type:'insert_batch',error:e.message});}
+      setProgress({done:Math.min(i+50,preview.newJobs.length),total});
+    }
+    // Update existing jobs one by one (PATCH by job_number)
+    const toUpdate=preview.updates.filter(u=>!skipUpdates.has(u.rowNum));
+    for(let i=0;i<toUpdate.length;i++){
+      const u=toUpdate[i];
+      const body={};u.changes.forEach(c=>{if(!PROTECTED_FIELDS.has(c.field))body[c.field]=c.newVal;});
+      if(Object.keys(body).length===0)continue;
+      try{
+        const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${u.existing.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(res.ok){updated++;}else{const txt=await res.text();errors.push({type:'update',job:u.existing.job_number,error:txt.substring(0,200)});}
+      }catch(e){errors.push({type:'update',job:u.existing.job_number,error:e.message});}
+      setProgress({done:preview.newJobs.length+i+1,total});
+    }
+    setResults({inserted,updated,skipped:preview.warnings.length+skipUpdates.size,errors});
+    setImporting(false);
+    setStep(4);
+    if(onRefresh)onRefresh();
+  };
+
+  const downloadErrorLog=()=>{
+    if(!results||!results.errors.length)return;
+    const rows=[['Type','Job','Error'],...results.errors.map(e=>[e.type||'',e.job||'',e.error||''])];
+    const csv=rows.map(r=>r.map(v=>typeof v==='string'&&v.includes(',')?`"${v}"`:v).join(',')).join('\n');
+    const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='import-errors.csv';a.click();
+  };
+
+  const reset=()=>{setStep(1);setFileName('');setRawRows([]);setHeaders([]);setMapping({});setPreview(null);setSkipUpdates(new Set());setResults(null);setError('');};
+  const toggleSkipUpdate=(rowNum)=>setSkipUpdates(prev=>{const s=new Set(prev);if(s.has(rowNum))s.delete(rowNum);else s.add(rowNum);return s;});
+
+  const stepIndicator=<div style={{display:'flex',gap:4,marginBottom:24}}>{[1,2,3,4].map(n=>{const labels={1:'Upload',2:'Mapping',3:'Preview',4:'Results'};return<div key={n} style={{flex:1,padding:'10px 14px',background:step===n?'#8B2020':step>n?'#D1FAE5':'#F4F4F2',color:step===n?'#FFF':step>n?'#065F46':'#9E9B96',borderRadius:8,fontSize:12,fontWeight:700,textAlign:'center'}}>Step {n}: {labels[n]}</div>;})}</div>;
+
+  return(<div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Import Projects</h1>
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Safely import the Master Project Tracker from Excel</div>
+    {stepIndicator}
+    {error&&<div style={{background:'#FEE2E2',border:'1px solid #EF4444',borderRadius:8,padding:12,marginBottom:16,color:'#991B1B',fontSize:13,fontWeight:600}}>{error}</div>}
+
+    {/* STEP 1: UPLOAD */}
+    {step===1&&<div style={{...card,padding:40,textAlign:'center'}}>
+      <div onDragOver={e=>e.preventDefault()} onDrop={handleDrop} style={{border:'3px dashed #D1CEC9',borderRadius:16,padding:60,cursor:'pointer',transition:'all .2s'}} onClick={()=>fileInputRef.current?.click()} onMouseEnter={e=>{e.currentTarget.style.borderColor='#8B2020';e.currentTarget.style.background='#FDF4F4';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#D1CEC9';e.currentTarget.style.background='transparent';}}>
+        <div style={{fontSize:48,marginBottom:12}}>📤</div>
+        <div style={{fontSize:16,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>Drop Excel file here or click to upload</div>
+        <div style={{fontSize:12,color:'#9E9B96'}}>.xlsx — reads the "Active Jobs" sheet, headers at row 6</div>
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:'none'}}/>
+      </div>
+      {fileName&&<div style={{marginTop:16,fontSize:13,color:'#065F46',fontWeight:600}}>✓ {fileName} — {rawRows.length} data rows parsed</div>}
+    </div>}
+
+    {/* STEP 2: MAPPING */}
+    {step===2&&<div style={card}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>Column Mapping — {headers.length} columns found</div>
+      <div style={{maxHeight:480,overflow:'auto',border:'1px solid #E5E3E0',borderRadius:8}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6'}}><tr><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Excel Column</th><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>→ App Field</th></tr></thead>
+          <tbody>{headers.map(h=><tr key={h} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'8px 10px',fontWeight:500}}>{h}</td>
+            <td style={{padding:'8px 10px'}}>
+              <select value={mapping[h]||''} onChange={e=>setMapping(prev=>({...prev,[h]:e.target.value||undefined}))} style={{...inputS,padding:'4px 8px',fontSize:12,width:280,background:mapping[h]?'#D1FAE5':'#FFF'}}>
+                <option value="">— Skip this column —</option>
+                {Object.values(IMPORT_COL_MAP).map(dbCol=><option key={dbCol} value={dbCol}>{dbCol}</option>)}
+              </select>
+            </td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <div style={{marginTop:16,display:'flex',gap:8,justifyContent:'space-between'}}>
+        <button onClick={reset} style={btnS}>← Start Over</button>
+        <button onClick={buildPreview} style={btnP}>Next: Preview →</button>
+      </div>
+    </div>}
+
+    {/* STEP 3: PREVIEW */}
+    {step===3&&preview&&<div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{preview.newJobs.length}</div><div style={{fontSize:11,color:'#6B6056'}}>✅ New jobs to INSERT</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{preview.updates.length-skipUpdates.size}</div><div style={{fontSize:11,color:'#6B6056'}}>🔄 Existing to UPDATE</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #F59E0B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#F59E0B'}}>{preview.warnings.length}</div><div style={{fontSize:11,color:'#6B6056'}}>⚠️ Warnings</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B7280'}}>{PROTECTED_FIELDS.size}</div><div style={{fontSize:11,color:'#6B6056'}}>🔒 Protected fields</div></div>
+      </div>
+      <div style={{fontSize:11,color:'#6B6056',background:'#F9F8F6',padding:'8px 12px',borderRadius:8,marginBottom:12}}>
+        <b>Protected fields (never overwritten):</b> ytd_invoiced, pct_billed, left_to_bill, status, material_calc_*, stage dates. The kanban, AR review, and material calculator own these fields.
+      </div>
+      {/* Tabs */}
+      <div style={{display:'flex',gap:4,marginBottom:12,borderBottom:'2px solid #E5E3E0'}}>
+        {[['new',`NEW JOBS (${preview.newJobs.length})`,'#065F46'],['updates',`UPDATES (${preview.updates.length})`,'#B45309'],['warnings',`WARNINGS (${preview.warnings.length})`,'#F59E0B']].map(([k,l,c])=><button key={k} onClick={()=>setPreviewTab(k)} style={{padding:'10px 18px',border:'none',background:'transparent',color:previewTab===k?c:'#6B6056',fontWeight:previewTab===k?800:400,fontSize:13,cursor:'pointer',borderBottom:previewTab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
+      </div>
+      {/* Tab content */}
+      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 460px)'}}>
+        {previewTab==='new'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Customer','Market','PM','Contract Value','Style'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{preview.newJobs.map(nj=><tr key={nj.rowNum} style={{borderBottom:'1px solid #F4F4F2',background:'#F0FDF4'}}>
+            <td style={{padding:'8px 10px',fontWeight:600}}>{nj.mapped.job_number||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{nj.mapped.job_name||'—'}</td>
+            <td style={{padding:'8px 10px',color:'#6B6056'}}>{nj.mapped.customer_name||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{nj.mapped.market||'—'}</td>
+            <td style={{padding:'8px 10px'}}>{nj.mapped.pm||'—'}</td>
+            <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{nj.mapped.contract_value?$(nj.mapped.contract_value):'—'}</td>
+            <td style={{padding:'8px 10px',color:'#6B6056'}}>{nj.mapped.style||'—'}</td>
+          </tr>)}
+          {preview.newJobs.length===0&&<tr><td colSpan={7} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No new jobs to insert</td></tr>}</tbody>
+        </table>}
+        {previewTab==='updates'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Skip','Job #','Job Name','Field','Current','New'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{preview.updates.flatMap(u=>u.changes.map((c,ci)=><tr key={u.rowNum+'-'+ci} style={{borderBottom:'1px solid #F4F4F2',opacity:skipUpdates.has(u.rowNum)?0.4:1}}>
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top'}}><input type="checkbox" checked={!skipUpdates.has(u.rowNum)} onChange={()=>toggleSkipUpdate(u.rowNum)} style={{width:16,height:16,accentColor:'#8B2020'}}/></td>}
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',fontWeight:600,verticalAlign:'top'}}>{u.existing.job_number}</td>}
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.existing.job_name}</td>}
+            <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.field}</td>
+            <td style={{padding:'8px 10px',fontSize:11,color:'#991B1B',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.cur!=null?String(c.cur):'—'}</td>
+            <td style={{padding:'8px 10px',fontSize:11,fontWeight:700,background:'#FEF3C7',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{String(c.newVal)}</td>
+          </tr>))}
+          {preview.updates.length===0&&<tr><td colSpan={6} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No updates — all existing jobs match Excel values</td></tr>}</tbody>
+        </table>}
+        {previewTab==='warnings'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Row #','Issue','Data'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{preview.warnings.map((w,i)=><tr key={i} style={{borderBottom:'1px solid #F4F4F2',background:'#FFFBEB'}}>
+            <td style={{padding:'8px 10px'}}>{w.row}</td>
+            <td style={{padding:'8px 10px',color:'#B45309',fontWeight:600}}>{w.issue}</td>
+            <td style={{padding:'8px 10px',fontSize:11,color:'#9E9B96',maxWidth:400,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{w.data}</td>
+          </tr>)}
+          {preview.warnings.length===0&&<tr><td colSpan={3} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No warnings — all rows valid</td></tr>}</tbody>
+        </table>}
+      </div>
+      <div style={{marginTop:16,display:'flex',gap:8,justifyContent:'space-between'}}>
+        <button onClick={()=>setStep(2)} style={btnS}>← Back</button>
+        <button onClick={runImport} disabled={preview.newJobs.length===0&&preview.updates.length-skipUpdates.size===0} style={{...btnP,opacity:(preview.newJobs.length===0&&preview.updates.length-skipUpdates.size===0)?0.4:1}}>Import Now →</button>
+      </div>
+    </div>}
+
+    {/* STEP 4: RESULTS */}
+    {step===4&&<div>
+      {importing?<div style={{...card,padding:40,textAlign:'center'}}>
+        <div style={{fontSize:48,marginBottom:12}}>⚙️</div>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:12}}>Importing... {progress.done} / {progress.total}</div>
+        <div style={{height:12,background:'#E5E3E0',borderRadius:12,overflow:'hidden',maxWidth:400,margin:'0 auto'}}><div style={{height:'100%',width:`${progress.total>0?progress.done/progress.total*100:0}%`,background:'#8B2020',transition:'width .3s'}}/></div>
+      </div>:results&&<div>
+        <div style={{...card,padding:24,marginBottom:16}}>
+          <div style={{fontSize:18,fontWeight:800,marginBottom:16,color:results.errors.length>0?'#B45309':'#065F46'}}>{results.errors.length>0?'⚠️ Import complete with errors':'✅ Import complete!'}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#065F46'}}>{results.inserted}</div><div style={{fontSize:11,color:'#6B6056'}}>Inserted</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#B45309'}}>{results.updated}</div><div style={{fontSize:11,color:'#6B6056'}}>Updated</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#6B7280'}}>{results.skipped}</div><div style={{fontSize:11,color:'#6B6056'}}>Skipped</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#991B1B'}}>{results.errors.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Errors</div></div>
+          </div>
+        </div>
+        {results.errors.length>0&&<div style={{...card,padding:16,marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:8,color:'#991B1B'}}>Errors ({results.errors.length})</div>
+          <div style={{maxHeight:200,overflow:'auto'}}>{results.errors.slice(0,20).map((e,i)=><div key={i} style={{fontSize:11,color:'#6B6056',padding:'4px 0',borderBottom:'1px solid #F4F4F2'}}><b style={{color:'#991B1B'}}>{e.type}</b> {e.job?`— ${e.job}`:''} — {e.error}</div>)}</div>
+          {results.errors.length>20&&<div style={{fontSize:11,color:'#9E9B96',marginTop:6}}>+{results.errors.length-20} more</div>}
+        </div>}
+        <div style={{display:'flex',gap:8}}>
+          {onNav&&<button onClick={()=>onNav('projects')} style={btnP}>View Projects</button>}
+          {results.errors.length>0&&<button onClick={downloadErrorLog} style={btnS}>Download Error Log</button>}
+          <button onClick={reset} style={btnS}>Import Another File</button>
+        </div>
+      </div>}
+    </div>}
+  </div>);
+}
+
 /* ═══ MAP PAGE ═══ */
 const MKT_COORDS={Austin:[30.2672,-97.7431],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
 const MKT_PIN={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
@@ -2832,7 +3113,7 @@ const NAV_GROUPS=[
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
   {label:'OPERATIONS',items:[{key:'production',label:'Production',icon:'⚙'},{key:'material_calc',label:'Material Calc',icon:'🧮'},{key:'production_orders',label:'Production Orders',icon:'📋'},{key:'schedule',label:'Schedule',icon:'📅'}]},
   {label:'FIELD',items:[{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'daily_report',label:'Production Report',icon:'🏭'}]},
-  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'}]},
+  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
 ];
 
 export default function App(){
@@ -2869,6 +3150,7 @@ export default function App(){
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='reports'&&<ReportsPage jobs={jobs}/>}
+            {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
             {page==='production_orders'&&<ProductionOrdersPage jobs={jobs} setJobs={setJobs} onNav={setPage}/>}
