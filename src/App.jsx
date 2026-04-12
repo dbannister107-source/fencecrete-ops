@@ -485,7 +485,7 @@ function WeeklyDigest({jobs,active}){
     const newJobs=jobs.filter(j=>j.created_at&&j.created_at>=weekAgo).length;
     const compJobs=jobs.filter(j=>j.complete_date&&j.complete_date>=weekAgo.split('T')[0]).length;
     Promise.all([
-      sbGet('weather_days',`weather_date=gte.${weekAgo.split('T')[0]}&select=id`),
+      sbGet('weather_days',`weather_date=gte.${weekAgo.split('T')[0]}&select=id`).catch(()=>[]),
       sbGet('change_orders',`status=eq.Pending&select=id`)
     ]).then(([wd,co])=>{
       setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs});
