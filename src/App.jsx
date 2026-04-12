@@ -3063,6 +3063,20 @@ function DailyReportPage({jobs}){
   const lineHasVariance=(l)=>PIECE_TYPES.some(pt=>{const a=n(l.actual[pt.key]);const p=n(l.planned[pt.key]);return (a>0||p>0)&&a!==p;})||(n(l.actual_lf)>0&&n(l.actual_lf)!==n(l.planned_lf));
 
   const actualsTotals=useMemo(()=>{let pcs=0,lf=0,plannedPcs=0,plannedLf=0;actualsLines.forEach(l=>{pcs+=lineActualTotal(l);lf+=n(l.actual_lf);plannedPcs+=linePlannedTotal(l);plannedLf+=n(l.planned_lf);});return{pcs,lf,plannedPcs,plannedLf,count:actualsLines.length};},[actualsLines,PIECE_TYPES]);
+  // Shift-wide group totals (Panels / Posts / Rails / Caps) — aggregated across all actualsLines
+  const shiftGroupTotals=useMemo(()=>{
+    const groups={PANELS:{planned:0,actual:0},POSTS:{planned:0,actual:0},RAILS:{planned:0,actual:0},'POST CAPS':{planned:0,actual:0}};
+    actualsLines.forEach(l=>{
+      PIECE_TYPES.forEach(pt=>{
+        if(!groups[pt.group])return;
+        groups[pt.group].planned+=n(l.planned[pt.key]);
+        groups[pt.group].actual+=n(l.actual[pt.key]);
+      });
+    });
+    const lf={planned:0,actual:0};
+    actualsLines.forEach(l=>{lf.planned+=n(l.planned_lf);lf.actual+=n(l.actual_lf);});
+    return{...groups,LF:lf};
+  },[actualsLines,PIECE_TYPES]);
 
   const submitActuals=async()=>{
     const toSubmit=actualsLines.filter(l=>lineActualTotal(l)>0||n(l.actual_lf)>0||l.notes);
@@ -3074,7 +3088,7 @@ function DailyReportPage({jobs}){
     try{
       const rows=toSubmit.map(l=>{
         const pieceCols={};PIECE_TYPES.forEach(pt=>{pieceCols['actual_'+pt.key]=n(l.actual[pt.key])||0;});
-        return{production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:lineActualTotal(l),actual_lf:n(l.actual_lf)||0,...pieceCols,adjustment_reason:l.adjustment_reason||null,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()};
+        return{production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:lineActualTotal(l),actual_lf:n(l.actual_lf)||0,...pieceCols,adjustment_reason:l.adjustment_reason||null,variance_reason:l.adjustment_reason||null,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()};
       });
       const res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
       if(!res.ok)throw new Error(await res.text());
@@ -3406,48 +3420,76 @@ function DailyReportPage({jobs}){
                 </div>
                 {l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#9E9B96',fontSize:11,cursor:'pointer'}}>Remove</button>}
               </div>
-              {/* Column headers */}
-              {(()=>{const s1=shift===2?shift1ByLine[l.plan_line_id]:null;const threeCol=!!s1;return<div style={{display:'grid',gridTemplateColumns:threeCol?'1fr 1fr 1fr':'1fr 1fr',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'}}>
-                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase'}}>Planned</div>
-                {threeCol&&<div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#1D4ED8',textTransform:'uppercase'}}>Shift 1 (Already Produced)</div>}
-                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase'}}>Shift {shift} (Luis enters)</div>
-              </div>;})()}
-              {/* Piece groups */}
-              {groups.map(g=>{
-                const pts=PIECE_TYPES.filter(pt=>pt.group===g);
-                const visible=pts.filter(pt=>n(l.planned[pt.key])>0);
-                if(visible.length===0)return null;
+              {/* Planned vs Actual vs Variance table */}
+              {(()=>{
                 const s1=shift===2?shift1ByLine[l.plan_line_id]:null;
-                const threeCol=!!s1;
-                return<div key={g} style={{padding:'8px 16px',borderBottom:'1px solid #F4F4F2'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:6}}>{g}</div>
-                  {visible.map(pt=>{const s1val=s1?n(s1[pt.key]):0;const remaining=Math.max(n(l.planned[pt.key])-s1val,0);return<div key={pt.key} style={{display:'grid',gridTemplateColumns:threeCol?'1fr 1fr 1fr':'1fr 1fr',gap:8,alignItems:'center',padding:'4px 0'}}>
-                    <div style={{fontSize:12,color:'#6B6056'}}>{pt.label}: <b style={{color:'#1A1A1A',fontSize:13}}>{n(l.planned[pt.key])}</b></div>
-                    {threeCol&&<div style={{fontSize:12,color:'#1D4ED8'}}><b style={{fontSize:13}}>{s1val}</b> <span style={{fontSize:10,color:'#6B6056'}}>(rem {remaining})</span></div>}
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{color:'#9E9B96'}}>→</span>
-                      <input type="number" value={l.actual[pt.key]} onChange={e=>updateActualsPiece(idx,pt.key,e.target.value)} placeholder="0" style={{width:70,padding:'5px 8px',fontSize:13,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/>
-                      {n(l.actual[pt.key])>0&&pieceIcon(l.planned[pt.key],l.actual[pt.key])}
-                    </div>
-                  </div>;})}
-                  {g==='POSTS'&&n(l.post_height)>0&&<div style={{fontSize:11,color:'#9E9B96',marginTop:4}}>Post Height: <b style={{color:'#6B6056'}}>{l.post_height}ft</b></div>}
-                </div>;
-              })}
-              {/* Linear Feet */}
-              <div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:6}}>Linear Feet</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,alignItems:'center'}}>
-                  <div style={{fontSize:12,color:'#6B6056'}}>Planned LF: <b style={{color:'#1A1A1A',fontSize:13}}>{n(l.planned_lf)||'—'}</b></div>
-                  <div style={{display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{color:'#9E9B96'}}>Actual LF:</span>
-                    <input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:90,padding:'5px 8px',fontSize:13,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/>
-                  </div>
-                </div>
-              </div>
-              {/* Adjustment reason */}
+                const showShift1=!!s1;
+                const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0'};
+                const cellThLeft={...cellTh,textAlign:'left'};
+                const cellTd={padding:'8px 12px',fontSize:14,textAlign:'center',borderBottom:'1px solid #F4F4F2'};
+                const cellLabel={...cellTd,textAlign:'left',color:'#1A1A1A',fontWeight:600,fontSize:13};
+                const cellPlanned={...cellTd,background:'#F9F8F6',color:'#6B6056',fontWeight:700,fontFamily:'Inter'};
+                const cellActual={...cellTd,background:'#FFF'};
+                const cellVar=(plan,act)=>{const hasAct=act!==''&&act!=null;const p=n(plan),a=n(act);const v=a-p;const col=!hasAct?'#9E9B96':v===0?'#065F46':v>0?'#065F46':'#991B1B';const text=!hasAct?'—':v===0?'✓':(v>0?'+':'')+v;return{...cellTd,color:col,fontWeight:800,fontFamily:'Inter'};};
+                const varText=(plan,act)=>{const hasAct=act!==''&&act!=null;const p=n(plan),a=n(act);const v=a-p;if(!hasAct)return'—';if(v===0)return'✓';return(v>0?'+':'')+v;};
+                const sectionHeader=(label)=><tr><td colSpan={showShift1?5:4} style={{padding:'6px 12px',background:'#EFEEEB',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
+                const pieceRow=(pt)=>{
+                  if(n(l.planned[pt.key])===0)return null;
+                  const plan=n(l.planned[pt.key]);
+                  const act=l.actual[pt.key];
+                  const s1val=s1?n(s1[pt.key]):0;
+                  return<tr key={pt.key}>
+                    <td style={cellLabel}>{pt.label}</td>
+                    <td style={cellPlanned}>{plan.toLocaleString()}</td>
+                    {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#1D4ED8',fontWeight:700}}>{s1val||'—'}</td>}
+                    <td style={cellActual}><input type="number" value={act} onChange={e=>updateActualsPiece(idx,pt.key,e.target.value)} placeholder="0" style={{width:'100%',maxWidth:100,padding:'8px 10px',fontSize:16,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center',fontFamily:'Inter'}}/></td>
+                    <td style={cellVar(plan,act)}>{varText(plan,act)}</td>
+                  </tr>;
+                };
+                const groupHasRows=(g)=>PIECE_TYPES.filter(pt=>pt.group===g).some(pt=>n(l.planned[pt.key])>0);
+                return<table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead><tr style={{background:'#FDF4F4'}}>
+                    <th style={cellThLeft}>Piece Type</th>
+                    <th style={cellTh}>Planned</th>
+                    {showShift1&&<th style={{...cellTh,color:'#1D4ED8'}}>Shift 1</th>}
+                    <th style={{...cellTh,color:'#8B2020'}}>Actual (Shift {shift})</th>
+                    <th style={cellTh}>Variance</th>
+                  </tr></thead>
+                  <tbody>
+                    {groupHasRows('POSTS')&&<>{sectionHeader('Posts')}
+                      {PIECE_TYPES.filter(pt=>pt.group==='POSTS').map(pieceRow)}
+                      {n(l.post_height)>0&&<tr>
+                        <td style={cellLabel}>Post Height</td>
+                        <td style={cellPlanned}>{l.post_height}ft</td>
+                        {showShift1&&<td style={{...cellTd,background:'#EFF6FF'}}></td>}
+                        <td style={cellTd}></td>
+                        <td style={cellTd}></td>
+                      </tr>}
+                    </>}
+                    {groupHasRows('PANELS')&&<>{sectionHeader('Panels')}
+                      {PIECE_TYPES.filter(pt=>pt.group==='PANELS').map(pieceRow)}
+                    </>}
+                    {groupHasRows('RAILS')&&<>{sectionHeader('Rails')}
+                      {PIECE_TYPES.filter(pt=>pt.group==='RAILS').map(pieceRow)}
+                    </>}
+                    {groupHasRows('POST CAPS')&&<>{sectionHeader('Post Caps')}
+                      {PIECE_TYPES.filter(pt=>pt.group==='POST CAPS').map(pieceRow)}
+                    </>}
+                    {sectionHeader('Linear Feet')}
+                    <tr>
+                      <td style={cellLabel}>Linear Feet</td>
+                      <td style={cellPlanned}>{n(l.planned_lf)?n(l.planned_lf).toLocaleString():'—'}</td>
+                      {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#1D4ED8',fontWeight:700}}>{n(s1?.lf)||'—'}</td>}
+                      <td style={cellActual}><input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:'100%',maxWidth:120,padding:'8px 10px',fontSize:16,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center',fontFamily:'Inter'}}/></td>
+                      <td style={cellVar(l.planned_lf,l.actual_lf)}>{varText(l.planned_lf,l.actual_lf)}</td>
+                    </tr>
+                  </tbody>
+                </table>;
+              })()}
+              {/* Variance reason */}
               {hasVar&&<div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2',background:'#FFFBEB'}}>
-                <label style={{display:'block',fontSize:10,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:4}}>⚠ Reason for adjustment (required)</label>
-                <input value={l.adjustment_reason} onChange={e=>updateActualsLine(idx,'adjustment_reason',e.target.value)} placeholder="Why is actual different from planned?" style={{...inputS,background:'#FFF'}}/>
+                <label style={{display:'block',fontSize:10,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:4}}>⚠ Reason for variance (required)</label>
+                <input value={l.adjustment_reason} onChange={e=>updateActualsLine(idx,'adjustment_reason',e.target.value)} placeholder="e.g. Mold issue, material shortage, equipment down, crew short..." style={{...inputS,background:'#FFF',fontSize:14,padding:'10px 12px'}}/>
               </div>}
               {/* Notes */}
               <div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2'}}>
@@ -3455,17 +3497,17 @@ function DailyReportPage({jobs}){
                 <input value={l.notes} onChange={e=>updateActualsLine(idx,'notes',e.target.value)} placeholder="—" style={inputS}/>
               </div>
               {/* Summary */}
-              <div style={{padding:'10px 16px',background:'#1A1A1A',color:'#FFF'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,marginBottom:6}}>
-                  <div style={{fontSize:11}}>Planned: <b>{plannedTot}</b> pcs</div>
-                  <div style={{fontSize:11}}>Actual: <b style={{color:actualTot>=plannedTot?'#6EE7B7':'#FCD34D'}}>{actualTot}</b> pcs</div>
-                  <div style={{fontSize:11}}>Variance: <b style={{color:variance===0?'#9CA3AF':variance>0?'#60A5FA':'#FCA5A5'}}>{variance>=0?'+':''}{variance}</b></div>
-                  <div style={{fontSize:11}}>{pct}%</div>
+              {(()=>{const variancePct=plannedTot>0?Math.round((variance/plannedTot)*100):0;return<div style={{padding:'12px 16px',background:'#1A1A1A',color:'#FFF'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12,marginBottom:8,fontSize:12}}>
+                  <div>Total Planned: <b>{plannedTot.toLocaleString()}</b> pieces</div>
+                  <div>Total Actual: <b style={{color:actualTot>=plannedTot?'#6EE7B7':'#FCD34D'}}>{actualTot.toLocaleString()}</b> pieces</div>
+                  <div>Variance: <b style={{color:variance===0?'#9CA3AF':variance>0?'#6EE7B7':'#FCA5A5'}}>{variance>=0?'+':''}{variance.toLocaleString()}</b>{plannedTot>0&&<span style={{color:variance===0?'#9CA3AF':variance>0?'#6EE7B7':'#FCA5A5',marginLeft:4}}>({variancePct>=0?'+':''}{variancePct}%)</span>}</div>
+                  <div><b>{pct}%</b> complete</div>
                 </div>
-                <div style={{height:6,background:'#374151',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:8,background:'#374151',borderRadius:4,overflow:'hidden'}}>
                   <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:pct>=100?'#10B981':pct>=80?'#F59E0B':'#EF4444',transition:'width 0.3s'}}/>
                 </div>
-              </div>
+              </div>;})()}
             </div>;
           })}
           {actualsLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12,...card}}>No lines yet. Add jobs below.</div>}
@@ -3476,12 +3518,32 @@ function DailyReportPage({jobs}){
           {unplanSearchResults.length>0&&<div style={{marginTop:6,maxHeight:200,overflow:'auto'}}>{unplanSearchResults.map(j=><button key={j.id} onClick={()=>addUnplannedLine(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:3,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}</div>}
           <button onClick={()=>{setShowUnplanPicker(false);setUnplanSearch('');}} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:6}}>Cancel</button>
         </div>}
-        {/* Totals */}
-        {actualsLines.length>0&&<div style={{padding:10,background:'#FDF4F4',borderRadius:8,display:'flex',gap:20,fontSize:12,fontWeight:600,color:'#8B2020',flexWrap:'wrap',marginBottom:12}}>
-          <span>Actual pieces: <b>{actualsTotals.pcs.toLocaleString()}</b> / {actualsTotals.plannedPcs.toLocaleString()} planned</span>
-          <span>Actual LF: <b>{actualsTotals.lf.toLocaleString()}</b> / {actualsTotals.plannedLf.toLocaleString()} planned</span>
-          {actualsTotals.plannedPcs>0&&<span>{Math.round(actualsTotals.pcs/actualsTotals.plannedPcs*100)}% of plan</span>}
-        </div>}
+        {/* Shift Summary — aggregated totals across all jobs */}
+        {actualsLines.length>0&&(()=>{
+          const g=shiftGroupTotals;
+          const rows=[['Total Panels',g.PANELS],['Total Posts',g.POSTS],['Total Rails',g.RAILS],['Total Caps',g['POST CAPS']],['Total LF',g.LF]];
+          const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'};
+          const cellThLeft={...cellTh,textAlign:'left'};
+          const cellTd={padding:'10px 12px',fontSize:14,textAlign:'center',borderBottom:'1px solid #F4F4F2',fontFamily:'Inter',fontWeight:700};
+          const cellLabel={...cellTd,textAlign:'left',color:'#1A1A1A'};
+          return<div style={{...card,padding:0,overflow:'hidden',marginBottom:12,borderTop:'3px solid #8B2020'}}>
+            <div style={{padding:'10px 14px',background:'#8B2020',color:'#FFF',fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>📊 Shift {shift} Summary — {actualsLines.length} job{actualsLines.length===1?'':'s'}</div>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>
+                <th style={cellThLeft}></th>
+                <th style={cellTh}>Planned</th>
+                <th style={{...cellTh,color:'#8B2020'}}>Actual</th>
+                <th style={cellTh}>Variance</th>
+              </tr></thead>
+              <tbody>{rows.map(([label,g2])=>{const v=g2.actual-g2.planned;const hasAct=g2.actual>0;const col=!hasAct?'#9E9B96':v===0?'#065F46':v>0?'#065F46':'#991B1B';const text=!hasAct?'—':v===0?'✓':(v>0?'+':'')+v.toLocaleString();return<tr key={label}>
+                <td style={cellLabel}>{label}</td>
+                <td style={{...cellTd,background:'#F9F8F6',color:'#6B6056'}}>{g2.planned.toLocaleString()}</td>
+                <td style={cellTd}>{g2.actual.toLocaleString()}</td>
+                <td style={{...cellTd,color:col}}>{text}</td>
+              </tr>;})}</tbody>
+            </table>
+          </div>;
+        })()}
         <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Shift Notes</label><textarea value={actualsNotes} onChange={e=>setActualsNotes(e.target.value)} rows={2} placeholder="General notes for this shift..." style={{...inputS,resize:'vertical'}}/></div>
         <button onClick={submitActuals} disabled={submittingActuals||actualsLines.length===0} style={{...btnP,width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:submittingActuals||actualsLines.length===0?0.5:1}}>{submittingActuals?'Submitting...':`Submit Shift ${shift} Report`}</button>
         </>}
