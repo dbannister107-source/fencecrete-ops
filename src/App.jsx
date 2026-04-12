@@ -485,7 +485,7 @@ function WeeklyDigest({jobs,active}){
     const newJobs=jobs.filter(j=>j.created_at&&j.created_at>=weekAgo).length;
     const compJobs=jobs.filter(j=>j.complete_date&&j.complete_date>=weekAgo.split('T')[0]).length;
     Promise.all([
-      sbGet('weather_days',`date=gte.${weekAgo.split('T')[0]}&select=id`),
+      sbGet('weather_days',`weather_date=gte.${weekAgo.split('T')[0]}&select=id`),
       sbGet('change_orders',`status=eq.Pending&select=id`)
     ]).then(([wd,co])=>{
       setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs});
@@ -1290,9 +1290,10 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav}){
   const[prodActuals,setProdActuals]=useState([]);
   const[prodPlanLines,setProdPlanLines]=useState([]);
   const todayIsoProd=new Date().toISOString().split('T')[0];
-  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,actuals_date,planned_pieces&limit=1000').then(d=>setProdActuals(d||[])).catch(()=>{});},[]);
-  useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[]);
-  const actualsByJob=useMemo(()=>{const m={};prodActuals.forEach(a=>{if(!m[a.job_id])m[a.job_id]={actual:0,planned:0,loggedToday:false};m[a.job_id].actual+=n(a.actual_pieces);m[a.job_id].planned=Math.max(m[a.job_id].planned,n(a.planned_pieces));if(a.actuals_date===todayIsoProd)m[a.job_id].loggedToday=true;});Object.values(m).forEach(x=>{x.pct=x.planned>0?Math.round(x.actual/x.planned*100):0;});return m;},[prodActuals,todayIsoProd]);
+  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id,planned_pieces&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[]);
+  const plannedByJob=useMemo(()=>{const m={};prodPlanLines.forEach(l=>{if(!m[l.job_id])m[l.job_id]=0;m[l.job_id]=Math.max(m[l.job_id],n(l.planned_pieces));});return m;},[prodPlanLines]);
+  const actualsByJob=useMemo(()=>{const m={};prodActuals.forEach(a=>{if(!m[a.job_id])m[a.job_id]={actual:0,planned:0,loggedToday:false};m[a.job_id].actual+=n(a.actual_pieces);if(a.production_date===todayIsoProd)m[a.job_id].loggedToday=true;});Object.entries(m).forEach(([jobId,x])=>{x.planned=plannedByJob[jobId]||0;x.pct=x.planned>0?Math.round(x.actual/x.planned*100):0;});return m;},[prodActuals,plannedByJob,todayIsoProd]);
   const planJobIds=useMemo(()=>new Set(prodPlanLines.map(l=>l.job_id)),[prodPlanLines]);
   // Bill sheet submissions for current month
   const prodBillingMonth=curBillingMonth();
@@ -2073,7 +2074,7 @@ function DailyReportPage({jobs}){
   // ─── HISTORY TAB STATE ───
   const[histRange,setHistRange]=useState('week');
   const[histShift,setHistShift]=useState('');
-  const[histPlans,setHistPlans]=useState([]);
+  const[histPlans,setHistPlans]=useState([]);const[histPlanLines,setHistPlanLines]=useState([]);
   const[histActuals,setHistActuals]=useState([]);
   const[histLoading,setHistLoading]=useState(false);
   const[expandedDate,setExpandedDate]=useState(null);
@@ -2177,7 +2178,7 @@ function DailyReportPage({jobs}){
     if(toSubmit.length===0){setToast({msg:'No actuals to submit — fill in at least one line',ok:false});return;}
     setSubmittingActuals(true);
     try{
-      const rows=toSubmit.map(l=>({actuals_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:l.planned_pieces||0,planned_lf:l.planned_lf||0,actual_pieces:n(l.actual_pieces)||0,actual_lf:n(l.actual_lf)||0,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()}));
+      const rows=toSubmit.map(l=>({production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:n(l.actual_pieces)||0,actual_lf:n(l.actual_lf)||0,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()}));
       const res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
       if(!res.ok)throw new Error(await res.text());
       // Auto-advance in_production → inventory_ready when cumulative actuals >= planned
@@ -2186,9 +2187,10 @@ function DailyReportPage({jobs}){
         for(const jobId of jobIds){
           const j=jobs.find(x=>x.id===jobId);
           if(!j||j.status!=='in_production')continue;
-          const allActuals=await sbGet('production_actuals',`job_id=eq.${jobId}&select=actual_pieces,planned_pieces`);
+          const allActuals=await sbGet('production_actuals',`job_id=eq.${jobId}&select=actual_pieces`);
           const totalActual=(allActuals||[]).reduce((s,a)=>s+n(a.actual_pieces),0);
-          const maxPlanned=Math.max(...(allActuals||[]).map(a=>n(a.planned_pieces)),0);
+          const allPlanned=await sbGet('production_plan_lines',`job_id=eq.${jobId}&select=planned_pieces`);
+          const maxPlanned=Math.max(...(allPlanned||[]).map(l=>n(l.planned_pieces)),0);
           if(maxPlanned>0&&totalActual>=maxPlanned){
             const today3=new Date().toISOString().split('T')[0];
             await fetch(`${SB}/rest/v1/jobs?id=eq.${jobId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'inventory_ready',inventory_ready_date:today3})});
@@ -2215,18 +2217,20 @@ function DailyReportPage({jobs}){
       else if(histRange==='month'){fromDate.setDate(fromDate.getDate()-30);}
       else{fromDate.setDate(fromDate.getDate()-30);}
       const fromISO=fromDate.toISOString().split('T')[0];
-      let q=`actuals_date=gte.${fromISO}&order=actuals_date.desc,shift.asc`;
+      let q=`production_date=gte.${fromISO}&order=production_date.desc,shift.asc`;
       if(histShift)q+=`&shift=eq.${histShift}`;
       const acts=await sbGet('production_actuals',q);
       setHistActuals(acts||[]);
       const plns=await sbGet('production_plans',`plan_date=gte.${fromISO}&order=plan_date.desc`);
       setHistPlans(plns||[]);
+      const planLineData=await sbGet('production_plan_lines','select=id,planned_pieces,plan_id&limit=1000');
+      setHistPlanLines(planLineData||[]);
     }catch(e){console.error('Fetch history error:',e);}
     setHistLoading(false);
   },[histRange,histShift]);
   useEffect(()=>{if(tab==='history')fetchHistory();},[tab,fetchHistory]);
 
-  const histStats=useMemo(()=>{let totalPcs=0,totalLf=0,totalPlanned=0;const byDate={};histActuals.forEach(a=>{totalPcs+=n(a.actual_pieces);totalLf+=n(a.actual_lf);totalPlanned+=n(a.planned_pieces);if(!byDate[a.actuals_date])byDate[a.actuals_date]={date:a.actuals_date,s1Pcs:0,s2Pcs:0,totalPcs:0,totalLf:0,totalPlanned:0,lines:[]};byDate[a.actuals_date].lines.push(a);byDate[a.actuals_date].totalPcs+=n(a.actual_pieces);byDate[a.actuals_date].totalLf+=n(a.actual_lf);byDate[a.actuals_date].totalPlanned+=n(a.planned_pieces);if(a.shift===1)byDate[a.actuals_date].s1Pcs+=n(a.actual_pieces);if(a.shift===2)byDate[a.actuals_date].s2Pcs+=n(a.actual_pieces);});const daily=Object.values(byDate).sort((a,b)=>b.date.localeCompare(a.date));const achievement=totalPlanned>0?Math.round(totalPcs/totalPlanned*100):0;const byStyle={};histActuals.forEach(a=>{const s=a.style||'—';if(!byStyle[s])byStyle[s]={style:s,pcs:0,lf:0};byStyle[s].pcs+=n(a.actual_pieces);byStyle[s].lf+=n(a.actual_lf);});return{totalPcs,totalLf,totalPlanned,achievement,daily,byStyle:Object.values(byStyle).sort((a,b)=>b.pcs-a.pcs),daysReported:daily.length};},[histActuals]);
+  const histStats=useMemo(()=>{const planLineMap={};histPlanLines.forEach(l=>{planLineMap[l.id]=n(l.planned_pieces);});let totalPcs=0,totalLf=0,totalPlanned=0;const byDate={};histActuals.forEach(a=>{const planned=planLineMap[a.plan_line_id]||0;const d=a.production_date;totalPcs+=n(a.actual_pieces);totalLf+=n(a.actual_lf);totalPlanned+=planned;if(!byDate[d])byDate[d]={date:d,s1Pcs:0,s2Pcs:0,totalPcs:0,totalLf:0,totalPlanned:0,lines:[]};byDate[d].lines.push({...a,planned_pieces:planned});byDate[d].totalPcs+=n(a.actual_pieces);byDate[d].totalLf+=n(a.actual_lf);byDate[d].totalPlanned+=planned;if(a.shift===1)byDate[d].s1Pcs+=n(a.actual_pieces);if(a.shift===2)byDate[d].s2Pcs+=n(a.actual_pieces);});const daily=Object.values(byDate).sort((a,b)=>(b.date||'').localeCompare(a.date||''));const achievement=totalPlanned>0?Math.round(totalPcs/totalPlanned*100):0;const byStyle={};histActuals.forEach(a=>{const s=a.style||'—';if(!byStyle[s])byStyle[s]={style:s,pcs:0,lf:0};byStyle[s].pcs+=n(a.actual_pieces);byStyle[s].lf+=n(a.actual_lf);});return{totalPcs,totalLf,totalPlanned,achievement,daily,byStyle:Object.values(byStyle).sort((a,b)=>b.pcs-a.pcs),daysReported:daily.length};},[histActuals,histPlanLines]);
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
