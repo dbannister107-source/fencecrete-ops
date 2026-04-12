@@ -1761,6 +1761,8 @@ function MaterialCalcPage({jobs,preJob}){
               <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{fontWeight:700}}>{jobColor||''}</span></div>
             </div>
           </div>
+          {/* EST INSTALL START BANNER */}
+          {(()=>{const d2=selJob?.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8B2020':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
           {/* POSTS */}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
@@ -1951,6 +1953,8 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
               <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{fontWeight:700}}>{j.color||''}</span></div>
             </div>
           </div>
+          {/* EST INSTALL START BANNER */}
+          {(()=>{const d2=j.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8B2020':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
