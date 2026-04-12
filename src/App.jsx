@@ -2031,226 +2031,356 @@ function SchedulePage({jobs}){
 }
 
 /* ═══ DAILY REPORT PAGE ═══ */
-function DailyReportPage(){
-  // ─── Row config: planned field → actual field ──────────────────────────
-  const DETAIL_GROUPS=[
-    {label:'POSTS',rows:[
-      {label:'8ft Line',p:'posts_8ft_line',a:'actual_posts_8ft_line'},{label:'8ft Corner',p:'posts_8ft_corner',a:'actual_posts_8ft_corner'},{label:'8ft Stop',p:'posts_8ft_stop',a:'actual_posts_8ft_stop'},
-      {label:'10ft Line',p:'posts_10ft_line',a:'actual_posts_10ft_line'},{label:'10ft Corner',p:'posts_10ft_corner',a:'actual_posts_10ft_corner'},{label:'10ft Stop',p:'posts_10ft_stop',a:'actual_posts_10ft_stop'},
-      {label:'12ft Line',p:'posts_12ft_line',a:'actual_posts_12ft_line'},{label:'12ft Corner',p:'posts_12ft_corner',a:'actual_posts_12ft_corner'},{label:'12ft Stop',p:'posts_12ft_stop',a:'actual_posts_12ft_stop'},
-    ]},
-    {label:'PANELS',rows:[
-      {label:'Regular',p:'panels_regular',a:'actual_panels_regular'},{label:'Long',p:'panels_long',a:'actual_panels_long'},
-      {label:'1/2 Regular',p:'panels_half_regular',a:'actual_panels_half_regular'},{label:'1/2 Long',p:'panels_half_long',a:'actual_panels_half_long'},
-      {label:'Center',p:'panels_center',a:'actual_panels_center'},{label:'Middle',p:'panels_middle',a:'actual_panels_middle'},
-      {label:'Diamond',p:'panels_diamond',a:'actual_panels_diamond'},{label:'Bottled',p:'panels_bottled',a:'actual_panels_bottled'},
-    ]},
-    {label:'RAILS',rows:[
-      {label:'Regular',p:'rails_regular',a:'actual_rails_regular'},{label:'Long',p:'rails_long',a:'actual_rails_long'},
-      {label:'Bottom',p:'rails_bottom',a:'actual_rails_bottom'},{label:'Top',p:'rails_top',a:'actual_rails_top'},{label:'Short',p:'rails_short',a:'actual_rails_short'},
-    ]},
-    {label:'POST CAPS',rows:[
-      {label:'Line Caps',p:'caps_line',a:'actual_caps_line'},{label:'Stop Caps',p:'caps_stop',a:'actual_caps_stop'},
-    ]},
-    {label:'OTHER MATERIALS',rows:[
-      {label:'Cement Bags',p:'cement_bags',a:'actual_cement_bags'},{label:'Rebar',p:'rebar_count',a:'actual_rebar_count'},{label:'Silicone Tubes',p:'silicone_tubes',a:'actual_silicone_tubes'},
-    ]},
-  ];
-  const ALL_P_FIELDS=DETAIL_GROUPS.flatMap(g=>g.rows.map(r=>r.p));
-  const ALL_A_FIELDS=DETAIL_GROUPS.flatMap(g=>g.rows.map(r=>r.a));
-  const ALL_FIELDS=[...ALL_P_FIELDS,...ALL_A_FIELDS,'fence_style','fence_color','fence_height'];
-
-  const emptyCard=()=>({job_name:'',fence_style:'',fence_color:'',fence_height:'',...Object.fromEntries([...ALL_P_FIELDS,...ALL_A_FIELDS].map(f=>[f,null]))});
-  const sumF=(row,fields)=>fields.reduce((s,f)=>s+(parseInt(row[f])||0),0);
-
-  const[tab,setTab]=useState('new');
-  const[reportId,setReportId]=useState(null);
-  const todayISO=new Date().toISOString().slice(0,10);
-  const[date,setDate]=useState(todayISO);
-  const[scheduler,setScheduler]=useState('');
-  const[shift,setShift]=useState('');
-  const[cards,setCards]=useState(()=>Array.from({length:3},emptyCard));
-  const[commentary,setCommentary]=useState({});
-  const[submitting,setSubmitting]=useState(false);
+function DailyReportPage({jobs}){
+  const[tab,setTab]=useState('plan');
   const[toast,setToast]=useState(null);
-  const[expanded,setExpanded]=useState(new Set());
-  const toggleCard=(i)=>setExpanded(prev=>{const n=new Set(prev);if(n.has(i))n.delete(i);else n.add(i);return n;});
-  const expandAll=()=>setExpanded(new Set(cards.map((_,i)=>i)));
-  const collapseAll=()=>setExpanded(new Set());
+  // Tomorrow + today date helpers
+  const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
+  const todayISO=new Date().toISOString().split('T')[0];
 
-  const[reports,setReports]=useState([]);
+  // ─── PLAN TAB STATE ───
+  const[planDate,setPlanDate]=useState(tomorrowISO);
+  const[planId,setPlanId]=useState(null);
+  const[planLines,setPlanLines]=useState([]);
+  const[planNotes,setPlanNotes]=useState('');
+  const[savingPlan,setSavingPlan]=useState(false);
+  const[showAddPicker,setShowAddPicker]=useState(false);
+  const[jobSearch,setJobSearch]=useState('');
+
+  // ─── ACTUALS TAB STATE ───
+  const[actualsDate,setActualsDate]=useState(todayISO);
+  const[shift,setShift]=useState(1);
+  const[loggedBy,setLoggedBy]=useState('Luis Rodriguez');
+  const[crewSize,setCrewSize]=useState('');
+  const[actualsLines,setActualsLines]=useState([]);
+  const[actualsNotes,setActualsNotes]=useState('');
+  const[actualsPlanId,setActualsPlanId]=useState(null);
+  const[submittingActuals,setSubmittingActuals]=useState(false);
+  const[showUnplanPicker,setShowUnplanPicker]=useState(false);
+  const[unplanSearch,setUnplanSearch]=useState('');
+
+  // ─── HISTORY TAB STATE ───
+  const[histRange,setHistRange]=useState('week');
+  const[histShift,setHistShift]=useState('');
+  const[histPlans,setHistPlans]=useState([]);
+  const[histActuals,setHistActuals]=useState([]);
   const[histLoading,setHistLoading]=useState(false);
-  const[detailReport,setDetailReport]=useState(null);
-  const[detailCards,setDetailCards]=useState([]);
+  const[expandedDate,setExpandedDate]=useState(null);
 
-  const showToast=(msg,ok)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500);};
-  const updateCard=(i,field,val)=>setCards(prev=>prev.map((c,idx)=>idx===i?{...c,[field]:val}:c));
-  const addCard=()=>setCards(prev=>[...prev,emptyCard()]);
-  const removeCard=(i)=>{setCards(prev=>prev.filter((_,idx)=>idx!==i));setExpanded(prev=>{const n=new Set();prev.forEach(idx=>{if(idx<i)n.add(idx);else if(idx>i)n.add(idx-1);});return n;});};
+  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
+  const prodOrderJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&['contract_review','production_queue','in_production','inventory_ready'].includes(j.status)).sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
+  const jobSearchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
+  const unplanSearchResults=unplanSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(unplanSearch.toLowerCase())).slice(0,8):[];
 
-  // Overall adherence
-  const overallPlanned=cards.reduce((s,c)=>s+sumF(c,ALL_P_FIELDS),0);
-  const overallActual=cards.reduce((s,c)=>s+sumF(c,ALL_A_FIELDS),0);
-  const overallAdh=overallPlanned>0?(overallActual/overallPlanned)*100:null;
+  // ─── LOAD PLAN FOR SELECTED DATE ───
+  const loadPlan=useCallback(async(date)=>{
+    try{
+      const plans=await sbGet('production_plans',`plan_date=eq.${date}&select=*&limit=1`);
+      if(plans&&plans[0]){
+        setPlanId(plans[0].id);
+        setPlanNotes(plans[0].plan_notes||'');
+        const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
+        setPlanLines((lines||[]).map(l=>({id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||'',color:l.color||'',height:l.height||'',planned_pieces:l.planned_pieces||'',planned_lf:l.planned_lf||'',notes:l.notes||''})));
+      }else{
+        setPlanId(null);setPlanLines([]);setPlanNotes('');
+      }
+    }catch(e){console.error('Load plan failed:',e);setPlanId(null);setPlanLines([]);setPlanNotes('');}
+  },[]);
+  useEffect(()=>{if(tab==='plan')loadPlan(planDate);},[tab,planDate,loadPlan]);
 
-  const adhBadge=(val)=>{if(val===null||val===undefined||isNaN(val))return<span style={{...pill('#6B6056','#E5E3E0'),fontSize:11}}>—</span>;const pct=Math.round(val);const bg=pct>=90?'#3B6D11':pct>=75?'#854F0B':'#A32D2D';return<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:bg,color:'#FFF'}}>{pct}%</span>;};
-  const formatDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // ─── LOAD PLAN FOR ACTUALS TAB ───
+  const loadActualsPlan=useCallback(async(date)=>{
+    try{
+      const plans=await sbGet('production_plans',`plan_date=eq.${date}&select=*&limit=1`);
+      if(plans&&plans[0]){
+        setActualsPlanId(plans[0].id);
+        const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
+        setActualsLines((lines||[]).map(l=>({plan_line_id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||'',color:l.color||'',height:l.height||'',planned_pieces:l.planned_pieces||0,planned_lf:l.planned_lf||0,actual_pieces:'',actual_lf:'',notes:'',unplanned:false})));
+      }else{
+        setActualsPlanId(null);setActualsLines([]);
+      }
+    }catch(e){console.error('Load actuals plan failed:',e);}
+  },[]);
+  useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan]);
 
-  const fetchHistory=async()=>{setHistLoading(true);try{const data=await sbGet('daily_schedule_reports','order=report_date.desc');const enriched=await Promise.all(data.map(async r=>{const rows=await sbGet('daily_schedule_rows',`report_id=eq.${r.id}&section=eq.today`);const tp=rows.reduce((s,row)=>s+sumF(row,ALL_P_FIELDS),0);const ta=rows.reduce((s,row)=>s+sumF(row,ALL_A_FIELDS),0);return{...r,adherence:tp>0?(ta/tp)*100:null};}));setReports(enriched);}catch(e){console.error(e);}setHistLoading(false);};
+  // ─── PLAN BUILDER HELPERS ───
+  const addJobToPlan=(j)=>{
+    setPlanLines(prev=>[...prev,{job_id:j.id,job_number:j.job_number,job_name:j.job_name,style:j.style||'',color:j.color||'',height:j.height_precast||'',planned_pieces:'',planned_lf:'',notes:''}]);
+    setShowAddPicker(false);setJobSearch('');
+  };
+  const updatePlanLine=(idx,field,val)=>setPlanLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
+  const removePlanLine=(idx)=>setPlanLines(prev=>prev.filter((_,i)=>i!==idx));
+  const movePlanLine=(idx,dir)=>setPlanLines(prev=>{const n2=[...prev];const target=idx+dir;if(target<0||target>=n2.length)return n2;[n2[idx],n2[target]]=[n2[target],n2[idx]];return n2;});
 
-  const openDetail=async(id)=>{try{const rArr=await sbGet('daily_schedule_reports',`id=eq.${id}`);if(!rArr||!rArr[0])return;setDetailReport(rArr[0]);const rows=await sbGet('daily_schedule_rows',`report_id=eq.${id}&section=eq.today&order=row_order.asc`);setDetailCards(rows||[]);setReportId(id);}catch(e){console.error(e);}};
+  const planTotals=useMemo(()=>{let pcs=0,lf=0;planLines.forEach(l=>{pcs+=n(l.planned_pieces);lf+=n(l.planned_lf);});return{pcs,lf,count:planLines.length};},[planLines]);
 
-  const resetForm=()=>{setDate(todayISO);setScheduler('');setShift('');setCards(Array.from({length:3},emptyCard));setCommentary({});setExpanded(new Set());};
-
-  const submitReport=async()=>{setSubmitting(true);try{const rpt=await sbPost('daily_schedule_reports',{report_date:date,scheduler:scheduler||null,shift:shift||null,...commentary});const rowPayloads=[];cards.forEach((c,i)=>{if(!c.job_name&&sumF(c,ALL_P_FIELDS)===0&&sumF(c,ALL_A_FIELDS)===0)return;rowPayloads.push({report_id:rpt[0].id,section:'today',row_order:i,job_name:c.job_name,fence_style:c.fence_style||null,fence_color:c.fence_color||null,fence_height:c.fence_height||null,...Object.fromEntries(ALL_P_FIELDS.map(f=>[f,parseInt(c[f])||null])),...Object.fromEntries(ALL_A_FIELDS.map(f=>[f,parseInt(c[f])||null]))});});if(rowPayloads.length>0)await sbPost('daily_schedule_rows',rowPayloads);showToast(`Production Daily Report submitted for ${date}`,true);resetForm();setTimeout(()=>{setTab('history');fetchHistory();},600);}catch(e){showToast(e.message||'Submit failed',false);}setSubmitting(false);};
-
-  useEffect(()=>{if(tab==='history'&&!reportId)fetchHistory();},[tab,reportId]);
-
-  // ─── Shared styles ───
-  const schedBg='#EBF3FB';const actualBg='#EAF3DE';const varBg='#F9FAFB';
-  const nI={width:60,padding:'3px 2px',border:'1px solid #E5E3E0',borderRadius:4,fontSize:12,textAlign:'center',background:'transparent',color:'#1A1A1A',fontFamily:'inherit'};
-  const varColor=(v)=>v>0?'#3B6D11':v<0?'#A32D2D':'#9E9B96';
-  const varText=(v)=>v>0?`+${v}`:v<0?`${v}`:'—';
-
-  // ─── Render one project card ───
-  const renderProjectCard=(c,i,readOnly,update,isCollapsible=false,isExp=true,onToggle=null)=>{
-    const cardPlanned=sumF(c,ALL_P_FIELDS);const cardActual=sumF(c,ALL_A_FIELDS);const cardAdh=cardPlanned>0?(cardActual/cardPlanned)*100:null;
-    const hasData=cardPlanned>0||cardActual>0;
-    const stopProp=(e)=>e.stopPropagation();
-    return(
-    <div key={i} style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-      {/* Project header */}
-      <div onClick={isCollapsible&&onToggle?onToggle:undefined} style={{background:'#333',color:'#FFF',padding:'10px 16px',display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',cursor:isCollapsible?'pointer':'default'}}>
-        <div style={{flex:'1 1 200px'}} onClick={isCollapsible?stopProp:undefined}>{readOnly?<span style={{fontSize:14,fontWeight:700}}>{c.job_name||'—'}</span>:<input value={c.job_name||''} onChange={e=>update(i,'job_name',e.target.value)} placeholder="Project Name" style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'4px 10px',fontSize:13,fontWeight:600,width:'100%'}}/>}</div>
-        <div style={{display:'flex',gap:8,alignItems:'center',fontSize:12}} onClick={isCollapsible?stopProp:undefined}>
-          <span style={{color:'rgba(255,255,255,0.6)'}}>Style:</span>{readOnly?<span>{c.fence_style||'—'}</span>:<input value={c.fence_style||''} onChange={e=>update(i,'fence_style',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
-          <span style={{color:'rgba(255,255,255,0.6)'}}>Color:</span>{readOnly?<span>{c.fence_color||'—'}</span>:<input value={c.fence_color||''} onChange={e=>update(i,'fence_color',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12,width:80}}/>}
-          <span style={{color:'rgba(255,255,255,0.6)'}}>Height:</span>{readOnly?<span>{c.fence_height||'—'}</span>:<select value={c.fence_height||''} onChange={e=>update(i,'fence_height',e.target.value)} style={{background:'rgba(255,255,255,0.12)',color:'#FFF',border:'1px solid rgba(255,255,255,0.25)',borderRadius:6,padding:'3px 8px',fontSize:12}}><option value="">—</option><option value="6">6</option><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="Other">Other</option></select>}
-        </div>
-        {isCollapsible&&<div style={{display:'flex',gap:8,alignItems:'center',fontSize:12,color:'rgba(255,255,255,0.7)',marginLeft:8}}>
-          {hasData?<><span>Planned: <b style={{color:'#FFF'}}>{cardPlanned}</b></span><span style={{opacity:0.4}}>|</span><span>Actual: <b style={{color:'#FFF'}}>{cardActual}</b></span><span style={{opacity:0.4}}>|</span>{adhBadge(cardAdh)}</>:<span style={{fontStyle:'italic'}}>No data entered</span>}
-        </div>}
-        {!readOnly&&cards.length>1&&<button onClick={(e)=>{e.stopPropagation();removeCard(i);}} title="Remove" style={{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:18,cursor:'pointer',padding:'0 4px'}}>×</button>}
-        {isCollapsible&&<span style={{fontSize:12,color:'rgba(255,255,255,0.5)',flexShrink:0,marginLeft:4,transition:'transform 0.3s ease',display:'inline-block',transform:isExp?'rotate(0deg)':'rotate(-90deg)'}}>▼</span>}
-      </div>
-      {/* Table */}
-      <div style={{maxHeight:(!isCollapsible||isExp)?'5000px':'0',overflow:'hidden',transition:'max-height 0.3s ease-in-out'}}>
-      <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}>
-        <thead><tr>
-          <th style={{padding:'6px 12px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'left',borderBottom:'2px solid #E5E3E0',width:140}}></th>
-          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#185FA5',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:schedBg,width:80}}>Planned</th>
-          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#3B6D11',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:actualBg,width:80}}>Actual</th>
-          <th style={{padding:'6px 8px',fontSize:11,fontWeight:700,color:'#6B6056',textAlign:'center',borderBottom:'2px solid #E5E3E0',background:varBg,width:70}}>Variance</th>
-        </tr></thead>
-        <tbody>
-          {DETAIL_GROUPS.map(g=>{
-            const gp=g.rows.reduce((s,r)=>s+(parseInt(c[r.p])||0),0);
-            const ga=g.rows.reduce((s,r)=>s+(parseInt(c[r.a])||0),0);
-            const gv=ga-gp;
-            return<React.Fragment key={g.label}>
-              <tr><td colSpan={4} style={{padding:'8px 12px 4px',fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:1,borderBottom:'1px solid #E5E3E0',background:'#FAFAF8'}}>{g.label}</td></tr>
-              {g.rows.map(r=>{const pv=parseInt(c[r.p])||0;const av=parseInt(c[r.a])||0;const v=av-pv;return<tr key={r.p}>
-                <td style={{padding:'3px 12px',fontSize:12,color:'#6B6056',borderBottom:'1px solid #F4F4F2'}}>{r.label}</td>
-                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:schedBg}}>{readOnly?<span style={{fontSize:12,fontWeight:500}}>{pv||'—'}</span>:<input type="number" min="0" value={c[r.p]??''} onChange={e=>update(i,r.p,e.target.value)} style={{...nI,background:'transparent'}}/>}</td>
-                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:actualBg}}>{readOnly?<span style={{fontSize:12,fontWeight:500}}>{av||'—'}</span>:<input type="number" min="0" value={c[r.a]??''} onChange={e=>update(i,r.a,e.target.value)} style={{...nI,background:'transparent'}}/>}</td>
-                <td style={{padding:'3px 4px',textAlign:'center',borderBottom:'1px solid #F4F4F2',background:varBg,fontWeight:600,fontSize:12,color:varColor(v)}}>{varText(v)}</td>
-              </tr>;})}
-              <tr style={{fontWeight:700,background:'#F3F4F6'}}><td style={{padding:'4px 12px',fontSize:11,borderBottom:'2px solid #E5E3E0'}}>TOTAL {g.label}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:schedBg}}>{gp}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:actualBg}}>{ga}</td><td style={{padding:'4px 4px',textAlign:'center',fontSize:12,borderBottom:'2px solid #E5E3E0',background:varBg,color:varColor(gv)}}>{varText(gv)}</td></tr>
-            </React.Fragment>;
-          })}
-          <tr style={{fontWeight:700,background:'#EEEDEB'}}><td style={{padding:'8px 12px',fontSize:13}}>TOTAL ALL PIECES</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#185FA5',background:schedBg}}>{cardPlanned}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:14,fontWeight:800,color:'#3B6D11',background:actualBg}}>{cardActual}</td><td style={{padding:'8px 4px',textAlign:'center',fontSize:13,fontWeight:700,background:varBg}}>{adhBadge(cardAdh)}</td></tr>
-        </tbody>
-      </table></div>
-      </div>
-    </div>);
+  const savePlan=async()=>{
+    setSavingPlan(true);
+    try{
+      let curId=planId;
+      if(curId){
+        await fetch(`${SB}/rest/v1/production_plans?id=eq.${curId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({plan_notes:planNotes||null,updated_at:new Date().toISOString()})});
+        await fetch(`${SB}/rest/v1/production_plan_lines?plan_id=eq.${curId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+      }else{
+        const res=await fetch(`${SB}/rest/v1/production_plans`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({plan_date:planDate,created_by:'Max',plan_notes:planNotes||null})});
+        if(!res.ok)throw new Error(await res.text());
+        const saved=await res.json();curId=saved[0].id;setPlanId(curId);
+      }
+      if(planLines.length>0){
+        const lineRows=planLines.map((l,i)=>({plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:n(l.planned_pieces)||0,planned_lf:n(l.planned_lf)||0,notes:l.notes||null}));
+        const res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
+        if(!res2.ok)throw new Error(await res2.text());
+      }
+      setToast({msg:`Plan saved for ${planDate}`,ok:true});
+      fetch(`${SB}/functions/v1/production-plan-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals})}).catch(e=>console.error('Plan notification failed:',e));
+    }catch(e){console.error('Save plan error:',e);setToast({msg:'Save failed: '+e.message,ok:false});}
+    setSavingPlan(false);
   };
 
-  // ─── DETAIL VIEW ───
-  if(tab==='history'&&reportId&&detailReport){
-    const dtPlanned=detailCards.reduce((s,c)=>s+sumF(c,ALL_P_FIELDS),0);
-    const dtActual=detailCards.reduce((s,c)=>s+sumF(c,ALL_A_FIELDS),0);
-    const dtAdh=dtPlanned>0?(dtActual/dtPlanned)*100:null;
-    return(<div>
-      {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <button onClick={()=>setReportId(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer'}}>← Back to History</button>
-        <span style={{fontSize:12,color:'#9E9B96'}}>Submitted {detailReport.submitted_at?new Date(detailReport.submitted_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):''}</span>
-      </div>
-      <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',gap:24,alignItems:'center',flexWrap:'wrap'}}>
-        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Date</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{formatDate(detailReport.report_date)}</div></div>
-        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Scheduler</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.scheduler||'—'}</div></div>
-        <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Shift</div><div style={{color:'#FFF',fontSize:13,fontWeight:600}}>{detailReport.shift||'—'}</div></div>
-        <div style={{marginLeft:'auto'}}><div style={{fontSize:10,color:'rgba(255,255,255,0.7)'}}>Overall Adherence</div><div>{adhBadge(dtAdh)}</div></div>
-      </div>
-      {detailCards.map((c,i)=>renderProjectCard(c,i,true,()=>{}))}
-      {detailCards.length===0&&<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>No project data in this report.</div>}
-      {/* Commentary read-only */}
-      <div style={{...card,padding:0,overflow:'hidden'}}>
-        <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Constraints, Readiness & Commentary</div>
-        <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {[{k:'blockers',l:'Schedule Blockers / Constraints',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow'},{k:'material_readiness',l:'Material Readiness for Tomorrow'},{k:'equipment_status',l:'Equipment Status'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations'},{k:'other_comments',l:'Other Comments',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}><div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</div><div style={{fontSize:13,color:'#1A1A1A',background:'#FAFAF8',borderRadius:8,padding:10,minHeight:48,whiteSpace:'pre-wrap'}}>{detailReport[f.k]||'—'}</div></div>)}
-        </div>
-      </div>
-    </div>);
-  }
+  // ─── ACTUALS HELPERS ───
+  const updateActualsLine=(idx,field,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
+  const removeActualsLine=(idx)=>setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
+  const addUnplannedLine=(j)=>{
+    setActualsLines(prev=>[...prev,{plan_line_id:null,job_id:j.id,job_number:j.job_number,job_name:j.job_name,style:j.style||'',color:j.color||'',height:j.height_precast||'',planned_pieces:0,planned_lf:0,actual_pieces:'',actual_lf:'',notes:'',unplanned:true}]);
+    setShowUnplanPicker(false);setUnplanSearch('');
+  };
 
-  // ─── HISTORY VIEW ───
-  if(tab==='history'){
-    return(<div>
-      {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Production Daily Report</h1>
-        <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>setTab('history')} style={gpill(tab==='history')}>History</button></div>
-      </div>
-      {histLoading?<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>Loading...</div>:reports.length===0?<div style={{textAlign:'center',color:'#9E9B96',padding:40}}>No reports submitted yet. Start with New Report.</div>:<div style={{display:'flex',flexDirection:'column',gap:12}}>
-        {reports.map(r=><div key={r.id} style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div><div style={{fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{formatDate(r.report_date)}</div><div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{r.scheduler||'—'} | {r.shift||'—'}</div></div>
-          <div style={{display:'flex',alignItems:'center',gap:12}}>{adhBadge(r.adherence)}<button onClick={()=>openDetail(r.id)} style={{fontSize:12,fontWeight:600,color:'#8B2020',background:'none',border:'none',cursor:'pointer'}}>View Report →</button></div>
-        </div>)}
-      </div>}
-    </div>);
-  }
+  const actualsTotals=useMemo(()=>{let pcs=0,lf=0,plannedPcs=0,plannedLf=0;actualsLines.forEach(l=>{pcs+=n(l.actual_pieces);lf+=n(l.actual_lf);plannedPcs+=n(l.planned_pieces);plannedLf+=n(l.planned_lf);});return{pcs,lf,plannedPcs,plannedLf,count:actualsLines.length};},[actualsLines]);
 
-  // ─── NEW REPORT VIEW ───
+  const submitActuals=async()=>{
+    const toSubmit=actualsLines.filter(l=>n(l.actual_pieces)>0||n(l.actual_lf)>0||l.notes);
+    if(toSubmit.length===0){setToast({msg:'No actuals to submit — fill in at least one line',ok:false});return;}
+    setSubmittingActuals(true);
+    try{
+      const rows=toSubmit.map(l=>({actuals_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:l.planned_pieces||0,planned_lf:l.planned_lf||0,actual_pieces:n(l.actual_pieces)||0,actual_lf:n(l.actual_lf)||0,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()}));
+      const res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
+      if(!res.ok)throw new Error(await res.text());
+      setToast({msg:`Shift ${shift} report submitted for ${actualsDate}`,ok:true});
+      fetch(`${SB}/functions/v1/production-actuals-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actuals_date:actualsDate,shift,logged_by:loggedBy,crew_size:crewSize,lines:toSubmit,totals:actualsTotals,shift_notes:actualsNotes})}).catch(e=>console.error('Actuals notification failed:',e));
+      // Clear for next shift
+      setActualsLines(prev=>prev.map(l=>({...l,actual_pieces:'',actual_lf:'',notes:''})));
+      setActualsNotes('');
+    }catch(e){console.error('Submit actuals error:',e);setToast({msg:'Submit failed: '+e.message,ok:false});}
+    setSubmittingActuals(false);
+  };
+
+  // ─── HISTORY ───
+  const fetchHistory=useCallback(async()=>{
+    setHistLoading(true);
+    try{
+      let fromDate=new Date();
+      if(histRange==='today'){/* today only */}
+      else if(histRange==='week'){fromDate.setDate(fromDate.getDate()-7);}
+      else if(histRange==='month'){fromDate.setDate(fromDate.getDate()-30);}
+      else{fromDate.setDate(fromDate.getDate()-30);}
+      const fromISO=fromDate.toISOString().split('T')[0];
+      let q=`actuals_date=gte.${fromISO}&order=actuals_date.desc,shift.asc`;
+      if(histShift)q+=`&shift=eq.${histShift}`;
+      const acts=await sbGet('production_actuals',q);
+      setHistActuals(acts||[]);
+      const plns=await sbGet('production_plans',`plan_date=gte.${fromISO}&order=plan_date.desc`);
+      setHistPlans(plns||[]);
+    }catch(e){console.error('Fetch history error:',e);}
+    setHistLoading(false);
+  },[histRange,histShift]);
+  useEffect(()=>{if(tab==='history')fetchHistory();},[tab,fetchHistory]);
+
+  const histStats=useMemo(()=>{let totalPcs=0,totalLf=0,totalPlanned=0;const byDate={};histActuals.forEach(a=>{totalPcs+=n(a.actual_pieces);totalLf+=n(a.actual_lf);totalPlanned+=n(a.planned_pieces);if(!byDate[a.actuals_date])byDate[a.actuals_date]={date:a.actuals_date,s1Pcs:0,s2Pcs:0,totalPcs:0,totalLf:0,totalPlanned:0,lines:[]};byDate[a.actuals_date].lines.push(a);byDate[a.actuals_date].totalPcs+=n(a.actual_pieces);byDate[a.actuals_date].totalLf+=n(a.actual_lf);byDate[a.actuals_date].totalPlanned+=n(a.planned_pieces);if(a.shift===1)byDate[a.actuals_date].s1Pcs+=n(a.actual_pieces);if(a.shift===2)byDate[a.actuals_date].s2Pcs+=n(a.actual_pieces);});const daily=Object.values(byDate).sort((a,b)=>b.date.localeCompare(a.date));const achievement=totalPlanned>0?Math.round(totalPcs/totalPlanned*100):0;const byStyle={};histActuals.forEach(a=>{const s=a.style||'—';if(!byStyle[s])byStyle[s]={style:s,pcs:0,lf:0};byStyle[s].pcs+=n(a.actual_pieces);byStyle[s].lf+=n(a.actual_lf);});return{totalPcs,totalLf,totalPlanned,achievement,daily,byStyle:Object.values(byStyle).sort((a,b)=>b.pcs-a.pcs),daysReported:daily.length};},[histActuals]);
+
   return(<div>
-    {toast&&<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:toast.ok?'#3B6D11':'#A32D2D',color:'#fff',padding:'8px 20px',borderRadius:20,fontSize:13,fontWeight:600,zIndex:9999}}>{toast.msg}</div>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Production Daily Report</h1>
-      <div style={{display:'flex',gap:8}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchHistory();}} style={gpill(tab==='history')}>History</button></div>
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Production Daily Report</h1>
+    {/* Tabs */}
+    <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
+      {[['plan','📋 Production Plan','#7C3AED'],['actuals','✅ Log Actuals','#8B2020'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#6B6056',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
     </div>
 
-    {/* Header bar */}
-    <div style={{background:'#8B2020',borderRadius:12,padding:16,marginBottom:16,display:'flex',flexWrap:'wrap',gap:16,alignItems:'center'}}>
-      <div style={{color:'#FFF',flex:'1 1 100%',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:800}}>Production Daily Report</div><div style={{fontSize:12,opacity:0.8}}>Fencecrete America — San Antonio Plant</div></div><div>{adhBadge(overallAdh)}<span style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginLeft:6}}>Overall</span></div></div>
-      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Date</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
-      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Scheduler</div><input value={scheduler} onChange={e=>setScheduler(e.target.value)} placeholder="Max" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
-      <div><div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginBottom:2}}>Shift</div><input value={shift} onChange={e=>setShift(e.target.value)} placeholder="Day / Eve" style={{background:'rgba(255,255,255,0.15)',color:'#FFF',border:'1px solid rgba(255,255,255,0.3)',borderRadius:6,padding:'4px 8px',fontSize:12}}/></div>
-    </div>
-
-    {/* Project cards */}
-    <div style={{display:'flex',gap:8,marginBottom:12}}>
-      <button onClick={addCard} style={{padding:'6px 14px',borderRadius:8,border:'2px dashed #D1CEC9',background:'transparent',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Syne'}}>+ Add Project</button>
-      <button onClick={expandAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Expand All</button>
-      <button onClick={collapseAll} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>Collapse All</button>
-    </div>
-    {cards.map((c,i)=>renderProjectCard(c,i,false,updateCard,true,expanded.has(i),()=>toggleCard(i)))}
-
-    {/* Commentary */}
-    <div style={{...card,padding:0,marginBottom:16,overflow:'hidden'}}>
-      <div style={{background:'#854F0B',color:'#FFF',padding:'8px 16px',fontWeight:700,fontSize:13}}>Constraints, Readiness & Commentary</div>
-      <div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-        {[{k:'blockers',l:'Schedule Blockers / Constraints',h:'What prevented hitting today\'s schedule',full:true},{k:'labor_readiness',l:'Labor Readiness for Tomorrow',h:'Headcount confirmed, gaps, call-outs expected'},{k:'material_readiness',l:'Material Readiness for Tomorrow',h:'Any shortages, deliveries pending'},{k:'equipment_status',l:'Equipment Status',h:'Down units, expected return'},{k:'scheduling_conflicts',l:'Scheduling Conflicts / Reprioritizations',h:''},{k:'other_comments',l:'Other Comments',h:'',full:true}].map(f=><div key={f.k} style={f.full?{gridColumn:'1 / -1'}:{}}>
-          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:4}}>{f.l}</label>
-          <textarea value={commentary[f.k]||''} onChange={e=>setCommentary(prev=>({...prev,[f.k]:e.target.value}))} placeholder={f.h} rows={3} style={{...inputS,resize:'vertical',minHeight:56}}/>
-        </div>)}
+    {/* ═══ TAB 1: PRODUCTION PLAN ═══ */}
+    {tab==='plan'&&<div>
+      <div style={{...card,marginBottom:16,borderTop:'3px solid #7C3AED'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#7C3AED'}}>Production Plan</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>Created by Max {planId?'— editing existing plan':'— new plan'}</div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase'}}>Plan Date</label>
+            <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} style={{...inputS,width:170}}/>
+          </div>
+        </div>
+        {/* Add buttons */}
+        <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+          <button onClick={()=>setShowAddPicker('orders')} style={{...btnP,background:'#7C3AED',padding:'8px 16px',fontSize:12}}>＋ Add from Production Orders</button>
+          <button onClick={()=>setShowAddPicker('manual')} style={{...btnS,padding:'8px 16px',fontSize:12}}>＋ Add Job Manually</button>
+        </div>
+        {/* Picker */}
+        {showAddPicker==='orders'&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12,maxHeight:300,overflow:'auto'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:6}}>Jobs with saved production orders:</div>
+          {prodOrderJobs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No jobs with production orders found</div>:prodOrderJobs.map(j=><button key={j.id} onClick={()=>addJobToPlan(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:4,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span> — {j.style||'—'} / {j.color||'—'} / {j.height_precast||'?'}ft</button>)}
+          <button onClick={()=>setShowAddPicker(false)} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:4}}>Cancel</button>
+        </div>}
+        {showAddPicker==='manual'&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12}}>
+          <input autoFocus value={jobSearch} onChange={e=>setJobSearch(e.target.value)} placeholder="Search by name or number..." style={inputS}/>
+          {jobSearchResults.length>0&&<div style={{marginTop:6,maxHeight:240,overflow:'auto'}}>{jobSearchResults.map(j=><button key={j.id} onClick={()=>addJobToPlan(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:3,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}</div>}
+          <button onClick={()=>{setShowAddPicker(false);setJobSearch('');}} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:6}}>Cancel</button>
+        </div>}
+        {/* Plan lines */}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {planLines.map((l,idx)=><div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:'4px solid #7C3AED',borderRadius:8,padding:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                <button onClick={()=>movePlanLine(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',fontSize:10,cursor:idx===0?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▲</button>
+                <button onClick={()=>movePlanLine(idx,1)} disabled={idx===planLines.length-1} style={{background:'none',border:'none',fontSize:10,cursor:idx===planLines.length-1?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▼</button>
+              </div>
+              <div style={{flex:1}}><b style={{fontSize:14}}>{l.job_name}</b> <span style={{color:'#9E9B96',fontSize:11}}>#{l.job_number}</span></div>
+              <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:16,cursor:'pointer'}}>✕</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:8}}>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Style</label><input value={l.style} onChange={e=>updatePlanLine(idx,'style',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Color</label><input value={l.color} onChange={e=>updatePlanLine(idx,'color',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Height</label><input value={l.height} onChange={e=>updatePlanLine(idx,'height',e.target.value)} placeholder="8'" style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Planned Pieces</label><input type="number" value={l.planned_pieces} onChange={e=>updatePlanLine(idx,'planned_pieces',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:14,fontWeight:700}}/></div>
+              <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Planned LF</label><input type="number" value={l.planned_lf} onChange={e=>updatePlanLine(idx,'planned_lf',e.target.value)} placeholder="0" style={{...inputS,padding:'5px 8px',fontSize:14,fontWeight:700}}/></div>
+            </div>
+            <div><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Notes</label><input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
+          </div>)}
+          {planLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12}}>No jobs planned yet. Add jobs above to build the plan.</div>}
+        </div>
+        {/* Summary */}
+        {planLines.length>0&&<div style={{marginTop:12,padding:10,background:'#F5F3FF',borderRadius:8,display:'flex',gap:20,fontSize:12,fontWeight:600,color:'#7C3AED',flexWrap:'wrap'}}>
+          <span>Total jobs: <b>{planTotals.count}</b></span>
+          <span>Total planned pieces: <b>{planTotals.pcs.toLocaleString()}</b></span>
+          <span>Total planned LF: <b>{planTotals.lf.toLocaleString()}</b></span>
+        </div>}
+        {/* Plan notes */}
+        <div style={{marginTop:12}}>
+          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Plan Notes</label>
+          <textarea value={planNotes} onChange={e=>setPlanNotes(e.target.value)} rows={2} placeholder="General notes for the day..." style={{...inputS,resize:'vertical'}}/>
+        </div>
+        <button onClick={savePlan} disabled={savingPlan||planLines.length===0} style={{...btnP,background:'#7C3AED',width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:savingPlan||planLines.length===0?0.5:1}}>{savingPlan?'Saving...':planId?'Update Plan':'Save Plan'}</button>
       </div>
-    </div>
+    </div>}
 
-    {/* Submit footer */}
-    <div style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
-      <div style={{fontSize:11,color:'#9E9B96'}}>Submit by end of shift | Archive: SharePoint &gt; Production &gt; Scheduling &gt; YYYY-MM</div>
-      <button onClick={submitReport} disabled={submitting} style={{...btnP,opacity:submitting?0.5:1}}>{submitting?'Submitting...':'Submit Report'}</button>
-    </div>
+    {/* ═══ TAB 2: LOG ACTUALS ═══ */}
+    {tab==='actuals'&&<div>
+      <div style={{...card,marginBottom:16,borderTop:'3px solid #8B2020'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#8B2020'}}>Log Production Actuals</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>{actualsPlanId?'Plan loaded — fill in what was actually produced':'No plan for this date — add lines manually below'}</div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <input type="date" value={actualsDate} onChange={e=>setActualsDate(e.target.value)} style={{...inputS,width:170}}/>
+            <div style={{display:'flex',gap:4}}>
+              {[1,2].map(s=><button key={s} onClick={()=>setShift(s)} style={{padding:'8px 16px',borderRadius:6,border:shift===s?'2px solid #8B2020':'1px solid #E5E3E0',background:shift===s?'#FDF4F4':'#FFF',color:shift===s?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>Shift {s}</button>)}
+            </div>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={loggedBy} onChange={e=>setLoggedBy(e.target.value)} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={crewSize} onChange={e=>setCrewSize(e.target.value)} placeholder="0" style={inputS}/></div>
+        </div>
+        {/* Actuals table */}
+        <div style={{overflow:'auto',marginBottom:12}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F9F8F6'}}>{['Job','Style','Color','Ht','Planned','Actual Pcs','Actual LF','Notes',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 6px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+            <tbody>{actualsLines.map((l,idx)=>{const pctVsPlan=n(l.planned_pieces)>0?n(l.actual_pieces)/n(l.planned_pieces):0;const actColor=n(l.actual_pieces)===0?'#9E9B96':pctVsPlan>=1?'#065F46':'#B45309';return<tr key={idx} style={{borderBottom:'1px solid #F4F4F2',borderLeft:l.unplanned?'3px solid #1D4ED8':'3px solid transparent'}}>
+              <td style={{padding:'6px',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><div style={{fontWeight:600,fontSize:12}}>{l.job_name}</div><div style={{fontSize:10,color:'#9E9B96'}}>#{l.job_number}{l.unplanned&&' · unplanned'}</div></td>
+              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.style||'—'}</td>
+              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.color||'—'}</td>
+              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.height||'—'}</td>
+              <td style={{padding:'6px',fontSize:12,color:'#9E9B96',fontWeight:600}}>{n(l.planned_pieces)||'—'}</td>
+              <td style={{padding:'6px'}}><input type="number" value={l.actual_pieces} onChange={e=>updateActualsLine(idx,'actual_pieces',e.target.value)} placeholder="0" style={{width:70,padding:'6px 8px',fontSize:14,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,color:actColor,textAlign:'center'}}/></td>
+              <td style={{padding:'6px'}}><input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:70,padding:'6px 8px',fontSize:14,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/></td>
+              <td style={{padding:'6px'}}><input value={l.notes} onChange={e=>updateActualsLine(idx,'notes',e.target.value)} placeholder="—" style={{width:140,padding:'6px 8px',fontSize:11,border:'1px solid #D1CEC9',borderRadius:6}}/></td>
+              <td style={{padding:'6px'}}>{l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>}</td>
+            </tr>;})}</tbody>
+          </table>
+          {actualsLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12}}>No lines yet. Add jobs below.</div>}
+        </div>
+        <button onClick={()=>setShowUnplanPicker(true)} style={{...btnS,padding:'6px 14px',fontSize:12,marginBottom:12}}>+ Add Unplanned Line</button>
+        {showUnplanPicker&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12}}>
+          <input autoFocus value={unplanSearch} onChange={e=>setUnplanSearch(e.target.value)} placeholder="Search by name or number..." style={inputS}/>
+          {unplanSearchResults.length>0&&<div style={{marginTop:6,maxHeight:200,overflow:'auto'}}>{unplanSearchResults.map(j=><button key={j.id} onClick={()=>addUnplannedLine(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:3,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}</div>}
+          <button onClick={()=>{setShowUnplanPicker(false);setUnplanSearch('');}} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:6}}>Cancel</button>
+        </div>}
+        {/* Totals */}
+        {actualsLines.length>0&&<div style={{padding:10,background:'#FDF4F4',borderRadius:8,display:'flex',gap:20,fontSize:12,fontWeight:600,color:'#8B2020',flexWrap:'wrap',marginBottom:12}}>
+          <span>Actual pieces: <b>{actualsTotals.pcs.toLocaleString()}</b> / {actualsTotals.plannedPcs.toLocaleString()} planned</span>
+          <span>Actual LF: <b>{actualsTotals.lf.toLocaleString()}</b> / {actualsTotals.plannedLf.toLocaleString()} planned</span>
+          {actualsTotals.plannedPcs>0&&<span>{Math.round(actualsTotals.pcs/actualsTotals.plannedPcs*100)}% of plan</span>}
+        </div>}
+        <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Shift Notes</label><textarea value={actualsNotes} onChange={e=>setActualsNotes(e.target.value)} rows={2} placeholder="General notes for this shift..." style={{...inputS,resize:'vertical'}}/></div>
+        <button onClick={submitActuals} disabled={submittingActuals||actualsLines.length===0} style={{...btnP,width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:submittingActuals||actualsLines.length===0?0.5:1}}>{submittingActuals?'Submitting...':`Submit Shift ${shift} Report`}</button>
+      </div>
+    </div>}
+
+    {/* ═══ TAB 3: HISTORY ═══ */}
+    {tab==='history'&&<div>
+      <div style={{...card,marginBottom:16,borderTop:'3px solid #0F766E'}}>
+        <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+          {[['today','Today'],['week','This Week'],['month','This Month']].map(([k,l])=><button key={k} onClick={()=>setHistRange(k)} style={fpill(histRange===k)}>{l}</button>)}
+          <span style={{color:'#E5E3E0'}}>|</span>
+          <button onClick={()=>setHistShift('')} style={fpill(!histShift)}>All Shifts</button>
+          <button onClick={()=>setHistShift('1')} style={fpill(histShift==='1')}>Shift 1</button>
+          <button onClick={()=>setHistShift('2')} style={fpill(histShift==='2')}>Shift 2</button>
+        </div>
+        {/* Summary stats */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #0F766E'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#0F766E'}}>{histStats.totalPcs.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Total Pieces Produced</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{histStats.totalLf.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Total LF Produced</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:histStats.achievement>=100?'#065F46':histStats.achievement>=80?'#B45309':'#991B1B'}}>{histStats.achievement}%</div><div style={{fontSize:10,color:'#6B6056'}}>Plan Achievement</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{histStats.daysReported}</div><div style={{fontSize:10,color:'#6B6056'}}>Days Reported</div></div>
+        </div>
+        {/* Daily breakdown */}
+        {histLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:histStats.daily.length===0?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No actuals reported in this range</div>:<div>
+          <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>Daily Breakdown</div>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {histStats.daily.map(d=>{const pct=d.totalPlanned>0?Math.round(d.totalPcs/d.totalPlanned*100):0;const isExp=expandedDate===d.date;return<div key={d.date} style={{...card,padding:0,overflow:'hidden'}}>
+              <div onClick={()=>setExpandedDate(isExp?null:d.date)} style={{padding:'10px 14px',cursor:'pointer',display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
+                <div style={{flex:'1 1 150px',fontWeight:700}}>{new Date(d.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
+                <div style={{fontSize:11,color:'#6B6056'}}>S1: <b style={{color:'#1A1A1A'}}>{d.s1Pcs}</b></div>
+                <div style={{fontSize:11,color:'#6B6056'}}>S2: <b style={{color:'#1A1A1A'}}>{d.s2Pcs}</b></div>
+                <div style={{fontSize:12,fontWeight:800,color:'#0F766E'}}>{d.totalPcs} pcs</div>
+                <div style={{fontSize:11,color:'#6B6056'}}>{d.totalLf.toLocaleString()} LF</div>
+                <div style={{fontSize:11,fontWeight:700,color:pct>=100?'#065F46':pct>=80?'#B45309':'#991B1B'}}>{pct}% of plan</div>
+                <span style={{color:'#9E9B96',fontSize:11}}>{isExp?'▲':'▼'}</span>
+              </div>
+              {isExp&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead><tr>{['Job','Style','Color','Ht','Shift','Planned','Actual','LF','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'4px 6px',color:'#9E9B96',fontSize:10}}>{h}</th>)}</tr></thead>
+                  <tbody>{d.lines.map((a,i)=><tr key={i} style={{borderBottom:'1px solid #E5E3E0',background:a.unplanned?'#EFF6FF':'transparent'}}>
+                    <td style={{padding:'4px 6px',fontWeight:500}}>{a.job_name}{a.unplanned&&<span style={{color:'#1D4ED8',fontSize:9,marginLeft:4}}>[unplanned]</span>}</td>
+                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.style||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.color||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.height||'—'}</td>
+                    <td style={{padding:'4px 6px'}}>{a.shift}</td>
+                    <td style={{padding:'4px 6px',color:'#9E9B96'}}>{n(a.planned_pieces)||'—'}</td>
+                    <td style={{padding:'4px 6px',fontWeight:700,color:n(a.actual_pieces)>=n(a.planned_pieces)?'#065F46':'#B45309'}}>{n(a.actual_pieces)||'—'}</td>
+                    <td style={{padding:'4px 6px'}}>{n(a.actual_lf).toLocaleString()}</td>
+                    <td style={{padding:'4px 6px',color:'#6B6056',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.notes||'—'}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>}
+            </div>;})}
+          </div>
+          {/* Style summary */}
+          {histStats.byStyle.length>0&&<div style={{marginTop:20}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>By Style</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr style={{background:'#F9F8F6'}}>{['Style','Pieces','LF'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+              <tbody>{histStats.byStyle.map(s=><tr key={s.style} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'8px 10px',fontWeight:500}}>{s.style}</td>
+                <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{s.pcs.toLocaleString()}</td>
+                <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{s.lf.toLocaleString()}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>}
+        </div>}
+      </div>
+    </div>}
   </div>);
 }
 
@@ -3157,7 +3287,7 @@ export default function App(){
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
-            {page==='daily_report'&&<DailyReportPage/>}
+            {page==='daily_report'&&<DailyReportPage jobs={jobs}/>}
           </>}
         </div>
       </div>
