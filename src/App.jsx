@@ -513,6 +513,13 @@ function Dashboard({jobs,onNav}){
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
   const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','inventory_ready','active_install']);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+n(j.total_lf),0);
+  // Backlog months + market breakdown (shown inside Backlog LF card)
+  const blCurrentMo=new Date().getMonth()+1;
+  const blRunRate=blCurrentMo>0?ty/blCurrentMo:0;
+  const blMonths=blRunRate>0?tl/blRunRate:0;
+  const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
+  const blMktLTB=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],market:m,ltb:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});
+  const blMktTotal=blMktLTB.reduce((s,m)=>s+m.ltb,0);
   // 2026 Revenue Goal — includes closed jobs (money already earned)
   const GOAL_2026=36000000;
   const ytd2026=ty;
@@ -535,7 +542,34 @@ function Dashboard({jobs,onNav}){
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}><KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/><KPI label="YTD Billed" value={$k(ty)} color="#065F46" sub="All jobs incl. closed"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/><KPI label="Backlog LF" value={tlf.toLocaleString()} color="#1D4ED8" sub="Active pipeline only"/></div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}>
+      <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
+      <KPI label="YTD Billed" value={$k(ty)} color="#065F46" sub="All jobs incl. closed"/>
+      <KPI label="Left to Bill" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
+      <div style={card}>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#1D4ED8'}}>{tlf.toLocaleString()}</div>
+        <div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Backlog LF</div>
+        <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>Active pipeline only</div>
+        <div style={{borderTop:'1px solid #E5E3E0',marginTop:10,paddingTop:10}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+            <span style={{fontFamily:'Inter',fontSize:20,fontWeight:800,color:blColor}}>{blMonths.toFixed(1)}</span>
+            <span style={{fontSize:11,fontWeight:700,color:blColor}}>months backlog</span>
+          </div>
+          <div style={{fontSize:10,color:'#9E9B96',marginBottom:6}}>at {$k(blRunRate)}/mo run rate</div>
+          {blMktTotal>0&&<div style={{display:'flex',height:8,borderRadius:4,overflow:'hidden',background:'#E5E3E0',marginBottom:4}}>
+            {blMktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{width:`${m.ltb/blMktTotal*100}%`,background:MC[m.market]}} title={`${m.name}: ${$k(m.ltb)} (${Math.round(m.ltb/blMktTotal*100)}%)`}/>)}
+          </div>}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',fontSize:9}}>
+            {blMktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{display:'flex',alignItems:'center',gap:3}}>
+              <div style={{width:6,height:6,borderRadius:1,background:MC[m.market]}}/>
+              <span style={{color:'#6B6056'}}>{m.name}</span>
+              <span style={{fontWeight:700}}>{$k(m.ltb)}</span>
+              <span style={{color:'#9E9B96'}}>{Math.round(m.ltb/blMktTotal*100)}%</span>
+            </div>)}
+          </div>
+        </div>
+      </div>
+    </div>
     {/* 2026 Revenue Goal */}
     {(()=>{
       const r=140,cx=160,cy=160;const circ=Math.PI*r;const offset=circ*(1-pct2026);const arcColor=achieved2026?'#065F46':'#8B2020';
@@ -580,7 +614,10 @@ function Dashboard({jobs,onNav}){
     {(()=>{const bsActive=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));const bsTotal=bsActive.length;const bsSubs=dashBillSubs;const bsSubIds=new Set(bsSubs.map(s=>s.job_id));const bsSubmitted=bsActive.filter(j=>bsSubIds.has(j.id)).length;const bsPct=bsTotal>0?Math.round(bsSubmitted/bsTotal*100):0;const bsColor=bsPct>80?'#10B981':bsPct>50?'#F59E0B':'#EF4444';const pmCounts=PM_LIST.map(p=>{const pj=bsActive.filter(j=>j.pm===p.id);const ps=pj.filter(j=>bsSubIds.has(j.id)).length;return{...p,total:pj.length,submitted:ps};});return<div style={{...card,marginBottom:16,borderTop:`3px solid ${bsColor}`}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
         <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Bill Sheets — {monthLabel(dashBillingMonth)}</div>
-        {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} title="Send reminder emails to PMs with missing bill sheets" style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer',opacity:remindSending?0.5:1}}>{remindSending?'Sending...':'📧 Send Reminders'}</button>
+          {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
+        </div>
       </div>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
         <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:bsColor}}>{bsSubmitted}</span>
@@ -623,11 +660,6 @@ function Dashboard({jobs,onNav}){
         </div>;})}
       </div>
     </div>
-    {/* Quick Actions */}
-    {onNav&&<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
-      {[['+ New Project','projects'],['Log Weather Day','weather_days'],['Log Daily Report','pm_daily_report'],['View Billing','billing']].map(([l,k])=><button key={k} onClick={()=>onNav(k)} style={{...btnP,padding:'10px 20px',fontSize:13}}>{l}</button>)}
-      <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} style={{...btnP,padding:'10px 20px',fontSize:13,opacity:remindSending?0.6:1}}>{remindSending?'Sending...':'📧 Send Bill Sheet Reminders'}</button>
-    </div>}
     {showRemindConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowRemindConfirm(false)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Send Bill Sheet Reminders?</div>
@@ -635,52 +667,6 @@ function Dashboard({jobs,onNav}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowRemindConfirm(false)} style={btnS}>Cancel</button><button onClick={sendReminders} style={btnP}>Send Reminders</button></div>
       </div>
     </div>}
-    {/* Backlog Health */}
-    {(()=>{
-      const blJobs=active;
-      const blLTB=tl;
-      const currentMo=new Date().getMonth()+1;
-      const runRate=currentMo>0?ty/currentMo:0;
-      const blCount=blJobs.length;
-      const blLF=blJobs.reduce((s,j)=>s+n(j.total_lf),0);
-      const blMonths=runRate>0?blLTB/runRate:0;
-      const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
-      const blBg=blMonths>=4?'#D1FAE5':blMonths>=2?'#FEF3C7':'#FEE2E2';
-      const mktLTB=MKTS.map(m=>{const mj=blJobs.filter(j=>j.market===m);return{name:MS[m],market:m,ltb:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});
-      const mktTotal=mktLTB.reduce((s,m)=>s+m.ltb,0);
-      return<div style={{...card,marginBottom:24,border:`1px solid ${blColor}30`}}>
-        <div style={{display:'flex',gap:24,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
-          <div>
-            <div style={{fontFamily:'Inter',fontWeight:900,fontSize:36,color:blColor}}>{blMonths.toFixed(1)}</div>
-            <div style={{fontSize:14,fontWeight:700,color:blColor}}>Months of Backlog</div>
-            <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>at {$k(runRate)}/mo run rate</div>
-          </div>
-          <div style={{display:'flex',gap:20,flex:1,justifyContent:'flex-end',flexWrap:'wrap'}}>
-            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(blLTB)}</div><div style={{fontSize:10,color:'#9E9B96'}}>Left to Bill</div></div>
-            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{$k(runRate)}/mo</div><div style={{fontSize:10,color:'#9E9B96'}}>Monthly Run Rate</div></div>
-            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{blCount}</div><div style={{fontSize:10,color:'#9E9B96'}}>Active Jobs</div></div>
-            <div style={{textAlign:'center'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#1A1A1A'}}>{blLF.toLocaleString()}</div><div style={{fontSize:10,color:'#9E9B96'}}>Total LF</div></div>
-          </div>
-        </div>
-        {/* Market breakdown bar */}
-        <div style={{marginBottom:8}}>
-          <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',background:'#E5E3E0'}}>
-            {mktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{width:`${mktTotal>0?m.ltb/mktTotal*100:0}%`,background:MC[m.market],display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:700,minWidth:m.ltb/mktTotal>0.08?0:'fit-content'}} title={`${m.name}: ${$(m.ltb)} (${Math.round(m.ltb/mktTotal*100)}%)`}>{mktTotal>0&&m.ltb/mktTotal>0.12?m.name:''}</div>)}
-          </div>
-          <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
-            {mktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{display:'flex',alignItems:'center',gap:4,fontSize:11}}>
-              <div style={{width:8,height:8,borderRadius:2,background:MC[m.market]}}/>
-              <span style={{color:'#6B6056'}}>{m.name}</span>
-              <span style={{fontWeight:700}}>{$k(m.ltb)}</span>
-              <span style={{color:'#9E9B96'}}>{mktTotal>0?Math.round(m.ltb/mktTotal*100):0}%</span>
-            </div>)}
-          </div>
-        </div>
-        {/* Warning banners */}
-        {blMonths<2&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginTop:8}}>Critical: Less than 2 months of backlog remaining</div>}
-        {blMonths>=2&&blMonths<4&&<div style={{background:'#FEF3C7',border:'1px solid #B4530930',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,color:'#B45309',marginTop:8}}>Backlog below 4-month target — new contracts needed to maintain revenue pace</div>}
-      </div>;
-    })()}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>!CLOSED_SET.has(s)).map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
