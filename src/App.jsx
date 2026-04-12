@@ -2847,8 +2847,8 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
 }
 
 /* ═══ DAILY REPORT PAGE ═══ */
-function DailyReportPage({jobs}){
-  const[tab,setTab]=useState('plan');
+function DailyReportPage({jobs,onNav}){
+  const[tab,setTab]=useState('actuals');
   const[toast,setToast]=useState(null);
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
@@ -2882,7 +2882,7 @@ function DailyReportPage({jobs}){
   // ─── CARRY FORWARD STATE ───
   const[carryForward,setCarryForward]=useState([]);
   // Pick up cross-page handoff (e.g. "View Tomorrow's Plan" from Production Orders)
-  useEffect(()=>{try{const raw=localStorage.getItem('fc_daily_goto');if(raw){const g=JSON.parse(raw);if(g.tab)setTab(g.tab);if(g.date){if(g.tab==='plan')setPlanDate(g.date);else if(g.tab==='actuals')setActualsDate(g.date);}localStorage.removeItem('fc_daily_goto');}}catch(e){}},[]);
+  useEffect(()=>{try{const raw=localStorage.getItem('fc_daily_goto');if(raw){const g=JSON.parse(raw);if(g.tab==='actuals'||g.tab==='history')setTab(g.tab);if(g.date&&g.tab==='actuals')setActualsDate(g.date);localStorage.removeItem('fc_daily_goto');}}catch(e){}},[]);
 
   // ─── HISTORY TAB STATE ───
   const[histRange,setHistRange]=useState('week');
@@ -3353,271 +3353,11 @@ function DailyReportPage({jobs}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Production Daily Report</h1>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['plan','📋 Production Plan','#7C3AED'],['actuals','✅ Log Actuals','#8B2020'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#6B6056',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
+      {[['actuals','✅ Log Actuals','#8B2020'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#6B6056',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
     </div>
 
-    {/* ═══ TAB 1: PRODUCTION PLAN ═══ */}
-    {tab==='plan'&&<div>
-      {/* Shift schedule indicator */}
-      <div style={{...card,marginBottom:12,padding:'8px 14px',background:'#1A1A1A',color:'#FFF',display:'flex',gap:20,fontSize:11,flexWrap:'wrap',alignItems:'center'}}>
-        <span style={{fontWeight:800}}>🕐 SHIFT SCHEDULE:</span>
-        <span><b>Shift 1:</b> morning → 4:00 PM</span>
-        <span><b>Shift 2:</b> 4:00 PM → 2:00 AM</span>
-        <span style={{color:'#9CA3AF'}}>|</span>
-        <span><b>Cure time:</b> 24 hours (1 pour per mold per day)</span>
-      </div>
-      {/* Plant capacity bar */}
-      {planLines.length>0&&<div style={{...card,marginBottom:12,padding:14,borderLeft:'4px solid #7C3AED'}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🏭 Plant Capacity — {new Date(planDate+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
-        <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:20}}>
-          {/* MOLD UTILIZATION */}
-          <div style={{paddingRight:16,borderRight:'1px solid #E5E3E0'}}>
-            <div style={{fontSize:10,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase'}}>Mold Utilization</div>
-            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Primary constraint — today's run / (molds × panels × 88%)</div>
-            {(()=>{const hasUnadjusted=planLines.some(l=>{const full=l.material_totals?.panels||0;const today=sumGroup(l.planned,'PANELS');return full>0&&today>=full;});return hasUnadjusted?<div style={{fontSize:10,color:'#1D4ED8',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,padding:'6px 8px',marginBottom:8}}>ℹ️ Set "Today's Run" quantities on each plan line to see accurate daily capacity</div>:null;})()}
-            {moldUsageByStyle.length===0?<div style={{fontSize:11,color:'#9E9B96'}}>No panels planned</div>:moldUsageByStyle.map(u=>{
-              const usedLabel=[...u.actualStyles].join(' + ')||u.style;
-              if(!u.confirmed)return<div key={u.style} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                  <span style={{fontWeight:600,color:'#1A1A1A'}}>{u.label}</span>
-                  <span style={{fontWeight:700,color:'#6B7280'}}>{u.panels.toLocaleString()} panels · ⚙️ Verify with Max</span>
-                </div>
-                <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{width:'0%',height:'100%',background:'#6B7280'}}/></div>
-                <div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>{u.molds} molds · panels/mold unconfirmed · planned from: {usedLabel}</div>
-                <div style={{fontSize:10,color:'#6B7280',fontWeight:600,marginTop:3,background:'#F4F4F2',padding:'4px 6px',borderRadius:4}}>⚙️ Vertical Wood panels/mold needs confirmation from Max before daily capacity can be calculated.</div>
-              </div>;
-              const pct=u.capacity>0?Math.round(u.panels/u.capacity*100):0;
-              const over=u.panels>u.capacity&&u.capacity>0;
-              const col=over||pct>=70?'#B45309':'#15803D';
-              const emoji=over||pct>=70?'🟡':'🟢';
-              const daysNeeded=u.capacity>0?Math.ceil(u.panels/u.capacity):0;
-              return<div key={u.style} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                  <span style={{fontWeight:600,color:'#1A1A1A'}}>{u.label}</span>
-                  <span style={{fontWeight:700,color:col}}>{u.panels.toLocaleString()}/{u.capacity.toLocaleString()} panels · {pct}% {emoji}</span>
-                </div>
-                <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}>
-                  <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/>
-                </div>
-                <div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>{u.molds} molds × {u.panelsPerMold} panels × 88% = {u.capacity} panels/day · planned from: {usedLabel}</div>
-                {over&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginTop:3,background:'#EFF6FF',padding:'4px 6px',borderRadius:4}}>📅 At {u.capacity} panels/day for {u.label}, this job needs ~{daysNeeded.toLocaleString()} production days total. Adjust "Today's Run" on the plan line to show only what you'll actually run this shift.</div>}
-              </div>;
-            })}
-            <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700}}>
-              <span>Total:</span>
-              <span>{totalPanelsPlanned.toLocaleString()}/{totalPanelCapacity.toLocaleString()} panels ({totalPanelCapacity>0?Math.round(totalPanelsPlanned/totalPanelCapacity*100):0}%)</span>
-            </div>
-          </div>
-          {/* BATCH PLANT CY */}
-          <div>
-            <div style={{fontSize:10,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase'}}>Batch Plant (CYD)</div>
-            <div style={{fontSize:9,color:'#9E9B96',marginBottom:10}}>Secondary — panels × cy × 1.4 / 52.8 CYD</div>
-            {(()=>{const cyPct=dailyCyCap>0?Math.round(totalCyPlanned/dailyCyCap*100):0;const col=cyPct>=70?'#B45309':'#15803D';return<>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                <span style={{fontWeight:600}}>Total CYD today</span>
-                <span style={{fontWeight:700,color:col}}>{totalCyPlanned.toFixed(1)}/{dailyCyCap} CYD</span>
-              </div>
-              <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}>
-                <div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:col}}/>
-              </div>
-              <div style={{fontSize:9,color:'#9E9B96',marginTop:4}}>2× WIGGERT HPGM 500 • 60 batches/shift × 0.44 CYD = 52.8 CYD/day</div>
-              <div style={{marginTop:8,paddingTop:6,borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700}}>
-                <span>Utilization:</span>
-                <span>{cyPct}%</span>
-              </div>
-            </>;})()}
-          </div>
-        </div>
-      </div>}
-      {/* Carry Forward from yesterday */}
-      {carryForward.length>0&&<div style={{...card,marginBottom:12,borderLeft:'4px solid #B45309',padding:14}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>↩ Carry Forward From Yesterday</div>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:10}}>These jobs weren't completed yesterday</div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:8}}>
-          {carryForward.map(cf=>{const alreadyAdded=planLines.some(l=>l.job_id===cf.job_id);return<div key={cf.job_id} style={{background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:10}}>
-            <div style={{fontSize:12,fontWeight:700}}>{cf.job_name}</div>
-            <div style={{fontSize:10,color:'#9E9B96',marginBottom:4}}>#{cf.job_number} · {cf.style||'—'}</div>
-            <div style={{fontSize:11,color:'#6B6056',marginBottom:4}}>{cf.actualPanels.toLocaleString()} of {cf.plannedPanels.toLocaleString()} done yesterday</div>
-            <div style={{fontSize:13,fontWeight:800,color:'#B45309',marginBottom:6}}>{cf.remaining.toLocaleString()} panels remaining</div>
-            <button onClick={()=>addJobFromCarryForward(cf)} disabled={alreadyAdded} style={{width:'100%',padding:'5px 10px',background:alreadyAdded?'#E5E3E0':'#B45309',border:'none',borderRadius:6,color:alreadyAdded?'#9E9B96':'#FFF',fontSize:11,fontWeight:700,cursor:alreadyAdded?'default':'pointer'}}>{alreadyAdded?'✓ Added to plan':'+ Add to Today\'s Plan'}</button>
-          </div>;})}
-        </div>
-      </div>}
-      {/* Smart Production Queue panel */}
-      {(()=>{const queueJobs=jobs.filter(j=>j.status==='production_queue'&&j.material_calc_date&&!planLines.some(l=>l.job_id===j.id)).sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')).slice(0,20);if(queueJobs.length===0)return null;return<div style={{...card,marginBottom:12,borderLeft:'4px solid #7C3AED'}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:8}}>Production Queue ({queueJobs.length} jobs with orders)</div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:8,maxHeight:260,overflow:'auto'}}>
-          {queueJobs.map(j=>{const gt2=groupTotals(j);const pcs=gt2.posts+gt2.panels+gt2.rails+gt2.caps;const tipParts=[];if(gt2.posts)tipParts.push(`Posts: ${gt2.posts}`);if(gt2.panels)tipParts.push(`Panels: ${gt2.panels}`);if(gt2.rails)tipParts.push(`Rails: ${gt2.rails}`);if(gt2.caps)tipParts.push(`Caps: ${gt2.caps}`);const molds=moldsForStyle(j.style);const ppd=panelsPerDayForStyle(j.style);const days=ppd>0&&gt2.panels>0?Math.ceil(gt2.panels/ppd):0;const jobCy=cyForLine({style:j.style,planned_panels:gt2.panels});return<div key={j.id} title={tipParts.join(' | ')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10}}>
-            <div style={{fontSize:12,fontWeight:700}}>{j.job_name}</div>
-            <div style={{fontSize:10,color:'#9E9B96',marginBottom:4}}>#{j.job_number}</div>
-            <div style={{fontSize:10,color:'#6B6056',marginBottom:4}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>
-            <div style={{fontSize:10,color:'#6B6056',marginBottom:6}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{pcs}</b> pcs</span>} {n(j.total_lf)>0&&<span style={{marginLeft:8}}><b style={{color:'#1A1A1A'}}>{n(j.total_lf).toLocaleString()}</b> LF</span>}</div>
-            {gt2.panels>0&&(ppd>0?<div style={{fontSize:10,color:'#7C3AED',fontWeight:600,marginBottom:3}}>📦 {gt2.panels.toLocaleString()} panels | {molds} molds × {panelsPerMoldForStyle(j.style)} panels = {ppd}/day → ~{days} prod days</div>:!isPanelsPerMoldConfirmed(j.style)?<div style={{fontSize:10,color:'#6B7280',fontWeight:600,marginBottom:3}}>📦 {gt2.panels.toLocaleString()} panels · ⚙️ Verify panels/mold with Max</div>:null)}
-            {jobCy>0&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginBottom:4}}>~{jobCy.toFixed(1)} CYD total concrete</div>}
-            {j.est_start_date&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:6}}>Est start: {fD(j.est_start_date)}</div>}
-            <button onClick={()=>addJobToPlan(j)} style={{width:'100%',padding:'5px 10px',background:'#7C3AED',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan</button>
-          </div>;})}
-        </div>
-      </div>;})()}
-      <div style={{...card,marginBottom:16,borderTop:'3px solid #7C3AED'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
-          <div>
-            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#7C3AED'}}>Production Plan</div>
-            <div style={{fontSize:11,color:'#9E9B96'}}>Created by Max {planId?'— editing existing plan':'— new plan'}</div>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase'}}>Plan Date</label>
-            <button onClick={()=>setPlanDate(shiftDate(planDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>←</button>
-            <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} title={fmtDateLabel(planDate)} style={{...inputS,width:170}}/>
-            <button onClick={()=>setPlanDate(shiftDate(planDate,1))} title="Next day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>→</button>
-            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'6px 10px',border:planDate===todayISO?'2px solid #7C3AED':'1px solid #E5E3E0',background:planDate===todayISO?'#EDE9FE':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#7C3AED':'#6B6056'}}>Today</button>
-            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'6px 10px',border:planDate===tomorrowISO?'2px solid #7C3AED':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#EDE9FE':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#7C3AED':'#6B6056'}}>Tomorrow</button>
-          </div>
-        </div>
-        {/* Add buttons */}
-        <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-          <button onClick={()=>setShowAddPicker('orders')} style={{...btnP,background:'#7C3AED',padding:'8px 16px',fontSize:12}}>＋ Add from Production Orders</button>
-          <button onClick={()=>setShowAddPicker('manual')} style={{...btnS,padding:'8px 16px',fontSize:12}}>＋ Add Job Manually</button>
-        </div>
-        {/* Picker */}
-        {showAddPicker==='orders'&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12,maxHeight:300,overflow:'auto'}}>
-          <div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:6}}>Jobs with saved production orders:</div>
-          {prodOrderJobs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No jobs with production orders found</div>:prodOrderJobs.map(j=><button key={j.id} onClick={()=>addJobToPlan(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:4,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span> — {j.style||'—'} / {j.color||'—'} / {j.height_precast||'?'}ft</button>)}
-          <button onClick={()=>setShowAddPicker(false)} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:4}}>Cancel</button>
-        </div>}
-        {showAddPicker==='manual'&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12}}>
-          <input autoFocus value={jobSearch} onChange={e=>setJobSearch(e.target.value)} placeholder="Search by name or number..." style={inputS}/>
-          {jobSearchResults.length>0&&<div style={{marginTop:6,maxHeight:240,overflow:'auto'}}>{jobSearchResults.map(j=><button key={j.id} onClick={()=>addJobToPlan(j)} style={{display:'block',width:'100%',padding:'6px 10px',marginBottom:3,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,textAlign:'left',cursor:'pointer',fontSize:12}}><b>{j.job_name}</b> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}</div>}
-          <button onClick={()=>{setShowAddPicker(false);setJobSearch('');}} style={{...btnS,padding:'4px 10px',fontSize:11,marginTop:6}}>Cancel</button>
-        </div>}
-        {/* Plan lines */}
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {planLines.map((l,idx)=>{
-            const m=l.material||{};const gt=l.material_totals||{posts:0,panels:0,rails:0,caps:0};
-            const partial=lineIsPartial(l);
-            const row=(label,val)=>val>0?<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'2px 0'}}><span style={{color:'#6B6056'}}>{label}:</span><b style={{color:'#1A1A1A'}}>{val.toLocaleString()}</b></div>:null;
-            const phLabel=l.post_height?`${l.post_height}ft`:(l.height?`${l.height}ft`:'');
-            return<div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:`4px solid ${partial?'#B45309':'#7C3AED'}`,borderRadius:8,padding:12,background:'#FFF'}}>
-              {/* Header */}
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                <div style={{display:'flex',flexDirection:'column',gap:2}}>
-                  <button onClick={()=>movePlanLine(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',fontSize:10,cursor:idx===0?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▲</button>
-                  <button onClick={()=>movePlanLine(idx,1)} disabled={idx===planLines.length-1} style={{background:'none',border:'none',fontSize:10,cursor:idx===planLines.length-1?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▼</button>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                    <b style={{fontSize:14}}>{l.job_name}</b>
-                    <span style={{color:'#9E9B96',fontSize:11}}>#{l.job_number}</span>
-                    {partial&&<span style={{background:'#FEF3C7',color:'#B45309',fontSize:9,fontWeight:800,padding:'2px 6px',borderRadius:4}}>⚡ PARTIAL RUN</span>}
-                  </div>
-                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null,n(l.planned_lf)?`${n(l.planned_lf).toLocaleString()} LF`:null].filter(Boolean).join(' | ')||'—'}</div>
-                  {l.material_calc_date&&<div style={{fontSize:10,color:'#065F46',fontWeight:600,marginTop:2}}>📋 Material order calculated {new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}
-                </div>
-                <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:16,cursor:'pointer'}}>✕</button>
-              </div>
-              {l.quantities_stale&&<div style={{marginTop:8,padding:'8px 12px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:6,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <div style={{fontSize:11,color:'#B45309',fontWeight:700}}>⚠️ Material calculation was updated{l.material_calc_date?' on '+new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''} — plan quantities may be outdated</div>
-                <button onClick={()=>updatePlanLineToLatest(idx)} style={{...btnP,background:'#B45309',padding:'5px 12px',fontSize:11}}>Update to Latest →</button>
-              </div>}
-              {/* Material breakdown grid */}
-              {(gt.posts+gt.panels+gt.rails+gt.caps)>0?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,padding:'8px 0',borderTop:'1px solid #F4F4F2',borderBottom:'1px solid #F4F4F2'}}>
-                {/* POSTS */}
-                <div style={{padding:'0 10px',borderRight:'1px solid #F4F4F2'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>POSTS {phLabel&&<span style={{color:'#6B6056',fontWeight:600}}>({phLabel})</span>}</div>
-                  {row('Line',m.posts_line)}{row('Corner',m.posts_corner)}{row('Stop',m.posts_stop)}
-                  {gt.posts>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.posts.toLocaleString()}</span></div>}
-                </div>
-                {/* PANELS */}
-                <div style={{padding:'0 10px'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>PANELS</div>
-                  {row('Regular',m.panels_regular)}{row('Half',m.panels_half)}{row('Bottom',m.panels_bottom)}{row('Top',m.panels_top)}
-                  {gt.panels>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.panels.toLocaleString()}</span></div>}
-                </div>
-                {/* RAILS */}
-                <div style={{padding:'0 10px',borderRight:'1px solid #F4F4F2',borderTop:'1px solid #F4F4F2',paddingTop:6,marginTop:4}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>RAILS</div>
-                  {row('Cap',m.rails_regular)}{row('Top',m.rails_top)}{row('Bottom',m.rails_bottom)}{row('Center',m.rails_center)}
-                  {gt.rails>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.rails.toLocaleString()}</span></div>}
-                </div>
-                {/* POST CAPS */}
-                <div style={{padding:'0 10px',borderTop:'1px solid #F4F4F2',paddingTop:6,marginTop:4}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>POST CAPS</div>
-                  {row('Line',m.caps_line)}{row('Stop',m.caps_stop)}
-                  {gt.caps>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2,borderTop:'1px solid #F4F4F2',fontWeight:700}}><span style={{color:'#6B6056'}}>Total:</span><span style={{color:'#7C3AED'}}>{gt.caps.toLocaleString()}</span></div>}
-                </div>
-              </div>:<div style={{padding:'8px 0',fontSize:11,color:'#B45309',borderTop:'1px solid #F4F4F2',marginTop:6}}>⚠ No material order on file — calculate materials first for full breakdown</div>}
-              {/* Today's Run — per-piece table */}
-              {(gt.posts+gt.panels+gt.rails+gt.caps)>0&&(()=>{
-                const thCell={padding:'6px 10px',fontSize:9,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'};
-                const tdLabel={padding:'5px 10px',fontSize:11,color:'#1A1A1A',fontWeight:600,borderBottom:'1px solid #F4F4F2'};
-                const tdFull={padding:'5px 10px',fontSize:12,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#6B6056',background:'#FAFAF8',borderBottom:'1px solid #F4F4F2'};
-                const tdInput={padding:'3px 6px',textAlign:'right',borderBottom:'1px solid #F4F4F2'};
-                const sectionHdr=(label)=><tr><td colSpan={3} style={{padding:'4px 10px',background:'#EFEEEB',fontSize:9,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
-                const pieceRow=(pt)=>{
-                  const full=n(l.material?.[pt.key]);
-                  if(full===0)return null;
-                  const val=l.planned?.[pt.key]??'';
-                  const isPartial=n(val)<full;
-                  return<tr key={pt.key}>
-                    <td style={tdLabel}>{pt.label}</td>
-                    <td style={tdFull}>{full.toLocaleString()}</td>
-                    <td style={tdInput}><input type="number" value={val} onChange={e=>updatePlanPiece(idx,pt.key,e.target.value)} placeholder="0" style={{width:80,padding:'5px 8px',fontSize:12,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:5,textAlign:'center',background:isPartial?'#FEF3C7':'#FFF'}}/></td>
-                  </tr>;
-                };
-                const groupHas=(g)=>PLAN_PIECE_TYPES.filter(pt=>pt.group===g).some(pt=>n(l.material?.[pt.key])>0);
-                const phLabel=l.post_height?`${l.post_height}ft`:(l.height?`${l.height}ft`:'');
-                return<div style={{marginTop:10,border:'1px solid #E5E3E0',borderRadius:6,overflow:'hidden'}}>
-                  <div style={{padding:'6px 12px',background:'#F5F3FF',fontSize:10,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5}}>Today's Run (adjust any quantity for partial runs)</div>
-                  <table style={{width:'100%',borderCollapse:'collapse'}}>
-                    <thead><tr>
-                      <th style={{...thCell,textAlign:'left'}}>Piece Type</th>
-                      <th style={{...thCell,textAlign:'right'}}>Full Order</th>
-                      <th style={{...thCell,textAlign:'right'}}>Today's Run</th>
-                    </tr></thead>
-                    <tbody>
-                      {groupHas('POSTS')&&<>{sectionHdr(`Posts${phLabel?' ('+phLabel+')':''}`)}{PLAN_PIECE_TYPES.filter(pt=>pt.group==='POSTS').map(pieceRow)}</>}
-                      {groupHas('PANELS')&&<>{sectionHdr('Panels')}{PLAN_PIECE_TYPES.filter(pt=>pt.group==='PANELS').map(pieceRow)}</>}
-                      {groupHas('RAILS')&&<>{sectionHdr('Rails')}{PLAN_PIECE_TYPES.filter(pt=>pt.group==='RAILS').map(pieceRow)}</>}
-                      {groupHas('POST CAPS')&&<>{sectionHdr('Post Caps')}{PLAN_PIECE_TYPES.filter(pt=>pt.group==='POST CAPS').map(pieceRow)}</>}
-                      {sectionHdr('Linear Feet')}
-                      <tr>
-                        <td style={tdLabel}>LF</td>
-                        <td style={tdFull}>{(n(jobs.find(x=>x.id===l.job_id)?.lf_precast)||n(jobs.find(x=>x.id===l.job_id)?.total_lf)||0).toLocaleString()||'—'}</td>
-                        <td style={tdInput}><input type="number" value={l.planned_lf} onChange={e=>updatePlanLine(idx,'planned_lf',e.target.value)} placeholder="0" style={{width:80,padding:'5px 8px',fontSize:12,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:5,textAlign:'center'}}/></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>;
-              })()}
-              {partial&&<div style={{marginTop:8,padding:'8px 10px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:6}}>
-                <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:800,textTransform:'uppercase',marginBottom:3}}>⚡ Partial run reason (required)</label>
-                <input value={l.partial_run_reason} onChange={e=>updatePlanLine(idx,'partial_run_reason',e.target.value)} placeholder="Why is today's run less than the full order?" style={{...inputS,padding:'6px 8px',fontSize:11,background:'#FFF'}}/>
-              </div>}
-              <div style={{marginTop:8}}><label style={{display:'block',fontSize:9,color:'#6B6056',marginBottom:2}}>Notes</label><input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} style={{...inputS,padding:'5px 8px',fontSize:12}}/></div>
-            </div>;
-          })}
-          {planLines.length===0&&<div style={{textAlign:'center',padding:32,color:'#9E9B96',fontSize:13}}>
-            <div style={{fontSize:24,marginBottom:6}}>📋</div>
-            <div style={{fontWeight:700,color:'#6B6056',marginBottom:4}}>No plan yet for {new Date(planDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
-            <div style={{fontSize:11}}>Add jobs from the Production Queue above or use "+ Add Job Manually" to start building the plan.</div>
-          </div>}
-        </div>
-        {/* Summary */}
-        {planLines.length>0&&<div style={{marginTop:12,padding:10,background:'#F5F3FF',borderRadius:8,display:'flex',gap:20,fontSize:12,fontWeight:600,color:'#7C3AED',flexWrap:'wrap'}}>
-          <span>Total jobs: <b>{planTotals.count}</b></span>
-          <span>Total planned pieces: <b>{planTotals.pcs.toLocaleString()}</b></span>
-          <span>Total planned LF: <b>{planTotals.lf.toLocaleString()}</b></span>
-        </div>}
-        {/* Plan notes */}
-        <div style={{marginTop:12}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Plan Notes</label>
-          <textarea value={planNotes} onChange={e=>setPlanNotes(e.target.value)} rows={2} placeholder="General notes for the day..." style={{...inputS,resize:'vertical'}}/>
-        </div>
-        <button onClick={savePlan} disabled={savingPlan||planLines.length===0} style={{...btnP,background:'#7C3AED',width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:savingPlan||planLines.length===0?0.5:1}}>{savingPlan?'Saving...':planId?'Update Plan':'Save Plan'}</button>
-      </div>
-    </div>}
 
-    {/* ═══ TAB 2: LOG ACTUALS ═══ */}
+    {/* ═══ TAB 1: LOG ACTUALS ═══ */}
     {tab==='actuals'&&<div>
       <div style={{...card,marginBottom:16,borderTop:'3px solid #8B2020'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
@@ -3660,7 +3400,7 @@ function DailyReportPage({jobs}){
           <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A',marginBottom:6}}>No production plan found for {new Date(actualsDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
           <div style={{fontSize:12,color:'#6B6056',marginBottom:16,maxWidth:440,margin:'0 auto 16px'}}>Max needs to save a plan for this date before actuals can be logged. You can create one now or switch to a date that already has a plan.</div>
           <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
-            <button onClick={()=>{try{localStorage.setItem('fc_daily_goto',JSON.stringify({tab:'plan',date:actualsDate}));}catch(e){}setTab('plan');setPlanDate(actualsDate);window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnP,padding:'10px 18px',fontSize:13}}>← Go to Production Planning</button>
+            <button onClick={()=>{if(onNav)onNav('production_planning');window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnP,padding:'10px 18px',fontSize:13}}>← Go to Production Planning</button>
             <button onClick={()=>setActualsDate(todayISO)} style={{...btnS,padding:'10px 18px',fontSize:13}}>Jump to Today</button>
           </div>
         </div>}
@@ -3813,7 +3553,7 @@ function DailyReportPage({jobs}){
       </div>
     </div>}
 
-    {/* ═══ TAB 3: HISTORY ═══ */}
+    {/* ═══ TAB 2: HISTORY ═══ */}
     {tab==='history'&&<div>
       <div style={{...card,marginBottom:16,borderTop:'3px solid #0F766E'}}>
         <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
@@ -4861,7 +4601,7 @@ export default function App(){
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
-            {page==='daily_report'&&<DailyReportPage jobs={jobs}/>}
+            {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='help'&&<HelpPage/>}
           </>}
