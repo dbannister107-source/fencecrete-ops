@@ -2004,7 +2004,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #8B2020'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
         <span>📅 Today's Plan — {new Date(todayStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
-        {!todayHasPlan&&<button onClick={()=>onNav&&onNav('daily')} style={{...btnS,padding:'4px 10px',fontSize:11}}>View Tomorrow's Plan →</button>}
+        {!todayHasPlan&&<button onClick={()=>{const t=new Date();t.setDate(t.getDate()+1);const tISO=t.toISOString().split('T')[0];try{localStorage.setItem('fc_daily_goto',JSON.stringify({tab:'plan',date:tISO}));}catch(e){}if(onNav)onNav('daily_report');window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnS,padding:'4px 10px',fontSize:11}}>View Tomorrow's Plan →</button>}
       </div>
       {!todayHasPlan?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>No plan for today. Plans are created by Max for the next day (default).</div>:
       todayPlanLines.length===0?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>Plan exists but has no lines.</div>:
@@ -2280,6 +2280,9 @@ function DailyReportPage({jobs}){
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
   const todayISO=new Date().toISOString().split('T')[0];
+  // Helpers to shift dates
+  const shiftDate=(iso,delta)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+delta);return d.toISOString().split('T')[0];};
+  const fmtDateLabel=(iso)=>new Date(iso+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 
   // ─── PLAN TAB STATE ───
   const[planDate,setPlanDate]=useState(tomorrowISO);
@@ -2305,6 +2308,8 @@ function DailyReportPage({jobs}){
   const[editingShift,setEditingShift]=useState(false);
   // ─── CARRY FORWARD STATE ───
   const[carryForward,setCarryForward]=useState([]);
+  // Pick up cross-page handoff (e.g. "View Tomorrow's Plan" from Production Orders)
+  useEffect(()=>{try{const raw=localStorage.getItem('fc_daily_goto');if(raw){const g=JSON.parse(raw);if(g.tab)setTab(g.tab);if(g.date){if(g.tab==='plan')setPlanDate(g.date);else if(g.tab==='actuals')setActualsDate(g.date);}localStorage.removeItem('fc_daily_goto');}}catch(e){}},[]);
 
   // ─── HISTORY TAB STATE ───
   const[histRange,setHistRange]=useState('week');
@@ -2773,9 +2778,13 @@ function DailyReportPage({jobs}){
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#7C3AED'}}>Production Plan</div>
             <div style={{fontSize:11,color:'#9E9B96'}}>Created by Max {planId?'— editing existing plan':'— new plan'}</div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
             <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase'}}>Plan Date</label>
-            <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} style={{...inputS,width:170}}/>
+            <button onClick={()=>setPlanDate(shiftDate(planDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>←</button>
+            <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} title={fmtDateLabel(planDate)} style={{...inputS,width:170}}/>
+            <button onClick={()=>setPlanDate(shiftDate(planDate,1))} title="Next day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>→</button>
+            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'6px 10px',border:planDate===todayISO?'2px solid #7C3AED':'1px solid #E5E3E0',background:planDate===todayISO?'#EDE9FE':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#7C3AED':'#6B6056'}}>Today</button>
+            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'6px 10px',border:planDate===tomorrowISO?'2px solid #7C3AED':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#EDE9FE':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#7C3AED':'#6B6056'}}>Tomorrow</button>
           </div>
         </div>
         {/* Add buttons */}
@@ -2893,8 +2902,11 @@ function DailyReportPage({jobs}){
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#8B2020'}}>Log Production Actuals</div>
             <div style={{fontSize:11,color:'#9E9B96'}}>{actualsPlanId?'Plan loaded — fill in what was actually produced':'No plan for this date — add lines manually below'}</div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            <input type="date" value={actualsDate} onChange={e=>setActualsDate(e.target.value)} style={{...inputS,width:170}}/>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <button onClick={()=>setActualsDate(shiftDate(actualsDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>←</button>
+            <input type="date" value={actualsDate} onChange={e=>setActualsDate(e.target.value)} title={fmtDateLabel(actualsDate)} style={{...inputS,width:170}}/>
+            <button onClick={()=>setActualsDate(shiftDate(actualsDate,1))} title="Next day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>→</button>
+            <button onClick={()=>setActualsDate(todayISO)} style={{padding:'6px 10px',border:actualsDate===todayISO?'2px solid #8B2020':'1px solid #E5E3E0',background:actualsDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:actualsDate===todayISO?'#8B2020':'#6B6056'}}>Today</button>
             <div style={{display:'flex',gap:4}}>
               {[1,2].map(s=><button key={s} onClick={()=>setShift(s)} style={{padding:'8px 16px',borderRadius:6,border:shift===s?'2px solid #8B2020':'1px solid #E5E3E0',background:shift===s?'#FDF4F4':'#FFF',color:shift===s?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>Shift {s}</button>)}
             </div>
