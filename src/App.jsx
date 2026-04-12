@@ -632,14 +632,14 @@ function Dashboard({jobs,onNav}){
       </div>)}</div>
     </div>;})()}
     {/* ═══ PIPELINE STAGE SUMMARY ═══ */}
-    {(()=>{const stages=[{key:'contract_review',short:'Review'},{key:'production_queue',short:'Prod Queue'},{key:'in_production',short:'In Prod'},{key:'inventory_ready',short:'Inventory'},{key:'active_install',short:'Active Install'},{key:'fence_complete',short:'Fence Done'}];const stData=stages.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+n(j.total_lf),0)};});const fcCount=jobs.filter(j=>j.status==='fully_complete').length;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0)+fcCount;const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);return<div style={{...card,marginBottom:16}}>
+    {(()=>{const PIPELINE_STAGES=[{key:'contract_review',label:'Review',color:'#6B7280',bg:'#F3F4F6'},{key:'production_queue',label:'Prod Queue',color:'#7C3AED',bg:'#EDE9FE'},{key:'in_production',label:'In Prod',color:'#1D4ED8',bg:'#DBEAFE'},{key:'inventory_ready',label:'Inventory',color:'#B45309',bg:'#FEF3C7'},{key:'active_install',label:'Active Install',color:'#C2410C',bg:'#FFEDD5'},{key:'fence_complete',label:'Fence Complete',color:'#0F766E',bg:'#CCFBF1'},{key:'fully_complete',label:'Fully Complete',color:'#15803D',bg:'#DCFCE7'}];const stData=PIPELINE_STAGES.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+n(j.total_lf),0)};});const fcCount=stData.find(s=>s.key==='fully_complete')?.count||0;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0);const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);return<div style={{...card,marginBottom:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Production Pipeline</div><div style={{fontSize:12,color:'#6B6056'}}>{pipeTotal} active projects | {pipeLF.toLocaleString()} LF</div></div>
-      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      <div style={{display:'flex',gap:4,alignItems:'stretch',flexWrap:'wrap'}}>
         {stData.map((s,i)=><React.Fragment key={s.key}>
-          {i>0&&<span style={{color:'#D1CEC9',fontSize:16}}>→</span>}
-          <div onClick={()=>onNav&&onNav('production')} style={{flex:'1 1 0',minWidth:90,background:SB_[s.key],border:`1px solid ${SC[s.key]}30`,borderRadius:10,padding:'10px 8px',textAlign:'center',cursor:onNav?'pointer':'default'}}>
-            <div style={{fontSize:10,fontWeight:700,color:SC[s.key],textTransform:'uppercase',marginBottom:2}}>{s.short}</div>
-            <div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:SC[s.key]}}>{s.count}</div>
+          {i>0&&<span style={{color:'#D1CEC9',fontSize:16,alignSelf:'center'}}>→</span>}
+          <div onClick={()=>onNav&&onNav('production')} style={{flex:'1 1 0',minWidth:80,background:s.bg,border:`1px solid ${s.color}40`,borderRadius:10,padding:'10px 6px',textAlign:'center',cursor:onNav?'pointer':'default'}}>
+            <div style={{fontSize:9,fontWeight:700,color:s.color,textTransform:'uppercase',marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.label}</div>
+            <div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:s.color}}>{s.count}</div>
             <div style={{fontSize:10,color:'#6B6056',marginTop:2}}>{s.lf.toLocaleString()} LF</div>
           </div>
         </React.Fragment>)}
