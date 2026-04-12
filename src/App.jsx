@@ -2158,6 +2158,45 @@ function DailyReportPage({jobs}){
   },[]);
   useEffect(()=>{if(tab==='plan')loadPlan(planDate);},[tab,planDate,loadPlan]);
 
+  // ─── PIECE TYPE DEFINITIONS (for per-piece actuals) ───
+  const PIECE_TYPES=useMemo(()=>[
+    {group:'POSTS',key:'posts_line',label:'Line Posts',jobCol:'material_posts_line'},
+    {group:'POSTS',key:'posts_corner',label:'Corner Posts',jobCol:'material_posts_corner'},
+    {group:'POSTS',key:'posts_stop',label:'Stop Posts',jobCol:'material_posts_stop'},
+    {group:'PANELS',key:'panels_regular',label:'Regular Panels',jobCol:'material_panels_regular'},
+    {group:'PANELS',key:'panels_half',label:'Half Panels',jobCol:'material_panels_half'},
+    {group:'PANELS',key:'panels_bottom',label:'Bottom Panels',jobCol:'material_panels_bottom'},
+    {group:'PANELS',key:'panels_top',label:'Top Panels',jobCol:'material_panels_top'},
+    {group:'RAILS',key:'rails_regular',label:'Cap Rails',jobCol:'material_rails_regular'},
+    {group:'RAILS',key:'rails_top',label:'Top Rails',jobCol:'material_rails_top'},
+    {group:'RAILS',key:'rails_bottom',label:'Bottom Rails',jobCol:'material_rails_bottom'},
+    {group:'RAILS',key:'rails_center',label:'Center Rails',jobCol:'material_rails_center'},
+    {group:'POST CAPS',key:'caps_line',label:'Line Caps',jobCol:'material_caps_line'},
+    {group:'POST CAPS',key:'caps_stop',label:'Stop Caps',jobCol:'material_caps_stop'},
+  ],[]);
+
+  const buildActualsLine=useCallback((opts)=>{
+    const{plan_line_id,job,planned_lf,unplanned}=opts;
+    const planned={};const actual={};
+    PIECE_TYPES.forEach(pt=>{planned[pt.key]=n(job?.[pt.jobCol])||0;actual[pt.key]='';});
+    return{
+      plan_line_id:plan_line_id||null,
+      job_id:job?.id||null,
+      job_number:job?.job_number||'',
+      job_name:job?.job_name||'',
+      style:job?.style||'',
+      color:job?.color||'',
+      height:job?.height_precast||'',
+      post_height:n(job?.material_post_height)||0,
+      planned,actual,
+      planned_lf:n(planned_lf)||n(job?.total_lf)||0,
+      actual_lf:'',
+      adjustment_reason:'',
+      notes:'',
+      unplanned:!!unplanned,
+    };
+  },[PIECE_TYPES]);
+
   // ─── LOAD PLAN FOR ACTUALS TAB ───
   const loadActualsPlan=useCallback(async(date)=>{
     try{
@@ -2165,12 +2204,15 @@ function DailyReportPage({jobs}){
       if(plans&&plans[0]){
         setActualsPlanId(plans[0].id);
         const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);
-        setActualsLines((lines||[]).map(l=>({plan_line_id:l.id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||'',color:l.color||'',height:l.height||'',planned_pieces:l.planned_pieces||0,planned_lf:l.planned_lf||0,actual_pieces:'',actual_lf:'',notes:'',unplanned:false})));
+        setActualsLines((lines||[]).map(l=>{
+          const j=jobs.find(x=>x.id===l.job_id);
+          return buildActualsLine({plan_line_id:l.id,job:j||{id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style,color:l.color,height_precast:l.height},planned_lf:l.planned_lf,unplanned:false});
+        }));
       }else{
         setActualsPlanId(null);setActualsLines([]);
       }
     }catch(e){console.error('Load actuals plan failed:',e);}
-  },[]);
+  },[jobs,buildActualsLine]);
   useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan]);
 
   // ─── PLAN BUILDER HELPERS ───
@@ -2223,20 +2265,31 @@ function DailyReportPage({jobs}){
 
   // ─── ACTUALS HELPERS ───
   const updateActualsLine=(idx,field,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
+  const updateActualsPiece=(idx,key,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,actual:{...l.actual,[key]:val}}:l));
   const removeActualsLine=(idx)=>setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
   const addUnplannedLine=(j)=>{
-    setActualsLines(prev=>[...prev,{plan_line_id:null,job_id:j.id,job_number:j.job_number,job_name:j.job_name,style:j.style||'',color:j.color||'',height:j.height_precast||'',planned_pieces:0,planned_lf:0,actual_pieces:'',actual_lf:'',notes:'',unplanned:true}]);
+    setActualsLines(prev=>[...prev,buildActualsLine({plan_line_id:null,job:j,planned_lf:0,unplanned:true})]);
     setShowUnplanPicker(false);setUnplanSearch('');
   };
 
-  const actualsTotals=useMemo(()=>{let pcs=0,lf=0,plannedPcs=0,plannedLf=0;actualsLines.forEach(l=>{pcs+=n(l.actual_pieces);lf+=n(l.actual_lf);plannedPcs+=n(l.planned_pieces);plannedLf+=n(l.planned_lf);});return{pcs,lf,plannedPcs,plannedLf,count:actualsLines.length};},[actualsLines]);
+  const linePlannedTotal=(l)=>PIECE_TYPES.reduce((s,pt)=>s+n(l.planned[pt.key]),0);
+  const lineActualTotal=(l)=>PIECE_TYPES.reduce((s,pt)=>s+n(l.actual[pt.key]),0);
+  const lineHasVariance=(l)=>PIECE_TYPES.some(pt=>{const a=n(l.actual[pt.key]);const p=n(l.planned[pt.key]);return (a>0||p>0)&&a!==p;})||(n(l.actual_lf)>0&&n(l.actual_lf)!==n(l.planned_lf));
+
+  const actualsTotals=useMemo(()=>{let pcs=0,lf=0,plannedPcs=0,plannedLf=0;actualsLines.forEach(l=>{pcs+=lineActualTotal(l);lf+=n(l.actual_lf);plannedPcs+=linePlannedTotal(l);plannedLf+=n(l.planned_lf);});return{pcs,lf,plannedPcs,plannedLf,count:actualsLines.length};},[actualsLines,PIECE_TYPES]);
 
   const submitActuals=async()=>{
-    const toSubmit=actualsLines.filter(l=>n(l.actual_pieces)>0||n(l.actual_lf)>0||l.notes);
+    const toSubmit=actualsLines.filter(l=>lineActualTotal(l)>0||n(l.actual_lf)>0||l.notes);
     if(toSubmit.length===0){setToast({msg:'No actuals to submit — fill in at least one line',ok:false});return;}
+    // Require adjustment reason on any line with variance
+    const missingReason=toSubmit.find(l=>lineHasVariance(l)&&!l.adjustment_reason.trim());
+    if(missingReason){setToast({msg:`Adjustment reason required for ${missingReason.job_name}`,ok:false});return;}
     setSubmittingActuals(true);
     try{
-      const rows=toSubmit.map(l=>({production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:n(l.actual_pieces)||0,actual_lf:n(l.actual_lf)||0,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()}));
+      const rows=toSubmit.map(l=>{
+        const pieceCols={};PIECE_TYPES.forEach(pt=>{pieceCols['actual_'+pt.key]=n(l.actual[pt.key])||0;});
+        return{production_date:actualsDate,shift:shift,logged_by:loggedBy||'Luis Rodriguez',crew_size:n(crewSize)||null,plan_id:actualsPlanId,plan_line_id:l.plan_line_id,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,actual_pieces:lineActualTotal(l),actual_lf:n(l.actual_lf)||0,...pieceCols,adjustment_reason:l.adjustment_reason||null,notes:l.notes||null,unplanned:!!l.unplanned,shift_notes:actualsNotes||null,submitted_at:new Date().toISOString()};
+      });
       const res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
       if(!res.ok)throw new Error(await res.text());
       // Auto-advance in_production → inventory_ready when cumulative actuals >= planned
@@ -2259,7 +2312,7 @@ function DailyReportPage({jobs}){
       setToast({msg:`Shift ${shift} report submitted for ${actualsDate}`,ok:true});
       fetch(`${SB}/functions/v1/production-actuals-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actuals_date:actualsDate,shift,logged_by:loggedBy,crew_size:crewSize,lines:toSubmit,totals:actualsTotals,shift_notes:actualsNotes})}).catch(e=>console.error('Actuals notification failed:',e));
       // Clear for next shift
-      setActualsLines(prev=>prev.map(l=>({...l,actual_pieces:'',actual_lf:'',notes:''})));
+      setActualsLines(prev=>prev.map(l=>{const blankAct={};PIECE_TYPES.forEach(pt=>{blankAct[pt.key]='';});return{...l,actual:blankAct,actual_lf:'',adjustment_reason:'',notes:''};}));
       setActualsNotes('');
     }catch(e){console.error('Submit actuals error:',e);setToast({msg:'Submit failed: '+e.message,ok:false});}
     setSubmittingActuals(false);
@@ -2399,23 +2452,83 @@ function DailyReportPage({jobs}){
           <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={loggedBy} onChange={e=>setLoggedBy(e.target.value)} style={inputS}/></div>
           <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={crewSize} onChange={e=>setCrewSize(e.target.value)} placeholder="0" style={inputS}/></div>
         </div>
-        {/* Actuals table */}
-        <div style={{overflow:'auto',marginBottom:12}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{background:'#F9F8F6'}}>{['Job','Style','Color','Ht','Planned','Actual Pcs','Actual LF','Notes',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 6px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
-            <tbody>{actualsLines.map((l,idx)=>{const pctVsPlan=n(l.planned_pieces)>0?n(l.actual_pieces)/n(l.planned_pieces):0;const actColor=n(l.actual_pieces)===0?'#9E9B96':pctVsPlan>=1?'#065F46':'#B45309';return<tr key={idx} style={{borderBottom:'1px solid #F4F4F2',borderLeft:l.unplanned?'3px solid #1D4ED8':'3px solid transparent'}}>
-              <td style={{padding:'6px',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><div style={{fontWeight:600,fontSize:12}}>{l.job_name}</div><div style={{fontSize:10,color:'#9E9B96'}}>#{l.job_number}{l.unplanned&&' · unplanned'}</div></td>
-              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.style||'—'}</td>
-              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.color||'—'}</td>
-              <td style={{padding:'6px',fontSize:11,color:'#6B6056'}}>{l.height||'—'}</td>
-              <td style={{padding:'6px',fontSize:12,color:'#9E9B96',fontWeight:600}}>{n(l.planned_pieces)||'—'}</td>
-              <td style={{padding:'6px'}}><input type="number" autoFocus={idx===0} value={l.actual_pieces} onChange={e=>updateActualsLine(idx,'actual_pieces',e.target.value)} placeholder="0" style={{width:70,padding:'6px 8px',fontSize:14,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,color:actColor,textAlign:'center'}}/></td>
-              <td style={{padding:'6px'}}><input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:70,padding:'6px 8px',fontSize:14,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/></td>
-              <td style={{padding:'6px'}}><input value={l.notes} onChange={e=>updateActualsLine(idx,'notes',e.target.value)} placeholder="—" style={{width:140,padding:'6px 8px',fontSize:11,border:'1px solid #D1CEC9',borderRadius:6}}/></td>
-              <td style={{padding:'6px'}}>{l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>}</td>
-            </tr>;})}</tbody>
-          </table>
-          {actualsLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12}}>No lines yet. Add jobs below.</div>}
+        {/* Actuals cards — full piece breakdown per job */}
+        <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:12}}>
+          {actualsLines.map((l,idx)=>{
+            const plannedTot=linePlannedTotal(l);const actualTot=lineActualTotal(l);
+            const variance=actualTot-plannedTot;
+            const pct=plannedTot>0?Math.round(actualTot/plannedTot*100):0;
+            const hasVar=lineHasVariance(l);
+            const groups=['POSTS','PANELS','RAILS','POST CAPS'];
+            const pieceIcon=(planned,act)=>{const p=n(planned),a=n(act);if(a===0&&p>0)return<span style={{color:'#991B1B',fontWeight:700}}>✗</span>;if(a===p)return<span style={{color:'#065F46',fontWeight:700}}>✓</span>;if(a<p)return<span style={{color:'#B45309',fontWeight:700}}>⚠</span>;return<span style={{color:'#1D4ED8',fontWeight:700}}>↑</span>;};
+            return<div key={idx} style={{...card,padding:0,overflow:'hidden',borderLeft:l.unplanned?'3px solid #1D4ED8':'3px solid #8B2020'}}>
+              {/* Header */}
+              <div style={{padding:'12px 16px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:14}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500}}>— #{l.job_number}</span>{l.unplanned&&<span style={{marginLeft:6,fontSize:9,padding:'2px 6px',background:'#DBEAFE',color:'#1D4ED8',borderRadius:4,fontWeight:700,textTransform:'uppercase'}}>Unplanned</span>}</div>
+                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
+                </div>
+                {l.unplanned&&<button onClick={()=>removeActualsLine(idx)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#9E9B96',fontSize:11,cursor:'pointer'}}>Remove</button>}
+              </div>
+              {/* Column headers */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'}}>
+                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase'}}>Planned (from production order)</div>
+                <div style={{padding:'8px 16px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase'}}>Actual (Luis enters)</div>
+              </div>
+              {/* Piece groups */}
+              {groups.map(g=>{
+                const pts=PIECE_TYPES.filter(pt=>pt.group===g);
+                const visible=pts.filter(pt=>n(l.planned[pt.key])>0);
+                if(visible.length===0)return null;
+                return<div key={g} style={{padding:'8px 16px',borderBottom:'1px solid #F4F4F2'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:6}}>{g}</div>
+                  {visible.map(pt=><div key={pt.key} style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,alignItems:'center',padding:'4px 0'}}>
+                    <div style={{fontSize:12,color:'#6B6056'}}>{pt.label}: <b style={{color:'#1A1A1A',fontSize:13}}>{n(l.planned[pt.key])}</b></div>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{color:'#9E9B96'}}>→</span>
+                      <input type="number" value={l.actual[pt.key]} onChange={e=>updateActualsPiece(idx,pt.key,e.target.value)} placeholder="0" style={{width:70,padding:'5px 8px',fontSize:13,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/>
+                      {n(l.actual[pt.key])>0&&pieceIcon(l.planned[pt.key],l.actual[pt.key])}
+                    </div>
+                  </div>)}
+                  {g==='POSTS'&&n(l.post_height)>0&&<div style={{fontSize:11,color:'#9E9B96',marginTop:4}}>Post Height: <b style={{color:'#6B6056'}}>{l.post_height}ft</b></div>}
+                </div>;
+              })}
+              {/* Linear Feet */}
+              <div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2'}}>
+                <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:6}}>Linear Feet</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,alignItems:'center'}}>
+                  <div style={{fontSize:12,color:'#6B6056'}}>Planned LF: <b style={{color:'#1A1A1A',fontSize:13}}>{n(l.planned_lf)||'—'}</b></div>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{color:'#9E9B96'}}>Actual LF:</span>
+                    <input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:90,padding:'5px 8px',fontSize:13,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center'}}/>
+                  </div>
+                </div>
+              </div>
+              {/* Adjustment reason */}
+              {hasVar&&<div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2',background:'#FFFBEB'}}>
+                <label style={{display:'block',fontSize:10,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:4}}>⚠ Reason for adjustment (required)</label>
+                <input value={l.adjustment_reason} onChange={e=>updateActualsLine(idx,'adjustment_reason',e.target.value)} placeholder="Why is actual different from planned?" style={{...inputS,background:'#FFF'}}/>
+              </div>}
+              {/* Notes */}
+              <div style={{padding:'10px 16px',borderBottom:'1px solid #F4F4F2'}}>
+                <label style={{display:'block',fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',marginBottom:4}}>Notes</label>
+                <input value={l.notes} onChange={e=>updateActualsLine(idx,'notes',e.target.value)} placeholder="—" style={inputS}/>
+              </div>
+              {/* Summary */}
+              <div style={{padding:'10px 16px',background:'#1A1A1A',color:'#FFF'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,marginBottom:6}}>
+                  <div style={{fontSize:11}}>Planned: <b>{plannedTot}</b> pcs</div>
+                  <div style={{fontSize:11}}>Actual: <b style={{color:actualTot>=plannedTot?'#6EE7B7':'#FCD34D'}}>{actualTot}</b> pcs</div>
+                  <div style={{fontSize:11}}>Variance: <b style={{color:variance===0?'#9CA3AF':variance>0?'#60A5FA':'#FCA5A5'}}>{variance>=0?'+':''}{variance}</b></div>
+                  <div style={{fontSize:11}}>{pct}%</div>
+                </div>
+                <div style={{height:6,background:'#374151',borderRadius:3,overflow:'hidden'}}>
+                  <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:pct>=100?'#10B981':pct>=80?'#F59E0B':'#EF4444',transition:'width 0.3s'}}/>
+                </div>
+              </div>
+            </div>;
+          })}
+          {actualsLines.length===0&&<div style={{textAlign:'center',padding:24,color:'#9E9B96',fontSize:12,...card}}>No lines yet. Add jobs below.</div>}
         </div>
         <button onClick={()=>setShowUnplanPicker(true)} style={{...btnS,padding:'6px 14px',fontSize:12,marginBottom:12}}>+ Add Unplanned Line</button>
         {showUnplanPicker&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:12}}>
