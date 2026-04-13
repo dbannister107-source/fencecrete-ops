@@ -448,9 +448,36 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const[latestPmLF,setLatestPmLF]=useState(null);
   useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
   useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
-  const saveCO=async()=>{const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));}catch(e){console.error('CO error:',e);}};
+  const[coToast,setCOToast]=useState(null);
+  const saveCO=async()=>{const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}
+    // Non-blocking email alert for CO submission
+    fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:coForm.co_number||'—',amount:n(coForm.amount),description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${coForm.co_number||'—'}`})}).catch(e=>console.error('CO email alert failed:',e));
+    setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));setCOToast({msg:'CO submitted — notification sent',kind:'success'});}catch(e){console.error('CO error:',e);setCOToast({msg:'CO save failed: '+e.message,kind:'error'});}};
+  const approveCO=async(c)=>{
+    const today=new Date().toISOString().split('T')[0];
+    try{
+      await sbPatch('change_orders',c.id,{status:'Approved',approved_by:'David Bannister',date_approved:today});
+      const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
+      setCOList(fresh||[]);
+      const approvedSum=(fresh||[]).filter(x=>x.status==='Approved').reduce((s,x)=>s+n(x.amount),0);
+      const newAdj=n(job.contract_value)+approvedSum;
+      await sbPatch('jobs',job.id,{adj_contract_value:newAdj,change_orders:approvedSum});
+      set('adj_contract_value',newAdj);set('change_orders',approvedSum);
+      logAct(job,'field_update','co_approved',c.co_number||'—',`Approved $${n(c.amount)}`);
+      setCOToast({msg:`CO #${c.co_number||'—'} approved — contract updated`,kind:'success'});
+    }catch(e){console.error('[CO approve] failed:',e);setCOToast({msg:'Approve failed: '+e.message,kind:'error'});}
+  };
+  const rejectCO=async(c)=>{
+    try{
+      await sbPatch('change_orders',c.id,{status:'Rejected'});
+      const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
+      setCOList(fresh||[]);
+      logAct(job,'field_update','co_rejected',c.co_number||'—','Rejected');
+      setCOToast({msg:`CO #${c.co_number||'—'} rejected`,kind:'gray'});
+    }catch(e){console.error('[CO reject] failed:',e);setCOToast({msg:'Reject failed: '+e.message,kind:'error'});}
+  };
   const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
-  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
+  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#6B6056','#F4F4F2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
     <div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
@@ -515,13 +542,23 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
             <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
             <div style={{display:'flex',gap:6}}><button onClick={saveCO} style={{...btnP,padding:'4px 12px',fontSize:11}}>Save</button><button onClick={()=>setShowCOForm(false)} style={{...btnS,padding:'4px 12px',fontSize:11}}>Cancel</button></div>
           </div>}
+          {coToast&&<div style={{marginBottom:6,padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:600,background:coToast.kind==='success'?'#D1FAE5':coToast.kind==='error'?'#FEE2E2':'#F4F4F2',color:coToast.kind==='success'?'#065F46':coToast.kind==='error'?'#991B1B':'#6B6056',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{coToast.msg}</span><button onClick={()=>setCOToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button></div>}
           {coList.length>0&&<div style={{fontSize:12}}>
-            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#6B6056','#F4F4F2'];return<div key={c.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
-              <span style={{fontWeight:600}}>{c.co_number||'—'}</span>
-              <span style={{color:'#9E9B96'}}>{fD(c.date)}</span>
-              <span style={{fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</span>
-              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{c.description||''}</span>
-              <span style={pill(sc2,sb2)}>{c.status}</span>
+            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#6B6056','#F4F4F2'];return<div key={c.id} style={{display:'flex',flexDirection:'column',gap:3,padding:'6px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <span style={{fontWeight:600}}>{c.co_number||'—'}</span>
+                <span style={{color:'#9E9B96'}}>{fD(c.date_submitted||c.date)}</span>
+                <span style={{fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</span>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{c.description||''}</span>
+                <span style={pill(sc2,sb2)}>{c.status}</span>
+                {c.status==='Pending'&&<span style={{display:'flex',gap:4}}>
+                  <button onClick={()=>approveCO(c)} style={{background:'#065F46',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Approve</button>
+                  <button onClick={()=>rejectCO(c)} style={{background:'#6B6056',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Reject</button>
+                </span>}
+              </div>
+              {c.status==='Approved'&&(c.approved_by||c.date_approved)&&<div style={{fontSize:10,color:'#065F46',paddingLeft:4}}>
+                ✓ Approved {c.date_approved?`on ${fD(c.date_approved)}`:''} {c.approved_by?`by ${c.approved_by}`:''}
+              </div>}
             </div>;})}
             <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11,fontWeight:700}}><span>Approved Total:</span><span style={{color:'#065F46'}}>{$(approvedTotal)}</span></div>
           </div>}
@@ -1391,6 +1428,10 @@ function PMBillingPage({jobs,onRefresh}){
   const[pmLineItems,setPmLineItems]=useState([]);
   useEffect(()=>{sbGet('job_line_items','select=*&order=line_number.asc&limit=4000').then(d=>setPmLineItems(d||[])).catch(()=>{});},[]);
   const pmLineItemsByJob=useMemo(()=>{const m={};pmLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[pmLineItems]);
+  // Approved CO totals per job — used in the "COs" column
+  const[pmAllCOs,setPmAllCOs]=useState([]);
+  useEffect(()=>{sbGet('change_orders','select=job_id,amount,status&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[]);
+  const pmApprovedCOByJob=useMemo(()=>{const m={};pmAllCOs.forEach(c=>{if(c.status!=='Approved')return;if(!m[c.job_id])m[c.job_id]=0;m[c.job_id]+=n(c.amount);});return m;},[pmAllCOs]);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
   const[selMonth,setSelMonth]=useState(curBillingMonth);
   const[subs,setSubs]=useState([]);
@@ -1495,6 +1536,8 @@ function PMBillingPage({jobs,onRefresh}){
             <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
             <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
+            <span title="Adjusted Contract Value (contract + approved COs)" style={{fontSize:11,fontWeight:700,color:'#8B2020',background:'#FDF4F4',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>Contract: {$(n(j.adj_contract_value)||n(j.contract_value))}</span>
+            <span title="Total approved change orders" style={{fontSize:11,fontWeight:700,color:pmApprovedCOByJob[j.id]>0?'#065F46':'#9E9B96',background:pmApprovedCOByJob[j.id]>0?'#D1FAE5':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>COs: {pmApprovedCOByJob[j.id]>0?$(pmApprovedCOByJob[j.id]):'—'}</span>
             <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
