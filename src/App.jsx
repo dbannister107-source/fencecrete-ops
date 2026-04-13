@@ -5061,7 +5061,7 @@ function HelpPage(){
 
 const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
-  {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'},{key:'production',label:'Production Board',icon:'🗂'}]},
+  {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
   {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
