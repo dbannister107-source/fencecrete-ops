@@ -4447,12 +4447,34 @@ function EstimatingPage(){
 
 /* ═══ IMPORT PROJECTS PAGE ═══ */
 const IMPORT_COL_MAP={
-  'Job Code':'job_number','Job Name':'job_name','Customer Name':'customer_name','Status':'status','Location':'market','Sales Rep':'sales_rep','Type':'job_type','Address':'address','City':'city','State':'state','Zip':'zip',
-  'LF - Precast':'lf_precast','Height - Precast':'height_precast','Style - Clean':'style','Color - Precast':'color','Contract Rate - Precast':'contract_rate_precast',
-  'LF - Single Wythe':'lf_single_wythe','Height - Single Wythe':'height_single_wythe','Contract Rate - Single Wythe':'contract_rate_single_wythe',
-  'LF - Wrought Iron':'lf_wrought_iron','Number of Gates':'number_of_gates','Gate Height':'gate_height','Gate Description':'gate_description','Gate Rate':'gate_rate',
-  'Net Contract Value':'contract_value','Change Orders':'change_orders','Adj Contract Value':'adj_contract_value','Sales Tax':'sales_tax','YTD Amt Invoiced':'ytd_invoiced',
-  'Contract Date':'contract_date','Est. Start Date':'est_start_date','Notes':'notes','Documents Needed':'documents_needed','Billing Method':'billing_method','Billing Date':'billing_date'
+  'Job Code':'job_number',
+  'Job Name ':'job_name',
+  'Customer Name':'customer_name',
+  'Status':'status',
+  'Location':'market',
+  'Sales Rep':'sales_rep',
+  'Type':'job_type',
+  'Fence Type':'fence_type',
+  'Billing Method':'billing_method',
+  'Address':'address',
+  'City':'city',
+  'State':'state',
+  'Zip':'zip',
+  'LF - Precast':'lf_precast',
+  'LF - Single Wythe':'lf_single_wythe',
+  'Net Contract Value':'contract_value',
+  'YTD Amt\nInvoiced':'amount_billed',
+  'Left to Bill':'left_to_bill',
+  '% Billed':'pct_billed',
+  'Contract Date':'contract_date',
+  'Est. Start Date':'start_date',
+  'Complete/Pass\nDate':'completion_date',
+  'Notes':'notes',
+  'Style - Clean':'style',
+  'Color - Precast':'color',
+  'Height - Precast':'height',
+  'Contract Rate - Precast':'contract_rate',
+  'Sales Tax':'sales_tax'
 };
 // Status mapping for NEW jobs only — existing jobs keep their current app status (kanban owns it)
 const IMPORT_STATUS_MAP={
@@ -4471,15 +4493,18 @@ const IMPORT_STATUS_DEFAULT='contract_review';
 const mapImportStatus=(raw)=>{if(raw==null||raw==='')return{mapped:IMPORT_STATUS_DEFAULT,matched:false,raw:''};const s=String(raw).trim();return{mapped:IMPORT_STATUS_MAP[s]||IMPORT_STATUS_DEFAULT,matched:!!IMPORT_STATUS_MAP[s],raw:s};};
 const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth'};
 // Fields protected from UPDATES on existing jobs (kanban/AR/material calc own these — never overwritten from Excel)
-const PROTECTED_FIELDS=new Set(['ytd_invoiced','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
+const PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
 // Fields stripped on INSERT of new jobs (derived/computed fields only — status IS set on insert so it's NOT here)
-const INSERT_PROTECTED_FIELDS=new Set(['ytd_invoiced','pct_billed','left_to_bill','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
-const IMPORT_NUMERIC_FIELDS=new Set(['lf_precast','height_precast','contract_rate_precast','lf_single_wythe','height_single_wythe','contract_rate_single_wythe','lf_wrought_iron','number_of_gates','gate_height','gate_rate','contract_value','change_orders','adj_contract_value','sales_tax','ytd_invoiced']);
-const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date']);
+const INSERT_PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','left_to_bill','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
+const IMPORT_NUMERIC_FIELDS=new Set(['lf_precast','height_precast','contract_rate_precast','lf_single_wythe','height_single_wythe','contract_rate_single_wythe','lf_wrought_iron','number_of_gates','gate_height','gate_rate','contract_value','change_orders','adj_contract_value','sales_tax','ytd_invoiced','amount_billed','left_to_bill','pct_billed','height','contract_rate']);
+const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date','start_date','completion_date']);
 
 function ImportProjectsPage({jobs,onRefresh,onNav}){
   const[step,setStep]=useState(1);
   const[fileName,setFileName]=useState('');
+  const[workbook,setWorkbook]=useState(null);
+  const[sheetNames,setSheetNames]=useState([]);
+  const[selectedSheet,setSelectedSheet]=useState('');
   const[rawRows,setRawRows]=useState([]);
   const[headers,setHeaders]=useState([]);
   const[mapping,setMapping]=useState({});
@@ -4493,36 +4518,47 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const[toast,setToast]=useState(null);
   const fileInputRef=useRef();
 
-  const parseFile=(file)=>{
+  const parseSheet=(wb,sheetName)=>{
+    try{
+      const sheet=wb.Sheets[sheetName];
+      if(!sheet){setError('Sheet "'+sheetName+'" not found');return;}
+      // Headers on row 1 (0-indexed 0)
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false});
+      if(rows.length<2){setError('Sheet must have a header row and at least one data row');return;}
+      const hdrs=rows[0].map(h=>h?String(h):'');
+      const dataRows=rows.slice(1).filter(r=>r.some(c=>c!=null&&String(c).trim()!==''));
+      const objRows=dataRows.map(r=>{const o={};hdrs.forEach((h,i)=>{if(h)o[h]=r[i];});return o;});
+      setHeaders(hdrs.filter(Boolean));
+      setRawRows(objRows);
+      // Auto-map (exact match against IMPORT_COL_MAP, preserving whitespace/newlines)
+      const autoMap={};
+      hdrs.forEach(h=>{if(h&&IMPORT_COL_MAP[h])autoMap[h]=IMPORT_COL_MAP[h];});
+      setMapping(autoMap);
+      setStep(2);
+    }catch(err){setError('Failed to parse sheet: '+err.message);}
+  };
+
+  const loadWorkbook=(file)=>{
     setError('');
     const reader=new FileReader();
     reader.onload=(e)=>{
       try{
         const data=new Uint8Array(e.target.result);
         const wb=XLSX.read(data,{type:'array',cellDates:true});
-        const sheetName=wb.SheetNames[0];
-        const sheet=wb.Sheets[sheetName];
-        // Header row is row 6 (0-indexed 5)
-        const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false});
-        if(rows.length<7){setError('File must have at least 7 rows (headers at row 6)');return;}
-        const hdrs=rows[5].map(h=>h?String(h).trim():'');
-        const dataRows=rows.slice(6).filter(r=>r.some(c=>c!=null&&String(c).trim()!==''));
-        const objRows=dataRows.map(r=>{const o={};hdrs.forEach((h,i)=>{if(h)o[h]=r[i];});return o;});
-        setHeaders(hdrs.filter(Boolean));
-        setRawRows(objRows);
+        if(!wb.SheetNames||wb.SheetNames.length===0){setError('No sheets found in workbook');return;}
+        setWorkbook(wb);
+        setSheetNames(wb.SheetNames);
+        // Default: prefer "Active Jobs" if present, else first sheet
+        const def=wb.SheetNames.find(n=>n.trim().toLowerCase()==='active jobs')||wb.SheetNames[0];
+        setSelectedSheet(def);
         setFileName(file.name);
-        // Auto-map
-        const autoMap={};
-        hdrs.forEach(h=>{if(h&&IMPORT_COL_MAP[h])autoMap[h]=IMPORT_COL_MAP[h];});
-        setMapping(autoMap);
-        setStep(2);
       }catch(err){setError('Failed to parse file: '+err.message);}
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const handleFile=(e)=>{const f=e.target.files[0];if(f)parseFile(f);};
-  const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)parseFile(f);};
+  const handleFile=(e)=>{const f=e.target.files[0];if(f)loadWorkbook(f);};
+  const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadWorkbook(f);};
 
   const parseNum=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n2=parseFloat(s);return isNaN(n2)?null:n2;};
   const parseDate=(v)=>{if(!v)return null;if(v instanceof Date)return v.toISOString().split('T')[0];const s=String(v).trim();if(!s)return null;const d=new Date(s);if(!isNaN(d.getTime()))return d.toISOString().split('T')[0];return null;};
@@ -4618,7 +4654,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='import-errors.csv';a.click();
   };
 
-  const reset=()=>{setStep(1);setFileName('');setRawRows([]);setHeaders([]);setMapping({});setPreview(null);setSkipUpdates(new Set());setResults(null);setError('');};
+  const reset=()=>{setStep(1);setFileName('');setWorkbook(null);setSheetNames([]);setSelectedSheet('');setRawRows([]);setHeaders([]);setMapping({});setPreview(null);setSkipUpdates(new Set());setResults(null);setError('');};
   const toggleSkipUpdate=(rowNum)=>setSkipUpdates(prev=>{const s=new Set(prev);if(s.has(rowNum))s.delete(rowNum);else s.add(rowNum);return s;});
 
   const stepIndicator=<div style={{display:'flex',gap:4,marginBottom:24}}>{[1,2,3,4].map(n=>{const labels={1:'Upload',2:'Mapping',3:'Preview',4:'Results'};return<div key={n} style={{flex:1,padding:'10px 14px',background:step===n?'#8B2020':step>n?'#D1FAE5':'#F4F4F2',color:step===n?'#FFF':step>n?'#065F46':'#9E9B96',borderRadius:8,fontSize:12,fontWeight:700,textAlign:'center'}}>Step {n}: {labels[n]}</div>;})}</div>;
@@ -4642,10 +4678,20 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       <div onDragOver={e=>e.preventDefault()} onDrop={handleDrop} style={{border:'3px dashed #D1CEC9',borderRadius:16,padding:60,cursor:'pointer',transition:'all .2s'}} onClick={()=>fileInputRef.current?.click()} onMouseEnter={e=>{e.currentTarget.style.borderColor='#8B2020';e.currentTarget.style.background='#FDF4F4';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#D1CEC9';e.currentTarget.style.background='transparent';}}>
         <div style={{fontSize:48,marginBottom:12}}>📤</div>
         <div style={{fontSize:16,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>Drop Excel file here or click to upload</div>
-        <div style={{fontSize:12,color:'#9E9B96'}}>.xlsx — reads the "Active Jobs" sheet, headers at row 6</div>
+        <div style={{fontSize:12,color:'#9E9B96'}}>.xlsx — pick the sheet to import (headers expected on row 1)</div>
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:'none'}}/>
       </div>
-      {fileName&&<div style={{marginTop:16,fontSize:13,color:'#065F46',fontWeight:600}}>✓ {fileName} — {rawRows.length} data rows parsed</div>}
+      {fileName&&<div style={{marginTop:16,fontSize:13,color:'#065F46',fontWeight:600}}>✓ {fileName} — {sheetNames.length} sheet{sheetNames.length===1?'':'s'} found</div>}
+      {sheetNames.length>0&&<div style={{marginTop:20,padding:20,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:12,display:'inline-block',textAlign:'left'}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:6}}>Select Sheet</div>
+        <select value={selectedSheet} onChange={e=>setSelectedSheet(e.target.value)} style={{...inputS,fontSize:13,minWidth:260,padding:'8px 10px'}}>
+          {sheetNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+        <div style={{marginTop:12,display:'flex',gap:8}}>
+          <button onClick={reset} style={btnS}>← Cancel</button>
+          <button onClick={()=>workbook&&selectedSheet&&parseSheet(workbook,selectedSheet)} disabled={!workbook||!selectedSheet} style={{...btnP,opacity:(!workbook||!selectedSheet)?0.5:1}}>Next: Mapping →</button>
+        </div>
+      </div>}
     </div>}
 
     {/* STEP 2: MAPPING */}
