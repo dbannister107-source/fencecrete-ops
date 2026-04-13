@@ -127,6 +127,30 @@ const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeigh
 function Toast({message,onDone,isError}){useEffect(()=>{const t=setTimeout(onDone,isError?6000:2500);return()=>clearTimeout(t);},[onDone,isError]);return<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:isError?'#DC2626':'#8B2020',color:'#fff',padding:isError?'12px 24px':'8px 20px',borderRadius:isError?10:20,fontSize:13,fontWeight:600,zIndex:9999,maxWidth:'90vw',boxShadow:isError?'0 4px 16px rgba(220,38,38,0.4)':'none'}}>{message}</div>;}
 function KPI({label,value,color='#8B2020',sub}){return<div style={card}><div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color}}>{value}</div><div style={{fontSize:12,color:'#6B6056',marginTop:4}}>{label}</div>{sub&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{sub}</div>}</div>;}
 function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
+// Multi-select dropdown with checkbox options, "All" clear row, and click-outside close.
+// `selected` is a Set; `onChange` receives a new Set.
+function MultiSelect({label,options,selected,onChange,width=160}){
+  const[open,setOpen]=useState(false);
+  const ref=useRef();
+  useEffect(()=>{if(!open)return;const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[open]);
+  const sel=selected instanceof Set?selected:new Set();
+  const toggle=(v)=>{const next=new Set(sel);if(next.has(v))next.delete(v);else next.add(v);onChange(next);};
+  const clearAll=()=>onChange(new Set());
+  const sz=sel.size;
+  const displayText=sz===0?label:sz>2?`${sz} selected`:[...sel].map(v=>{const o=options.find(x=>x.v===v);return o?o.l:v;}).join(', ');
+  const cbox=(on)=><span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:14,borderRadius:3,border:on?'2px solid #8B2020':'1px solid #D1CEC9',background:on?'#8B2020':'#FFF',color:'#FFF',fontSize:9,fontWeight:700,flexShrink:0}}>{on?'✓':''}</span>;
+  return<div ref={ref} style={{position:'relative',width}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{...inputS,width:'100%',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:4,overflow:'hidden',padding:'8px 10px'}}>
+      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:sz===0?'#9E9B96':'#1A1A1A',fontSize:13}}>{displayText}</span>
+      <span style={{fontSize:10,color:'#9E9B96'}}>▾</span>
+    </button>
+    {open&&<div style={{position:'absolute',top:'100%',left:0,marginTop:4,minWidth:Math.max(width,200),background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:50,maxHeight:320,overflow:'auto',padding:'4px 0'}}>
+      <div onClick={clearAll} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:sz===0?700:500,color:sz===0?'#8B2020':'#6B6056',background:sz===0?'#FDF4F4':'transparent'}}>{cbox(sz===0)}<span>All</span></div>
+      <div style={{borderTop:'1px solid #F4F4F2',margin:'2px 0'}}/>
+      {options.map(o=>{const on=sel.has(o.v);return<div key={o.v} onClick={()=>toggle(o.v)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:on?700:400,color:on?'#8B2020':'#1A1A1A',background:on?'#FDF4F4':'transparent'}}>{cbox(on)}<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.l}</span></div>;})}
+    </div>}
+  </div>;
+}
 // ─── LF display helpers ───
 // Plant-produced LF (new "total_lf_precast" column, falls back to legacy lf_precast if null)
 const lfPC=(j)=>n(j?.total_lf_precast)||n(j?.lf_precast);
@@ -1036,7 +1060,13 @@ const COL_GROUPS=[
 ];
 function ProjectsPage({jobs,onRefresh,openJob}){
   const[projTab,setProjTab]=useState('active');
-  const[search,setSearch]=useState('');const[statusF,setStatusF]=useState(null);const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[primaryTypeF,setPrimaryTypeF]=useState('');const[addonsF,setAddonsF]=useState('');
+  const[search,setSearch]=useState('');
+  const[statusF,setStatusF]=useState(new Set());
+  const[mktF,setMktF]=useState(new Set());
+  const[pmF,setPmF]=useState(new Set());
+  const[primaryTypeF,setPrimaryTypeF]=useState(new Set());
+  const[addonsF,setAddonsF]=useState(new Set());
+  const clearAllFilters=()=>{setStatusF(new Set());setMktF(new Set());setPmF(new Set());setPrimaryTypeF(new Set());setAddonsF(new Set());};
   const[sortCol,setSortCol]=useState('left_to_bill');const[sortDir,setSortDir]=useState('desc');
   const[closedYearF,setClosedYearF]=useState('');
   const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');if(!s)return DEF_VIS;const saved=JSON.parse(s);const ensure=['primary_fence_type','fence_addons'];const missing=ensure.filter(k=>!saved.includes(k));if(missing.length>0){const ftIdx=saved.indexOf('fence_type');const insertAt=ftIdx>=0?ftIdx+1:saved.length;const updated=[...saved.slice(0,insertAt),...missing,...saved.slice(insertAt)];localStorage.setItem('fc_vis_cols',JSON.stringify(updated));return updated;}return saved;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
@@ -1047,10 +1077,22 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
   useEffect(()=>setSel(new Set()),[search,statusF,mktF,pmF]);
   const toggleSort=k=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('desc');}};
-  const closedJobs=useMemo(()=>{let f=jobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF)f=f.filter(j=>j.market===mktF);if(pmF)f=f.filter(j=>j.pm===pmF);if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[jobs,search,mktF,pmF,closedYearF]);
+  const closedJobs=useMemo(()=>{let f=jobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[jobs,search,mktF,pmF,closedYearF]);
   const closedCount=jobs.filter(j=>j.status==='closed').length;
   const closedStats=useMemo(()=>{const cj=jobs.filter(j=>j.status==='closed');return{count:cj.length,cv:cj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),lfPC:cj.reduce((s,j)=>s+lfPC(j),0),lf:cj.reduce((s,j)=>s+lfTotal(j),0),avgPct:cj.length>0?Math.round(cj.reduce((s,j)=>s+n(j.pct_billed),0)/cj.length*100):0};},[jobs]);
-  const filtered=useMemo(()=>{let f=jobs.filter(j=>j.status!=='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(statusF)f=f.filter(j=>j.status===statusF);if(mktF)f=f.filter(j=>j.market===mktF);if(pmF)f=f.filter(j=>j.pm===pmF);if(primaryTypeF)f=f.filter(j=>j.primary_fence_type===primaryTypeF);if(addonsF==='has_any')f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.length>0);else if(addonsF)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.includes(addonsF));return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});},[jobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
+  const filtered=useMemo(()=>{
+    let f=jobs.filter(j=>j.status!=='closed');
+    if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}
+    if(statusF.size>0)f=f.filter(j=>statusF.has(j.status));
+    if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));
+    if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));
+    if(primaryTypeF.size>0)f=f.filter(j=>primaryTypeF.has(j.primary_fence_type));
+    if(addonsF.size>0){
+      if(addonsF.has('has_any'))f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.length>0);
+      else f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));
+    }
+    return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});
+  },[jobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
   const exportCSV=rows=>{const cols=ALL_COLS.filter(c=>visCols.includes(c.key));const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
   const saveInline=async()=>{if(!inlE)return;const u={[inlE.key]:inlE.value};if(inlE.key==='ytd_invoiced'){const adj=n(inlE.job.adj_contract_value||inlE.job.contract_value);const ytd=n(inlE.value);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',inlE.id,u);const j=jobs.find(x=>x.id===inlE.id);if(['ytd_invoiced','last_billed'].includes(inlE.key)){fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',inlE.key,j[inlE.key],inlE.value);}else{fireAlert('job_updated',{...j,...u});logAct(j,'field_update',inlE.key,j[inlE.key],inlE.value);}setInlE(null);setToast('Saved');onRefresh();};
   const bulkStatus=async s=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();};
@@ -1089,17 +1131,19 @@ function ProjectsPage({jobs,onRefresh,openJob}){
       </div>
       {projTab==='active'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:240}}/>
-        <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
-        <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
-        <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-        <select value={primaryTypeF} onChange={e=>setPrimaryTypeF(e.target.value)} style={{...inputS,width:140}}><option value="">All Types</option><option value="Precast">Precast</option><option value="Masonry">Masonry</option><option value="Wrought Iron">Wrought Iron</option></select>
-        <select value={addonsF} onChange={e=>setAddonsF(e.target.value)} style={{...inputS,width:160}}><option value="">All Add-ons</option><option value="has_any">Has Any Add-on</option><option value="G">Gates (G)</option><option value="C">Columns (C)</option><option value="WI">Wrought Iron (WI)</option></select>
+        <MultiSelect label="All Statuses" width={160} selected={statusF} onChange={setStatusF} options={STS.map(s=>({v:s,l:SL[s]}))}/>
+        <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
+        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
+        <MultiSelect label="All Types" width={140} selected={primaryTypeF} onChange={setPrimaryTypeF} options={[{v:'Precast',l:'Precast'},{v:'Masonry',l:'Masonry'},{v:'Wrought Iron',l:'Wrought Iron'}]}/>
+        <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'}]}/>
+        {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8B2020',borderRadius:6,padding:'6px 12px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:240}}/>
-        <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
-        <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
+        <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
+        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
         <select value={closedYearF} onChange={e=>setClosedYearF(e.target.value)} style={{...inputS,width:140}}><option value="">All Years</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="older">2023 & Earlier</option></select>
+        {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #8B2020',borderRadius:6,padding:'6px 12px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='active'&&<div style={{fontSize:12,color:'#6B6056',padding:'4px 0'}}>Showing {filtered.length} jobs | {$k(fTC)} contract value | {$k(fLTB)} left to bill | {Math.round(fAvgB*100)}% avg billed</div>}
     </div>
