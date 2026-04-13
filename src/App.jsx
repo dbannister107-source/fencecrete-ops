@@ -4585,6 +4585,8 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadWorkbook(f);};
 
   const parseNum=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n2=parseFloat(s);return isNaN(n2)?null:n2;};
+  const INTEGER_FIELDS=new Set(['lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','lf_removal','total_lf','total_lf_removed','number_of_gates','contract_age']);
+  const parseIntSafe=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n=parseFloat(s);if(isNaN(n))return null;const r=Math.round(n);return isNaN(r)?null:r;};
   const safeDate=(val)=>{
     if(val===null||val===undefined||val==='')return null;
     // Excel serial date (number)
@@ -4643,6 +4645,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
           v=r.mapped;
         }
         else if(dbCol==='market'){v=IMPORT_MARKET_MAP[String(v).trim()]||String(v).trim();}
+        else if(INTEGER_FIELDS.has(dbCol)){v=parseIntSafe(v);}
         else if(IMPORT_NUMERIC_FIELDS.has(dbCol)){v=parseNum(v);}
         else if(IMPORT_DATE_FIELDS.has(dbCol)){v=parseDate(v);}
         else{v=String(v).trim();}
