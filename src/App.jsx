@@ -656,10 +656,10 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
-  // 'auto' = generate ##X### from market (commercial); 'manual' = free-form plain text (residential)
+  // 'auto' = generate ##X### from market (commercial); 'manual' internal key = 'Residential' UI label — free-form plain text
   const[jobCodeMode,setJobCodeMode]=useState('auto');
   const genJobNum=async(mkt)=>{if(!mkt)return;setJnLoading(true);try{const num=await getNextJobNumber(mkt);setF(p=>({...p,job_number:num}));}catch(e){console.error('Job number gen failed:',e);}setJnLoading(false);};
-  // Only auto-generate on market change when the user hasn't switched to manual mode
+  // Only auto-generate on market change when the user hasn't switched to residential mode
   const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market'){u.pm=AUTO_PM(v,u.fence_type);if(jobCodeMode==='auto')genJobNum(v);}if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
   const switchJobCodeMode=(mode)=>{
     setJobCodeMode(mode);
@@ -823,7 +823,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
             {fLbl('Job Code')}
             <div style={{display:'inline-flex',border:'1px solid #E5E3E0',borderRadius:6,overflow:'hidden',marginBottom:4}}>
               <button type="button" onClick={()=>switchJobCodeMode('auto')} title="Auto-generate commercial job code (e.g. 26H017)" style={{padding:'3px 10px',border:'none',background:jobCodeMode==='auto'?'#8B2020':'#FFF',color:jobCodeMode==='auto'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Auto</button>
-              <button type="button" onClick={()=>switchJobCodeMode('manual')} title="Manual entry for residential jobs (plain numbers)" style={{padding:'3px 10px',border:'none',borderLeft:'1px solid #E5E3E0',background:jobCodeMode==='manual'?'#8B2020':'#FFF',color:jobCodeMode==='manual'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Manual</button>
+              <button type="button" onClick={()=>switchJobCodeMode('manual')} title="Residential entry — plain-number job code (e.g. 10167)" style={{padding:'3px 10px',border:'none',borderLeft:'1px solid #E5E3E0',background:jobCodeMode==='manual'?'#8B2020':'#FFF',color:jobCodeMode==='manual'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Residential</button>
             </div>
           </div>
           <div style={{display:'flex',gap:4,alignItems:'center'}}>
@@ -831,7 +831,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
             {jobCodeMode==='auto'&&f.market&&<button type="button" onClick={()=>genJobNum(f.market)} title="Regenerate job number" style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 8px',cursor:'pointer',fontSize:14,color:'#6B6056',lineHeight:1}} disabled={jnLoading}>↻</button>}
           </div>
           {jobCodeMode==='auto'&&f.job_number&&f.market&&<div style={{fontSize:10,color:'#10B981',marginTop:2}}>Auto-generated — edit if needed</div>}
-          {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#6B6056',marginTop:2}}>Manual entry — type any job code</div>}
+          {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#6B6056',marginTop:2}}>Residential entry — type any job code</div>}
         </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
