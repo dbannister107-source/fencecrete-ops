@@ -799,7 +799,7 @@ function WeeklyDigest({jobs,active}){
 }
 
 /* ═══ DASHBOARD ═══ */
-function Dashboard({jobs,onNav}){
+function Dashboard({jobs,onNav,refreshKey=0}){
   const[showRemindConfirm,setShowRemindConfirm]=useState(false);
   const[remindSending,setRemindSending]=useState(false);
   const[dashToast,setDashToast]=useState(null);
@@ -852,7 +852,7 @@ function Dashboard({jobs,onNav}){
   // Current month bill sheet submissions for dashboard
   const dashBillingMonth=curBillingMonth();
   const[dashBillSubs,setDashBillSubs]=useState([]);
-  useEffect(()=>{sbGet('pm_bill_submissions',`billing_month=eq.${dashBillingMonth}&select=id,job_id,submitted_by,submitted_at,total_lf,pct_complete_pm`).then(d=>setDashBillSubs(d||[]));},[dashBillingMonth]);
+  useEffect(()=>{sbGet('pm_bill_submissions',`billing_month=eq.${dashBillingMonth}&select=id,job_id,submitted_by,submitted_at,total_lf,pct_complete_pm`).then(d=>setDashBillSubs(d||[]));},[dashBillingMonth,refreshKey]);
 
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
@@ -1446,14 +1446,14 @@ function BillingPage({jobs,onRefresh,onNav}){
 /* ═══ PM BILLING PAGE ═══ */
 const ACTIVE_BILL_STATUSES=['in_production','inventory_ready','active_install','fence_complete','fully_complete'];
 
-function PMBillingPage({jobs,onRefresh}){
+function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   // All line items for display in expanded bill sheet rows
   const[pmLineItems,setPmLineItems]=useState([]);
-  useEffect(()=>{sbGet('job_line_items','select=*&order=line_number.asc&limit=4000').then(d=>setPmLineItems(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('job_line_items','select=*&order=line_number.asc&limit=4000').then(d=>setPmLineItems(d||[])).catch(()=>{});},[refreshKey]);
   const pmLineItemsByJob=useMemo(()=>{const m={};pmLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[pmLineItems]);
   // Approved CO totals per job — used in the "COs" column
   const[pmAllCOs,setPmAllCOs]=useState([]);
-  useEffect(()=>{sbGet('change_orders','select=job_id,amount,status&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('change_orders','select=job_id,amount,status&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[refreshKey]);
   const pmApprovedCOByJob=useMemo(()=>{const m={};pmAllCOs.forEach(c=>{if(c.status!=='Approved')return;if(!m[c.job_id])m[c.job_id]=0;m[c.job_id]+=n(c.amount);});return m;},[pmAllCOs]);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
   const[selMonth,setSelMonth]=useState(curBillingMonth);
@@ -1477,7 +1477,7 @@ function PMBillingPage({jobs,onRefresh}){
   const selMonthLabel=monthLabel(selMonth);
   const activeJobs=useMemo(()=>{let j2=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));if(selPM)j2=j2.filter(j=>j.pm===selPM);return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));},[jobs,selPM]);
   const fetchSubs=useCallback(async()=>{if(!selPM)return;const d=await sbGet('pm_bill_submissions',`billing_month=eq.${selMonth}&pm=eq.${selPM}&order=created_at.desc`);setSubs(d||[]);},[selMonth,selPM]);
-  useEffect(()=>{fetchSubs();},[fetchSubs]);
+  useEffect(()=>{fetchSubs();},[fetchSubs,refreshKey]);
   const subByJob=useMemo(()=>{const m={};(subs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[subs]);
   const submittedCount=activeJobs.filter(j=>subByJob[j.id]).length;
   const reviewedCount=activeJobs.filter(j=>{const s=subByJob[j.id];return s&&s.ar_reviewed;}).length;
@@ -1644,17 +1644,17 @@ const STAGE_THRESHOLDS={contract_review:[30,60],production_queue:[21,45],in_prod
 const STAGE_DATE_KEY={inventory_ready:'inventory_ready_date',active_install:'active_install_date',fence_complete:'fence_complete_date',fully_complete:'fully_complete_date',in_production:'production_start_date'};
 function ProdCard({j,move,locked,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,lineItems}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div>{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#EDE9FE',border:'1px solid #7C3AED40',borderRadius:6,fontSize:10,color:'#5B21B6'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='inventory_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
-function ProductionPage({jobs,setJobs,onRefresh,onNav}){
+function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const[quickViewJob,setQuickViewJob]=useState(null);
   // Actuals + plan membership for kanban cards
   const[prodActuals,setProdActuals]=useState([]);
   const[prodPlanLines,setProdPlanLines]=useState([]);
   const todayIsoProd=new Date().toISOString().split('T')[0];
-  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(Array.isArray(d)?d:[])).catch(e=>console.error('Fetch actuals failed:',e));},[]);
-  useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id,planned_pieces&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(Array.isArray(d)?d:[])).catch(e=>console.error('Fetch actuals failed:',e));},[refreshKey]);
+  useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id,planned_pieces&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[refreshKey]);
   // Fetch all produced line items for kanban cards
   const[prodLineItems,setProdLineItems]=useState([]);
-  useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setProdLineItems(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setProdLineItems(d||[])).catch(()=>{});},[refreshKey]);
   const lineItemsByJob=useMemo(()=>{const m={};prodLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[prodLineItems]);
   const plannedByJob=useMemo(()=>{const m={};prodPlanLines.forEach(l=>{if(!m[l.job_id])m[l.job_id]=0;m[l.job_id]=Math.max(m[l.job_id],n(l.planned_pieces));});return m;},[prodPlanLines]);
   const actualsByJob=useMemo(()=>{const m={};prodActuals.forEach(a=>{if(!m[a.job_id])m[a.job_id]={actual:0,planned:0,loggedToday:false};m[a.job_id].actual+=n(a.actual_pieces);if(a.production_date===todayIsoProd)m[a.job_id].loggedToday=true;});Object.entries(m).forEach(([jobId,x])=>{x.planned=plannedByJob[jobId]||0;x.pct=x.planned>0?Math.round(x.actual/x.planned*100):0;});return m;},[prodActuals,plannedByJob,todayIsoProd]);
@@ -1664,7 +1664,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav}){
   const[prodBillSubs,setProdBillSubs]=useState([]);
   const[prodBillModal,setProdBillModal]=useState(null);
   const fetchProdBillSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${prodBillingMonth}&order=created_at.desc`);setProdBillSubs(d||[]);},[prodBillingMonth]);
-  useEffect(()=>{fetchProdBillSubs();},[fetchProdBillSubs]);
+  useEffect(()=>{fetchProdBillSubs();},[fetchProdBillSubs,refreshKey]);
   const prodSubByJob=useMemo(()=>{const m={};(prodBillSubs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[prodBillSubs]);
   const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
   const[groupBy,setGroupBy]=useState('status');const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);const[search,setSearch]=useState('');const[addonsF,setAddonsF]=useState(new Set());
@@ -2899,7 +2899,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
       }else{setPlanId(null);setPlanLines([]);setPlanNotes('');}
     }catch(e){console.error('Load plan failed:',e);}
   },[jobs,buildPlanLine]);
-  useEffect(()=>{loadPlan(planDate);},[planDate,loadPlan]);
+  useEffect(()=>{loadPlan(planDate);},[planDate,loadPlan,refreshKey]);
 
   // Carry forward from previous day — per-piece remaining based on full order - cumulative actuals for each job
   const loadCarryForward=useCallback(async(forDate)=>{
@@ -3358,12 +3358,12 @@ function ProductionPlanningPage({jobs,setJobs,onNav}){
 }
 
 /* ═══ DAILY REPORT PAGE ═══ */
-function DailyReportPage({jobs,onNav}){
+function DailyReportPage({jobs,onNav,refreshKey=0}){
   const[tab,setTab]=useState('actuals');
   const[toast,setToast]=useState(null);
   // Produced line items for per-line planned display
   const[drLineItems,setDrLineItems]=useState([]);
-  useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setDrLineItems(d||[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setDrLineItems(d||[])).catch(()=>{});},[refreshKey]);
   const drLineItemsByJob=useMemo(()=>{const m={};drLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[drLineItems]);
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
@@ -3605,7 +3605,7 @@ function DailyReportPage({jobs,onNav}){
       }
     }catch(e){console.error('Load actuals plan failed:',e);}
   },[jobs,buildActualsLine,PIECE_TYPES]);
-  useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan]);
+  useEffect(()=>{if(tab==='actuals')loadActualsPlan(actualsDate);},[tab,actualsDate,loadActualsPlan,refreshKey]);
 
   // ─── LOAD SHIFT SUBMISSIONS for actuals date ───
   const loadShiftSubs=useCallback(async(date)=>{
@@ -5216,14 +5216,27 @@ function MapPage({jobs,onNav}){
 }
 
 /* ═══ TOPBAR ═══ */
-function Topbar({jobs,live,onSearch}){
+function Topbar({jobs,live,onSearch,onRefresh}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
+  const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
   const today=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  const handleRefresh=async()=>{
+    if(refreshState==='spinning')return;
+    setRefreshState('spinning');
+    try{if(onRefresh)await onRefresh();}
+    catch(e){console.error('[Topbar refresh]',e);}
+    setRefreshState('done');
+    setTimeout(()=>setRefreshState('idle'),1000);
+  };
   return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 24px',gap:16,flexShrink:0}}>
+    <style>{`@keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     <div style={{flex:1}}/>
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
+      <button onClick={handleRefresh} title="Refresh data" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#6B6056',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
+        <span style={{display:'inline-block',animation:refreshState==='spinning'?'fcSpin 0.8s linear infinite':'none'}}>{refreshState==='done'?'✓':'↻'}</span>
+      </button>
       <div style={{width:8,height:8,borderRadius:4,background:live?'#10B981':'#9E9B96'}} title={live?'Live':'Disconnected'}/>
       <span style={{fontSize:12,color:'#6B6056'}}>{today}</span>
       <div style={{position:'relative'}}><button onClick={()=>setShowBell(!showBell)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',position:'relative'}}>🔔{alerts.length>0&&<span style={{position:'absolute',top:-4,right:-6,background:'#991B1B',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 4px',minWidth:14,textAlign:'center'}}>{alerts.length}</span>}</button>{showBell&&<div style={{position:'absolute',right:0,top:32,width:300,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:8}}>Billing Alerts</div>{alerts.slice(0,5).map(j=><div key={j.id} style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>{j.job_name} <span style={{color:'#B45309'}}>{j.contract_age}d</span></div>)}{alerts.length===0&&<div style={{color:'#9E9B96',fontSize:12}}>No alerts</div>}</div>}</div>
@@ -5280,8 +5293,11 @@ const NAV_GROUPS=[
 
 export default function App(){
   const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
+  const[refreshKey,setRefreshKey]=useState(0);
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
+  // Global refresh — fetches the main jobs list AND increments refreshKey so pages with internal fetches can re-run them.
+  const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
   useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:s.style_name}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
   const live=useRealtime(setJobs);
   const isMobile=typeof window!=='undefined'&&window.innerWidth<768;
@@ -5301,26 +5317,26 @@ export default function App(){
         </div>
       </div>
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)}/>
+        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh}/>
         <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
           {loading?<div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'50vh',color:'#9E9B96'}}>Loading...</div>:<>
-            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage}/>}
+            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
-            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob}/>}
-            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
-            {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs}/>}
-            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage}/>}
-            {page==='production_planning'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage}/>}
-            {page==='reports'&&<ReportsPage jobs={jobs} onNav={setPage} onOpenJob={j=>{setOpenJob(j);setPage('projects');}}/>}
+            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey}/>}
+            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
+            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='production_planning'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='reports'&&<ReportsPage jobs={jobs} onNav={setPage} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
-            {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage}/>}
+            {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
-            {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage}/>}
+            {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='help'&&<HelpPage/>}
           </>}
