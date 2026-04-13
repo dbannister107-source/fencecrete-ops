@@ -651,7 +651,7 @@ const lineSubtotal=(li)=>{
 };
 function NewProjectForm({jobs,onClose,onSaved}){
   const todayISO=new Date().toISOString().split('T')[0];
-  const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);
+  const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
   const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
@@ -714,27 +714,76 @@ function NewProjectForm({jobs,onClose,onSaved}){
   };
   const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
   const submit=async()=>{
-    if(missing.length)return;
+    if(missing.length){setSaveErr(`Missing required fields: ${missing.join(', ')}`);return;}
     setSaving(true);
-    const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
-    delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
-    body.fence_addons=syncFenceAddons(body);
+    setSaveErr(null);
     try{
-      const saved=await sbPost('jobs',body);
-      if(saved&&saved[0]){
-        // Save line items as separate rows in job_line_items
-        const dbItems=f.lineItems.map((li,i)=>toDBLineItem(li,i,saved[0])).filter(Boolean);
-        if(dbItems.length){
-          try{await sbPost('job_line_items',dbItems);}
-          catch(liErr){console.error('[NewProject] line items save failed:',liErr);}
-        }
-        fireAlert('new_job',saved[0]);
-        logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);
-        fireNewProjectEmail(saved[0]);
+      // Build the job row body
+      const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
+      delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
+      // Sanitize empty-string date fields — PostgREST rejects '' for date columns
+      ['contract_date','est_start_date','active_entry_date','billing_date','complete_date','last_billed'].forEach(k=>{if(body[k]==='')body[k]=null;});
+      // Coerce optional text-ish fields that were empty strings to null (safer than empty strings for nullable columns)
+      ['job_number','address','city','zip','notes','file_location','documents_needed','gate_description','lump_sum_description','pm','sales_rep'].forEach(k=>{if(body[k]==='')body[k]=null;});
+      body.fence_addons=syncFenceAddons(body);
+      // Filter out line items that have no meaningful data — user may add an empty row and not fill it
+      const filled=f.lineItems.filter(li=>{
+        const lt=li.line_type;
+        if(lt==='Gate')return n(li.quantity)>0||n(li.rate)>0||(li.description||'').trim();
+        if(lt==='Lump Sum / Other')return n(li.amount)>0||n(li.rate)>0||(li.description||'').trim();
+        return n(li.lf)>0||n(li.rate)>0;
+      });
+      // STEP 1 — Insert the jobs row with explicit fetch + response.ok check so errors surface clearly
+      const jobRes=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
+      const jobTxt=await jobRes.text();
+      if(!jobRes.ok){
+        // Try to extract a useful error message from PostgREST's JSON error body
+        let msg=`Job insert failed (${jobRes.status})`;
+        try{const err=JSON.parse(jobTxt);msg=err.message||err.hint||err.details||msg;}catch(_){if(jobTxt)msg=jobTxt.slice(0,200);}
+        throw new Error(msg);
       }
-    }catch(e){console.error('[NewProject] save failed:',e);}
-    setSaving(false);
-    onSaved(`Project ${f.job_name} created`);
+      const saved=jobTxt?JSON.parse(jobTxt):[];
+      if(!saved||!saved[0]||!saved[0].id){
+        throw new Error('Job created but no row was returned from Supabase. Check PostgREST Prefer header.');
+      }
+      const jobRow=saved[0];
+      // STEP 2 — Insert line items with the new job_id (failures here do NOT roll back the job —
+      // the user can add/edit line items from the Edit Panel if this batch fails)
+      let liWarning=null;
+      if(filled.length>0){
+        const dbItems=filled.map((li,i)=>toDBLineItem(li,i,jobRow)).filter(Boolean);
+        if(dbItems.length>0){
+          try{
+            const liRes=await fetch(`${SB}/rest/v1/job_line_items`,{method:'POST',headers:H,body:JSON.stringify(dbItems)});
+            if(!liRes.ok){
+              const liTxt=await liRes.text();
+              console.error('[NewProject] line items POST failed:',liRes.status,liTxt);
+              liWarning=`Job saved, but line items failed: ${liTxt.slice(0,150)}. Edit the project to add them.`;
+            }
+          }catch(liErr){
+            console.error('[NewProject] line items save threw:',liErr);
+            liWarning=`Job saved, but line items failed: ${liErr.message}. Edit the project to add them.`;
+          }
+        }
+      }
+      // STEP 3 — Post-save side effects
+      fireAlert('new_job',jobRow);
+      logAct(jobRow,'job_created','','',jobRow.job_number||jobRow.job_name);
+      fireNewProjectEmail(jobRow);
+      setSaving(false);
+      // If a non-blocking line-items warning fired, show it for 3 seconds before closing.
+      if(liWarning){
+        setSaveErr(liWarning);
+        setTimeout(()=>onSaved(`Project ${f.job_name} created (with warnings)`),3000);
+      }else{
+        onSaved(`Project ${f.job_name} created`);
+      }
+    }catch(e){
+      console.error('[NewProject] save failed:',e);
+      setSaveErr(e.message||'Save failed — check console for details');
+      setSaving(false);
+      // Do NOT call onSaved — keep the form open so the user can fix and retry
+    }
   };
   const secIdx=NP_SECS.indexOf(sec)+1;
   const grd='repeat(auto-fill,minmax(220px,1fr))';
@@ -865,6 +914,13 @@ function NewProjectForm({jobs,onClose,onSaved}){
       </div>}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
+        {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:800,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>⚠ Save failed</div>
+            <div style={{fontSize:13,color:'#991B1B',fontWeight:600,lineHeight:1.5,wordBreak:'break-word'}}>{saveErr}</div>
+          </div>
+          <button onClick={()=>setSaveErr(null)} style={{background:'none',border:'none',color:'#991B1B',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
+        </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',derivedFenceType],['Line Items',f.lineItems.length],['Total LF',totalLF.toLocaleString()],['Gates',lineAgg.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
