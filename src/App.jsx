@@ -4521,7 +4521,7 @@ const PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','lef
 // Fields stripped on INSERT of new jobs (derived/computed fields only — status IS set on insert so it's NOT here)
 const INSERT_PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','left_to_bill','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
 const IMPORT_NUMERIC_FIELDS=new Set(['lf_precast','height_precast','contract_rate_precast','lf_single_wythe','height_single_wythe','contract_rate_single_wythe','lf_wrought_iron','number_of_gates','gate_height','gate_rate','contract_value','change_orders','adj_contract_value','sales_tax','ytd_invoiced','amount_billed','left_to_bill','pct_billed','height','contract_rate','lump_sum_amount','net_contract_value','height_wrought_iron','contract_rate_wrought_iron','lf_removal','contract_rate_removal']);
-const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date','start_date','completion_date','last_billed','active_entry_date','complete_date']);
+const IMPORT_DATE_FIELDS=new Set(['contract_date','est_start_date','billing_date','start_date','completion_date','last_billed','active_entry_date','complete_date','contract_month','start_month','complete_month']);
 
 function ImportProjectsPage({jobs,onRefresh,onNav}){
   const[step,setStep]=useState(1);
@@ -4585,7 +4585,34 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadWorkbook(f);};
 
   const parseNum=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n2=parseFloat(s);return isNaN(n2)?null:n2;};
-  const parseDate=(v)=>{if(!v)return null;if(v instanceof Date)return v.toISOString().split('T')[0];const s=String(v).trim();if(!s)return null;const d=new Date(s);if(!isNaN(d.getTime()))return d.toISOString().split('T')[0];return null;};
+  const fmtYMD=(d)=>{if(!(d instanceof Date)||isNaN(d.getTime()))return null;const y=d.getUTCFullYear();const m=String(d.getUTCMonth()+1).padStart(2,'0');const dd=String(d.getUTCDate()).padStart(2,'0');return `${y}-${m}-${dd}`;};
+  const parseDate=(v)=>{
+    if(v==null||v==='')return null;
+    // JS Date object
+    if(v instanceof Date){
+      if(isNaN(v.getTime()))return null;
+      return fmtYMD(v);
+    }
+    // Excel serial number
+    if(typeof v==='number'&&isFinite(v)){
+      const d=new Date(Math.round((v-25569)*86400*1000));
+      return fmtYMD(d);
+    }
+    const s=String(v).trim();
+    if(!s)return null;
+    // Already YYYY-MM-DD
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    // Numeric string → Excel serial
+    if(/^\d+(\.\d+)?$/.test(s)){
+      const n=parseFloat(s);
+      const d=new Date(Math.round((n-25569)*86400*1000));
+      return fmtYMD(d);
+    }
+    // Fallback: try Date constructor
+    const d=new Date(s);
+    if(!isNaN(d.getTime()))return fmtYMD(d);
+    return null;
+  };
 
   const buildPreview=()=>{
     const jobsByNumber={};jobs.forEach(j=>{if(j.job_number)jobsByNumber[j.job_number.trim()]=j;});
@@ -4644,9 +4671,16 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     const errors=[];let inserted=0;let updated=0;
     const total=preview.newJobs.length+preview.updates.filter(u=>!skipUpdates.has(u.rowNum)).length;
     setProgress({done:0,total});
-    // Insert new jobs (batch of 50)
+    // Insert new jobs (batch of 50) — all rows in a batch must have identical key sets
     for(let i=0;i<preview.newJobs.length;i+=50){
-      const batch=preview.newJobs.slice(i,i+50).map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};INSERT_PROTECTED_FIELDS.forEach(f=>{delete body[f];});if(!body.status)body.status=IMPORT_STATUS_DEFAULT;return body;});
+      const slice=preview.newJobs.slice(i,i+50);
+      // First pass: build each row body
+      const rawRows=slice.map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};INSERT_PROTECTED_FIELDS.forEach(f=>{delete body[f];});if(!body.status)body.status=IMPORT_STATUS_DEFAULT;return body;});
+      // Second pass: compute the union of all keys across the batch
+      const allKeys=new Set();
+      rawRows.forEach(r=>{Object.keys(r).forEach(k=>allKeys.add(k));});
+      // Third pass: ensure every row has every key (fill missing with null)
+      const batch=rawRows.map(r=>{const out={};allKeys.forEach(k=>{out[k]=(k in r&&r[k]!==undefined)?r[k]:null;});return out;});
       try{
         const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(batch)});
         if(res.ok){inserted+=batch.length;}else{const txt=await res.text();errors.push({type:'insert_batch',error:txt.substring(0,200)});}
