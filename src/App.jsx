@@ -292,7 +292,7 @@ const PM_BILL_LF_GROUPS=[
   {title:'Single Wythe',fields:[['sw_foundation','SW Foundation'],['sw_columns','SW Columns'],['sw_panels','SW Panels'],['sw_complete','SW Complete']]},
   {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Columns'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['remove_existing','Remove Existing'],['gate_controls','Gate Controls']]},
 ];
-const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['net_contract_value','sales_tax','contract_value','change_orders','adj_contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'precast',label:'Precast',fields:['lf_precast','height_precast','style','color','contract_rate_precast']},{key:'wythe',label:'Single Wythe',fields:['lf_single_wythe','height_single_wythe','style_single_wythe','contract_rate_single_wythe']},{key:'iron',label:'Wrought Iron',fields:['lf_wrought_iron','height_wrought_iron','contract_rate_wrought_iron']},{key:'removal',label:'Removal',fields:['lf_removal','height_removal','removal_material_type','contract_rate_removal']},{key:'other',label:'Other/Lump',fields:['lf_other','height_other','other_material_type','contract_rate_other','lump_sum_amount','lump_sum_description']},{key:'gates',label:'Gates',fields:['number_of_gates','gate_height','gate_description','gate_rate']},{key:'totals',label:'Totals',fields:['total_lf','average_height_installed','total_lf_removed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]}];
+const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['net_contract_value','sales_tax','contract_value','change_orders','adj_contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]}];
 
 const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#6B6056',job_created:'#8B2020'};
 
@@ -461,7 +461,7 @@ function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setL
 
 /* ═══ EDIT PANEL ═══ */
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
-  const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'contract');const[saving,setSaving]=useState(false);
+  const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
   const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
@@ -1447,10 +1447,18 @@ function BillingPage({jobs,onRefresh,onNav}){
 const ACTIVE_BILL_STATUSES=['in_production','inventory_ready','active_install','fence_complete','fully_complete'];
 
 function PMBillingPage({jobs,onRefresh,refreshKey=0}){
-  // All line items for display in expanded bill sheet rows
-  const[pmLineItems,setPmLineItems]=useState([]);
-  useEffect(()=>{sbGet('job_line_items','select=*&order=line_number.asc&limit=4000').then(d=>setPmLineItems(d||[])).catch(()=>{});},[refreshKey]);
-  const pmLineItemsByJob=useMemo(()=>{const m={};pmLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[pmLineItems]);
+  // Line items are fetched lazily — only when a job row is expanded — keyed by job_number.
+  // This replaces the prior bulk fetch to keep the initial page load fast.
+  const[pmLineItemsByJob,setPmLineItemsByJob]=useState({});
+  const fetchLineItemsForJob=useCallback(async(jobNumber)=>{
+    if(!jobNumber||pmLineItemsByJob[jobNumber])return;
+    try{
+      const d=await sbGet('job_line_items',`select=*&job_number=eq.${encodeURIComponent(jobNumber)}&order=line_number.asc&limit=50`);
+      setPmLineItemsByJob(prev=>({...prev,[jobNumber]:d||[]}));
+    }catch(e){console.error('[PMBill] line items fetch failed:',e);}
+  },[pmLineItemsByJob]);
+  // Clear cached line items on global refresh so lazy loads re-fetch fresh data
+  useEffect(()=>{setPmLineItemsByJob({});},[refreshKey]);
   // Approved CO totals per job — used in the "COs" column
   const[pmAllCOs,setPmAllCOs]=useState([]);
   useEffect(()=>{sbGet('change_orders','select=job_id,amount,status&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[refreshKey]);
@@ -1493,7 +1501,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
 
   const getForm=(jobId)=>forms[jobId]||emptyForm();
   const updateForm=(jobId,field,val)=>setForms(prev=>({...prev,[jobId]:{...(prev[jobId]||emptyForm()),[field]:val}}));
-  const expandRow=(jobId)=>{if(expandedRow===jobId){setExpandedRow(null);setEditingRow(null);}else{setExpandedRow(jobId);setEditingRow(null);}};
+  const expandRow=(jobId)=>{if(expandedRow===jobId){setExpandedRow(null);setEditingRow(null);}else{setExpandedRow(jobId);setEditingRow(null);const j=jobs.find(x=>x.id===jobId);if(j)fetchLineItemsForJob(j.job_number);}};
   const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditingRow(job.id);setExpandedRow(job.id);};
 
   const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
@@ -1652,9 +1660,19 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const todayIsoProd=new Date().toISOString().split('T')[0];
   useEffect(()=>{sbGet('production_actuals','select=job_id,actual_pieces,production_date&limit=1000').then(d=>setProdActuals(Array.isArray(d)?d:[])).catch(e=>console.error('Fetch actuals failed:',e));},[refreshKey]);
   useEffect(()=>{sbGet('production_plan_lines','select=job_id,plan_id,planned_pieces&limit=500').then(d=>setProdPlanLines(d||[])).catch(()=>{});},[refreshKey]);
-  // Fetch all produced line items for kanban cards
+  // Fetch produced line items ONLY for currently-visible (non-closed) jobs to limit payload
   const[prodLineItems,setProdLineItems]=useState([]);
-  useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setProdLineItems(d||[])).catch(()=>{});},[refreshKey]);
+  const visibleJobNumbers=useMemo(()=>jobs.filter(j=>j.status!=='closed'&&j.job_number).map(j=>j.job_number),[jobs]);
+  useEffect(()=>{
+    if(visibleJobNumbers.length===0){setProdLineItems([]);return;}
+    // Chunk IN filter to stay under URL length limits (~100 job numbers per batch)
+    const chunks=[];
+    for(let i=0;i<visibleJobNumbers.length;i+=100){chunks.push(visibleJobNumbers.slice(i,i+100));}
+    Promise.all(chunks.map(chunk=>{
+      const inList=chunk.map(jn=>`"${encodeURIComponent(jn)}"`).join(',');
+      return sbGet('job_line_items',`select=*&is_produced=eq.true&job_number=in.(${inList})&order=line_number.asc&limit=500`).catch(()=>[]);
+    })).then(results=>{setProdLineItems([].concat(...results.map(r=>r||[])));});
+  },[visibleJobNumbers.join('|'),refreshKey]);// eslint-disable-line
   const lineItemsByJob=useMemo(()=>{const m={};prodLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[prodLineItems]);
   const plannedByJob=useMemo(()=>{const m={};prodPlanLines.forEach(l=>{if(!m[l.job_id])m[l.job_id]=0;m[l.job_id]=Math.max(m[l.job_id],n(l.planned_pieces));});return m;},[prodPlanLines]);
   const actualsByJob=useMemo(()=>{const m={};prodActuals.forEach(a=>{if(!m[a.job_id])m[a.job_id]={actual:0,planned:0,loggedToday:false};m[a.job_id].actual+=n(a.actual_pieces);if(a.production_date===todayIsoProd)m[a.job_id].loggedToday=true;});Object.entries(m).forEach(([jobId,x])=>{x.planned=plannedByJob[jobId]||0;x.pct=x.planned>0?Math.round(x.actual/x.planned*100):0;});return m;},[prodActuals,plannedByJob,todayIsoProd]);
@@ -3365,6 +3383,8 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const[drLineItems,setDrLineItems]=useState([]);
   useEffect(()=>{sbGet('job_line_items','select=*&is_produced=eq.true&order=line_number.asc&limit=2000').then(d=>setDrLineItems(d||[])).catch(()=>{});},[refreshKey]);
   const drLineItemsByJob=useMemo(()=>{const m={};drLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[drLineItems]);
+  // Per-split actual LF state for multi-line-item jobs — key: `${idx}-${line_item_id}` → entered value
+  const[lfSplitActuals,setLfSplitActuals]=useState({});
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
   const todayISO=new Date().toISOString().split('T')[0];
@@ -4068,13 +4088,39 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
                       {PIECE_TYPES.filter(pt=>pt.group==='POST CAPS').map(pieceRow)}
                     </>}
                     {sectionHeader('Linear Feet')}
-                    <tr>
-                      <td style={cellLabel}>Linear Feet</td>
-                      <td style={cellPlanned}>{n(l.planned_lf)?n(l.planned_lf).toLocaleString():'—'}</td>
-                      {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#1D4ED8',fontWeight:700}}>{n(s1?.lf)||'—'}</td>}
-                      <td style={cellActual}><input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:'100%',maxWidth:120,padding:'8px 10px',fontSize:16,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center',fontFamily:'Inter'}}/></td>
-                      <td style={cellVar(l.planned_lf,l.actual_lf)}>{varText(l.planned_lf,l.actual_lf)}</td>
-                    </tr>
+                    {(()=>{
+                      const splits=drLineItemsByJob[l.job_number]||[];
+                      if(splits.length<2){
+                        // Single or no line items — original single-row rendering
+                        return<tr>
+                          <td style={cellLabel}>Linear Feet</td>
+                          <td style={cellPlanned}>{n(l.planned_lf)?n(l.planned_lf).toLocaleString():'—'}</td>
+                          {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#1D4ED8',fontWeight:700}}>{n(s1?.lf)||'—'}</td>}
+                          <td style={cellActual}><input type="number" value={l.actual_lf} onChange={e=>updateActualsLine(idx,'actual_lf',e.target.value)} placeholder="0" style={{width:'100%',maxWidth:120,padding:'8px 10px',fontSize:16,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center',fontFamily:'Inter'}}/></td>
+                          <td style={cellVar(l.planned_lf,l.actual_lf)}>{varText(l.planned_lf,l.actual_lf)}</td>
+                        </tr>;
+                      }
+                      // Multi-line-item render: one row per produced line item + an aggregated total row
+                      const splitsTotalPlanned=splits.reduce((s,li)=>s+n(li.lf),0);
+                      const splitsTotalActual=splits.reduce((s,li)=>s+n(lfSplitActuals[`${idx}-${li.id}`]),0);
+                      const setSplit=(liId,val)=>{setLfSplitActuals(prev=>{const next={...prev,[`${idx}-${liId}`]:val};let sum=0;splits.forEach(x=>{sum+=n(next[`${idx}-${x.id}`]);});updateActualsLine(idx,'actual_lf',sum);return next;});};
+                      return<>
+                        {splits.map(li=>{const keyA=`${idx}-${li.id}`;const va=lfSplitActuals[keyA]||'';const lbl=`${n(li.lf).toLocaleString()} LF${li.height?` @ ${li.height}ft`:''}${li.style?` ${li.style}`:''}`;return<tr key={li.id}>
+                          <td style={{...cellLabel,fontSize:11,fontWeight:600}} title={lbl}>{lbl}</td>
+                          <td style={cellPlanned}>{n(li.lf).toLocaleString()}</td>
+                          {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#9E9B96'}}>—</td>}
+                          <td style={cellActual}><input type="number" value={va} onChange={e=>setSplit(li.id,e.target.value)} placeholder="0" style={{width:'100%',maxWidth:120,padding:'8px 10px',fontSize:14,fontWeight:700,border:'1px solid #D1CEC9',borderRadius:6,textAlign:'center',fontFamily:'Inter'}}/></td>
+                          <td style={cellVar(li.lf,va)}>{varText(li.lf,va)}</td>
+                        </tr>;})}
+                        <tr style={{background:'#F9F8F6'}}>
+                          <td style={{...cellLabel,fontWeight:800,fontStyle:'italic'}}>Total LF</td>
+                          <td style={{...cellPlanned,fontWeight:800}}>{splitsTotalPlanned.toLocaleString()}</td>
+                          {showShift1&&<td style={{...cellTd,background:'#EFF6FF',color:'#1D4ED8',fontWeight:700}}>{n(s1?.lf)||'—'}</td>}
+                          <td style={{...cellActual,fontWeight:800}}>{splitsTotalActual.toLocaleString()}</td>
+                          <td style={cellVar(splitsTotalPlanned,splitsTotalActual)}>{varText(splitsTotalPlanned,splitsTotalActual)}</td>
+                        </tr>
+                      </>;
+                    })()}
                   </tbody>
                 </table>;
               })()}
