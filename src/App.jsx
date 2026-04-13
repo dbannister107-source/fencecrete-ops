@@ -4585,34 +4585,46 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const handleDrop=(e)=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadWorkbook(f);};
 
   const parseNum=(v)=>{if(v==null||v==='')return null;const s=String(v).replace(/[$,\s]/g,'');const n2=parseFloat(s);return isNaN(n2)?null:n2;};
-  const fmtYMD=(d)=>{if(!(d instanceof Date)||isNaN(d.getTime()))return null;const y=d.getUTCFullYear();const m=String(d.getUTCMonth()+1).padStart(2,'0');const dd=String(d.getUTCDate()).padStart(2,'0');return `${y}-${m}-${dd}`;};
-  const parseDate=(v)=>{
-    if(v==null||v==='')return null;
-    // JS Date object
-    if(v instanceof Date){
-      if(isNaN(v.getTime()))return null;
-      return fmtYMD(v);
+  const safeDate=(val)=>{
+    if(val===null||val===undefined||val==='')return null;
+    // Excel serial date (number)
+    if(typeof val==='number'){
+      const d=new Date(Math.round((val-25569)*86400*1000));
+      if(isNaN(d.getTime()))return null;
+      return d.toISOString().split('T')[0];
     }
-    // Excel serial number
-    if(typeof v==='number'&&isFinite(v)){
-      const d=new Date(Math.round((v-25569)*86400*1000));
-      return fmtYMD(d);
+    // JS Date object — use UTC to avoid timezone shifts
+    if(val instanceof Date){
+      if(isNaN(val.getTime()))return null;
+      const y=val.getUTCFullYear();
+      const m=String(val.getUTCMonth()+1).padStart(2,'0');
+      const d=String(val.getUTCDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
     }
-    const s=String(v).trim();
-    if(!s)return null;
-    // Already YYYY-MM-DD
-    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
-    // Numeric string → Excel serial
-    if(/^\d+(\.\d+)?$/.test(s)){
-      const n=parseFloat(s);
-      const d=new Date(Math.round((n-25569)*86400*1000));
-      return fmtYMD(d);
+    // String
+    if(typeof val==='string'){
+      const trimmed=val.trim();
+      if(!trimmed)return null;
+      if(/^\d{4}-\d{2}-\d{2}$/.test(trimmed))return trimmed;
+      // Numeric string → Excel serial
+      if(/^\d+(\.\d+)?$/.test(trimmed)){
+        const n=parseFloat(trimmed);
+        const d=new Date(Math.round((n-25569)*86400*1000));
+        if(isNaN(d.getTime()))return null;
+        return d.toISOString().split('T')[0];
+      }
+      const d=new Date(trimmed);
+      if(isNaN(d.getTime()))return null;
+      // Guard against extended-year ISO output (e.g. "+045964-01-01")
+      const y=d.getUTCFullYear();
+      if(y<1900||y>2200)return null;
+      const mm=String(d.getUTCMonth()+1).padStart(2,'0');
+      const dd=String(d.getUTCDate()).padStart(2,'0');
+      return `${y}-${mm}-${dd}`;
     }
-    // Fallback: try Date constructor
-    const d=new Date(s);
-    if(!isNaN(d.getTime()))return fmtYMD(d);
     return null;
   };
+  const parseDate=safeDate;
 
   const buildPreview=()=>{
     const jobsByNumber={};jobs.forEach(j=>{if(j.job_number)jobsByNumber[j.job_number.trim()]=j;});
@@ -4671,16 +4683,25 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     const errors=[];let inserted=0;let updated=0;
     const total=preview.newJobs.length+preview.updates.filter(u=>!skipUpdates.has(u.rowNum)).length;
     setProgress({done:0,total});
+    // List of every date field that must be normalized via safeDate before sending to Postgres
+    const DATE_FIELDS_TO_NORMALIZE=['contract_date','est_start_date','active_entry_date','complete_date','last_billed','contract_month','start_month','complete_month','billing_date'];
     // Insert new jobs (batch of 50) — all rows in a batch must have identical key sets
     for(let i=0;i<preview.newJobs.length;i+=50){
       const slice=preview.newJobs.slice(i,i+50);
-      // First pass: build each row body
-      const rawRows=slice.map(nj=>{const body={...nj.mapped,created_at:new Date().toISOString()};INSERT_PROTECTED_FIELDS.forEach(f=>{delete body[f];});if(!body.status)body.status=IMPORT_STATUS_DEFAULT;return body;});
+      // First pass: build each row body and re-normalize every date field via safeDate
+      const rawRows=slice.map(nj=>{
+        const body={...nj.mapped,created_at:new Date().toISOString()};
+        INSERT_PROTECTED_FIELDS.forEach(f=>{delete body[f];});
+        if(!body.status)body.status=IMPORT_STATUS_DEFAULT;
+        // Defensive: re-run safeDate over all known date fields
+        DATE_FIELDS_TO_NORMALIZE.forEach(f=>{if(f in body)body[f]=safeDate(body[f]);});
+        return body;
+      });
       // Second pass: compute the union of all keys across the batch
       const allKeys=new Set();
       rawRows.forEach(r=>{Object.keys(r).forEach(k=>allKeys.add(k));});
-      // Third pass: ensure every row has every key (fill missing with null)
-      const batch=rawRows.map(r=>{const out={};allKeys.forEach(k=>{out[k]=(k in r&&r[k]!==undefined)?r[k]:null;});return out;});
+      // Third pass: ensure every row has every key (fill missing with null) — required by PostgREST batch insert
+      const batch=rawRows.map(r=>{const out={};allKeys.forEach(k=>{out[k]=(k in r&&r[k]!==undefined&&r[k]!=='')?r[k]:null;});return out;});
       try{
         const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(batch)});
         if(res.ok){inserted+=batch.length;}else{const txt=await res.text();errors.push({type:'insert_batch',error:txt.substring(0,200)});}
@@ -4692,6 +4713,8 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     for(let i=0;i<toUpdate.length;i++){
       const u=toUpdate[i];
       const body={};u.changes.forEach(c=>{if(!PROTECTED_FIELDS.has(c.field))body[c.field]=c.newVal;});
+      // Defensive: re-run safeDate on every date field before PATCH
+      DATE_FIELDS_TO_NORMALIZE.forEach(f=>{if(f in body)body[f]=safeDate(body[f]);});
       if(Object.keys(body).length===0)continue;
       try{
         const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${u.existing.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
