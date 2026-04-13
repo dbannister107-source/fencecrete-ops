@@ -656,8 +656,16 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
+  // 'auto' = generate ##X### from market (commercial); 'manual' = free-form plain text (residential)
+  const[jobCodeMode,setJobCodeMode]=useState('auto');
   const genJobNum=async(mkt)=>{if(!mkt)return;setJnLoading(true);try{const num=await getNextJobNumber(mkt);setF(p=>({...p,job_number:num}));}catch(e){console.error('Job number gen failed:',e);}setJnLoading(false);};
-  const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market'){u.pm=AUTO_PM(v,u.fence_type);genJobNum(v);}if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
+  // Only auto-generate on market change when the user hasn't switched to manual mode
+  const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market'){u.pm=AUTO_PM(v,u.fence_type);if(jobCodeMode==='auto')genJobNum(v);}if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
+  const switchJobCodeMode=(mode)=>{
+    setJobCodeMode(mode);
+    if(mode==='auto'&&f.market){genJobNum(f.market);}
+    else if(mode==='manual'){setF(p=>({...p,job_number:''}));}
+  };
   // Line item helpers
   const addLineItem=()=>setF(p=>({...p,lineItems:[...p.lineItems,emptyLineItem('Precast')]}));
   const removeLineItem=(idx)=>setF(p=>({...p,lineItems:p.lineItems.length<=1?p.lineItems:p.lineItems.filter((_,i)=>i!==idx)}));
@@ -810,7 +818,21 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{totalLF.toLocaleString()}</div></div>
       </div>}
       {sec==='info'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-        <div>{fLbl('Job Code')}<div style={{display:'flex',gap:4,alignItems:'center'}}><input value={f.job_number} onChange={e=>set('job_number',e.target.value)} placeholder={jnLoading?'Generating...':'e.g. 26H017'} style={{...inputS,flex:1}}/>{f.market&&<button type="button" onClick={()=>genJobNum(f.market)} title="Regenerate job number" style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 8px',cursor:'pointer',fontSize:14,color:'#6B6056',lineHeight:1}} disabled={jnLoading}>↻</button>}</div>{f.job_number&&f.market&&<div style={{fontSize:10,color:'#10B981',marginTop:2}}>Auto-generated — edit if needed</div>}</div>
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+            {fLbl('Job Code')}
+            <div style={{display:'inline-flex',border:'1px solid #E5E3E0',borderRadius:6,overflow:'hidden',marginBottom:4}}>
+              <button type="button" onClick={()=>switchJobCodeMode('auto')} title="Auto-generate commercial job code (e.g. 26H017)" style={{padding:'3px 10px',border:'none',background:jobCodeMode==='auto'?'#8B2020':'#FFF',color:jobCodeMode==='auto'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Auto</button>
+              <button type="button" onClick={()=>switchJobCodeMode('manual')} title="Manual entry for residential jobs (plain numbers)" style={{padding:'3px 10px',border:'none',borderLeft:'1px solid #E5E3E0',background:jobCodeMode==='manual'?'#8B2020':'#FFF',color:jobCodeMode==='manual'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Manual</button>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+            <input value={f.job_number} onChange={e=>set('job_number',e.target.value)} placeholder={jobCodeMode==='auto'?(jnLoading?'Generating...':'e.g. 26H017'):'e.g. 10167'} style={{...inputS,flex:1}}/>
+            {jobCodeMode==='auto'&&f.market&&<button type="button" onClick={()=>genJobNum(f.market)} title="Regenerate job number" style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 8px',cursor:'pointer',fontSize:14,color:'#6B6056',lineHeight:1}} disabled={jnLoading}>↻</button>}
+          </div>
+          {jobCodeMode==='auto'&&f.job_number&&f.market&&<div style={{fontSize:10,color:'#10B981',marginTop:2}}>Auto-generated — edit if needed</div>}
+          {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#6B6056',marginTop:2}}>Manual entry — type any job code</div>}
+        </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Cust #')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS}/></div>
