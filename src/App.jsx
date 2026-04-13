@@ -1494,6 +1494,7 @@ function PMBillingPage({jobs,onRefresh}){
             <span style={{fontSize:16,color:iconColor,fontWeight:700,width:18,textAlign:'center'}}>{icon}</span>
             <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
             <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
+            <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
             <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
