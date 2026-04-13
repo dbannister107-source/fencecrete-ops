@@ -19,6 +19,29 @@ const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POS
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
 const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ type, job }) }); } catch(e) {} };
 const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
+// Fires a non-blocking "new project created" email via billing-alerts edge function.
+// Intentionally NOT called from the bulk import flow.
+const fireNewProjectEmail = (j) => {
+  if (!j) return;
+  try {
+    fetch(`${SB}/functions/v1/billing-alerts`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'new_project',
+        jobNumber: j.job_number || '',
+        jobName: j.job_name || '',
+        market: j.market || '',
+        pm: j.pm || '',
+        salesRep: j.sales_rep || '',
+        contractValue: Number(j.contract_value) || 0,
+        status: j.status || '',
+        recipient: 'violet@fencecrete.com',
+        subject: `New Project Created — ${j.job_name || 'Untitled'} (${j.job_number || '—'})`
+      })
+    }).catch(e => console.error('[new_project email] failed:', e));
+  } catch (e) { console.error('[new_project email] threw:', e); }
+};
 
 /* ═══ HELPERS ═══ */
 const $ = v => '$' + (Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
@@ -441,8 +464,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'contract');const[saving,setSaving]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
-  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
-  const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
+  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);fireNewProjectEmail(saved[0]);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
   const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
   const[latestPmLF,setLatestPmLF]=useState(null);
@@ -591,7 +614,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const totalLF=n(f.lf_precast)+n(f.lf_single_wythe)+n(f.lf_wrought_iron)+n(f.lf_removal)+n(f.lf_other);
   const ft=f.fence_type||'';const showPC=ft.includes('PC');const showSW=ft.includes('SW');const showWI=ft.includes('WI');
   const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
-  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
+  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);fireNewProjectEmail(saved[0]);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
   const secIdx=NP_SECS.indexOf(sec)+1;
   const grd='repeat(auto-fill,minmax(220px,1fr))';
   const rateHint=(field)=>avgRates[field]?`Avg ${f.market}: $${avgRates[field].toFixed(2)}/LF`:'';
