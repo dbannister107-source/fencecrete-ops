@@ -19,6 +19,18 @@ const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POS
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
 const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ type, job }) }); } catch(e) {} };
 const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
+// Keeps fence_addons in sync with a job row's scalar fields. Adds/removes the
+// auto-managed codes G (Gates), WI (Wrought Iron), C (Columns, from Single Wythe)
+// based on current data. Preserves any other codes outside {G, WI, C}.
+const syncFenceAddons = (row) => {
+  const existing = Array.isArray(row?.fence_addons) ? row.fence_addons : [];
+  const preserved = existing.filter(c => c !== 'G' && c !== 'WI' && c !== 'C');
+  const next = new Set(preserved);
+  if (Number(row?.number_of_gates) > 0) next.add('G');
+  if (Number(row?.lf_wrought_iron) > 0 || Number(row?.total_lf_wrought_iron) > 0) next.add('WI');
+  if (Number(row?.lf_single_wythe) > 0 || Number(row?.total_lf_masonry) > 0) next.add('C');
+  return [...next];
+};
 // Fires a non-blocking "new project created" email via billing-alerts edge function.
 // Intentionally NOT called from the bulk import flow.
 const fireNewProjectEmail = (j) => {
@@ -400,15 +412,20 @@ function LineItemsEditor({job,onChange}){
       const fresh=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&order=line_number.asc`);
       const all=fresh||[];
       const pcLines=all.filter(x=>x.fence_type==='PC');
+      // Also count gates (line items with description starting with "GATE:")
+      const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
       const summary={
         lf_precast:pcLines.filter(x=>n(x.line_number)===1).reduce((s,x)=>s+n(x.lf),0),
         lf_other:pcLines.filter(x=>n(x.line_number)>1).reduce((s,x)=>s+n(x.lf),0),
         lf_single_wythe:all.filter(x=>x.fence_type==='SW').reduce((s,x)=>s+n(x.lf),0),
         lf_wrought_iron:all.filter(x=>x.fence_type==='WI').reduce((s,x)=>s+n(x.lf),0),
+        number_of_gates:gateLines.reduce((s,x)=>s+n(x.lf),0),
         total_lf_precast:all.filter(x=>x.is_produced).reduce((s,x)=>s+n(x.lf),0),
         total_lf_masonry:all.filter(x=>x.fence_type==='SW').reduce((s,x)=>s+n(x.lf),0),
         total_lf:all.reduce((s,x)=>s+n(x.lf),0),
       };
+      // Auto-sync fence_addons (G/WI/C) to reflect the new summary data
+      summary.fence_addons=syncFenceAddons({...job,...summary});
       await sbPatch('jobs',job.id,summary);
       setLines(all.map(l=>({...l,_existing:true})));
       setDirty(false);
@@ -492,8 +509,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
-  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
-  const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);fireNewProjectEmail(saved[0]);}onSaved('Project duplicated');};
+  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);fireNewProjectEmail(saved[0]);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
   const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
   const[latestPmLF,setLatestPmLF]=useState(null);
@@ -701,6 +718,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
     setSaving(true);
     const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
     delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
+    body.fence_addons=syncFenceAddons(body);
     try{
       const saved=await sbPost('jobs',body);
       if(saved&&saved[0]){
@@ -1176,7 +1194,8 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
       if(!m[li.job_number])m[li.job_number]=new Set();
       const ft=li.fence_type;
       const desc=(li.description||'').toUpperCase();
-      if(ft==='SW')m[li.job_number].add('SW');
+      // Single Wythe adds both SW (display-only marker) and C (Columns) since SW fences include columns
+      if(ft==='SW'){m[li.job_number].add('SW');m[li.job_number].add('C');}
       if(ft==='WI')m[li.job_number].add('WI');
       if(desc.startsWith('GATE:'))m[li.job_number].add('G');
       if(desc.startsWith('REMOVAL:'))m[li.job_number].add('R');
@@ -1189,11 +1208,11 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
     const derived=new Set();
     if(n(j.number_of_gates)>0)derived.add('G');
     if(n(j.lf_wrought_iron)>0||n(j.total_lf_wrought_iron)>0)derived.add('WI');
-    if(n(j.lf_single_wythe)>0||n(j.total_lf_masonry)>0)derived.add('SW');
+    if(n(j.lf_single_wythe)>0||n(j.total_lf_masonry)>0){derived.add('SW');derived.add('C');}
     if(n(j.lump_sum_amount)>0)derived.add('LS');
     const fromLI=addonsByJobNum[j.job_number];
     if(fromLI)fromLI.forEach(c=>derived.add(c));
-    // Preserve any manually-set legacy codes (e.g. 'C' for Columns which isn't auto-derivable)
+    // Preserve any manually-set codes that aren't auto-derivable
     const existing=Array.isArray(j.fence_addons)?j.fence_addons:[];
     existing.forEach(c=>derived.add(c));
     return{...j,fence_addons:[...derived]};
