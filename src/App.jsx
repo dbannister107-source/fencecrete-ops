@@ -1157,7 +1157,7 @@ const COL_GROUPS=[
   {label:'Team',keys:['sales_rep','pm','job_type']},
   {label:'Other',keys:['notes','documents_needed','file_location','address','city','state','zip']}
 ];
-function ProjectsPage({jobs,onRefresh,openJob}){
+function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
   const[projTab,setProjTab]=useState('active');
   const[search,setSearch]=useState('');
   const[statusF,setStatusF]=useState(new Set());
@@ -1166,6 +1166,38 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   const[primaryTypeF,setPrimaryTypeF]=useState(new Set());
   const[addonsF,setAddonsF]=useState(new Set());
   const clearAllFilters=()=>{setStatusF(new Set());setMktF(new Set());setPmF(new Set());setPrimaryTypeF(new Set());setAddonsF(new Set());};
+  // Fetch line items so add-on badges auto-derive from actual line data (Gate, Removal, Lump Sum, SW, WI)
+  const[plLineItems,setPlLineItems]=useState([]);
+  useEffect(()=>{sbGet('job_line_items','select=job_number,fence_type,description&limit=5000').then(d=>setPlLineItems(d||[])).catch(()=>{});},[refreshKey]);
+  const addonsByJobNum=useMemo(()=>{
+    const m={};
+    plLineItems.forEach(li=>{
+      if(!li.job_number)return;
+      if(!m[li.job_number])m[li.job_number]=new Set();
+      const ft=li.fence_type;
+      const desc=(li.description||'').toUpperCase();
+      if(ft==='SW')m[li.job_number].add('SW');
+      if(ft==='WI')m[li.job_number].add('WI');
+      if(desc.startsWith('GATE:'))m[li.job_number].add('G');
+      if(desc.startsWith('REMOVAL:'))m[li.job_number].add('R');
+      if(desc.startsWith('LUMP SUM:'))m[li.job_number].add('LS');
+    });
+    return m;
+  },[plLineItems]);
+  // Augment each job with auto-derived add-on codes (merged with any manually-set fence_addons)
+  const augmentedJobs=useMemo(()=>jobs.map(j=>{
+    const derived=new Set();
+    if(n(j.number_of_gates)>0)derived.add('G');
+    if(n(j.lf_wrought_iron)>0||n(j.total_lf_wrought_iron)>0)derived.add('WI');
+    if(n(j.lf_single_wythe)>0||n(j.total_lf_masonry)>0)derived.add('SW');
+    if(n(j.lump_sum_amount)>0)derived.add('LS');
+    const fromLI=addonsByJobNum[j.job_number];
+    if(fromLI)fromLI.forEach(c=>derived.add(c));
+    // Preserve any manually-set legacy codes (e.g. 'C' for Columns which isn't auto-derivable)
+    const existing=Array.isArray(j.fence_addons)?j.fence_addons:[];
+    existing.forEach(c=>derived.add(c));
+    return{...j,fence_addons:[...derived]};
+  }),[jobs,addonsByJobNum]);
   const[sortCol,setSortCol]=useState('left_to_bill');const[sortDir,setSortDir]=useState('desc');
   const[closedYearF,setClosedYearF]=useState('');
   const[visCols,setVisCols]=useState(()=>{try{const s=localStorage.getItem('fc_vis_cols');if(!s)return DEF_VIS;const saved=JSON.parse(s);const ensure=['primary_fence_type','fence_addons'];const missing=ensure.filter(k=>!saved.includes(k));if(missing.length>0){const ftIdx=saved.indexOf('fence_type');const insertAt=ftIdx>=0?ftIdx+1:saved.length;const updated=[...saved.slice(0,insertAt),...missing,...saved.slice(insertAt)];localStorage.setItem('fc_vis_cols',JSON.stringify(updated));return updated;}return saved;}catch(e){return DEF_VIS;}});const[showCols,setShowCols]=useState(false);
@@ -1176,11 +1208,11 @@ function ProjectsPage({jobs,onRefresh,openJob}){
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
   useEffect(()=>setSel(new Set()),[search,statusF,mktF,pmF]);
   const toggleSort=k=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('desc');}};
-  const closedJobs=useMemo(()=>{let f=jobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[jobs,search,mktF,pmF,closedYearF]);
-  const closedCount=jobs.filter(j=>j.status==='closed').length;
-  const closedStats=useMemo(()=>{const cj=jobs.filter(j=>j.status==='closed');return{count:cj.length,cv:cj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),lfPC:cj.reduce((s,j)=>s+lfPC(j),0),lf:cj.reduce((s,j)=>s+lfTotal(j),0),avgPct:cj.length>0?Math.round(cj.reduce((s,j)=>s+n(j.pct_billed),0)/cj.length*100):0};},[jobs]);
+  const closedJobs=useMemo(()=>{let f=augmentedJobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[augmentedJobs,search,mktF,pmF,closedYearF]);
+  const closedCount=augmentedJobs.filter(j=>j.status==='closed').length;
+  const closedStats=useMemo(()=>{const cj=augmentedJobs.filter(j=>j.status==='closed');return{count:cj.length,cv:cj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),lfPC:cj.reduce((s,j)=>s+lfPC(j),0),lf:cj.reduce((s,j)=>s+lfTotal(j),0),avgPct:cj.length>0?Math.round(cj.reduce((s,j)=>s+n(j.pct_billed),0)/cj.length*100):0};},[augmentedJobs]);
   const filtered=useMemo(()=>{
-    let f=jobs.filter(j=>j.status!=='closed');
+    let f=augmentedJobs.filter(j=>j.status!=='closed');
     if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}
     if(statusF.size>0)f=f.filter(j=>statusF.has(j.status));
     if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));
@@ -1191,7 +1223,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
       else f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));
     }
     return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});
-  },[jobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
+  },[augmentedJobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
   const exportCSV=rows=>{const cols=ALL_COLS.filter(c=>visCols.includes(c.key));const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
   const saveInline=async()=>{if(!inlE)return;const u={[inlE.key]:inlE.value};if(inlE.key==='ytd_invoiced'){const adj=n(inlE.job.adj_contract_value||inlE.job.contract_value);const ytd=n(inlE.value);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',inlE.id,u);const j=jobs.find(x=>x.id===inlE.id);if(['ytd_invoiced','last_billed'].includes(inlE.key)){fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',inlE.key,j[inlE.key],inlE.value);}else{fireAlert('job_updated',{...j,...u});logAct(j,'field_update',inlE.key,j[inlE.key],inlE.value);}setInlE(null);setToast('Saved');onRefresh();};
   const bulkStatus=async s=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();};
@@ -1234,7 +1266,7 @@ function ProjectsPage({jobs,onRefresh,openJob}){
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
         <MultiSelect label="All Types" width={140} selected={primaryTypeF} onChange={setPrimaryTypeF} options={[{v:'Precast',l:'Precast'},{v:'Masonry',l:'Masonry'},{v:'Wrought Iron',l:'Wrought Iron'}]}/>
-        <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'}]}/>
+        <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'},{v:'SW',l:'Single Wythe (SW)'},{v:'R',l:'Removal (R)'},{v:'LS',l:'Lump Sum (LS)'}]}/>
         {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8B2020',borderRadius:6,padding:'6px 12px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
