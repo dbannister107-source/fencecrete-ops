@@ -66,7 +66,11 @@ const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toStrin
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
 const PMS=PM_LIST.map(p=>p.id);
-const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'].map(v=>({v,l:v})), style_single_wythe:['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'].map(v=>({v,l:v})), color:['LAC','Painted','10#61078','Café','Adobe','8#860','Regular Brown','Outback','Silversmoke 8085','Green','Stain','10#860','8#677','3.5#860','1.5#860','Dune 6058','Sandstone 5237','Pebble 641','No Color','Other'].map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
+// Maps underlying style values to their display labels. DB values are preserved
+// for back-compat; only the user-visible label changes.
+const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
+const _STYLE_LIST = ['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
+const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), style_single_wythe:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), color:['LAC','Painted','10#61078','Café','Adobe','8#860','Regular Brown','Outback','Silversmoke 8085','Green','Stain','10#860','8#677','3.5#860','1.5#860','Dune 6058','Sandstone 5237','Pebble 641','No Color','Other'].map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
 const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'inventory_ready', inventory_ready:'active_install', active_install:'fence_complete', fence_complete:'fully_complete', fully_complete:'closed' };
 
 // ═══ MOLD SHARING ═══
@@ -620,25 +624,100 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
 const NP_SECS=['info','fence','contract','requirements','schedule','review'];
 const NP_LABELS={info:'Job Info',fence:'Fence & Dimensions',contract:'Contract & Billing',requirements:'Requirements',schedule:'Schedule',review:'Review & Submit'};
 const AUTO_PM=(mkt,ft)=>{if(mkt==='Austin'||mkt==='Dallas-Fort Worth')return'Doug Monroe';if(mkt==='San Antonio')return'Ray Garcia';if(mkt==='Houston'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
+const LINE_TYPES=['Precast','Single Wythe','Wrought Iron','Wood','Gate','Removal','Lump Sum / Other'];
+const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:''});
+const lineSubtotal=(li)=>{
+  const lt=li.line_type;
+  if(lt==='Gate')return n(li.quantity)*n(li.rate);
+  if(lt==='Lump Sum / Other')return n(li.amount);
+  return n(li.lf)*n(li.rate);
+};
 function NewProjectForm({jobs,onClose,onSaved}){
   const todayISO=new Date().toISOString().split('T')[0];
   const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);
-  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lf_precast:'',height_precast:'',style:'',color:'',contract_rate_precast:'',lf_single_wythe:'',height_single_wythe:'',style_single_wythe:'',contract_rate_single_wythe:'',lf_wrought_iron:'',height_wrought_iron:'',contract_rate_wrought_iron:'',lf_removal:'',height_removal:'',removal_material_type:'',contract_rate_removal:'',lf_other:'',height_other:'',other_material_type:'',contract_rate_other:'',number_of_gates:'',gate_height:'',gate_description:'',gate_rate:'',lump_sum_amount:'',lump_sum_description:'',contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
   const genJobNum=async(mkt)=>{if(!mkt)return;setJnLoading(true);try{const num=await getNextJobNumber(mkt);setF(p=>({...p,job_number:num}));}catch(e){console.error('Job number gen failed:',e);}setJnLoading(false);};
   const set=(k,v)=>{setF(p=>{const u={...p,[k]:v};if(k==='market'){u.pm=AUTO_PM(v,u.fence_type);genJobNum(v);}if(k==='fence_type')u.pm=AUTO_PM(u.market,v);return u;});};
+  // Line item helpers
+  const addLineItem=()=>setF(p=>({...p,lineItems:[...p.lineItems,emptyLineItem('Precast')]}));
+  const removeLineItem=(idx)=>setF(p=>({...p,lineItems:p.lineItems.length<=1?p.lineItems:p.lineItems.filter((_,i)=>i!==idx)}));
+  const updateLineItem=(idx,key,val)=>setF(p=>({...p,lineItems:p.lineItems.map((l,i)=>i===idx?{...l,[key]:val}:l)}));
   // Fetch avg rates when market changes
   useEffect(()=>{if(!f.market)return;const mj=jobs.filter(j=>j.market===f.market);const avg=(field)=>{const valid=mj.filter(j=>n(j[field])>0);return valid.length?Math.round(valid.reduce((s,j)=>s+n(j[field]),0)/valid.length*100)/100:0;};setAvgRates({contract_rate_precast:avg('contract_rate_precast'),contract_rate_single_wythe:avg('contract_rate_single_wythe'),contract_rate_wrought_iron:avg('contract_rate_wrought_iron'),gate_rate:avg('gate_rate')});},[f.market,jobs]);
   const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
-  // Auto-calc contract values — recalculates on every render as f changes
-  const ncv=n(f.lf_precast)*n(f.contract_rate_precast)+n(f.lf_single_wythe)*n(f.contract_rate_single_wythe)+n(f.lf_wrought_iron)*n(f.contract_rate_wrought_iron)+n(f.lf_removal)*n(f.contract_rate_removal)+n(f.lf_other)*n(f.contract_rate_other)+n(f.number_of_gates)*n(f.gate_rate)+n(f.lump_sum_amount);
+  // Auto-calc from line items
+  const ncv=f.lineItems.reduce((s,li)=>s+lineSubtotal(li),0);
   const stax=n(f.sales_tax);const cv=ncv+stax;const acv=cv;
-  const totalLF=n(f.lf_precast)+n(f.lf_single_wythe)+n(f.lf_wrought_iron)+n(f.lf_removal)+n(f.lf_other);
-  const ft=f.fence_type||'';const showPC=ft.includes('PC');const showSW=ft.includes('SW');const showWI=ft.includes('WI');
+  const totalLF=f.lineItems.reduce((s,li)=>{
+    if(['Precast','Single Wythe','Wrought Iron','Wood','Removal'].includes(li.line_type))return s+n(li.lf);
+    if(li.line_type==='Lump Sum / Other')return s+n(li.lf);
+    return s;
+  },0);
+  // Derive legacy aggregate fields from line items for back-compat with existing jobs-table schema
+  const lineAgg=useMemo(()=>{
+    const a={lf_precast:0,height_precast:null,style:null,color:null,contract_rate_precast:null,lf_single_wythe:0,height_single_wythe:null,style_single_wythe:null,contract_rate_single_wythe:null,lf_wrought_iron:0,height_wrought_iron:null,contract_rate_wrought_iron:null,lf_removal:0,height_removal:null,removal_material_type:null,contract_rate_removal:null,lf_other:0,contract_rate_other:null,number_of_gates:0,gate_height:null,gate_description:null,gate_rate:null,lump_sum_amount:0,lump_sum_description:null};
+    f.lineItems.forEach(li=>{
+      if(li.line_type==='Precast'){a.lf_precast+=n(li.lf);if(a.height_precast==null)a.height_precast=li.height||null;if(a.style==null)a.style=li.style||null;if(a.color==null)a.color=li.color||null;if(a.contract_rate_precast==null)a.contract_rate_precast=n(li.rate)||null;}
+      else if(li.line_type==='Single Wythe'){a.lf_single_wythe+=n(li.lf);if(a.height_single_wythe==null)a.height_single_wythe=li.height||null;if(a.style_single_wythe==null)a.style_single_wythe=li.style||null;if(a.contract_rate_single_wythe==null)a.contract_rate_single_wythe=n(li.rate)||null;}
+      else if(li.line_type==='Wrought Iron'){a.lf_wrought_iron+=n(li.lf);if(a.height_wrought_iron==null)a.height_wrought_iron=li.height||null;if(a.contract_rate_wrought_iron==null)a.contract_rate_wrought_iron=n(li.rate)||null;}
+      else if(li.line_type==='Wood'){a.lf_other+=n(li.lf);if(a.contract_rate_other==null)a.contract_rate_other=n(li.rate)||null;}
+      else if(li.line_type==='Removal'){a.lf_removal+=n(li.lf);if(a.height_removal==null)a.height_removal=li.height||null;if(a.removal_material_type==null)a.removal_material_type=li.material_type||null;if(a.contract_rate_removal==null)a.contract_rate_removal=n(li.rate)||null;}
+      else if(li.line_type==='Gate'){a.number_of_gates+=n(li.quantity);if(a.gate_height==null)a.gate_height=li.height||null;if(a.gate_description==null)a.gate_description=li.description||null;if(a.gate_rate==null)a.gate_rate=n(li.rate)||null;}
+      else if(li.line_type==='Lump Sum / Other'){a.lump_sum_amount+=n(li.amount);if(a.lump_sum_description==null)a.lump_sum_description=li.description||null;}
+    });
+    return a;
+  },[f.lineItems]);
+  // Derive fence_type from line item types
+  const derivedFenceType=useMemo(()=>{
+    const types=new Set();
+    f.lineItems.forEach(l=>{
+      if(l.line_type==='Precast')types.add('PC');
+      else if(l.line_type==='Single Wythe')types.add('SW');
+      else if(l.line_type==='Wrought Iron')types.add('WI');
+      else if(l.line_type==='Wood')types.add('Wood');
+      else if(l.line_type==='Gate')types.add('Gates');
+    });
+    return[...types].join('/')||f.fence_type||'PC';
+  },[f.lineItems,f.fence_type]);
+  // Map a UI line item to the job_line_items DB row shape
+  const toDBLineItem=(li,idx,jobRow)=>{
+    const base={job_id:jobRow.id,job_number:jobRow.job_number,line_number:idx+1};
+    const lt=li.line_type;
+    if(lt==='Precast')return{...base,fence_type:'PC',lf:n(li.lf),height:li.height?String(li.height):null,style:li.style||null,color:li.color||null,contract_rate:n(li.rate),description:null,is_produced:true};
+    if(lt==='Single Wythe')return{...base,fence_type:'SW',lf:n(li.lf),height:li.height?String(li.height):null,style:li.style||null,color:li.color||null,contract_rate:n(li.rate),description:null,is_produced:false};
+    if(lt==='Wrought Iron')return{...base,fence_type:'WI',lf:n(li.lf),height:li.height?String(li.height):null,style:li.style||null,color:null,contract_rate:n(li.rate),description:null,is_produced:false};
+    if(lt==='Wood')return{...base,fence_type:'Wood',lf:n(li.lf),height:li.height?String(li.height):null,style:li.style||null,color:null,contract_rate:n(li.rate),description:null,is_produced:false};
+    if(lt==='Gate')return{...base,fence_type:'Other',lf:n(li.quantity),height:li.height?String(li.height):null,style:null,color:null,contract_rate:n(li.rate),description:`GATE: ${li.description||''}`.trim(),is_produced:false};
+    if(lt==='Removal')return{...base,fence_type:'Other',lf:n(li.lf),height:li.height?String(li.height):null,style:null,color:null,contract_rate:n(li.rate),description:`REMOVAL: ${li.material_type||''}`.trim(),is_produced:false};
+    if(lt==='Lump Sum / Other')return{...base,fence_type:'Other',lf:n(li.lf)||1,height:null,style:null,color:null,contract_rate:n(li.rate)||n(li.amount),description:`LUMP SUM: ${li.description||''}`.trim(),is_produced:false};
+    return null;
+  };
   const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
-  const submit=async()=>{if(missing.length)return;setSaving(true);const body={...f,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};delete body.id;delete body.created_at;delete body.updated_at;const saved=await sbPost('jobs',body);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);fireNewProjectEmail(saved[0]);}setSaving(false);onSaved(`Project ${f.job_name} created`);};
+  const submit=async()=>{
+    if(missing.length)return;
+    setSaving(true);
+    const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
+    delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
+    try{
+      const saved=await sbPost('jobs',body);
+      if(saved&&saved[0]){
+        // Save line items as separate rows in job_line_items
+        const dbItems=f.lineItems.map((li,i)=>toDBLineItem(li,i,saved[0])).filter(Boolean);
+        if(dbItems.length){
+          try{await sbPost('job_line_items',dbItems);}
+          catch(liErr){console.error('[NewProject] line items save failed:',liErr);}
+        }
+        fireAlert('new_job',saved[0]);
+        logAct(saved[0],'job_created','','',saved[0].job_number||saved[0].job_name);
+        fireNewProjectEmail(saved[0]);
+      }
+    }catch(e){console.error('[NewProject] save failed:',e);}
+    setSaving(false);
+    onSaved(`Project ${f.job_name} created`);
+  };
   const secIdx=NP_SECS.indexOf(sec)+1;
   const grd='repeat(auto-fill,minmax(220px,1fr))';
   const rateHint=(field)=>avgRates[field]?`Avg ${f.market}: $${avgRates[field].toFixed(2)}/LF`:'';
@@ -679,43 +758,63 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div style={{gridColumn:'1/-1'}}>{fLbl('Notes')}<textarea value={f.notes} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
       </div>}
       {sec==='fence'&&<div>
-        <div style={{marginBottom:16}}>{fLbl('Fence Type')}<select value={f.fence_type} onChange={e=>set('fence_type',e.target.value)} style={inputS}>{['PC','SW','WI','PC/SW','PC/WI','PC/Columns','PC/Gates','SW/Columns','SW/Gate','SW/WI','WI/Gate','PC/SW/Columns','LABOR','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-        {showPC&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#8B2020',marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('LF - Precast')}<input type="number" value={f.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_precast} onChange={e=>set('height_precast',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Style')}<select value={f.style||''} onChange={e=>set('style',e.target.value)} style={inputS}><option value="">— Select —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>
-          <div>{fLbl('Color')}<input value={f.color} onChange={e=>set('color',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_precast} onChange={e=>set('contract_rate_precast',e.target.value)} placeholder={rateHint('contract_rate_precast')} style={inputS}/></div>
-        </div></div>}
-        {showSW&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#1D4ED8',marginBottom:8,padding:'6px 10px',background:'#DBEAFE',borderRadius:6}}>SINGLE WYTHE</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('LF - Single Wythe')}<input type="number" value={f.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_single_wythe} onChange={e=>set('height_single_wythe',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Style')}<input value={f.style_single_wythe} onChange={e=>set('style_single_wythe',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_single_wythe} onChange={e=>set('contract_rate_single_wythe',e.target.value)} placeholder={rateHint('contract_rate_single_wythe')} style={inputS}/></div>
-        </div></div>}
-        {showWI&&<div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6D28D9',marginBottom:8,padding:'6px 10px',background:'#EDE9FE',borderRadius:6}}>WROUGHT IRON</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('LF - Wrought Iron')}<input type="number" value={f.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_wrought_iron} onChange={e=>set('height_wrought_iron',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_wrought_iron} onChange={e=>set('contract_rate_wrought_iron',e.target.value)} placeholder={rateHint('contract_rate_wrought_iron')} style={inputS}/></div>
-        </div></div>}
-        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>REMOVAL</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('LF - Removal')}<input type="number" value={f.lf_removal} onChange={e=>set('lf_removal',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Height (ft)')}<input type="number" value={f.height_removal} onChange={e=>set('height_removal',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Material Type')}<input value={f.removal_material_type} onChange={e=>set('removal_material_type',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate ($/LF)')}<input type="number" value={f.contract_rate_removal} onChange={e=>set('contract_rate_removal',e.target.value)} style={inputS}/></div>
-        </div></div>
-        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>GATES</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('# of Gates')}<input type="number" value={f.number_of_gates} onChange={e=>set('number_of_gates',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Gate Height (ft)')}<input type="number" value={f.gate_height} onChange={e=>set('gate_height',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Gate Description')}<input value={f.gate_description} onChange={e=>set('gate_description',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Gate Rate ($)')}<input type="number" value={f.gate_rate} onChange={e=>set('gate_rate',e.target.value)} placeholder={rateHint('gate_rate')} style={inputS}/></div>
-        </div></div>
-        <div style={{marginBottom:20}}><div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>LUMP SUM / OTHER</div><div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
-          <div>{fLbl('Lump Sum Amount')}<input type="number" value={f.lump_sum_amount} onChange={e=>set('lump_sum_amount',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Lump Sum Description')}<input value={f.lump_sum_description} onChange={e=>set('lump_sum_description',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('LF - Other')}<input type="number" value={f.lf_other} onChange={e=>set('lf_other',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('Rate - Other ($/LF)')}<input type="number" value={f.contract_rate_other} onChange={e=>set('contract_rate_other',e.target.value)} style={inputS}/></div>
-        </div></div>
+        <div style={{marginBottom:14,fontSize:12,color:'#6B6056'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
+        {f.lineItems.map((li,idx)=>{
+          const sub=lineSubtotal(li);
+          const u=(k,v)=>updateLineItem(idx,k,v);
+          const lt=li.line_type;
+          const isLFType=['Precast','Single Wythe','Wrought Iron','Wood','Removal'].includes(lt);
+          return<div key={idx} style={{background:'#FAFAFA',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,background:'#FDF4F4',padding:'3px 8px',borderRadius:4,border:'1px solid #8B202030'}}>Line {idx+1}</span>
+                <select value={lt} onChange={e=>u('line_type',e.target.value)} style={{...inputS,width:200,fontWeight:700,fontSize:13}}>
+                  {LINE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#8B2020'}}>{$(sub)}</span>
+                {f.lineItems.length>1&&<button onClick={()=>removeLineItem(idx)} style={{background:'none',border:'1px solid #DC2626',borderRadius:6,padding:'4px 10px',color:'#DC2626',fontSize:11,fontWeight:700,cursor:'pointer'}}>× Remove</button>}
+              </div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
+              {(lt==='Precast'||lt==='Single Wythe')&&<>
+                <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>
+                <div>{fLbl('Color')}<input value={li.color} onChange={e=>u('color',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Precast'?rateHint('contract_rate_precast'):rateHint('contract_rate_single_wythe')} style={inputS}/></div>
+              </>}
+              {(lt==='Wrought Iron'||lt==='Wood')&&<>
+                <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Style')}<input value={li.style} onChange={e=>u('style',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Wrought Iron'?rateHint('contract_rate_wrought_iron'):''} style={inputS}/></div>
+              </>}
+              {lt==='Gate'&&<>
+                <div>{fLbl('Quantity')}<input type="number" value={li.quantity} onChange={e=>u('quantity',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Gate Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Gate Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Rate ($) each')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={rateHint('gate_rate')} style={inputS}/></div>
+              </>}
+              {lt==='Removal'&&<>
+                <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Material Type')}<input value={li.material_type} onChange={e=>u('material_type',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} style={inputS}/></div>
+              </>}
+              {lt==='Lump Sum / Other'&&<>
+                <div>{fLbl('Amount ($)')}<input type="number" value={li.amount} onChange={e=>u('amount',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('LF (optional)')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Rate ($/LF) (optional)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} style={inputS}/></div>
+              </>}
+            </div>
+            {isLFType&&n(li.lf)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#6B6056'}}>{n(li.lf).toLocaleString()} LF × ${n(li.rate)}/LF = <b style={{color:'#8B2020'}}>{$(sub)}</b></div>}
+            {lt==='Gate'&&n(li.quantity)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#6B6056'}}>{n(li.quantity)} × {$(n(li.rate))} = <b style={{color:'#8B2020'}}>{$(sub)}</b></div>}
+          </div>;
+        })}
+        <button onClick={addLineItem} style={{width:'100%',padding:'12px',border:'1px dashed #8B2020',background:'#FDF4F4',color:'#8B2020',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',marginTop:6}}>+ Add Line Item</button>
       </div>}
       {sec==='contract'&&<div>
         <div style={{display:'grid',gridTemplateColumns:grd,gap:12,marginBottom:20}}>
@@ -749,7 +848,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',f.fence_type],['Total LF',totalLF.toLocaleString()],['Gates',f.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
+          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',derivedFenceType],['Line Items',f.lineItems.length],['Total LF',totalLF.toLocaleString()],['Gates',lineAgg.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
             {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
           </div>)}
@@ -5388,7 +5487,7 @@ export default function App(){
   useEffect(()=>{fetchJobs();},[fetchJobs]);
   // Global refresh — fetches the main jobs list AND increments refreshKey so pages with internal fetches can re-run them.
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
-  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:s.style_name}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
+  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:STYLE_LABEL(s.style_name)}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
   const live=useRealtime(setJobs);
   const isMobile=typeof window!=='undefined'&&window.innerWidth<768;
   const sideW=sideCollapsed||isMobile?48:220;
