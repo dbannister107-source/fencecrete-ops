@@ -6054,20 +6054,35 @@ function ChatWidget({currentPage}){
     setSending(true);
     setErr(null);
     try{
-      const res=await fetch(`${SB}/functions/v1/chat-assistant`,{
+      const url=`${SB}/functions/v1/chat-assistant`;
+      const payload={messages:nextMessages,currentPage:currentPage||'dashboard'};
+      console.log('[ChatWidget] POST',url);
+      console.log('[ChatWidget] request body',payload);
+      const res=await fetch(url,{
         method:'POST',
         headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({messages:nextMessages,currentPage:currentPage||'dashboard'})
+        body:JSON.stringify(payload)
       });
-      const data=await res.json().catch(()=>({}));
-      if(!res.ok){throw new Error(data?.error||`Request failed (${res.status})`);}
-      const reply=(data?.text||'').trim();
-      if(!reply)throw new Error('Empty response from assistant');
-      setMessages(m=>[...m,{role:'assistant',content:reply}]);
+      const rawText=await res.text();
+      console.log('[ChatWidget] raw response',res.status,rawText);
+      let data={};
+      try{data=rawText?JSON.parse(rawText):{};}catch(parseErr){
+        console.error('[ChatWidget] JSON parse failed:',parseErr);
+        throw new Error(`Invalid JSON response: ${rawText.slice(0,120)}`);
+      }
+      console.log('[ChatWidget] parsed data',data);
+      // Edge function now always returns 200 — check for `message` field first regardless of status.
+      // Only treat as failure if no `message` is present.
+      const reply=(data?.message||data?.text||'').trim();
+      if(reply){
+        setMessages(m=>[...m,{role:'assistant',content:reply}]);
+      }else{
+        const errMsg=data?.error||data?.details||`Empty response (status ${res.status})`;
+        throw new Error(errMsg);
+      }
     }catch(e){
       console.error('[ChatWidget] send failed:',e);
-      setErr("Sorry, I couldn't connect. Try again.");
-      // Roll back the user message? No — keep it visible so they can see what they asked and retry
+      setErr(`Sorry, I couldn't connect: ${e.message||'unknown error'}`);
     }
     setSending(false);
   };

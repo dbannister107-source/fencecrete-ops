@@ -120,14 +120,15 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const text = Array.isArray(data?.content) && data.content[0]?.text ? data.content[0].text : '';
-    return new Response(JSON.stringify({ text }), {
+    const message = Array.isArray(data?.content) && data.content[0]?.text ? data.content[0].text : '';
+    // Always return 200; frontend decides success by presence of `message`
+    return new Response(JSON.stringify({ message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
+    return new Response(JSON.stringify({ error: 'Edge function threw', details: msg }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
