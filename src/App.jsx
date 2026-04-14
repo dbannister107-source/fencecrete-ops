@@ -1807,31 +1807,6 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const[batchSubmitting,setBatchSubmitting]=useState(false);
   const[confirmReset,setConfirmReset]=useState(null);
   const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
-  // Accent/add-ons filter — when true, only show jobs with at least one non-zero accent field
-  const[hasAddOnsFilter,setHasAddOnsFilter]=useState(false);
-  // Inline YTD Invoiced editing state
-  const[ytdEditId,setYtdEditId]=useState(null);
-  const[ytdEditVal,setYtdEditVal]=useState('');
-  const startYtdEdit=(j)=>{setYtdEditId(j.id);setYtdEditVal(String(n(j.ytd_invoiced)||''));};
-  const saveYtdEdit=async(j)=>{
-    const ytd=n(ytdEditVal);
-    const adj=n(j.adj_contract_value||j.contract_value);
-    const u={ytd_invoiced:ytd,pct_billed:adj>0?Math.round(ytd/adj*10000)/10000:0,left_to_bill:adj-ytd,last_billed:new Date().toISOString().split('T')[0]};
-    try{
-      await sbPatch('jobs',j.id,u);
-      try{fireAlert('billing_logged',{...j,...u});}catch(e){}
-      setYtdEditId(null);
-      setYtdEditVal('');
-      setToast(`YTD updated for ${j.job_name}`);
-      if(onRefresh)onRefresh();
-    }catch(e){setToast({message:e.message||'YTD save failed',isError:true});}
-  };
-  // % Billed color coding: green ≥75%, amber 50–75%, red <50%
-  const pctBilledColor=(p)=>{const v=n(p);if(v>=0.75)return'#065F46';if(v>=0.5)return'#B45309';return'#991B1B';};
-  // Per-job accent helpers
-  const gateValueOf=(j)=>n(j.number_of_gates)*n(j.gate_rate);
-  const hasAnyAddOn=(j)=>n(j.lf_single_wythe)>0||n(j.lf_wrought_iron)>0||n(j.number_of_gates)>0||gateValueOf(j)>0||n(j.lf_removal)>0||n(j.lump_sum_amount)>0||((j.lump_sum_description||'').trim().length>0);
-  const truncDesc=(s,lim=30)=>{if(!s)return'';const t=String(s);return t.length>lim?t.slice(0,lim)+'…':t;};
 
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
   const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
@@ -1852,11 +1827,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const totalLFSubmitted=useMemo(()=>(subs||[]).reduce((s,x)=>s+n(x.total_lf),0),[subs]);
 
   const getStatus=(j)=>{const s=subByJob[j.id];if(!s)return'missing';if(s.ar_reviewed)return'reviewed';return'submitted';};
-  const filteredJobs=useMemo(()=>{
-    let f=filterTab==='all'?activeJobs:activeJobs.filter(j=>getStatus(j)===filterTab);
-    if(hasAddOnsFilter)f=f.filter(hasAnyAddOn);
-    return f;
-  },[activeJobs,filterTab,subByJob,hasAddOnsFilter]);// eslint-disable-line
+  const filteredJobs=useMemo(()=>{if(filterTab==='all')return activeJobs;return activeJobs.filter(j=>getStatus(j)===filterTab);},[activeJobs,filterTab,subByJob]);
 
   const getForm=(jobId)=>forms[jobId]||emptyForm();
   const updateForm=(jobId,field,val)=>setForms(prev=>({...prev,[jobId]:{...(prev[jobId]||emptyForm()),[field]:val}}));
@@ -1869,25 +1840,6 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
 
   const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload=buildPayload(job,form);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Submitted: ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));setEditingRow(null);setExpandedRow(null);}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
 
-  // CSV export — billing columns first, accent columns second
-  const exportPMBillCSV=()=>{
-    const headers=['Job #','Job Name','Customer','Market','PM','Status','Contract Value','Adj Contract Value','YTD Invoiced','% Billed','Left to Bill','Last Billed','Bill Date','Bill Sheet Status','PC LF','SW LF','WI LF','# Gates','Gate Value','Removal LF','Lump Sum','Lump Sum Desc'];
-    const csvEscape=v=>{if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
-    const rows=filteredJobs.map(j=>{
-      const billStatus=getStatus(j);
-      const gv=gateValueOf(j);
-      return[
-        j.job_number||'',j.job_name||'',j.customer_name||'',j.market||'',j.pm||'',SL[j.status]||j.status||'',
-        n(j.contract_value)||0,n(j.adj_contract_value)||0,n(j.ytd_invoiced)||0,
-        j.pct_billed!=null?Math.round(n(j.pct_billed)*100)+'%':'',n(j.left_to_bill)||0,
-        j.last_billed||'',j.billing_date||'',billStatus==='reviewed'?'Reviewed':billStatus==='submitted'?'Submitted':'Missing',
-        lfPC(j)||0,n(j.lf_single_wythe)||0,n(j.lf_wrought_iron)||0,n(j.number_of_gates)||0,gv||0,n(j.lf_removal)||0,n(j.lump_sum_amount)||0,j.lump_sum_description||''
-      ];
-    });
-    const csv=[headers.map(csvEscape).join(','),...rows.map(r=>r.map(csvEscape).join(','))].join('\n');
-    const b=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`pm-bill-sheet-${selMonth}.csv`;a.click();
-  };
   const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
   const toggleSelect=(jobId)=>setSelected(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
   const toggleSelectAll=()=>{if(selected.size===missingJobs.length)setSelected(new Set());else setSelected(new Set(missingJobs.map(j=>j.id)));};
@@ -1927,85 +1879,43 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       </div>
       <div style={{height:8,background:'#E5E3E0',borderRadius:8,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:8,transition:'width .4s ease'}}/></div>
     </div>
-    {/* Filter tabs + Add-ons toggle + CSV export */}
-    <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
-      {filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
-      <span style={{width:1,height:24,background:'#E5E3E0',margin:'0 4px'}}/>
-      <button onClick={()=>setHasAddOnsFilter(v=>!v)} title="Only show jobs with at least one non-zero accent/add-on value" style={{padding:'7px 14px',borderRadius:8,border:hasAddOnsFilter?'2px solid #8B2020':'1px solid #E5E3E0',background:hasAddOnsFilter?'#FDF4F4':'#FFF',color:hasAddOnsFilter?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{hasAddOnsFilter?'✓ ':''}Has Add-Ons</button>
-      <button onClick={exportPMBillCSV} title="Export visible rows to CSV" style={{marginLeft:'auto',padding:'7px 14px',borderRadius:8,border:'1px solid #E5E3E0',background:'#FFF',color:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>⬇ Export CSV</button>
-    </div>
+    {/* Filter tabs */}
+    <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>{filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}</div>
     {/* Batch submit for Missing tab */}
     {filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
       <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#6B6056',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8B2020'}}/>Select all missing jobs</label>
       {selected.size>0&&<button onClick={()=>setShowBatchConfirm(true)} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309'}}>Submit {selected.size} as $0 / No Activity</button>}
     </div>}
-    {/* Job list — table with primary billing columns + accent/add-ons secondary group */}
-    {filteredJobs.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No jobs in this filter</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 320px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:2400}}>
-        <thead>
-          {/* Row 1: group headers — 14 billing columns, then 8 accent columns */}
-          <tr style={{background:'#F9F8F6'}}>
-            <th colSpan={6} style={{borderBottom:'1px solid #E5E3E0',padding:'6px 4px',fontSize:9,fontWeight:800,color:'#6B6056',background:'#F4F4F2',textAlign:'center',textTransform:'uppercase',letterSpacing:0.5}}>Job Info</th>
-            <th colSpan={5} style={{borderBottom:'1px solid #E5E3E0',padding:'6px 4px',fontSize:9,fontWeight:800,color:'#8B2020',background:'#FDF4F4',textAlign:'center',textTransform:'uppercase',letterSpacing:0.5}}>Billing</th>
-            <th colSpan={3} style={{borderBottom:'1px solid #E5E3E0',padding:'6px 4px',fontSize:9,fontWeight:800,color:'#1D4ED8',background:'#DBEAFE',textAlign:'center',textTransform:'uppercase',letterSpacing:0.5}}>Bill Sheet</th>
-            <th colSpan={8} style={{borderBottom:'1px solid #E5E3E0',padding:'6px 4px',fontSize:9,fontWeight:800,color:'#065F46',background:'#D1FAE5',textAlign:'center',textTransform:'uppercase',letterSpacing:0.5}}>Accent / Add-Ons</th>
-          </tr>
-          {/* Row 2: individual column headers */}
-          <tr style={{background:'#F9F8F6',position:'sticky',top:0,zIndex:1}}>
-            {[
-              ['Job #',90],['Job Name',220],['Customer',160],['Market',90],['PM',110],['Status',100],
-              ['Contract',100],['Adj Contract',100],['YTD Invoiced',110],['% Billed',80],['Left to Bill',100],
-              ['Last Billed',100],['Bill Date',90],['Bill Sheet',130],
-              ['PC LF',70],['SW LF',70],['WI LF',70],['# Gates',70],['Gate Value',90],['Removal LF',80],['Lump Sum',90],['Lump Sum Desc',160]
-            ].map(([h,w])=><th key={h} style={{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap',minWidth:w}}>{h}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-        {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const rowBg=status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const statusColor=status==='reviewed'?'#1D4ED8':status==='submitted'?'#065F46':'#991B1B';const statusLabel=status==='reviewed'?'Reviewed':status==='submitted'?'Submitted':'Missing';
-          const gv=gateValueOf(j);const adjCV=n(j.adj_contract_value)||n(j.contract_value);const ltb=n(j.left_to_bill)||0;
-          const td={padding:'8px 10px',borderBottom:'1px solid #F4F4F2',fontSize:11,verticalAlign:'middle',whiteSpace:'nowrap'};
-          const tdDim={...td,color:'#9E9B96'};
-          const tdNum={...td,fontFamily:'Inter',fontWeight:600,textAlign:'right'};
-          const onRowClick=()=>{if(status!=='reviewed')expandRow(j.id);};
-          return<React.Fragment key={j.id}>
-            <tr onClick={onRowClick} style={{background:rowBg,cursor:status==='reviewed'?'default':'pointer'}} onMouseEnter={e=>{if(status!=='reviewed')e.currentTarget.style.background='#FDF9F6';}} onMouseLeave={e=>{e.currentTarget.style.background=rowBg;}}>
-              {/* JOB INFO — 6 columns */}
-              <td style={{...td,fontFamily:'Inter',color:'#6B6056'}}>{j.job_number||'—'}</td>
-              <td style={{...td,fontWeight:700,color:'#1A1A1A',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis'}}>{j.job_name}</td>
-              <td style={{...td,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'}}>{j.customer_name||'—'}</td>
-              <td style={td}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
-              <td style={td}>{j.pm||'—'}</td>
-              <td style={td}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SL[j.status]||j.status||'—'}</span></td>
-              {/* BILLING — 5 columns */}
-              <td style={tdNum}>{n(j.contract_value)>0?$(j.contract_value):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={{...tdNum,color:'#8B2020',fontWeight:800}}>{adjCV>0?$(adjCV):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={{...tdNum,color:'#065F46',cursor:'pointer',background:'#F0FDF4'}} onClick={e=>{e.stopPropagation();if(ytdEditId!==j.id)startYtdEdit(j);}} title="Click to edit YTD Invoiced">
-                {ytdEditId===j.id
-                  ?<input autoFocus type="number" value={ytdEditVal} onClick={e=>e.stopPropagation()} onChange={e=>setYtdEditVal(e.target.value)} onBlur={()=>saveYtdEdit(j)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();saveYtdEdit(j);}if(e.key==='Escape'){setYtdEditId(null);setYtdEditVal('');}}} style={{width:100,padding:'4px 6px',fontSize:11,fontWeight:700,border:'1px solid #8B2020',borderRadius:4,textAlign:'right',fontFamily:'Inter'}}/>
-                  :(n(j.ytd_invoiced)>0?$(j.ytd_invoiced):<span style={{color:'#9E9B96',fontWeight:400}}>— click to edit</span>)}
-              </td>
-              <td style={{...tdNum,color:pctBilledColor(j.pct_billed),fontWeight:800}}>{j.pct_billed!=null?fmtPct(j.pct_billed):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={{...tdNum,color:ltb>100000?'#991B1B':ltb>50000?'#B45309':'#1A1A1A'}}>{ltb>0?$(ltb):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              {/* BILL SHEET — 3 columns */}
-              <td style={td}>{j.last_billed?fD(j.last_billed):<span style={{color:'#9E9B96'}}>—</span>}</td>
-              <td style={td}>{j.billing_date?<span style={{fontWeight:700,color:'#1D4ED8',background:'#DBEAFE',padding:'2px 8px',borderRadius:4,fontSize:10}}>{j.billing_date}</span>:<span style={{color:'#9E9B96'}}>—</span>}</td>
-              <td style={td}>
-                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'nowrap'}}>
-                  <span style={{display:'inline-block',padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700,background:status==='reviewed'?'#DBEAFE':status==='submitted'?'#D1FAE5':'#FEE2E2',color:statusColor}}>{statusLabel}{status==='submitted'&&subDate?` ${subDate}`:''}</span>
-                  {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'3px 10px',fontSize:10}}>Submit</button>}
-                </div>
-              </td>
-              {/* ACCENT / ADD-ONS — 8 columns */}
-              <td style={{...tdNum,background:'#ECFDF5',color:'#065F46',fontWeight:700}}>{lfPC(j)>0?lfPC(j).toLocaleString():'—'}</td>
-              <td style={tdNum}>{n(j.lf_single_wythe)>0?n(j.lf_single_wythe).toLocaleString():<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={tdNum}>{n(j.lf_wrought_iron)>0?n(j.lf_wrought_iron).toLocaleString():<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={tdNum}>{n(j.number_of_gates)>0?n(j.number_of_gates).toLocaleString():<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={tdNum}>{gv>0?$(gv):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={tdNum}>{n(j.lf_removal)>0?n(j.lf_removal).toLocaleString():<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={tdNum}>{n(j.lump_sum_amount)>0?$(j.lump_sum_amount):<span style={{color:'#9E9B96',fontWeight:400}}>—</span>}</td>
-              <td style={{...td,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',color:j.lump_sum_description?'#1A1A1A':'#9E9B96'}} title={j.lump_sum_description||''}>{j.lump_sum_description?truncDesc(j.lump_sum_description):'—'}</td>
-            </tr>
-            {isExp&&status!=='reviewed'&&<tr><td colSpan={22} style={{padding:'12px 14px',background:'#FFF',borderBottom:'1px solid #E5E3E0',borderLeft:`3px solid ${status==='submitted'?'#10B981':'#EF4444'}`}}>
+    {/* Job list — compact rows */}
+    {filteredJobs.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No jobs in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:6}}>
+      {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const rowBg=status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const borderColor=status==='reviewed'?'#3B82F6':status==='submitted'?'#10B981':'#EF4444';const icon=status==='reviewed'?'✅':status==='submitted'?'✓':'✗';const iconColor=status==='reviewed'?'#1D4ED8':status==='submitted'?'#10B981':'#EF4444';
+        return<div key={j.id} style={{background:rowBg,borderLeft:`3px solid ${borderColor}`,borderRadius:6,border:'1px solid #E5E3E0',overflow:'hidden'}}>
+          {/* Compact row */}
+          <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:48}}>
+            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,accentColor:'#8B2020'}}/>}
+            <span style={{fontSize:16,color:iconColor,fontWeight:700,width:18,textAlign:'center'}}>{icon}</span>
+            <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
+            <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
+            <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
+            <span title="Adjusted Contract Value (contract + approved COs)" style={{fontSize:11,fontWeight:700,color:'#8B2020',background:'#FDF4F4',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>Contract: {$(n(j.adj_contract_value)||n(j.contract_value))}</span>
+            <span title="Total approved change orders" style={{fontSize:11,fontWeight:700,color:pmApprovedCOByJob[j.id]>0?'#065F46':'#9E9B96',background:pmApprovedCOByJob[j.id]>0?'#D1FAE5':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>COs: {pmApprovedCOByJob[j.id]>0?$(pmApprovedCOByJob[j.id]):'—'}</span>
+            <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
+              {j.style&&<span>{j.style}</span>}
+              {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
+              {lfPC(j)>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'1px 6px',borderRadius:4,fontWeight:700}}>{lfPC(j).toLocaleString()} PC</span>}
+              {lfSW(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfSW(j).toLocaleString()} SW</span>}
+              {lfWI(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfWI(j).toLocaleString()} WI</span>}
+              {lfGates(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfGates(j)} gates</span>}
+              {lfTotal(j)>0&&<span style={{fontWeight:700,color:'#1A1A1A'}}>{lfTotal(j).toLocaleString()} Total LF</span>}
+            </span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button>}
+              {status==='submitted'&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
+              {status==='reviewed'&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>}
+            </div>
+          </div>
+          {/* Expanded inline form */}
+          {isExp&&status!=='reviewed'&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#FFF'}}>
             {(pmLineItemsByJob[j.job_number]||[]).length>0&&(()=>{const lis=pmLineItemsByJob[j.job_number];const lineTotal=lis.reduce((s,x)=>s+n(x.line_value),0);const contractTotal=lineTotal+n(j.lump_sum_amount)+n(j.change_orders);return<div style={{marginBottom:10,padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Contract Line Items ({lis.length})</div><div style={{display:'flex',flexDirection:'column',gap:3,marginBottom:6}}>{lis.map(li=><div key={li.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#1A1A1A'}}><span>#{li.line_number} · <b>{li.fence_type}</b> · {n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`} {li.style||''} {li.color?'· '+li.color:''}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</span></div>)}</div><div style={{borderTop:'1px solid #E5E3E0',paddingTop:6,display:'flex',flexDirection:'column',gap:2,fontSize:11}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Line items subtotal</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(lineTotal)}</span></div>{n(j.lump_sum_amount)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Lump sum</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.lump_sum_amount)}</span></div>}{n(j.change_orders)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Change orders</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</span></div>}<div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:4,marginTop:2}}><span style={{fontWeight:700,color:'#8B2020'}}>Total contract value</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{$(contractTotal)}</span></div></div></div>;})()}
             {status==='submitted'&&!isEditing?<>
               {renderLFReadOnly(sub)}
@@ -2024,17 +1934,13 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
               <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
               <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'8px 0',fontSize:13,opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
             </>}
-            </td></tr>}
-            {status==='reviewed'&&<tr><td colSpan={22} style={{padding:'6px 14px',borderBottom:'1px solid #BFDBFE',background:'#EFF6FF',fontSize:11,color:'#1D4ED8'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <span>Reviewed by AR{sub.ar_reviewed_by?' — '+sub.ar_reviewed_by:''}</span>
-                <button onClick={()=>{setAdminPinJob(j);setAdminPin('');setAdminPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button>
-              </div>
-            </td></tr>}
-          </React.Fragment>;
-        })}
-        </tbody>
-      </table>
+          </div>}
+          {status==='reviewed'&&<div style={{padding:'8px 14px',borderTop:'1px solid #BFDBFE',background:'#EFF6FF',fontSize:11,color:'#1D4ED8',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>Reviewed by AR{sub.ar_reviewed_by?' — '+sub.ar_reviewed_by:''}</span>
+            <button onClick={()=>{setAdminPinJob(j);setAdminPin('');setAdminPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline'}}>Admin Reset</button>
+          </div>}
+        </div>;
+      })}
     </div>}
     {/* Batch confirm modal */}
     {showBatchConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!batchSubmitting&&setShowBatchConfirm(false)}>
