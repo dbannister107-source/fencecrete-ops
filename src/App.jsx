@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
@@ -6909,6 +6909,367 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads}){
   </div>;
 }
 
+/* ═══ PROPOSALS PAGE ═══ */
+function ProposalLeadDetail({lead,onClose,onSaved}){
+  const[f,setF]=useState({
+    company_name:lead.company_name||'',contact_name:lead.contact_name||'',contact_phone:lead.contact_phone||'',contact_email:lead.contact_email||'',
+    project_description:lead.project_description||'',market:lead.market||'',sales_rep:lead.sales_rep||'',source:lead.source||'',
+    estimated_value:lead.estimated_value||'',estimated_lf:lead.estimated_lf||'',fence_type:lead.fence_type||'PC',
+    proposal_value:lead.proposal_value||'',proposal_sent_date:lead.proposal_sent_date||'',win_probability:lead.win_probability==null?50:lead.win_probability,
+    expected_close_date:lead.expected_close_date||'',follow_up_date:lead.follow_up_date||'',notes:lead.notes||'',
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const save=async()=>{
+    setSaving(true);
+    try{
+      const body={...f};
+      ['estimated_value','estimated_lf','proposal_value'].forEach(k=>{body[k]=n(body[k])||null;});
+      body.win_probability=parseInt(body.win_probability)||0;
+      Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
+      body.updated_at=new Date().toISOString();
+      await sbPatch('leads',lead.id,body);
+      toast.success('Lead saved');
+      onSaved&&onSaved();
+    }catch(e){toast.error('Save failed: '+e.message);}
+    setSaving(false);
+  };
+  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+    :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
+    :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
+  </div>);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:480,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div>
+          <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{lead.company_name||'Lead'}</div>
+          <div style={{fontSize:12,color:'#6B6056'}}>Proposal Sent</div>
+        </div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card}}>
+        {fld('Company Name','company_name')}
+        {fld('Contact Name','contact_name')}
+        {fld('Contact Phone','contact_phone')}
+        {fld('Contact Email','contact_email','email')}
+        {fld('Project Description','project_description','textarea')}
+        {fld('Market','market','text',MKTS)}
+        {fld('Sales Rep','sales_rep','text',REPS)}
+        {fld('Fence Type','fence_type','text',['PC','SW','WI','Mixed','Other'])}
+        {fld('Estimated Value ($)','estimated_value','number')}
+        {fld('Estimated LF','estimated_lf','number')}
+        {fld('Proposal Value ($)','proposal_value','number')}
+        {fld('Proposal Sent Date','proposal_sent_date','date')}
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Win Probability ({f.win_probability}%)</div>
+          <input type="range" min={0} max={100} value={f.win_probability} onChange={e=>set('win_probability',+e.target.value)} style={{width:'100%'}}/>
+        </div>
+        {fld('Expected Close Date','expected_close_date','date')}
+        {fld('Follow-up Date','follow_up_date','date')}
+        {fld('Notes','notes','textarea')}
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function ProposalsPage({jobs}){
+  const[leads,setLeads]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[repF,setRepF]=useState(null);
+  const[mktF,setMktF]=useState(null);
+  const[search,setSearch]=useState('');
+  const[detail,setDetail]=useState(null);
+  const[sortKey,setSortKey]=useState('follow_up_date');
+  const[sortDir,setSortDir]=useState('asc');
+  const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','stage=eq.proposal_sent&select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
+  useEffect(()=>{fetchLeads();},[fetchLeads]);
+  const today=new Date().toISOString().slice(0,10);
+  const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
+  const filtered=useMemo(()=>{
+    let f=leads;
+    if(repF)f=f.filter(l=>l.sales_rep===repF);
+    if(mktF)f=f.filter(l=>l.market===mktF);
+    if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
+    return f;
+  },[leads,repF,mktF,search]);
+  const sorted=useMemo(()=>{
+    const arr=[...filtered];
+    const dir=sortDir==='asc'?1:-1;
+    arr.sort((a,b)=>{
+      if(sortKey==='follow_up_date'){
+        const av=a.follow_up_date||'9999-12-31';
+        const bv=b.follow_up_date||'9999-12-31';
+        return av.localeCompare(bv)*dir;
+      }
+      if(sortKey==='weighted'){
+        const av=n(a.estimated_value||a.proposal_value)*(n(a.win_probability)/100);
+        const bv=n(b.estimated_value||b.proposal_value)*(n(b.win_probability)/100);
+        return (av-bv)*dir;
+      }
+      const av=a[sortKey];const bv=b[sortKey];
+      if(typeof av==='number'||typeof bv==='number')return ((n(av))-(n(bv)))*dir;
+      return String(av||'').localeCompare(String(bv||''))*dir;
+    });
+    return arr;
+  },[filtered,sortKey,sortDir]);
+  const kpis=useMemo(()=>{
+    const weighted=leads.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0);
+    const openCount=leads.length;
+    const openTotal=leads.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
+    const avgDays=leads.length?leads.reduce((s,l)=>s+daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at),0)/leads.length:0;
+    return{weighted,openCount,openTotal,avgDays:Math.round(avgDays)};
+  },[leads]);
+  const saveInline=async(id,patch)=>{
+    try{await sbPatch('leads',id,{...patch,updated_at:new Date().toISOString()});setLeads(prev=>prev.map(l=>l.id===id?{...l,...patch}:l));toast.success('Saved');}
+    catch(e){toast.error('Save failed');}
+  };
+  const hdr=(key,label,align='left')=>{const active=sortKey===key;return <th onClick={()=>{if(active)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc');}}} style={{textAlign:align,padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>{label}{active&&<span style={{marginLeft:4,color:'#8B2020'}}>{sortDir==='asc'?'▲':'▼'}</span>}</th>;};
+  const fuCell=(l)=>{
+    if(!l.follow_up_date)return <span style={{color:'#9E9B96',fontStyle:'italic',fontSize:12}}>Not set</span>;
+    const d=l.follow_up_date;
+    if(d<today)return <span style={{color:'#991B1B',fontWeight:700}}>{fD(d)} · overdue</span>;
+    if(d===today)return <span style={{color:'#B45309',fontWeight:800}}>{fD(d)} · today</span>;
+    return <span>{fD(d)}</span>;
+  };
+  return <div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Proposals</h1>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
+      <div style={{...card}}>
+        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Weighted Forecast</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#8B2020',marginTop:4}}>{$k(kpis.weighted)}</div>
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>value × win probability</div>
+      </div>
+      <div style={{...card}}>
+        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Open Proposals</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#1A1A1A',marginTop:4}}>{kpis.openCount}</div>
+        <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{$k(kpis.openTotal)} total value</div>
+      </div>
+      <div style={{...card}}>
+        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Avg Days Outstanding</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:kpis.avgDays>30?'#B45309':'#065F46',marginTop:4}}>{kpis.avgDays}d</div>
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>since proposal sent</div>
+      </div>
+    </div>
+    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
+      <button onClick={()=>setRepF(null)} style={fpill(!repF)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setRepF(r)} style={fpill(repF===r)}>{r}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
+      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+    </div>
+    {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={12}/></div>:
+    sorted.length===0?<div style={{...card}}><EmptyState icon="📋" title="No open proposals" subtitle="Proposals will appear here once leads move into the Proposal Sent stage in the Pipeline."/></div>:
+    <div style={{...card,padding:0,overflow:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',position:'sticky',top:0}}>
+          {hdr('company_name','Customer')}
+          {hdr('project_description','Project')}
+          {hdr('market','Market')}
+          {hdr('sales_rep','Rep')}
+          {hdr('estimated_value','Est. Value','right')}
+          {hdr('estimated_lf','LF','right')}
+          {hdr('proposal_sent_date','Date Sent')}
+          {hdr('follow_up_date','Follow-up')}
+          <th style={{textAlign:'right',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>Days Out</th>
+          {hdr('win_probability','Win %','right')}
+          {hdr('weighted','Weighted','right')}
+        </tr></thead>
+        <tbody>
+          {sorted.map(l=>{
+            const overdue=l.follow_up_date&&l.follow_up_date<today;
+            const weighted=n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100);
+            const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
+            return <tr key={l.id} onClick={()=>setDetail(l)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:overdue?'#FEF3C7':'transparent'}} onMouseEnter={e=>e.currentTarget.style.background=overdue?'#FDE68A':'#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=overdue?'#FEF3C7':'transparent'}>
+              <td style={{padding:'10px 12px',fontWeight:600}}>{l.company_name||'—'}</td>
+              <td style={{padding:'10px 12px',color:'#6B6056',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
+              <td style={{padding:'10px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
+              <td style={{padding:'10px 12px'}}>{l.sales_rep||'—'}</td>
+              <td style={{padding:'10px 12px',fontWeight:700,textAlign:'right',color:'#8B2020'}}>{$k(l.estimated_value||l.proposal_value)}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',color:'#6B6056'}}>{n(l.estimated_lf)?n(l.estimated_lf).toLocaleString():'—'}</td>
+              <td style={{padding:'10px 12px',color:'#6B6056'}}>{fD(l.proposal_sent_date)}</td>
+              <td style={{padding:'10px 12px'}} onClick={e=>e.stopPropagation()}>
+                <input type="date" defaultValue={l.follow_up_date||''} onBlur={e=>{const v=e.target.value||null;if(v!==l.follow_up_date)saveInline(l.id,{follow_up_date:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:140,background:overdue?'#FEF3C7':'#FFF'}}/>
+                <div style={{marginTop:2}}>{fuCell(l)}</div>
+              </td>
+              <td style={{padding:'10px 12px',textAlign:'right',color:days>30?'#B45309':'#6B6056',fontWeight:days>30?700:400}}>{days}d</td>
+              <td style={{padding:'10px 12px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
+                <input type="number" min={0} max={100} defaultValue={l.win_probability==null?50:l.win_probability} onBlur={e=>{const v=Math.max(0,Math.min(100,parseInt(e.target.value)||0));if(v!==l.win_probability)saveInline(l.id,{win_probability:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:60,textAlign:'right'}}/>
+              </td>
+              <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700}}>{$k(weighted)}</td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>}
+    {detail&&<ProposalLeadDetail lead={detail} onClose={()=>setDetail(null)} onSaved={()=>{setDetail(null);fetchLeads();}}/>}
+  </div>;
+}
+
+/* ═══ SALES DASHBOARD PAGE ═══ */
+function SalesDashboardPage({jobs,onNav}){
+  const[leads,setLeads]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
+  useEffect(()=>{fetchLeads();},[fetchLeads]);
+  const today=new Date();
+  const startOfMonth=new Date(today.getFullYear(),today.getMonth(),1).toISOString().slice(0,10);
+  const ninetyDaysAgo=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+  const proposalsOpen=useMemo(()=>leads.filter(l=>l.stage==='proposal_sent'),[leads]);
+  const wonLeads=useMemo(()=>leads.filter(l=>l.stage==='won'),[leads]);
+  const lostLeads=useMemo(()=>leads.filter(l=>l.stage==='lost'),[leads]);
+  const pipelineValue=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),[proposalsOpen]);
+  const weightedForecast=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0),[proposalsOpen]);
+  const recentWon=useMemo(()=>wonLeads.filter(l=>(l.won_date||'')>=ninetyDaysAgo),[wonLeads,ninetyDaysAgo]);
+  const recentLost=useMemo(()=>lostLeads.filter(l=>(l.lost_date||'')>=ninetyDaysAgo),[lostLeads,ninetyDaysAgo]);
+  const winRate=useMemo(()=>{const tot=recentWon.length+recentLost.length;return tot>0?(recentWon.length/tot)*100:0;},[recentWon,recentLost]);
+  const avgDaysToClose=useMemo(()=>{if(wonLeads.length===0)return 0;const spans=wonLeads.filter(l=>l.created_at&&l.won_date).map(l=>Math.floor((new Date(l.won_date).getTime()-new Date(l.created_at).getTime())/86400000));return spans.length?Math.round(spans.reduce((s,x)=>s+x,0)/spans.length):0;},[wonLeads]);
+  const mtd=useMemo(()=>{
+    const proposalsSent=leads.filter(l=>l.proposal_sent_date&&l.proposal_sent_date>=startOfMonth).length;
+    const wonThis=wonLeads.filter(l=>(l.won_date||'')>=startOfMonth);
+    const lostThis=lostLeads.filter(l=>(l.lost_date||'')>=startOfMonth);
+    return{proposalsSent,wonCount:wonThis.length,wonRevenue:wonThis.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),lostCount:lostThis.length,lostValue:lostThis.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0)};
+  },[leads,wonLeads,lostLeads,startOfMonth]);
+  const pipelineByRep=useMemo(()=>{
+    const m={};REPS.forEach(r=>m[r]={rep:r,value:0,count:0});
+    proposalsOpen.forEach(l=>{if(!l.sales_rep||!m[l.sales_rep])return;m[l.sales_rep].value+=n(l.estimated_value||l.proposal_value);m[l.sales_rep].count++;});
+    return Object.values(m).sort((a,b)=>b.value-a.value);
+  },[proposalsOpen]);
+  const pipelineByMarket=useMemo(()=>{
+    const m={};MKTS.forEach(mk=>m[mk]={market:mk,label:MS[mk]||mk,value:0,color:MC[mk]});
+    proposalsOpen.forEach(l=>{if(!l.market||!m[l.market])return;m[l.market].value+=n(l.estimated_value||l.proposal_value);});
+    return Object.values(m).sort((a,b)=>b.value-a.value);
+  },[proposalsOpen]);
+  const monthlyTrend=useMemo(()=>{
+    const months=[];
+    for(let i=5;i>=0;i--){const d=new Date(today.getFullYear(),today.getMonth()-i,1);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;months.push({key,label:d.toLocaleDateString('en-US',{month:'short'}),won:0,lost:0,wonCount:0,lostCount:0});}
+    const byKey={};months.forEach(m=>{byKey[m.key]=m;});
+    wonLeads.forEach(l=>{if(!l.won_date)return;const k=l.won_date.slice(0,7);if(byKey[k]){byKey[k].won+=n(l.estimated_value||l.proposal_value);byKey[k].wonCount++;}});
+    lostLeads.forEach(l=>{if(!l.lost_date)return;const k=l.lost_date.slice(0,7);if(byKey[k]){byKey[k].lost+=n(l.estimated_value||l.proposal_value);byKey[k].lostCount++;}});
+    months.forEach(m=>{const tot=m.wonCount+m.lostCount;m.winRate=tot>0?Math.round((m.wonCount/tot)*100):0;});
+    return months;
+  },[wonLeads,lostLeads]);// eslint-disable-line
+  const lossReasons=useMemo(()=>{
+    const m={};lostLeads.forEach(l=>{if(!l.loss_reason)return;m[l.loss_reason]=(m[l.loss_reason]||0)+1;});
+    return Object.entries(m).map(([name,value])=>({name,value}));
+  },[lostLeads]);
+  const topOpen=useMemo(()=>[...proposalsOpen].sort((a,b)=>n(b.estimated_value||b.proposal_value)-n(a.estimated_value||a.proposal_value)).slice(0,10),[proposalsOpen]);
+  const PIE_COLORS=['#8B2020','#B45309','#1D4ED8','#065F46','#9D174D','#6D28D9','#374151'];
+  const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
+  const kpi=(label,value,sub,color='#1A1A1A')=>(<div style={{...card}}>
+    <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+    <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color,marginTop:4}}>{value}</div>
+    {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
+  </div>);
+  if(loading)return <div><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Sales Dashboard</h1><SkeletonKpis n={4}/><div style={{height:16}}/><SkeletonKpis n={4}/><div style={{height:16}}/><div style={{...card,padding:20}}><Skeleton h={240} r={10}/></div></div>;
+  return <div>
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Sales Dashboard</h1>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
+      {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8B2020')}
+      {kpi('Weighted Forecast',$k(weightedForecast),'value × win probability','#8B2020')}
+      {kpi('Win Rate (90d)',`${winRate.toFixed(0)}%`,`${recentWon.length}W · ${recentLost.length}L`,winRate>=50?'#065F46':winRate>=25?'#B45309':'#991B1B')}
+      {kpi('Avg Days to Close',`${avgDaysToClose}d`,`${wonLeads.length} won leads`,'#1A1A1A')}
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:20}}>
+      {kpi('Proposals Sent MTD',mtd.proposalsSent,'this month','#1D4ED8')}
+      {kpi('Deals Won MTD',mtd.wonCount,'this month','#065F46')}
+      {kpi('Revenue Won MTD',$k(mtd.wonRevenue),`${mtd.wonCount} deals`,'#065F46')}
+      {kpi('Deals Lost MTD',mtd.lostCount,$k(mtd.lostValue),'#991B1B')}
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+      <div style={{...card}}>
+        <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:12}}>Pipeline by Rep</div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={pipelineByRep} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="rep" stroke="#6B6056" fontSize={12} width={70}/>
+            <Tooltip formatter={(v,nm,p)=>[$k(v)+` · ${p.payload.count} deal${p.payload.count===1?'':'s'}`,'Pipeline']}/>
+            <Bar dataKey="value" fill="#8B2020" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#6B6056',fontSize:11}}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{...card}}>
+        <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:12}}>Pipeline by Market</div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={pipelineByMarket} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="label" stroke="#6B6056" fontSize={12} width={70}/>
+            <Tooltip formatter={v=>$k(v)}/>
+            <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#6B6056',fontSize:11}}>
+              {pipelineByMarket.map((entry,i)=><Cell key={i} fill={entry.color}/>)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:12,marginBottom:14}}>
+      <div style={{...card}}>
+        <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:12}}>Monthly Won / Lost (last 6 months)</div>
+        <ResponsiveContainer width="100%" height={260}>
+          <ComposedChart data={monthlyTrend} margin={{top:4,right:16,bottom:4,left:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis dataKey="label" stroke="#6B6056" fontSize={11}/>
+            <YAxis yAxisId="left" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis yAxisId="right" orientation="right" tickFormatter={v=>v+'%'} stroke="#9E9B96" fontSize={11} domain={[0,100]}/>
+            <Tooltip formatter={(v,nm)=>nm==='Win Rate'?v+'%':$k(v)}/>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            <Bar yAxisId="left" dataKey="won" fill="#10B981" name="Won" radius={[4,4,0,0]}/>
+            <Bar yAxisId="left" dataKey="lost" fill="#DC2626" name="Lost" radius={[4,4,0,0]}/>
+            <Line yAxisId="right" type="monotone" dataKey="winRate" stroke="#8B2020" strokeWidth={2} name="Win Rate" dot={{fill:'#8B2020',r:3}}/>
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{...card}}>
+        <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:12}}>Loss Reasons</div>
+        {lostLeads.length<3?<EmptyState compact icon="📊" title="Not enough data" subtitle="Need at least 3 lost leads with a recorded reason to show the breakdown."/>:
+        lossReasons.length===0?<EmptyState compact icon="📊" title="No reasons recorded"/>:
+        <ResponsiveContainer width="100%" height={240}>
+          <PieChart>
+            <Pie data={lossReasons} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={{fontSize:11,fill:'#6B6056'}}>
+              {lossReasons.map((e,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+            </Pie>
+            <Tooltip/>
+            <Legend wrapperStyle={{fontSize:11}}/>
+          </PieChart>
+        </ResponsiveContainer>}
+      </div>
+    </div>
+    <div style={{...card}}>
+      <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span>Top 10 Open Deals</span>
+        {onNav&&<button onClick={()=>onNav('proposals')} style={{...btnS,padding:'4px 10px',fontSize:11}}>View all proposals →</button>}
+      </div>
+      {topOpen.length===0?<EmptyState compact icon="💼" title="No open deals" subtitle="Move leads into Proposal Sent in the Pipeline to track them here."/>:
+      <div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+            {['Customer','Project','Market','Rep','Value','Days Out'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {topOpen.map(l=>{const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);return <tr key={l.id} onClick={()=>onNav&&onNav('proposals')} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <td style={{padding:'8px 12px',fontWeight:600}}>{l.company_name||'—'}</td>
+              <td style={{padding:'8px 12px',color:'#6B6056',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
+              <td style={{padding:'8px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
+              <td style={{padding:'8px 12px'}}>{l.sales_rep||'—'}</td>
+              <td style={{padding:'8px 12px',fontWeight:700,color:'#8B2020'}}>{$k(l.estimated_value||l.proposal_value)}</td>
+              <td style={{padding:'8px 12px',color:days>30?'#B45309':'#6B6056'}}>{days}d</td>
+            </tr>;})}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+  </div>;
+}
+
 const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
@@ -7031,8 +7392,8 @@ export default function App(){
             {page==='help'&&<HelpPage/>}
             {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs}/>}
             {page==='contacts'&&<ContactsPage jobs={jobs}/>}
-            {page==='sales_dashboard'&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Sales Dashboard</div><div style={{fontSize:13,color:'#6B6056'}}>Coming in Session 2.</div></div>}
-            {page==='proposals'&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Proposals</div><div style={{fontSize:13,color:'#6B6056'}}>Coming in Session 2.</div></div>}
+            {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
+            {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
           </>}
         </div>
       </div>
