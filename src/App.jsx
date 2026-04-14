@@ -59,6 +59,16 @@ const fireNewProjectEmail = (j) => {
 const $ = v => '$' + (Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
 const $k = v => { const x=Number(v)||0; return x>=1e6?'$'+(x/1e6).toFixed(1)+'M':x>=1e3?'$'+(x/1e3).toFixed(0)+'K':'$'+x; };
 const n = v => Number(v)||0;
+const downloadCSV = (filename, rows) => {
+  if(!rows||rows.length===0)return;
+  const cols=Object.keys(rows[0]);
+  const esc=(v)=>{if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv=[cols.join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
 const fD = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : '—';
 const fmtPct = v => (!v && v !== 0) ? '—' : `${(parseFloat(v) * 100).toFixed(1)}%`;
 const relT = d => { if(!d) return '—'; const ms=Date.now()-new Date(d).getTime(), m=ms/60000; if(m<60) return `${Math.floor(m)}m ago`; const h=m/60; if(h<24) return `${Math.floor(h)}h ago`; const dy=h/24; if(dy<2) return 'Yesterday'; if(dy<7) return `${Math.floor(dy)}d ago`; return fD(d); };
@@ -2298,6 +2308,18 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
 /* ═══ REPORTS PAGE ═══ */
 function ReportsPage({jobs,onNav,onOpenJob}){
   const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
+  // Sales data — used by Waterfall, Rep Scorecard
+  const[leads,setLeads]=useState([]);
+  useEffect(()=>{sbGet('leads','select=*&order=updated_at.desc').then(d=>setLeads(Array.isArray(d)?d:[])).catch(()=>{});},[]);
+  // Local filters for new reports
+  const[wfMkt,setWfMkt]=useState(null);
+  const[wfPeriod,setWfPeriod]=useState('all');
+  const[repPeriod,setRepPeriod]=useState('90d');
+  const[agingMkt,setAgingMkt]=useState(null);
+  const[agingPm,setAgingPm]=useState(null);
+  const[agingStatus,setAgingStatus]=useState(null);
+  const[expandedPm,setExpandedPm]=useState(null);
+  const[styleMkt,setStyleMkt]=useState(null);
   // Production data (molds + plant config + per-style CY) — fetched once for the production reports
   const[moldInventory,setMoldInventory]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
@@ -2325,11 +2347,20 @@ function ReportsPage({jobs,onNav,onOpenJob}){
   const dailyCapacityFor=(style)=>{const c=canonicalStyle(style);const molds=moldsByCanonical[c]||0;if(!molds)return 0;return Math.floor(molds*12*UTIL_RATE);};
   const sumJobMaterial=(j,group)=>{const keys=PLAN_PIECE_TYPES.filter(pt=>pt.group===group).map(pt=>'material_'+pt.key);return keys.reduce((s,k)=>s+n(j[k]),0);};
 
+  const executiveReports=[
+    {id:'waterfall',title:'Revenue Pipeline Waterfall',desc:'Deal lifecycle from proposal to collected',icon:'💧'},
+    {id:'ltb_pm',title:'Left to Bill by PM',desc:'Unbilled revenue by project manager',icon:'💰'},
+    {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
+  ];
+  const salesReports=[
+    {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
+  ];
   const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
   const productionReports=[
     {id:'prod_backlog',title:'Production Backlog by Style',desc:'LF, panels, CYD, and estimated production days for all queued and in-production jobs grouped by style.'},
     {id:'prod_missing',title:'Jobs Not Ready for Production',desc:'Active jobs missing material calculation, style, or color — blocking them from being added to a production plan.'},
     {id:'prod_outlook',title:'Production Schedule Outlook',desc:'Projected ready date per job vs install start date — flags jobs at risk of missing their install window.'},
+    {id:'prod_demand',title:'Production Demand by Style',desc:'Precast LF in pipeline by fence style and status, with data-gap flag.',icon:'📐'},
   ];
   const comingSoonReports=[
     {id:'daily_pva',title:'Daily Planned vs Actual',desc:'Shift-by-shift plan achievement over time'},
@@ -2579,6 +2610,326 @@ function ReportsPage({jobs,onNav,onOpenJob}){
         {rows.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:13}}>No jobs in production queue or in-production with material calculations.</div>}
       </div>;
     }
+    if(activeRpt==='waterfall'){
+      const today=new Date();
+      const startOfMonth=new Date(today.getFullYear(),today.getMonth(),1);
+      const startOfQuarter=new Date(today.getFullYear(),Math.floor(today.getMonth()/3)*3,1);
+      const startOfYear=new Date(today.getFullYear(),0,1);
+      const periodCutoff=wfPeriod==='month'?startOfMonth:wfPeriod==='quarter'?startOfQuarter:wfPeriod==='ytd'?startOfYear:null;
+      const jobsF=active.filter(j=>{if(wfMkt&&j.market!==wfMkt)return false;if(periodCutoff){const d=j.contract_date||j.active_entry_date||j.created_at;if(!d||new Date(d)<periodCutoff)return false;}return true;});
+      const leadsF=leads.filter(l=>{if(wfMkt&&l.market!==wfMkt)return false;if(periodCutoff){const d=l.proposal_sent_date||l.created_at;if(!d||new Date(d)<periodCutoff)return false;}return true;});
+      const proposalLeads=leadsF.filter(l=>l.stage==='proposal_sent');
+      const wonJobs=jobsF.filter(j=>j.status!=='closed'&&j.status!=='canceled');
+      const inProdJobs=wonJobs.filter(j=>['in_production','production_queue','inventory_ready'].includes(j.status));
+      const daysAgo=(d)=>d?Math.floor((Date.now()-new Date(d).getTime())/86400000):0;
+      const mkStage=(label,items,valueFn,ageFn)=>{const vals=items.map(valueFn);const total=vals.reduce((s,v)=>s+v,0);const ages=items.map(ageFn).filter(a=>a>0);return{label,count:items.length,total,avg:items.length?total/items.length:0,avgAge:ages.length?Math.round(ages.reduce((s,a)=>s+a,0)/ages.length):0};};
+      const stages=[
+        {...mkStage('Open Proposals',proposalLeads,l=>n(l.estimated_value||l.proposal_value),l=>daysAgo(l.proposal_sent_date||l.created_at)),color:'#93C5FD'},
+        {...mkStage('Won (Contracted)',wonJobs,j=>n(j.contract_value),j=>daysAgo(j.contract_date||j.created_at)),color:'#60A5FA'},
+        {...mkStage('In Production',inProdJobs,j=>n(j.contract_value),j=>daysAgo(j.active_entry_date||j.contract_date)),color:'#3B82F6'},
+        {label:'Billed (YTD)',count:wonJobs.length,total:wonJobs.reduce((s,j)=>s+n(j.ytd_invoiced),0),avg:wonJobs.length?wonJobs.reduce((s,j)=>s+n(j.ytd_invoiced),0)/wonJobs.length:0,avgAge:0,color:'#10B981'},
+        {label:'Left to Bill',count:wonJobs.length,total:wonJobs.reduce((s,j)=>s+n(j.left_to_bill),0),avg:wonJobs.length?wonJobs.reduce((s,j)=>s+n(j.left_to_bill),0)/wonJobs.length:0,avgAge:0,color:'#065F46'},
+      ];
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Revenue Pipeline Waterfall</div>
+            <div style={{fontSize:12,color:'#6B6056'}}>Deal lifecycle from proposal to collected</div>
+          </div>
+          <button onClick={()=>downloadCSV('waterfall.csv',stages.map(s=>({Stage:s.label,Count:s.count,Total:Math.round(s.total),Avg:Math.round(s.avg),AvgAge:s.avgAge})))} style={btnS}>Export CSV</button>
+        </div>
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>PERIOD:</span>
+          {[{k:'month',l:'This Month'},{k:'quarter',l:'This Quarter'},{k:'ytd',l:'YTD'},{k:'all',l:'All Time'}].map(o=><button key={o.k} onClick={()=>setWfPeriod(o.k)} style={fpill(wfPeriod===o.k)}>{o.l}</button>)}
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:8}}>MKT:</span>
+          <button onClick={()=>setWfMkt(null)} style={fpill(!wfMkt)}>All</button>
+          {MKTS.map(m=><button key={m} onClick={()=>setWfMkt(m)} style={fpill(wfMkt===m)}>{MS[m]}</button>)}
+        </div>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={stages} layout="vertical" margin={{top:4,right:80,bottom:4,left:40}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="label" stroke="#6B6056" fontSize={12} width={140}/>
+            <Tooltip formatter={v=>$(v)}/>
+            <Bar dataKey="total" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#1A1A1A',fontSize:11,fontWeight:700}}>
+              {stages.map((s,i)=><Cell key={i} fill={s.color}/>)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginTop:12}}>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Stage','Count','Total Value','Avg Value','Avg Age'].map(h=><th key={h} style={{textAlign:'left',padding:8,fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{stages.map(s=><tr key={s.label} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:8,fontWeight:600}}><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:s.color,marginRight:8,verticalAlign:'middle'}}/>{s.label}</td>
+            <td style={{padding:8}}>{s.count}</td>
+            <td style={{padding:8,fontFamily:'Inter',fontWeight:700}}>{$(s.total)}</td>
+            <td style={{padding:8}}>{$(s.avg)}</td>
+            <td style={{padding:8}}>{s.avgAge?s.avgAge+'d':'—'}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>;
+    }
+    if(activeRpt==='rep_scorecard'){
+      const cutoffDays=repPeriod==='30d'?30:repPeriod==='90d'?90:repPeriod==='ytd'?(Math.floor((Date.now()-new Date(new Date().getFullYear(),0,1).getTime())/86400000)):999999;
+      const cutoff=new Date(Date.now()-cutoffDays*86400000).toISOString().slice(0,10);
+      const today=new Date().toISOString().slice(0,10);
+      const rows=REPS.map(rep=>{
+        const rLeads=leads.filter(l=>l.sales_rep===rep);
+        const proposalsSent=rLeads.filter(l=>l.proposal_sent_date&&l.proposal_sent_date>=cutoff);
+        const wonIn=rLeads.filter(l=>l.stage==='won'&&(l.won_date||'')>=cutoff);
+        const lostIn=rLeads.filter(l=>l.stage==='lost'&&(l.lost_date||'')>=cutoff);
+        const openPipe=rLeads.filter(l=>l.stage==='proposal_sent');
+        const overdue=openPipe.filter(l=>l.follow_up_date&&l.follow_up_date<today);
+        const totClose=wonIn.length+lostIn.length;
+        const winRate=totClose>0?(wonIn.length/totClose)*100:0;
+        const closeDays=wonIn.filter(l=>l.created_at&&l.won_date).map(l=>Math.floor((new Date(l.won_date).getTime()-new Date(l.created_at).getTime())/86400000));
+        const avgClose=closeDays.length?Math.round(closeDays.reduce((s,d)=>s+d,0)/closeDays.length):0;
+        const weighted=openPipe.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0);
+        return{rep,proposalsSent,wonIn,lostIn,openPipe,overdue,winRate,avgClose,weighted,propVal:proposalsSent.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),wonVal:wonIn.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),lostVal:lostIn.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),pipeVal:openPipe.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0)};
+      });
+      const chartData=[...rows].sort((a,b)=>b.wonVal-a.wonVal).map(r=>({rep:r.rep,won:r.wonVal}));
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Sales Rep Activity Scorecard</div>
+            <div style={{fontSize:12,color:'#6B6056'}}>Performance by rep — {repPeriod==='30d'?'last 30 days':repPeriod==='90d'?'last 90 days':repPeriod==='ytd'?'year to date':'all time'}</div>
+          </div>
+          <button onClick={()=>downloadCSV('rep_scorecard.csv',rows.map(r=>({Rep:r.rep,ProposalsSent:r.proposalsSent.length,ProposalVal:Math.round(r.propVal),Won:r.wonIn.length,WonVal:Math.round(r.wonVal),Lost:r.lostIn.length,LostVal:Math.round(r.lostVal),WinRate:r.winRate.toFixed(0)+'%',AvgClose:r.avgClose,OpenPipe:r.openPipe.length,OpenPipeVal:Math.round(r.pipeVal),Overdue:r.overdue.length,Weighted:Math.round(r.weighted)})))} style={btnS}>Export CSV</button>
+        </div>
+        <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>PERIOD:</span>
+          {[{k:'30d',l:'Last 30 Days'},{k:'90d',l:'Last 90 Days'},{k:'ytd',l:'YTD'},{k:'all',l:'All Time'}].map(o=><button key={o.k} onClick={()=>setRepPeriod(o.k)} style={fpill(repPeriod===o.k)}>{o.l}</button>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:12,marginBottom:16}}>
+          {rows.map(r=>{const wrColor=r.winRate>50?'#065F46':r.winRate>=25?'#B45309':'#991B1B';return <div key={r.rep} style={{...card}}>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#1A1A1A',marginBottom:8}}>{r.rep}</div>
+            <div style={{borderTop:'1px solid #F4F4F2',paddingTop:8,fontSize:12,display:'flex',flexDirection:'column',gap:4}}>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Proposals Sent</span><span><b>{r.proposalsSent.length}</b> <span style={{color:'#9E9B96'}}>({$k(r.propVal)})</span></span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Deals Won</span><span style={{color:'#065F46'}}><b>{r.wonIn.length}</b> ({$k(r.wonVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Deals Lost</span><span style={{color:'#991B1B'}}><b>{r.lostIn.length}</b> ({$k(r.lostVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Win Rate</span><span style={{color:wrColor,fontWeight:800}}>{r.winRate.toFixed(0)}%</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Avg Days to Close</span><span><b>{r.avgClose}d</b></span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Open Pipeline</span><span><b>{r.openPipe.length}</b> ({$k(r.pipeVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Overdue Follow-ups</span><span style={{color:r.overdue.length>0?'#991B1B':'#9E9B96',fontWeight:r.overdue.length>0?800:400}}>{r.overdue.length}</span></div>
+            </div>
+            <div style={{borderTop:'1px solid #F4F4F2',marginTop:8,paddingTop:8,display:'flex',justifyContent:'space-between'}}>
+              <span style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Weighted</span>
+              <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{$k(r.weighted)}</span>
+            </div>
+          </div>;})}
+        </div>
+        <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:8}}>Won Revenue by Rep</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="rep" stroke="#6B6056" fontSize={12} width={70}/>
+            <Tooltip formatter={v=>$(v)}/>
+            <Bar dataKey="won" fill="#065F46" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#6B6056',fontSize:11}}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>;
+    }
+    if(activeRpt==='backlog_aging'){
+      const stageKeys=['contract_review','inventory_ready','in_production','active_install'];
+      const daysInStatus=(j)=>{
+        const field=j.status==='contract_review'?j.contract_date||j.created_at:j.status==='inventory_ready'?j.inventory_ready_date:j.status==='in_production'?j.active_entry_date||j.created_at:j.status==='active_install'?j.active_install_date:null;
+        if(!field)return 0;
+        return Math.floor((Date.now()-new Date(field).getTime())/86400000);
+      };
+      const bucket=(d)=>d<=30?'0-30':d<=60?'31-60':d<=90?'61-90':d<=180?'91-180':'180+';
+      const BKT=['0-30','31-60','61-90','91-180','180+'];
+      const BKT_COLOR={'0-30':'#10B981','31-60':'#F59E0B','61-90':'#FBBF24','91-180':'#F97316','180+':'#DC2626'};
+      const subset=jobs.filter(j=>stageKeys.includes(j.status)).filter(j=>{if(agingMkt&&j.market!==agingMkt)return false;if(agingPm&&j.pm!==agingPm)return false;if(agingStatus&&j.status!==agingStatus)return false;return true;});
+      const chartData=stageKeys.map(s=>{const row={status:SS[s]||s};BKT.forEach(b=>{row[b]=0;});subset.filter(j=>j.status===s).forEach(j=>{row[bucket(daysInStatus(j))]++;});return row;});
+      const tableRows=[...subset].map(j=>({...j,_days:daysInStatus(j)})).sort((a,b)=>b._days-a._days);
+      const stuck=tableRows.filter(j=>j._days>=90).length;
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Backlog Aging</div>
+            <div style={{fontSize:12,color:'#6B6056'}}>How long jobs have been in each status</div>
+          </div>
+          <button onClick={()=>downloadCSV('backlog_aging.csv',tableRows.map(j=>({JobNumber:j.job_number,JobName:j.job_name,Customer:j.customer_name,Market:MS[j.market]||j.market,PM:j.pm,Status:SS[j.status]||j.status,ContractValue:n(j.adj_contract_value||j.contract_value),LF:n(j.total_lf),DaysInStatus:j._days,ContractDate:j.contract_date})))} style={btnS}>Export CSV</button>
+        </div>
+        {stuck>0&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderLeft:'4px solid #991B1B',borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:13,color:'#991B1B',fontWeight:600}}>⚠ {stuck} job{stuck===1?'':'s'} {stuck===1?'has':'have'} been in the same status for 90+ days — review recommended</div>}
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>MKT:</span>
+          <button onClick={()=>setAgingMkt(null)} style={fpill(!agingMkt)}>All</button>
+          {MKTS.map(m=><button key={m} onClick={()=>setAgingMkt(m)} style={fpill(agingMkt===m)}>{MS[m]}</button>)}
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:8}}>PM:</span>
+          <button onClick={()=>setAgingPm(null)} style={fpill(!agingPm)}>All</button>
+          {PM_LIST.map(p=><button key={p.id} onClick={()=>setAgingPm(p.id)} style={fpill(agingPm===p.id)}>{p.short}</button>)}
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:8}}>STATUS:</span>
+          <button onClick={()=>setAgingStatus(null)} style={fpill(!agingStatus)}>All</button>
+          {stageKeys.map(s=><button key={s} onClick={()=>setAgingStatus(s)} style={fpill(agingStatus===s)}>{SS[s]}</button>)}
+        </div>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis dataKey="status" stroke="#6B6056" fontSize={11}/>
+            <YAxis stroke="#9E9B96" fontSize={11} allowDecimals={false}/>
+            <Tooltip/>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            {BKT.map(b=><Bar key={b} dataKey={b} stackId="a" fill={BKT_COLOR[b]} name={`${b} days`}/>)}
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Job #','Job Name','Customer','Market','PM','Status','Contract','LF','Days','Contract Date'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <tbody>{tableRows.map(j=>{const bg=j._days>=180?'#FEF2F2':j._days>=90?'#FEF3C7':'transparent';return <tr key={j.id} onClick={()=>onOpenJob&&onOpenJob(j)} style={{borderBottom:'1px solid #F4F4F2',cursor:onOpenJob?'pointer':'default',background:bg}}>
+              <td style={{padding:'8px 10px'}}>{j.job_number||'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:600,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
+              <td style={{padding:'8px 10px',color:'#6B6056',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.customer_name||'—'}</td>
+              <td style={{padding:'8px 10px'}}>{j.market?<span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>:'—'}</td>
+              <td style={{padding:'8px 10px'}}>{j.pm||'—'}</td>
+              <td style={{padding:'8px 10px'}}><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></td>
+              <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$k(j.adj_contract_value||j.contract_value)}</td>
+              <td style={{padding:'8px 10px'}}>{n(j.total_lf).toLocaleString()}</td>
+              <td style={{padding:'8px 10px',fontWeight:800,color:j._days>=180?'#991B1B':j._days>=90?'#B45309':'#6B6056'}}>{j._days}d</td>
+              <td style={{padding:'8px 10px',color:'#6B6056'}}>{fD(j.contract_date)}</td>
+            </tr>;})}</tbody>
+          </table>
+        </div>
+      </div>;
+    }
+    if(activeRpt==='ltb_pm'){
+      const today=new Date().toISOString().slice(0,10);
+      const daysAgo=(d)=>d?Math.floor((Date.now()-new Date(d).getTime())/86400000):0;
+      const pmGroups={};
+      PM_LIST.forEach(p=>{pmGroups[p.id]={pm:p.id,short:p.short,jobs:[],ltb:0,acv:0,ytd:0,markets:{}};});
+      pmGroups['Unassigned']={pm:'Unassigned',short:'—',jobs:[],ltb:0,acv:0,ytd:0,markets:{}};
+      active.forEach(j=>{const key=pmGroups[j.pm]?j.pm:'Unassigned';const g=pmGroups[key];g.jobs.push(j);g.ltb+=n(j.left_to_bill);g.acv+=n(j.adj_contract_value||j.contract_value);g.ytd+=n(j.ytd_invoiced);const mk=j.market||'Other';g.markets[mk]=(g.markets[mk]||0)+n(j.left_to_bill);});
+      const pmRows=Object.values(pmGroups).filter(g=>g.jobs.length>0).sort((a,b)=>b.ltb-a.ltb);
+      const totalLtb=pmRows.reduce((s,g)=>s+g.ltb,0);
+      const totalAcv=pmRows.reduce((s,g)=>s+g.acv,0);
+      const totalYtd=pmRows.reduce((s,g)=>s+g.ytd,0);
+      const avgPctBilled=totalAcv>0?Math.round((totalYtd/totalAcv)*100):0;
+      const zeroBilled=active.filter(j=>n(j.ytd_invoiced)===0);
+      const largestUnbilled=[...active].sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill))[0];
+      const chartData=pmRows.map(g=>{const row={pm:g.short};MKTS.forEach(m=>{row[MS[m]]=g.markets[m]||0;});return row;});
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Left to Bill by PM</div>
+            <div style={{fontSize:12,color:'#6B6056'}}>Unbilled revenue by project manager</div>
+          </div>
+          <button onClick={()=>downloadCSV('ltb_by_pm.csv',pmRows.map(g=>({PM:g.pm,Jobs:g.jobs.length,ContractValue:Math.round(g.acv),YTDInvoiced:Math.round(g.ytd),LeftToBill:Math.round(g.ltb),PctBilled:g.acv>0?Math.round(g.ytd/g.acv*100)+'%':'0%'})))} style={btnS}>Export CSV</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Left to Bill</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:'#8B2020',marginTop:4}}>{$k(totalLtb)}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Avg % Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,marginTop:4}}>{avgPctBilled}%</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Jobs with 0% Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:zeroBilled.length>10?'#991B1B':'#1A1A1A',marginTop:4}}>{zeroBilled.length}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Largest Unbilled</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700,marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{largestUnbilled?largestUnbilled.job_name:'—'}</div><div style={{fontSize:12,color:'#8B2020',fontWeight:700}}>{largestUnbilled?$k(largestUnbilled.left_to_bill):'—'}</div></div>
+        </div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={chartData} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="pm" stroke="#6B6056" fontSize={12} width={60}/>
+            <Tooltip formatter={v=>$(v)}/>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            {MKTS.map(m=><Bar key={m} dataKey={MS[m]} stackId="a" fill={MC[m]}/>)}
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['','PM','Jobs','Contract','YTD','Left to Bill','% Billed'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <tbody>{pmRows.map(g=>{const pct=g.acv>0?Math.round(g.ytd/g.acv*100):0;const isOpen=expandedPm===g.pm;return <React.Fragment key={g.pm}>
+              <tr onClick={()=>setExpandedPm(isOpen?null:g.pm)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:isOpen?'#FDF4F4':'transparent'}}>
+                <td style={{padding:'10px',width:20,color:'#8B2020'}}>{isOpen?'▾':'▸'}</td>
+                <td style={{padding:'10px',fontWeight:700}}>{g.pm}</td>
+                <td style={{padding:'10px'}}>{g.jobs.length}</td>
+                <td style={{padding:'10px',fontFamily:'Inter',fontWeight:700}}>{$k(g.acv)}</td>
+                <td style={{padding:'10px'}}>{$k(g.ytd)}</td>
+                <td style={{padding:'10px',fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$k(g.ltb)}</td>
+                <td style={{padding:'10px'}}>{pct}%</td>
+              </tr>
+              {isOpen&&<tr><td colSpan={7} style={{padding:'0 10px 10px 30px',background:'#FDFBFB'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead><tr style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10}}>{['Job #','Name','Contract','YTD','% Billed','Left to Bill','Last Billed','Flag'].map(h=><th key={h} style={{textAlign:'left',padding:'4px 8px'}}>{h}</th>)}</tr></thead>
+                  <tbody>{[...g.jobs].sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)).map(j=>{const jpct=n(j.adj_contract_value||j.contract_value)>0?n(j.ytd_invoiced)/n(j.adj_contract_value||j.contract_value):0;const flags=[];if(jpct===0&&j.status==='active_install')flags.push({t:'Active but never billed',c:'#991B1B'});if(jpct>1)flags.push({t:'Overbilled',c:'#991B1B'});if(j.last_billed&&daysAgo(j.last_billed)>60)flags.push({t:'Stale billing',c:'#B45309'});return <tr key={j.id} onClick={e=>{e.stopPropagation();onOpenJob&&onOpenJob(j);}} style={{borderBottom:'1px solid #F4F4F2',cursor:onOpenJob?'pointer':'default'}}>
+                    <td style={{padding:'4px 8px'}}>{j.job_number||'—'}</td>
+                    <td style={{padding:'4px 8px',fontWeight:600,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
+                    <td style={{padding:'4px 8px'}}>{$k(j.adj_contract_value||j.contract_value)}</td>
+                    <td style={{padding:'4px 8px'}}>{$k(j.ytd_invoiced)}</td>
+                    <td style={{padding:'4px 8px'}}>{(jpct*100).toFixed(0)}%</td>
+                    <td style={{padding:'4px 8px',color:'#8B2020',fontWeight:700}}>{$k(j.left_to_bill)}</td>
+                    <td style={{padding:'4px 8px',color:'#6B6056'}}>{fD(j.last_billed)}</td>
+                    <td style={{padding:'4px 8px'}}>{flags.map((f,i)=><div key={i} style={{fontSize:9,color:f.c,fontWeight:700}}>⚠ {f.t}</div>)}</td>
+                  </tr>;})}</tbody>
+                </table>
+              </td></tr>}
+            </React.Fragment>;})}</tbody>
+          </table>
+        </div>
+      </div>;
+    }
+    if(activeRpt==='prod_demand'){
+      const target=active.filter(j=>['contract_review','inventory_ready','in_production','production_queue','active_install'].includes(j.status)).filter(j=>!styleMkt||j.market===styleMkt);
+      const styleMap={};
+      target.forEach(j=>{
+        const st=j.style||'__UNKNOWN__';
+        if(!styleMap[st])styleMap[st]={style:st,contract_review:0,inventory_ready:0,in_production:0,active_install:0,total:0,count:0};
+        const pcLf=n(j.total_lf_precast);
+        if(!pcLf)return;
+        const bucket=j.status==='production_queue'?'in_production':j.status;
+        if(styleMap[st][bucket]!=null){styleMap[st][bucket]+=pcLf;styleMap[st].total+=pcLf;styleMap[st].count++;}
+      });
+      const rows=Object.values(styleMap).sort((a,b)=>b.total-a.total);
+      const unknownLF=styleMap['__UNKNOWN__']?styleMap['__UNKNOWN__'].total:0;
+      const inProdNow=rows.reduce((s,r)=>s+r.in_production,0);
+      const readyToProd=rows.reduce((s,r)=>s+r.inventory_ready,0);
+      const totalPipeLf=rows.reduce((s,r)=>s+r.total,0);
+      const chartData=rows.map(r=>({style:r.style==='__UNKNOWN__'?'(no style)':r.style,'Contract Review':r.contract_review,'Inventory Ready':r.inventory_ready,'In Production':r.in_production,'Active Install':r.active_install}));
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Production Demand by Style</div>
+            <div style={{fontSize:12,color:'#6B6056'}}>Precast LF in pipeline by fence style and status</div>
+          </div>
+          <button onClick={()=>downloadCSV('prod_demand.csv',rows.map(r=>({Style:r.style==='__UNKNOWN__'?'(no style)':r.style,ContractReview:r.contract_review,InventoryReady:r.inventory_ready,InProduction:r.in_production,ActiveInstall:r.active_install,Total:r.total,Jobs:r.count,AvgPerJob:r.count>0?Math.round(r.total/r.count):0})))} style={btnS}>Export CSV</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Pipeline PC LF</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#8B2020',marginTop:4}}>{totalPipeLf.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>In Production Now</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#6D28D9',marginTop:4}}>{inProdNow.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Ready to Produce</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#1D4ED8',marginTop:4}}>{readyToProd.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Unknown Style</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:unknownLF>10000?'#991B1B':'#9E9B96',marginTop:4}}>{unknownLF.toLocaleString()}</div></div>
+        </div>
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>MKT:</span>
+          <button onClick={()=>setStyleMkt(null)} style={fpill(!styleMkt)}>All</button>
+          {MKTS.map(m=><button key={m} onClick={()=>setStyleMkt(m)} style={fpill(styleMkt===m)}>{MS[m]}</button>)}
+        </div>
+        <ResponsiveContainer width="100%" height={Math.max(260,rows.length*28+60)}>
+          <BarChart data={chartData} layout="vertical" margin={{top:4,right:16,bottom:4,left:40}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+            <XAxis type="number" tickFormatter={v=>v.toLocaleString()} stroke="#9E9B96" fontSize={11}/>
+            <YAxis type="category" dataKey="style" stroke="#6B6056" fontSize={11} width={160}/>
+            <Tooltip formatter={v=>v.toLocaleString()+' LF'}/>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            <Bar dataKey="Contract Review" stackId="a" fill="#9CA3AF"/>
+            <Bar dataKey="Inventory Ready" stackId="a" fill="#3B82F6"/>
+            <Bar dataKey="In Production" stackId="a" fill="#8B5CF6"/>
+            <Bar dataKey="Active Install" stackId="a" fill="#10B981"/>
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Style','Contract Review','Inventory Ready','In Production','Active Install','Total LF','Jobs','Avg LF/Job'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <tbody>{rows.map(r=>{const unk=r.style==='__UNKNOWN__';return <tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:unk?'#FEF2F2':'transparent'}}>
+              <td style={{padding:'8px 10px',fontWeight:700,color:unk?'#991B1B':'#1A1A1A'}}>{unk?'(no style — data gap)':r.style}</td>
+              <td style={{padding:'8px 10px'}}>{r.contract_review.toLocaleString()}</td>
+              <td style={{padding:'8px 10px'}}>{r.inventory_ready.toLocaleString()}</td>
+              <td style={{padding:'8px 10px'}}>{r.in_production.toLocaleString()}</td>
+              <td style={{padding:'8px 10px'}}>{r.active_install.toLocaleString()}</td>
+              <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{r.total.toLocaleString()}</td>
+              <td style={{padding:'8px 10px'}}>{r.count}</td>
+              <td style={{padding:'8px 10px'}}>{r.count>0?Math.round(r.total/r.count).toLocaleString():'—'}</td>
+            </tr>;})}</tbody>
+          </table>
+        </div>
+      </div>;
+    }
     return null;
   };
   const fmtLoadedAt=reportsLoadedAt?reportsLoadedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'—';
@@ -2591,6 +2942,14 @@ function ReportsPage({jobs,onNav,onOpenJob}){
   </div>;
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:6}}>Reports</h1>
+    {/* EXECUTIVE */}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>📈 Executive</div>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>{executiveReports.map(renderReportCard)}</div>
+    {/* SALES */}
+    <div style={{fontSize:11,fontWeight:800,color:'#1D4ED8',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>🎯 Sales</div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>{salesReports.map(renderReportCard)}</div>
     {/* PRODUCTION REPORTS */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5}}>🏭 Production</div>
