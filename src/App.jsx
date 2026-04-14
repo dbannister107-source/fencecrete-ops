@@ -6156,6 +6156,502 @@ function HelpPage(){
   </div>);
 }
 
+/* ═══ SALES — PIPELINE & CONTACTS ═══ */
+const LEAD_STAGES=[
+  {key:'new_lead',label:'NEW LEAD',color:'#6B7280',bg:'#F9FAFB',accent:'#F4F4F2'},
+  {key:'qualifying',label:'QUALIFYING',color:'#1D4ED8',bg:'#EFF6FF',accent:'#DBEAFE'},
+  {key:'proposal_sent',label:'PROPOSAL SENT',color:'#B45309',bg:'#FFFBEB',accent:'#FEF3C7'},
+  {key:'won',label:'WON',color:'#065F46',bg:'#ECFDF5',accent:'#D1FAE5'},
+  {key:'lost',label:'LOST',color:'#991B1B',bg:'#FEF2F2',accent:'#FEE2E2'},
+];
+const LOSS_REASONS=['Price','Timing','Relationship','Scope Change','Competitor','Customer Canceled','Other'];
+const LEAD_SOURCES=['Inbound Call','Referral','Website','Bid Invitation','Cold Outreach','Other'];
+const FENCE_TYPES_LEAD=['PC','SW','WI','Mixed','Other'];
+const COMPANY_TYPES=['GC','Developer','MUD','Homeowner','Municipality','Other'];
+
+function LeadCard({lead,onDragStart,onClick}){
+  const mc=MC[lead.market]||'#6B6056';
+  const mb=MB[lead.market]||'#F4F4F2';
+  const stageDate=lead.stage_entered_at||lead.updated_at||lead.created_at;
+  const days=stageDate?Math.floor((Date.now()-new Date(stageDate).getTime())/86400000):0;
+  const today=new Date().toISOString().slice(0,10);
+  const fuOverdue=lead.follow_up_date&&lead.follow_up_date<today;
+  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}>
+    <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
+    {lead.project_description&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+      {n(lead.estimated_value)>0&&<span style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#8B2020'}}>{$k(lead.estimated_value)}</span>}
+      {n(lead.estimated_lf)>0&&<span style={{fontSize:11,color:'#6B6056'}}>{n(lead.estimated_lf).toLocaleString()} LF</span>}
+    </div>
+    <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      {lead.market&&<span style={pill(mc,mb)}>{MS[lead.market]||lead.market}</span>}
+      {lead.sales_rep&&<span style={{fontSize:11,color:'#6B6056'}}>{lead.sales_rep}</span>}
+    </div>
+    <div style={{display:'flex',gap:8,marginTop:6,fontSize:10,color:'#9E9B96',flexWrap:'wrap'}}>
+      <span>{days}d in stage</span>
+      {lead.follow_up_date&&<span style={{color:fuOverdue?'#B45309':'#9E9B96',fontWeight:fuOverdue?700:400}}>F/U {fD(lead.follow_up_date)}</span>}
+      {lead.expected_close_date&&<span>Close {fD(lead.expected_close_date)}</span>}
+    </div>
+  </div>;
+}
+
+function NewLeadForm({onClose,onSaved,contacts}){
+  const[f,setF]=useState({company_name:'',contact_name:'',contact_phone:'',contact_email:'',project_description:'',market:'',sales_rep:'',source:'',estimated_value:'',estimated_lf:'',fence_type:'PC',expected_close_date:'',follow_up_date:'',notes:''});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const companySuggest=useMemo(()=>{if(!f.company_name||f.company_name.length<2)return[];const q=f.company_name.toLowerCase();return(contacts||[]).filter(c=>(c.company||'').toLowerCase().includes(q)).slice(0,5);},[f.company_name,contacts]);
+  const pickCompany=(c)=>{setF(p=>({...p,company_name:c.company||'',contact_name:c.name||p.contact_name,contact_phone:c.phone||p.contact_phone,contact_email:c.email||p.contact_email,market:c.market||p.market}));};
+  const save=async()=>{
+    if(!f.company_name){alert('Company name required');return;}
+    setSaving(true);
+    try{
+      const body={...f,estimated_value:n(f.estimated_value)||null,estimated_lf:n(f.estimated_lf)||null,stage:'new_lead',stage_entered_at:new Date().toISOString()};
+      Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
+      await sbPost('leads',body);
+      onSaved&&onSaved();
+      onClose();
+    }catch(e){alert('Save failed: '+e.message);}
+    setSaving(false);
+  };
+  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    {opts?<select value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+    :type==='textarea'?<textarea value={f[k]} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
+    :<input type={type} value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}/>}
+  </div>);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:440,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>New Lead</div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card}}>
+        <div style={{marginBottom:10,position:'relative'}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Company Name *</div>
+          <input value={f.company_name} onChange={e=>set('company_name',e.target.value)} style={inputS}/>
+          {companySuggest.length>0&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,zIndex:2,maxHeight:150,overflow:'auto'}}>{companySuggest.map(c=><div key={c.id} onClick={()=>pickCompany(c)} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}}>{c.company} — {c.name}</div>)}</div>}
+        </div>
+        {fld('Contact Name','contact_name')}
+        {fld('Contact Phone','contact_phone')}
+        {fld('Contact Email','contact_email','email')}
+        {fld('Project Description','project_description','textarea')}
+        {fld('Market','market','text',MKTS)}
+        {fld('Sales Rep','sales_rep','text',REPS)}
+        {fld('Source','source','text',LEAD_SOURCES)}
+        {fld('Estimated Value ($)','estimated_value','number')}
+        {fld('Estimated LF','estimated_lf','number')}
+        {fld('Fence Type','fence_type','text',FENCE_TYPES_LEAD)}
+        {fld('Expected Close Date','expected_close_date','date')}
+        {fld('Follow-up Date','follow_up_date','date')}
+        {fld('Notes','notes','textarea')}
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Lead'}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function ProposalSentModal({lead,onClose,onSave}){
+  const[v,setV]=useState(lead.proposal_value||lead.estimated_value||'');
+  const[d,setD]=useState(new Date().toISOString().slice(0,10));
+  const[p,setP]=useState(lead.win_probability||50);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:400,maxWidth:'94vw'}}>
+      <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Proposal Sent</div>
+      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{lead.company_name}</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Proposal Value ($)</div><input type="number" value={v} onChange={e=>setV(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Date Sent</div><input type="date" value={d} onChange={e=>setD(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Win Probability ({p}%)</div><input type="range" min={0} max={100} value={p} onChange={e=>setP(+e.target.value)} style={{width:'100%'}}/></div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+        <button onClick={()=>onSave({proposal_value:n(v),proposal_sent_date:d,win_probability:p})} style={{...btnP,flex:2}}>Save</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function LostModal({lead,onClose,onSave}){
+  const[r,setR]=useState('Price');
+  const[notes,setNotes]=useState('');
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:420,maxWidth:'94vw'}}>
+      <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Mark as Lost</div>
+      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{lead.company_name}</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Loss Reason</div><select value={r} onChange={e=>setR(e.target.value)} style={inputS}>{LOSS_REASONS.map(o=><option key={o} value={o}>{o}</option>)}</select></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Loss Notes</div><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...inputS,minHeight:80}}/></div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+        <button onClick={()=>onSave({loss_reason:r,loss_notes:notes})} style={{...btnP,flex:2}}>Save</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function WonModal({lead,onClose,onCreate}){
+  const[customer,setCustomer]=useState(lead.company_name||'');
+  const[jobName,setJobName]=useState(lead.project_description?lead.project_description.slice(0,80):lead.company_name||'');
+  const[market,setMarket]=useState(lead.market||'');
+  const[rep,setRep]=useState(lead.sales_rep||'');
+  const[cv,setCv]=useState(lead.proposal_value||lead.estimated_value||'');
+  const[lf,setLf]=useState(lead.estimated_lf||'');
+  const[residential,setResidential]=useState(false);
+  const[jobNumber,setJobNumber]=useState('');
+  const[creating,setCreating]=useState(false);
+  useEffect(()=>{(async()=>{
+    if(!market){setJobNumber('');return;}
+    if(residential){
+      const yr=new Date().getFullYear().toString().slice(-2);
+      const d=await sbGet('jobs',`job_number=like.${yr}R*&select=job_number&order=job_number.desc&limit=1`);
+      let seq=1;
+      if(d&&d[0]&&d[0].job_number){seq=(parseInt(d[0].job_number.slice(3))||0)+1;}
+      setJobNumber(yr+'R'+String(seq).padStart(3,'0'));
+    }else{
+      setJobNumber(await getNextJobNumber(market));
+    }
+  })();},[market,residential]);
+  const create=async()=>{
+    if(!customer||!jobName||!market||!jobNumber){alert('Customer, Job Name, Market, and Job # required');return;}
+    setCreating(true);
+    try{
+      const pm=AUTO_PM(market,lead.fence_type||'PC');
+      const body={
+        job_number:jobNumber,
+        job_name:jobName,
+        customer_name:customer,
+        market:market,
+        sales_rep:rep,
+        pm:pm,
+        status:'contract_review',
+        job_type:residential?'Residential':'Commercial',
+        fence_type:lead.fence_type||'PC',
+        contract_value:n(cv)||null,
+        adj_contract_value:n(cv)||null,
+        total_lf:n(lf)||null,
+        total_lf_precast:n(lf)||null,
+        notes:lead.notes||null,
+      };
+      await sbPost('jobs',body);
+      onCreate(jobNumber);
+    }catch(e){alert('Create failed: '+e.message);setCreating(false);}
+  };
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto'}}>
+      <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🎉 Create Project from Lead</div>
+      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>Confirm project details — Amiee will pick up from here.</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Customer Name</div><input value={customer} onChange={e=>setCustomer(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Job Name</div><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputS}/></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Market</div><select value={market} onChange={e=>setMarket(e.target.value)} style={inputS}><option value="">—</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Sales Rep</div><select value={rep} onChange={e=>setRep(e.target.value)} style={inputS}><option value="">—</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Contract Value</div><input type="number" value={cv} onChange={e=>setCv(e.target.value)} style={inputS}/></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Total LF</div><input type="number" value={lf} onChange={e=>setLf(e.target.value)} style={inputS}/></div>
+      </div>
+      <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#6B6056',marginBottom:10,cursor:'pointer'}}>
+        <input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)}/>
+        Residential (uses R-prefix job code)
+      </label>
+      <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
+        <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Job Number</div>
+        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#8B2020'}}>{jobNumber||'—'}</div>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+        <button onClick={create} disabled={creating} style={{...btnP,flex:2}}>{creating?'Creating...':'Create Project'}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function PipelinePage({jobs,onRefresh}){
+  const[leads,setLeads]=useState([]);
+  const[contacts,setContacts]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[repF,setRepF]=useState(null);
+  const[mktF,setMktF]=useState(null);
+  const[search,setSearch]=useState('');
+  const[showNewForm,setShowNewForm]=useState(false);
+  const[dragLead,setDragLead]=useState(null);
+  const[propModal,setPropModal]=useState(null);
+  const[lostModal,setLostModal]=useState(null);
+  const[wonModal,setWonModal]=useState(null);
+  const[toast,setToast]=useState(null);
+  const[wonExpanded,setWonExpanded]=useState(false);
+  const[lostExpanded,setLostExpanded]=useState(false);
+  const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
+  useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
+  const thirtyAgo=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  const filtered=useMemo(()=>{
+    let f=leads;
+    if(repF)f=f.filter(l=>l.sales_rep===repF);
+    if(mktF)f=f.filter(l=>l.market===mktF);
+    if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
+    return f;
+  },[leads,repF,mktF,search]);
+  const byStage=useMemo(()=>{
+    const m={};LEAD_STAGES.forEach(s=>m[s.key]=[]);
+    filtered.forEach(l=>{
+      if(l.stage==='won'){const dt=l.won_date||l.updated_at;if(dt&&dt.slice(0,10)<thirtyAgo)return;}
+      if(l.stage==='lost'){const dt=l.lost_date||l.updated_at;if(dt&&dt.slice(0,10)<thirtyAgo)return;}
+      if(m[l.stage])m[l.stage].push(l);
+    });
+    return m;
+  },[filtered,thirtyAgo]);
+  const onDragStart=(e,lead)=>{setDragLead(lead);try{e.dataTransfer.effectAllowed='move';}catch(err){}};
+  const onDrop=async(toStage)=>{
+    const lead=dragLead;setDragLead(null);
+    if(!lead||lead.stage===toStage)return;
+    if(toStage==='proposal_sent'){setPropModal(lead);return;}
+    if(toStage==='won'){setWonModal(lead);return;}
+    if(toStage==='lost'){setLostModal(lead);return;}
+    const nowIso=new Date().toISOString();
+    await sbPatch('leads',lead.id,{stage:toStage,updated_at:nowIso,stage_entered_at:nowIso});
+    await fetchLeads();
+    setToast(`Moved to ${LEAD_STAGES.find(s=>s.key===toStage)?.label||toStage}`);
+  };
+  const saveProposal=async(data)=>{
+    const lead=propModal;const nowIso=new Date().toISOString();
+    await sbPatch('leads',lead.id,{...data,stage:'proposal_sent',updated_at:nowIso,stage_entered_at:nowIso});
+    setPropModal(null);await fetchLeads();setToast('Moved to Proposal Sent');
+  };
+  const saveLost=async(data)=>{
+    const lead=lostModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
+    await sbPatch('leads',lead.id,{...data,stage:'lost',lost_date:today,updated_at:nowIso,stage_entered_at:nowIso});
+    setLostModal(null);await fetchLeads();setToast('Marked as Lost');
+  };
+  const afterProjectCreated=async(jobNumber)=>{
+    const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
+    await sbPatch('leads',lead.id,{stage:'won',won_date:today,job_number:jobNumber,updated_at:nowIso,stage_entered_at:nowIso});
+    setWonModal(null);await fetchLeads();onRefresh&&onRefresh();
+    setToast(`Project ${jobNumber} created — Amiee will take it from here.`);
+  };
+  return <div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Sales Pipeline</h1>
+      <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
+    </div>
+    <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
+      <button onClick={()=>setRepF(null)} style={fpill(!repF)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setRepF(r)} style={fpill(repF===r)}>{r}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
+      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+    </div>
+    {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading leads...</div>:
+    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,alignItems:'flex-start'}}>
+      {LEAD_STAGES.map(col=>{
+        const items=byStage[col.key]||[];
+        const total=items.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
+        const collapsed=(col.key==='won'&&!wonExpanded)||(col.key==='lost'&&!lostExpanded);
+        const toggle=col.key==='won'?()=>setWonExpanded(e=>!e):col.key==='lost'?()=>setLostExpanded(e=>!e):null;
+        return <div key={col.key} onDragOver={e=>e.preventDefault()} onDrop={()=>onDrop(col.key)} style={{background:col.bg,borderRadius:12,padding:8,minHeight:200,border:`1px solid ${col.accent}`}}>
+          <div onClick={toggle} style={{padding:'10px 12px',background:col.accent,borderRadius:8,marginBottom:8,cursor:toggle?'pointer':'default'}}>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:12,color:col.color,letterSpacing:0.5}}>{col.label}{toggle&&<span style={{float:'right'}}>{collapsed?'▸':'▾'}</span>}</div>
+            <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>
+              <span style={{background:'#FFF',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{items.length}</span>
+              {$k(total)}
+            </div>
+          </div>
+          {!collapsed&&items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>)}
+        </div>;
+      })}
+    </div>}
+    {showNewForm&&<NewLeadForm onClose={()=>setShowNewForm(false)} onSaved={fetchLeads} contacts={contacts}/>}
+    {propModal&&<ProposalSentModal lead={propModal} onClose={()=>setPropModal(null)} onSave={saveProposal}/>}
+    {lostModal&&<LostModal lead={lostModal} onClose={()=>setLostModal(null)} onSave={saveLost}/>}
+    {wonModal&&<WonModal lead={wonModal} onClose={()=>setWonModal(null)} onCreate={afterProjectCreated}/>}
+  </div>;
+}
+
+function ContactsPage({jobs}){
+  const[contacts,setContacts]=useState([]);
+  const[leads,setLeads]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[search,setSearch]=useState('');
+  const[typeF,setTypeF]=useState(null);
+  const[mktF,setMktF]=useState(null);
+  const[showAdd,setShowAdd]=useState(false);
+  const[detail,setDetail]=useState(null);
+  const[importBanner,setImportBanner]=useState(false);
+  const[toast,setToast]=useState(null);
+  const fetchContacts=useCallback(async()=>{setLoading(true);const d=await sbGet('contacts','select=*&order=company.asc');setContacts(Array.isArray(d)?d:[]);if(!d||d.length===0)setImportBanner(true);setLoading(false);},[]);
+  useEffect(()=>{fetchContacts();sbGet('leads','select=id,company_name,stage,estimated_value,created_at').then(d=>setLeads(Array.isArray(d)?d:[]));},[fetchContacts]);
+  const jobsByCustomer=useMemo(()=>{const m={};(jobs||[]).forEach(j=>{if(!j.customer_name)return;const k=j.customer_name.toLowerCase();if(!m[k])m[k]=[];m[k].push(j);});return m;},[jobs]);
+  const leadsByCompany=useMemo(()=>{const m={};leads.forEach(l=>{if(!l.company_name)return;const k=l.company_name.toLowerCase();if(!m[k])m[k]=[];m[k].push(l);});return m;},[leads]);
+  const filtered=useMemo(()=>{
+    let f=contacts;
+    if(typeF)f=f.filter(c=>(c.type||c.company_type||c.contact_type)===typeF);
+    if(mktF)f=f.filter(c=>c.market===mktF);
+    if(search){const q=search.toLowerCase();f=f.filter(c=>`${c.company||''} ${c.name||''} ${c.email||''} ${c.phone||''}`.toLowerCase().includes(q));}
+    return f;
+  },[contacts,typeF,mktF,search]);
+  const doImport=async()=>{
+    const seen=new Set();const rows=[];
+    (jobs||[]).forEach(j=>{if(!j.customer_name)return;const k=j.customer_name.toLowerCase();if(seen.has(k))return;seen.add(k);rows.push({company:j.customer_name,market:j.market||null,type:'GC'});});
+    for(const r of rows){try{await sbPost('contacts',r);}catch(e){}}
+    setImportBanner(false);await fetchContacts();setToast(`Imported ${rows.length} contacts`);
+  };
+  return <div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Contacts</h1>
+      <button onClick={()=>setShowAdd(true)} style={btnP}>+ Add Contact</button>
+    </div>
+    {importBanner&&<div style={{...card,marginBottom:16,background:'#FFFBEB',borderColor:'#FEF3C7',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <div style={{fontSize:13,color:'#78350F'}}>Import contacts from existing projects? This will create a contact entry for each unique customer in your project database.</div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>setImportBanner(false)} style={btnS}>Skip</button>
+        <button onClick={doImport} style={btnP}>Import</button>
+      </div>
+    </div>}
+    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company, name, email, phone..." style={{...inputS,width:260,padding:'6px 10px',fontSize:12}}/>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>TYPE:</span>
+      <button onClick={()=>setTypeF(null)} style={fpill(!typeF)}>All</button>
+      {COMPANY_TYPES.map(t=><button key={t} onClick={()=>setTypeF(t)} style={fpill(typeF===t)}>{t}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
+      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+    </div>
+    {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:
+    <div style={{...card,padding:0,overflow:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+          {['Company','Type','Contact Name','Title','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {filtered.length===0?<tr><td colSpan={8} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No contacts</td></tr>:
+          filtered.map(c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <tr key={c.id} onClick={()=>setDetail(c)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <td style={{padding:'10px 12px',fontWeight:600}}>{c.company||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{c.type||c.company_type||c.contact_type||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{c.name||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.title||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.phone||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.email||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{c.market?<span style={pill(MC[c.market]||'#6B6056',MB[c.market]||'#F4F4F2')}>{MS[c.market]||c.market}</span>:'—'}</td>
+            <td style={{padding:'10px 12px',fontWeight:700,color:jc>0?'#8B2020':'#9E9B96'}}>{jc}</td>
+          </tr>;})}
+        </tbody>
+      </table>
+    </div>}
+    {showAdd&&<ContactForm onClose={()=>setShowAdd(false)} onSaved={()=>{fetchContacts();setToast('Contact saved');}}/>}
+    {detail&&<ContactDetail contact={detail} onClose={()=>setDetail(null)} onSaved={()=>{fetchContacts();setDetail(null);}} linkedJobs={jobsByCustomer[(detail.company||'').toLowerCase()]||[]} linkedLeads={leadsByCompany[(detail.company||'').toLowerCase()]||[]}/>}
+  </div>;
+}
+
+function ContactForm({onClose,onSaved,initial}){
+  const[f,setF]=useState(initial||{company:'',type:'',name:'',title:'',phone:'',email:'',market:'',notes:''});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const save=async()=>{
+    if(!f.company){alert('Company name required');return;}
+    setSaving(true);
+    try{
+      const body={...f};Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
+      if(initial&&initial.id)await sbPatch('contacts',initial.id,{...body,updated_at:new Date().toISOString()});
+      else await sbPost('contacts',body);
+      onSaved&&onSaved();onClose();
+    }catch(e){alert('Save failed: '+e.message);}
+    setSaving(false);
+  };
+  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+    :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
+    :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
+  </div>);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:420,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{initial?'Edit Contact':'New Contact'}</div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card}}>
+        {fld('Company Name *','company')}
+        {fld('Company Type','type','text',COMPANY_TYPES)}
+        {fld('Contact Name','name')}
+        {fld('Title','title')}
+        {fld('Phone','phone')}
+        {fld('Email','email','email')}
+        {fld('Market','market','text',MKTS)}
+        {fld('Notes','notes','textarea')}
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Contact'}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads}){
+  const[f,setF]=useState({company:contact.company||'',type:contact.type||contact.company_type||'',name:contact.name||'',title:contact.title||'',phone:contact.phone||'',email:contact.email||'',market:contact.market||'',notes:contact.notes||''});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const save=async()=>{
+    setSaving(true);
+    try{
+      const body={...f};Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
+      await sbPatch('contacts',contact.id,{...body,updated_at:new Date().toISOString()});
+      onSaved&&onSaved();
+    }catch(e){alert('Save failed: '+e.message);}
+    setSaving(false);
+  };
+  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+    :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
+    :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
+  </div>);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:520,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div>
+          <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900}}>{contact.company||'Unnamed'}</div>
+          <div style={{fontSize:12,color:'#6B6056'}}>{contact.type||contact.company_type||'—'} · {contact.market?(MS[contact.market]||contact.market):'—'}</div>
+        </div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card}}>
+        {fld('Company Name','company')}
+        {fld('Company Type','type','text',COMPANY_TYPES)}
+        {fld('Contact Name','name')}
+        {fld('Title','title')}
+        {fld('Phone','phone')}
+        {fld('Email','email','email')}
+        {fld('Market','market','text',MKTS)}
+        {fld('Notes','notes','textarea')}
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
+        </div>
+      </div>
+      <div style={{...card,marginTop:12}}>
+        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Jobs with this Customer ({linkedJobs.length})</div>
+        {linkedJobs.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No jobs</div>:
+        <div style={{maxHeight:240,overflow:'auto'}}>{linkedJobs.map(j=><div key={j.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',gap:8,fontSize:12}}>
+          <div><b>#{j.job_number}</b> {j.job_name}</div>
+          <div style={{color:'#6B6056'}}>{SS[j.status]||j.status} · {$k(j.adj_contract_value||j.contract_value)}</div>
+        </div>)}</div>}
+      </div>
+      <div style={{...card,marginTop:12}}>
+        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Leads ({linkedLeads.length})</div>
+        {linkedLeads.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No leads</div>:
+        <div>{linkedLeads.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',fontSize:12}}>
+          <div>{l.stage}</div>
+          <div style={{color:'#6B6056'}}>{$k(l.estimated_value)} · {fD(l.created_at)}</div>
+        </div>)}</div>}
+      </div>
+    </div>
+  </div>;
+}
+
 const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
@@ -6163,6 +6659,7 @@ const NAV_GROUPS=[
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'HELP',items:[{key:'help',label:'Help',icon:'❓'}]},
+  {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 export default function App(){
@@ -6214,6 +6711,10 @@ export default function App(){
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='help'&&<HelpPage/>}
+            {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs}/>}
+            {page==='contacts'&&<ContactsPage jobs={jobs}/>}
+            {page==='sales_dashboard'&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Sales Dashboard</div><div style={{fontSize:13,color:'#6B6056'}}>Coming in Session 2.</div></div>}
+            {page==='proposals'&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Proposals</div><div style={{fontSize:13,color:'#6B6056'}}>Coming in Session 2.</div></div>}
           </>}
         </div>
       </div>
