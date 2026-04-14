@@ -522,7 +522,7 @@ function LineItemsEditor({job,onChange}){
 function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setLd]=useState(true);useEffect(()=>{sbGet('activity_log',`job_id=eq.${jobId}&order=created_at.desc&limit=50`).then(d=>{setLogs(d||[]);setLd(false);});},[jobId]);if(ld)return<div style={{padding:20,color:'#9E9B96'}}>Loading...</div>;if(!logs.length)return<div style={{padding:20,color:'#9E9B96'}}>No activity yet</div>;return<div>{logs.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #E5E3E0',display:'flex',gap:10,alignItems:'flex-start'}}><span style={{...pill(ACT_C[l.action]||'#6B6056',(ACT_C[l.action]||'#6B6056')+'18'),fontSize:10,whiteSpace:'nowrap',marginTop:2}}>{(l.action||'').replace(/_/g,' ')}</span><div style={{flex:1}}><div style={{fontSize:12}}>{l.field_name==='status'?`Status: ${l.old_value} → ${l.new_value}`:l.action==='job_created'?`Created: ${l.new_value}`:l.field_name==='notes'?'Notes updated':`${l.field_name}: updated`}</div><div style={{fontSize:10,color:'#9E9B96'}} title={new Date(l.created_at).toLocaleString()}>{relT(l.created_at)} · {l.changed_by}</div></div></div>)}</div>;}
 
 /* ═══ EDIT PANEL ═══ */
-function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
+function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
@@ -568,7 +568,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate}){
     <div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
       <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,background:'#F9F8F6'}}>
         <div><div style={{fontFamily:'Inter',fontSize:16,fontWeight:800}}>{isNew?'New Project':(form.job_name||'Untitled')}</div><div style={{fontSize:12,color:'#6B6056'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div></div>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>{saveErr&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}<button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8B2020'}}>{saving?'Saving...':isNew?'Create':'Save'}</button><button onClick={onClose} style={btnS}>Close</button></div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {saveErr&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
+          {!isNew&&onNav&&<button onClick={()=>{
+            try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.lf_precast||form.total_lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
+            onNav('material_requests');
+          }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8B2020',borderRadius:8,padding:'8px 14px',color:'#8B2020',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
+          <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8B2020'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
+          <button onClick={onClose} style={btnS}>Close</button>
+        </div>
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8B2020':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8B2020':'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
       <div style={{flex:1,overflow:'auto',padding:20}}>
@@ -1270,7 +1278,7 @@ const COL_GROUPS=[
   {label:'Team',keys:['sales_rep','pm','job_type']},
   {label:'Other',keys:['notes','documents_needed','file_location','address','city','state','zip']}
 ];
-function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
+function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   const[projTab,setProjTab]=useState('active');
   const[search,setSearch]=useState('');
   const[statusF,setStatusF]=useState(new Set());
@@ -1462,7 +1470,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
       </tr>)}</tbody></table>
       {closedJobs.length===0&&<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No closed projects found</div>}
     </div>}
-    {editJob&&<EditPanel job={editJob} isNew={false} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}}/>}
+    {editJob&&<EditPanel job={editJob} isNew={false} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}} onNav={onNav}/>}
     {showNewForm&&<NewProjectForm jobs={jobs} onClose={()=>setShowNewForm(false)} onSaved={msg=>{setShowNewForm(false);if(msg)setToast(msg);onRefresh();}}/>}
   </div>);
 }
@@ -5666,8 +5674,39 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
   const[toast,setToast]=useState(null);
   // ─── New Request Form ───
   const emptyForm=()=>({request_date:todayISO,requested_by:'',projected_start_date:'',job_number:'',job_name:'',address:'',city_state_zip:'',crew_on_job:'',material_style:'',color_name:'',color_code:'',height_of_fence:'',linear_feet:'',second_height:'',second_linear_feet:'',notes:''});
-  const[form,setForm]=useState(emptyForm);
-  const[items,setItems]=useState(()=>buildDefaultMRItems('',''));
+  // Hydrate form from localStorage if a job was pre-selected from the Edit Panel
+  const initialFormFromPrefill=()=>{
+    try{
+      const raw=localStorage.getItem('fc_matreq_prejob');
+      if(!raw)return emptyForm();
+      const p=JSON.parse(raw);
+      localStorage.removeItem('fc_matreq_prejob');// consume once
+      return{
+        request_date:todayISO,
+        requested_by:'',
+        projected_start_date:'',
+        job_number:p.job_number||'',
+        job_name:p.job_name||'',
+        address:p.address||'',
+        city_state_zip:[p.city,p.state,p.zip].filter(Boolean).join(', '),
+        crew_on_job:'',
+        material_style:p.style||'',
+        color_name:p.color||'',
+        color_code:'',
+        height_of_fence:p.height_precast?String(p.height_precast):'',
+        linear_feet:p.lf_precast?String(p.lf_precast):'',
+        second_height:p.height_other?String(p.height_other):'',
+        second_linear_feet:p.lf_other?String(p.lf_other):'',
+        notes:''
+      };
+    }catch(e){return emptyForm();}
+  };
+  const initialForm=useMemo(initialFormFromPrefill,[]);// eslint-disable-line
+  const wasPrefilled=!!initialForm.job_number;
+  const[form,setForm]=useState(initialForm);
+  const[items,setItems]=useState(()=>buildDefaultMRItems(initialForm.height_of_fence,initialForm.second_height));
+  // If we pre-filled, land on the New Request tab
+  useEffect(()=>{if(wasPrefilled)setTab('new');},[wasPrefilled]);
   const[saving,setSaving]=useState(false);
   const[saveErr,setSaveErr]=useState(null);
   const[jobSearch,setJobSearch]=useState('');
@@ -6180,7 +6219,7 @@ export default function App(){
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
-            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey}/>}
+            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={setPage}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
