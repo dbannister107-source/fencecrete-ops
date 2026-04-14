@@ -17,6 +17,49 @@ const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { hea
 const sbPatch = async (t, id, b) => (await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) })).json();
 const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) })).json();
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
+// Auth — GoTrue REST helpers (Supabase Auth). Sessions are stored in localStorage
+// under fc_auth. When a session is active, H.Authorization carries the user's JWT
+// (instead of the anon key); PostgREST accepts both so existing "public all" RLS
+// policies keep working.
+const AUTH_STORAGE_KEY = 'fc_auth';
+const authHeaders = () => ({ apikey: KEY, 'Content-Type': 'application/json' });
+const authSignIn = async (email, password) => {
+  const res = await fetch(`${SB}/auth/v1/token?grant_type=password`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password }) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || data.error || 'Invalid email or password');
+  return data;
+};
+const authSignOut = async (accessToken) => {
+  try { await fetch(`${SB}/auth/v1/logout`, { method: 'POST', headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } }); } catch(e) {}
+};
+const authRecover = async (email) => {
+  const redirectTo = typeof window !== 'undefined' ? window.location.origin : '';
+  const res = await fetch(`${SB}/auth/v1/recover`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, gotrue_meta_security: {}, redirect_to: redirectTo }) });
+  if (!res.ok) { const data = await res.json().catch(()=>({})); throw new Error(data.error_description || data.msg || 'Could not send reset email'); }
+};
+const authGetUser = async (accessToken) => {
+  const res = await fetch(`${SB}/auth/v1/user`, { headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) throw new Error('Session expired');
+  return res.json();
+};
+const authRefresh = async (refreshToken) => {
+  const res = await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ refresh_token: refreshToken }) });
+  if (!res.ok) throw new Error('Refresh failed');
+  return res.json();
+};
+const authUpdatePassword = async (accessToken, newPassword) => {
+  const res = await fetch(`${SB}/auth/v1/user`, { method: 'PUT', headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ password: newPassword }) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || 'Could not update password');
+  return data;
+};
+const loadStoredSession = () => { try { const raw = localStorage.getItem(AUTH_STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } };
+const saveStoredSession = (s) => { try { if (s) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(s)); else localStorage.removeItem(AUTH_STORAGE_KEY); } catch(e) {} };
+const applyAuthToken = (accessToken) => { H.Authorization = `Bearer ${accessToken || KEY}`; };
+// React context for auth
+const AuthContext = React.createContext(null);
+const useAuth = () => React.useContext(AuthContext);
+
 const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ type, job }) }); } catch(e) {} };
 const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
 // Keeps fence_addons in sync with a job row's scalar fields. Adds/removes the
@@ -6646,7 +6689,7 @@ function ChatWidget({currentPage}){
 }
 
 /* ═══ TOPBAR ═══ */
-function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu}){
+function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
@@ -6672,6 +6715,7 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu}){
       <span style={{fontSize:12,color:'#6B6056'}}>{today}</span>
       <div style={{position:'relative'}}><button onClick={()=>setShowBell(!showBell)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',position:'relative'}}>🔔{alerts.length>0&&<span style={{position:'absolute',top:-4,right:-6,background:'#991B1B',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 4px',minWidth:14,textAlign:'center'}}>{alerts.length}</span>}</button>{showBell&&<div style={{position:'absolute',right:0,top:32,width:300,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:8}}>Billing Alerts</div>{alerts.slice(0,5).map(j=><div key={j.id} style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>{j.job_name} <span style={{color:'#B45309'}}>{j.contract_age}d</span></div>)}{alerts.length===0&&<div style={{color:'#9E9B96',fontSize:12}}>No alerts</div>}</div>}</div>
       <div style={{position:'relative'}}><button onClick={()=>setShowHelp(!showHelp)} style={{background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#9E9B96'}}>?</button>{showHelp&&<div style={{position:'absolute',right:0,top:32,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12,fontSize:12,color:'#6B6056'}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:6}}>Shortcuts</div><div>⌘K — Global search</div><div>Esc — Close panel</div></div>}</div>
+      {onOpenProfile&&<UserMenu onOpenProfile={onOpenProfile}/>}
     </div>
   </div>);
 }
@@ -7843,15 +7887,19 @@ const MOBILE_NAV=[
   {key:'__more',label:'More',icon:'☰'},
 ];
 
-function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick}){
+function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}){
+  const groups=navGroups||NAV_GROUPS;
+  const auth=useAuth();
   return <>
     <div style={{padding:collapsed?'16px 8px':'24px 20px 20px',textAlign:collapsed?'center':'left'}}>
       {!collapsed?<div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FCA Command Center</div>
       :<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
     </div>
-    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>)}</div>)}</nav>
+    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map(g=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>)}</div>)}</nav>
     <div style={{padding:collapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
+      {auth&&auth.profile&&!collapsed&&<div style={{fontSize:11,color:'#D1CEC9',marginBottom:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={auth.user?.email}>{auth.profile.full_name||auth.user?.email}</div>}
+      {auth&&<button onClick={()=>auth.signOut()} title="Sign out" style={{background:'#2A2A2A',border:'1px solid #3A2020',borderRadius:6,color:'#D1CEC9',fontSize:11,cursor:'pointer',padding:collapsed?'6px 4px':'6px 10px',width:'100%',marginBottom:6,fontWeight:600}}>{collapsed?'⇤':'Sign Out'}</button>}
       <button onClick={()=>setCollapsed(!collapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{collapsed?'→':'←'}</button>
     </div>
   </>;
@@ -7885,13 +7933,238 @@ function MobileBottomNav({page,setPage,onMore}){
   </div>;
 }
 
-export default function App(){
-  const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
+/* ═══ AUTH UI ═══ */
+const ROLE_META = {
+  admin:           { label:'Admin',           c:'#8B2020', bg:'#FDF4F4' },
+  sales_director:  { label:'Sales Director',  c:'#1D4ED8', bg:'#DBEAFE' },
+  sales_rep:       { label:'Sales Rep',       c:'#1D4ED8', bg:'#DBEAFE' },
+  pm:              { label:'PM',              c:'#6D28D9', bg:'#EDE9FE' },
+  production:      { label:'Production',      c:'#B45309', bg:'#FEF3C7' },
+  billing:         { label:'Billing',         c:'#065F46', bg:'#D1FAE5' },
+  viewer:          { label:'Viewer',          c:'#6B6056', bg:'#F4F4F2' },
+};
+// Which sidebar group labels are visible to each role. Groups not listed are hidden.
+const ROLE_NAV_GROUPS = {
+  admin:          new Set(['OVERVIEW','PROJECTS','OPERATIONS','PROJECT MANAGEMENT','FINANCE','HELP','SALES']),
+  sales_director: new Set(['OVERVIEW','PROJECTS','OPERATIONS','PROJECT MANAGEMENT','FINANCE','HELP','SALES']),
+  sales_rep:      new Set(['OVERVIEW','PROJECTS','HELP','SALES']),
+  pm:             new Set(['OVERVIEW','PROJECTS','OPERATIONS','PROJECT MANAGEMENT','HELP']),
+  production:     new Set(['OVERVIEW','OPERATIONS','HELP']),
+  billing:        new Set(['OVERVIEW','PROJECTS','PROJECT MANAGEMENT','FINANCE','HELP']),
+  viewer:         new Set(['OVERVIEW','PROJECTS','HELP']),
+};
+const initialsOf = (name, email) => {
+  if (name) { const parts = name.trim().split(/\s+/); return ((parts[0]?.[0]||'') + (parts[1]?.[0]||'')).toUpperCase() || (name[0]||'?').toUpperCase(); }
+  return (email || '?').slice(0,2).toUpperCase();
+};
+const roleColorFor = (role) => ROLE_META[role] || { label: role || 'User', c:'#6B6056', bg:'#F4F4F2' };
+
+function LoginPage(){
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [mode, setMode] = useState('login'); // 'login' | 'forgot'
+  const [forgotSent, setForgotSent] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault(); setError(''); setLoading(true);
+    try { await signIn(email.trim(), password); }
+    catch (err) { setError('Invalid email or password'); }
+    setLoading(false);
+  };
+  const forgot = async (e) => {
+    e.preventDefault(); setError(''); setLoading(true);
+    try { await authRecover(email.trim()); setForgotSent(true); }
+    catch (err) { setError(err.message || 'Could not send reset email'); }
+    setLoading(false);
+  };
+  return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <style>{`@keyframes fcSpin2{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    <div style={{width:'100%',maxWidth:400}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020',letterSpacing:-0.5}}>FCA Command Center</div>
+        <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Fencecrete America</div>
+      </div>
+      <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
+        {mode==='login'?<>
+          <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Sign In</div>
+          <div style={{fontSize:12,color:'#6B6056',marginBottom:18}}>Use your Fencecrete email to continue.</div>
+          <form onSubmit={submit}>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
+              <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputS}/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Password</div>
+              <input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputS}/>
+            </div>
+            {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
+            <button type="submit" disabled={loading} style={{...btnP,width:'100%',padding:'12px 16px',fontSize:14,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              {loading&&<span style={{display:'inline-block',width:14,height:14,borderRadius:7,border:'2px solid #FFFFFF55',borderTopColor:'#FFF',animation:'fcSpin2 0.8s linear infinite'}}/>}
+              {loading?'Signing In...':'Sign In'}
+            </button>
+          </form>
+          <div style={{textAlign:'center',marginTop:14}}>
+            <button onClick={()=>{setMode('forgot');setError('');setForgotSent(false);}} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:600,cursor:'pointer'}}>Forgot password?</button>
+          </div>
+        </>:<>
+          <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Reset Password</div>
+          <div style={{fontSize:12,color:'#6B6056',marginBottom:18}}>Enter your email and we'll send a reset link.</div>
+          {forgotSent?<div style={{background:'#ECFDF5',border:'1px solid #D1FAE5',color:'#065F46',padding:'12px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:12}}>✓ Check your email for a reset link.</div>:<form onSubmit={forgot}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
+              <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputS}/>
+            </div>
+            {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
+            <button type="submit" disabled={loading} style={{...btnP,width:'100%',padding:'12px 16px',fontSize:14}}>{loading?'Sending...':'Send Reset Link'}</button>
+          </form>}
+          <div style={{textAlign:'center',marginTop:14}}>
+            <button onClick={()=>{setMode('login');setError('');}} style={{background:'none',border:'none',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>← Back to sign in</button>
+          </div>
+        </>}
+      </div>
+      <div style={{textAlign:'center',marginTop:20,fontSize:10,color:'#9E9B96'}}>Access restricted to Fencecrete team members.</div>
+    </div>
+  </div>;
+}
+
+function RecoveryPage({ accessToken, onDone }){
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (e) => {
+    e.preventDefault(); setError('');
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (password !== confirm) { setError('Passwords do not match'); return; }
+    setLoading(true);
+    try { await authUpdatePassword(accessToken, password); onDone(); }
+    catch (err) { setError(err.message || 'Could not set password'); }
+    setLoading(false);
+  };
+  return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div style={{width:'100%',maxWidth:400}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020'}}>FCA Command Center</div>
+        <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Set a new password</div>
+      </div>
+      <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28}}>
+        <form onSubmit={submit}>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>New Password</div>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputS}/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Confirm Password</div>
+            <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} required style={inputS}/>
+          </div>
+          {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
+          <button type="submit" disabled={loading} style={{...btnP,width:'100%',padding:'12px 16px',fontSize:14}}>{loading?'Saving...':'Set Password'}</button>
+        </form>
+      </div>
+    </div>
+  </div>;
+}
+
+function UserMenu({ onOpenProfile }){
+  const { profile, user, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(()=>{const h=(e)=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+  const displayName = profile?.full_name || user?.email || 'User';
+  const initials = initialsOf(profile?.full_name, user?.email);
+  const role = roleColorFor(profile?.role);
+  return <div ref={ref} style={{position:'relative'}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:8,background:'transparent',border:'1px solid #E5E3E0',borderRadius:20,padding:'4px 4px 4px 10px',cursor:'pointer'}}>
+      <div style={{textAlign:'right',lineHeight:1.2}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#1A1A1A'}}>{displayName}</div>
+        <div style={{fontSize:9,fontWeight:700,color:role.c,textTransform:'uppercase',letterSpacing:0.4}}>{role.label}</div>
+      </div>
+      <div style={{width:30,height:30,borderRadius:15,background:role.bg,color:role.c,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,border:`1px solid ${role.c}33`}}>{initials}</div>
+    </button>
+    {open&&<div style={{position:'absolute',right:0,top:42,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,boxShadow:'0 8px 30px rgba(0,0,0,0.12)',zIndex:200,overflow:'hidden'}}>
+      <div style={{padding:'12px 14px',borderBottom:'1px solid #F4F4F2'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A'}}>{displayName}</div>
+        <div style={{fontSize:11,color:'#6B6056',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{user?.email}</div>
+      </div>
+      <button onClick={()=>{setOpen(false);onOpenProfile();}} style={{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'transparent',textAlign:'left',fontSize:13,color:'#1A1A1A',cursor:'pointer'}}>My Profile</button>
+      <button onClick={()=>{setOpen(false);signOut();}} style={{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'transparent',textAlign:'left',fontSize:13,color:'#991B1B',cursor:'pointer',borderTop:'1px solid #F4F4F2'}}>Sign Out</button>
+    </div>}
+  </div>;
+}
+
+function ProfileModal({ onClose }){
+  const { profile, user, session } = useAuth();
+  const [mode, setMode] = useState('view'); // 'view' | 'password'
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savePassword = async () => {
+    setError('');
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (password !== confirm) { setError('Passwords do not match'); return; }
+    setSaving(true);
+    try { await authUpdatePassword(session.access_token, password); toast.success('Password updated'); setMode('view'); setPassword(''); setConfirm(''); }
+    catch (err) { setError(err.message || 'Could not update password'); }
+    setSaving(false);
+  };
+  const role = roleColorFor(profile?.role);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:440,maxWidth:'94vw'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900}}>My Profile</div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:14,padding:14,background:'#F9F8F6',borderRadius:10,marginBottom:16}}>
+        <div style={{width:52,height:52,borderRadius:26,background:role.bg,color:role.c,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,border:`1px solid ${role.c}33`}}>{initialsOf(profile?.full_name, user?.email)}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A'}}>{profile?.full_name || user?.email}</div>
+          <div style={{fontSize:12,color:'#6B6056'}}>{profile?.title || '—'}</div>
+          <div style={{marginTop:4}}><span style={pill(role.c,role.bg)}>{role.label}</span></div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+        <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Email</div><div style={{fontSize:12,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{user?.email || '—'}</div></div>
+        <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Location</div><div style={{fontSize:12,color:'#1A1A1A'}}>{profile?.location || '—'}</div></div>
+        <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Market</div><div style={{fontSize:12,color:'#1A1A1A'}}>{profile?.market || '—'}</div></div>
+        <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Role</div><div style={{fontSize:12,color:'#1A1A1A'}}>{role.label}</div></div>
+      </div>
+      {mode==='view'?<div style={{display:'flex',gap:8}}>
+        <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
+        <button onClick={()=>setMode('password')} style={{...btnP,flex:1}}>Change Password</button>
+      </div>:<div>
+        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Change Password</div>
+        <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>New Password</div><input type="password" value={password} onChange={e=>setPassword(e.target.value)} style={inputS}/></div>
+        <div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Confirm</div><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} style={inputS}/></div>
+        {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}}>{error}</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>{setMode('view');setError('');}} style={{...btnS,flex:1}}>Cancel</button>
+          <button onClick={savePassword} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Update Password'}</button>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+/* ═══ APP (auth-gated) ═══ */
+function AppShell(){
+  const{profile}=useAuth();
+  const role=profile?.role||'viewer';
+  const allowedGroups=useMemo(()=>ROLE_NAV_GROUPS[role]||ROLE_NAV_GROUPS.viewer,[role]);
+  const filteredNav=useMemo(()=>NAV_GROUPS.filter(g=>allowedGroups.has(g.label)),[allowedGroups]);
+  // Pick a safe landing page the user can actually see
+  const firstAllowedKey=useMemo(()=>{const first=filteredNav[0]?.items?.[0]?.key;return first||'help';},[filteredNav]);
+  const[page,setPage]=useState(firstAllowedKey);const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
+  const[showProfile,setShowProfile]=useState(false);
   const[sideCollapsed,setSideCollapsed]=useState(()=>{try{return localStorage.getItem('fc_side_collapsed')==='1';}catch(e){return false;}});
   const[tabletOverlay,setTabletOverlay]=useState(false);
   const[showMoreMenu,setShowMoreMenu]=useState(false);
   const[refreshKey,setRefreshKey]=useState(0);
   const v=useViewport();
+  // If current page becomes disallowed (e.g. after role change), redirect
+  useEffect(()=>{const allowedKeys=new Set(filteredNav.flatMap(g=>g.items.map(i=>i.key)));if(!allowedKeys.has(page))setPage(firstAllowedKey);},[filteredNav,page,firstAllowedKey]);
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
@@ -7911,15 +8184,15 @@ export default function App(){
     <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
       {showInlineSidebar&&<div style={{width:inlineW,minWidth:inlineW,maxWidth:inlineW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
-        <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={v.tablet?true:sideCollapsed} setCollapsed={v.tablet?(()=>setTabletOverlay(true)):setSideCollapsed}/>
+        <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={v.tablet?true:sideCollapsed} setCollapsed={v.tablet?(()=>setTabletOverlay(true)):setSideCollapsed} navGroups={filteredNav}/>
       </div>}
       {showOverlaySidebar&&<div style={{position:'fixed',inset:0,zIndex:650,background:'rgba(0,0,0,0.5)'}} onClick={()=>setTabletOverlay(false)}>
         <div onClick={e=>e.stopPropagation()} style={{width:240,height:'100%',background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'2px 0 16px rgba(0,0,0,0.3)'}}>
-          <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={false} setCollapsed={()=>setTabletOverlay(false)} onNavClick={()=>setTabletOverlay(false)}/>
+          <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={false} setCollapsed={()=>setTabletOverlay(false)} onNavClick={()=>setTabletOverlay(false)} navGroups={filteredNav}/>
         </div>
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile}/>
+        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)}/>
         <div style={{flex:1,overflow:'auto',padding:v.mobile?'16px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
@@ -7957,6 +8230,90 @@ export default function App(){
       {showMoreMenu&&<MoreMenuSheet page={page} setPage={setPage} onClose={()=>setShowMoreMenu(false)} jobs={jobs}/>}
       <ToastHost/>
       <ChatWidget currentPage={page}/>
+      {showProfile&&<ProfileModal onClose={()=>setShowProfile(false)}/>}
     </div>
   );
+}
+
+/* ═══ AUTH GATE — wraps AppShell with session check ═══ */
+export default function App(){
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [recoveryToken, setRecoveryToken] = useState(null);
+  // Detect recovery hash from password-reset email
+  useEffect(()=>{
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash || '';
+    if (hash.includes('type=recovery')) {
+      const params = new URLSearchParams(hash.replace(/^#/,''));
+      const at = params.get('access_token');
+      if (at) setRecoveryToken(at);
+    }
+  },[]);
+  // Boot: check stored session, verify with GoTrue, fetch profile
+  useEffect(()=>{
+    (async()=>{
+      const stored = loadStoredSession();
+      if (!stored || !stored.access_token) { setLoading(false); return; }
+      applyAuthToken(stored.access_token);
+      try {
+        const u = await authGetUser(stored.access_token);
+        setSession(stored); setUser(u);
+        const rows = await sbGet('user_profiles', `email=eq.${encodeURIComponent(u.email||'')}&limit=1`);
+        setProfile((rows&&rows[0])||null);
+      } catch(e) {
+        // Try refresh
+        if (stored.refresh_token) {
+          try {
+            const fresh = await authRefresh(stored.refresh_token);
+            saveStoredSession(fresh); applyAuthToken(fresh.access_token);
+            setSession(fresh); setUser(fresh.user);
+            const rows = await sbGet('user_profiles', `email=eq.${encodeURIComponent(fresh.user?.email||'')}&limit=1`);
+            setProfile((rows&&rows[0])||null);
+          } catch(err) {
+            saveStoredSession(null); applyAuthToken(null);
+          }
+        } else {
+          saveStoredSession(null); applyAuthToken(null);
+        }
+      }
+      setLoading(false);
+    })();
+  },[]);
+  const signIn = useCallback(async (email, password) => {
+    const data = await authSignIn(email, password);
+    saveStoredSession(data); applyAuthToken(data.access_token);
+    setSession(data); setUser(data.user);
+    try {
+      const rows = await sbGet('user_profiles', `email=eq.${encodeURIComponent(data.user?.email||'')}&limit=1`);
+      setProfile((rows&&rows[0])||null);
+    } catch(e) { setProfile(null); }
+  },[]);
+  const signOut = useCallback(async () => {
+    if (session?.access_token) await authSignOut(session.access_token);
+    saveStoredSession(null); applyAuthToken(null);
+    setSession(null); setUser(null); setProfile(null);
+  },[session]);
+  const ctx = useMemo(()=>({session,user,profile,loading,signIn,signOut}),[session,user,profile,loading,signIn,signOut]);
+  if (loading) {
+    return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
+        <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900,color:'#8B2020'}}>FCA Command Center</div>
+        <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8B2020 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
+      </div>
+    </div>;
+  }
+  if (recoveryToken) {
+    return <AuthContext.Provider value={ctx}><RecoveryPage accessToken={recoveryToken} onDone={()=>{
+      try { window.location.hash=''; } catch(e) {}
+      setRecoveryToken(null);
+      toast.success('Password set — please sign in');
+    }}/></AuthContext.Provider>;
+  }
+  return <AuthContext.Provider value={ctx}>
+    {!session?<LoginPage/>:<AppShell/>}
+  </AuthContext.Provider>;
 }
