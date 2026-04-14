@@ -5626,6 +5626,361 @@ function MapPage({jobs,onNav}){
   </div>);
 }
 
+/* ═══ MATERIAL REQUESTS — digitized PMR form ═══ */
+const MR_REQUESTERS=['Ray Garcia','Manuel Salazar','Rafael Anaya Jr.','Doug Monroe'];
+const MR_ITEM_TYPES=['Line Post','Corner Post','Stop Post','Panel','Rail','Post Cap','Rebar','Cement','Caulking'];
+const MR_PANEL_SIZES=['Full','Bottoms','2 Regular','1/2 Long','Center','Middle','Diamond','Bottled'];
+const MR_RAIL_SIZES=['Top','Center','Bottom','Top (short)','Short'];
+// Builds the default line-items list. Post rows are regenerated whenever heights change;
+// panel/rail/cap rows are static.
+const buildDefaultMRItems=(h1,h2)=>{
+  const rows=[];
+  const postHeightRows=(h)=>{
+    if(!h||!String(h).trim())return[];
+    return[
+      {group:'POSTS',size_design:h,item_type:'Line Post',mat_qty_each:'',ship_date:'',backorder:false,notes:''},
+      {group:'POSTS',size_design:h,item_type:'Corner Post',mat_qty_each:'',ship_date:'',backorder:false,notes:''},
+      {group:'POSTS',size_design:h,item_type:'Stop Post',mat_qty_each:'',ship_date:'',backorder:false,notes:''},
+    ];
+  };
+  rows.push(...postHeightRows(h1));
+  if(h2&&String(h2).trim()&&h2!==h1)rows.push(...postHeightRows(h2));
+  MR_PANEL_SIZES.forEach(s=>rows.push({group:'PANELS',size_design:s,item_type:'Panel',mat_qty_each:'',ship_date:'',backorder:false,notes:''}));
+  MR_RAIL_SIZES.forEach(s=>rows.push({group:'RAILS',size_design:s,item_type:'Rail',mat_qty_each:'',ship_date:'',backorder:false,notes:''}));
+  rows.push({group:'CAPS & OTHER',size_design:'Line',item_type:'Post Cap',mat_qty_each:'',ship_date:'',backorder:false,notes:''});
+  rows.push({group:'CAPS & OTHER',size_design:'Stop',item_type:'Post Cap',mat_qty_each:'',ship_date:'',backorder:false,notes:''});
+  rows.push({group:'CAPS & OTHER',size_design:'—',item_type:'Rebar',mat_qty_each:'',ship_date:'',backorder:false,notes:''});
+  rows.push({group:'CAPS & OTHER',size_design:'—',item_type:'Cement',mat_qty_each:'',ship_date:'',backorder:false,notes:''});
+  rows.push({group:'CAPS & OTHER',size_design:'—',item_type:'Caulking',mat_qty_each:'',ship_date:'',backorder:false,notes:''});
+  return rows;
+};
+const MR_STATUS_STYLE={
+  pending:{bg:'#FEF3C7',color:'#B45309',label:'Pending'},
+  confirmed:{bg:'#DBEAFE',color:'#1D4ED8',label:'Confirmed'},
+  fulfilled:{bg:'#D1FAE5',color:'#065F46',label:'Fulfilled'},
+  cancelled:{bg:'#F4F4F2',color:'#6B6056',label:'Cancelled'},
+};
+function MaterialRequestsPage({jobs,refreshKey=0}){
+  const todayISO=new Date().toISOString().split('T')[0];
+  const[tab,setTab]=useState('new');
+  const[toast,setToast]=useState(null);
+  // ─── New Request Form ───
+  const emptyForm=()=>({request_date:todayISO,requested_by:'',projected_start_date:'',job_number:'',job_name:'',address:'',city_state_zip:'',crew_on_job:'',material_style:'',color_name:'',color_code:'',height_of_fence:'',linear_feet:'',second_height:'',second_linear_feet:'',notes:''});
+  const[form,setForm]=useState(emptyForm);
+  const[items,setItems]=useState(()=>buildDefaultMRItems('',''));
+  const[saving,setSaving]=useState(false);
+  const[saveErr,setSaveErr]=useState(null);
+  const[jobSearch,setJobSearch]=useState('');
+  const[showJobDD,setShowJobDD]=useState(false);
+  const setF=(k,v)=>setForm(p=>({...p,[k]:v}));
+  // Regenerate POSTS rows when heights change, preserve all other rows' quantities
+  const prevHeightsRef=useRef({h1:'',h2:''});
+  useEffect(()=>{
+    const prev=prevHeightsRef.current;
+    if(prev.h1===form.height_of_fence&&prev.h2===form.second_height)return;
+    prevHeightsRef.current={h1:form.height_of_fence,h2:form.second_height};
+    setItems(curr=>{
+      const nonPosts=curr.filter(r=>r.group!=='POSTS');
+      const newPosts=buildDefaultMRItems(form.height_of_fence,form.second_height).filter(r=>r.group==='POSTS');
+      return[...newPosts,...nonPosts];
+    });
+  },[form.height_of_fence,form.second_height]);
+  // Job autocomplete — filter jobs as user types
+  const jobMatches=useMemo(()=>{
+    const q=(jobSearch||'').toLowerCase().trim();
+    if(!q)return[];
+    return jobs.filter(j=>j.status!=='closed'&&((j.job_number||'').toLowerCase().includes(q)||(j.job_name||'').toLowerCase().includes(q))).slice(0,8);
+  },[jobSearch,jobs]);
+  const pickJob=(j)=>{
+    setForm(p=>({...p,job_number:j.job_number||'',job_name:j.job_name||'',address:j.address||'',city_state_zip:[j.city,j.state,j.zip].filter(Boolean).join(', '),material_style:j.style||p.material_style,color_name:j.color||p.color_name,height_of_fence:j.height_precast?String(j.height_precast):p.height_of_fence,linear_feet:j.lf_precast?String(j.lf_precast):(j.total_lf_precast?String(j.total_lf_precast):p.linear_feet)}));
+    setJobSearch(j.job_number||j.job_name||'');
+    setShowJobDD(false);
+  };
+  const updateItem=(idx,key,val)=>setItems(prev=>prev.map((r,i)=>i===idx?{...r,[key]:val}:r));
+  const removeItem=(idx)=>setItems(prev=>prev.filter((_,i)=>i!==idx));
+  const addCustomItem=()=>setItems(prev=>[...prev,{group:'CUSTOM',size_design:'',item_type:MR_ITEM_TYPES[0],mat_qty_each:'',ship_date:'',backorder:false,notes:''}]);
+  // Submit handler
+  const submit=async()=>{
+    if(!form.job_number||!form.requested_by){setSaveErr('Job Code and Requested By are required');return;}
+    const filled=items.filter(r=>n(r.mat_qty_each)>0);
+    if(filled.length===0){setSaveErr('Add at least one line item with quantity > 0');return;}
+    setSaving(true);setSaveErr(null);
+    try{
+      const body={
+        request_date:form.request_date||null,
+        requested_by:form.requested_by||null,
+        job_number:form.job_number||null,
+        job_name:form.job_name||null,
+        address:form.address||null,
+        city_state_zip:form.city_state_zip||null,
+        crew_on_job:form.crew_on_job||null,
+        material_style:form.material_style||null,
+        color_name:form.color_name||null,
+        color_code:form.color_code||null,
+        height_of_fence:form.height_of_fence||null,
+        linear_feet:n(form.linear_feet)||null,
+        second_height:form.second_height||null,
+        second_linear_feet:n(form.second_linear_feet)||null,
+        projected_start_date:form.projected_start_date||null,
+        status:'pending',
+        notes:form.notes||null,
+      };
+      const saved=await sbPost('material_requests',body);
+      if(!saved||!saved[0]||!saved[0].id)throw new Error('Request insert returned no data');
+      const req=saved[0];
+      const dbItems=filled.map(r=>({request_id:req.id,size_design:r.size_design||null,item_type:r.item_type||null,mat_qty_each:n(r.mat_qty_each)||0,ship_date:r.ship_date||null,backorder:!!r.backorder,notes:r.notes||null}));
+      await sbPost('material_request_items',dbItems);
+      // Fire email alert (non-blocking)
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'material_request',jobNumber:form.job_number,jobName:form.job_name,requestedBy:form.requested_by,linearFeet:n(form.linear_feet),height:form.height_of_fence,style:form.material_style,color:form.color_name,projectedStartDate:form.projected_start_date,itemCount:filled.length,recipients:['max@fencecrete.com','carlos@fencecrete.com'],subject:`New Material Request — ${form.job_name} (${form.job_number})`})}).catch(e=>console.error('[MR email] failed:',e));
+      setToast({msg:`Material request submitted for ${form.job_name}`,ok:true});
+      setForm(emptyForm());
+      setItems(buildDefaultMRItems('',''));
+      setJobSearch('');
+      setTab('queue');
+      fetchRequests();
+    }catch(e){
+      console.error('[MR submit] failed:',e);
+      setSaveErr(e.message||'Submit failed');
+    }
+    setSaving(false);
+  };
+  // ─── Request Queue ───
+  const[requests,setRequests]=useState([]);
+  const[reqItems,setReqItems]=useState({});
+  const[queueFilter,setQueueFilter]=useState('all');
+  const[expandedId,setExpandedId]=useState(null);
+  const[confirmForm,setConfirmForm]=useState({confirmed_by:'',estimated_ship_date:'',notes:''});
+  const[cancelConfirmId,setCancelConfirmId]=useState(null);
+  const fetchRequests=useCallback(async()=>{
+    try{const d=await sbGet('material_requests','select=*&order=created_at.desc&limit=200');setRequests(d||[]);}
+    catch(e){console.error('[MR fetch] failed:',e);}
+  },[]);
+  useEffect(()=>{fetchRequests();},[fetchRequests,refreshKey]);
+  const loadItemsFor=useCallback(async(reqId)=>{
+    if(reqItems[reqId])return;
+    try{const d=await sbGet('material_request_items',`select=*&request_id=eq.${reqId}&order=id.asc`);setReqItems(prev=>({...prev,[reqId]:d||[]}));}
+    catch(e){console.error('[MR items fetch] failed:',e);}
+  },[reqItems]);
+  const toggleExpand=(id)=>{if(expandedId===id){setExpandedId(null);}else{setExpandedId(id);loadItemsFor(id);}};
+  const filteredRequests=useMemo(()=>queueFilter==='all'?requests:requests.filter(r=>r.status===queueFilter),[requests,queueFilter]);
+  const confirmReceipt=async(req)=>{
+    if(!confirmForm.confirmed_by||!confirmForm.estimated_ship_date){setToast({msg:'Confirmed By and Ship Date are required',ok:false});return;}
+    try{
+      const patch={status:'confirmed',confirmed_by:confirmForm.confirmed_by,confirmed_at:new Date().toISOString(),estimated_ship_date:confirmForm.estimated_ship_date,notes:confirmForm.notes||req.notes||null,updated_at:new Date().toISOString()};
+      await sbPatch('material_requests',req.id,patch);
+      setRequests(prev=>prev.map(r=>r.id===req.id?{...r,...patch}:r));
+      setConfirmForm({confirmed_by:'',estimated_ship_date:'',notes:''});
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'material_request_confirmed',jobNumber:req.job_number,jobName:req.job_name,requestedBy:req.requested_by,confirmedBy:confirmForm.confirmed_by,estimatedShipDate:confirmForm.estimated_ship_date,subject:`Material Request Confirmed — ${req.job_name}`})}).catch(()=>{});
+      setToast({msg:'Request confirmed — PM notified',ok:true});
+    }catch(e){console.error('[MR confirm] failed:',e);setToast({msg:e.message||'Confirm failed',ok:false});}
+  };
+  const markFulfilled=async(req)=>{
+    try{
+      const patch={status:'fulfilled',updated_at:new Date().toISOString()};
+      await sbPatch('material_requests',req.id,patch);
+      setRequests(prev=>prev.map(r=>r.id===req.id?{...r,...patch}:r));
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'material_request_fulfilled',jobNumber:req.job_number,jobName:req.job_name,requestedBy:req.requested_by,subject:`Material Request Fulfilled — ${req.job_name}`})}).catch(()=>{});
+      setToast({msg:'Request marked fulfilled — PM notified',ok:true});
+    }catch(e){console.error('[MR fulfill] failed:',e);setToast({msg:e.message||'Update failed',ok:false});}
+  };
+  const cancelRequest=async(req)=>{
+    try{
+      const patch={status:'cancelled',updated_at:new Date().toISOString()};
+      await sbPatch('material_requests',req.id,patch);
+      setRequests(prev=>prev.map(r=>r.id===req.id?{...r,...patch}:r));
+      setCancelConfirmId(null);
+      setToast({msg:'Request cancelled',ok:true});
+    }catch(e){console.error('[MR cancel] failed:',e);setToast({msg:e.message||'Cancel failed',ok:false});}
+  };
+  // ─── Render helpers ───
+  const lbl={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
+  const sectionHdr={fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingBottom:6,borderBottom:'1px solid #E5E3E0'};
+  const grd2={display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:16};
+  const countCounts=useMemo(()=>({
+    all:requests.length,
+    pending:requests.filter(r=>r.status==='pending').length,
+    confirmed:requests.filter(r=>r.status==='confirmed').length,
+    fulfilled:requests.filter(r=>r.status==='fulfilled').length,
+  }),[requests]);
+  return(<div>
+    {toast&&<Toast message={toast.msg} isError={toast.ok===false} onDone={()=>setToast(null)}/>}
+    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Material Requests</h1>
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:16}}>Digital PMR form — request materials from the production plant</div>
+    {/* Tabs */}
+    <div style={{display:'flex',gap:6,marginBottom:16}}>
+      <button onClick={()=>setTab('new')} style={{padding:'8px 18px',borderRadius:8,border:tab==='new'?'2px solid #8B2020':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8B2020':'#6B6056',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
+      <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8B2020':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8B2020':'#6B6056',fontWeight:700,fontSize:13,cursor:'pointer'}}>Request Queue ({requests.length})</button>
+    </div>
+    {/* NEW REQUEST FORM */}
+    {tab==='new'&&<div>
+      <div style={{background:'#8B2020',color:'#FFF',padding:'14px 20px',borderRadius:'10px 10px 0 0',fontFamily:'Syne',fontSize:16,fontWeight:800}}>Project Material Request</div>
+      <div style={{...card,borderRadius:'0 0 10px 10px',borderTop:'none',padding:20}}>
+        {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'10px 14px',marginBottom:14,color:'#991B1B',fontSize:12,fontWeight:600}}>⚠ {saveErr}</div>}
+        {/* Request Info */}
+        <div style={sectionHdr}>Request Info</div>
+        <div style={grd2}>
+          <div><label style={lbl}>Request Date</label><input type="date" value={form.request_date} onChange={e=>setF('request_date',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Requested By *</label><select value={form.requested_by} onChange={e=>setF('requested_by',e.target.value)} style={inputS}><option value="">— Select —</option>{MR_REQUESTERS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+          <div><label style={lbl}>Projected Start Date</label><input type="date" value={form.projected_start_date} onChange={e=>setF('projected_start_date',e.target.value)} style={inputS}/></div>
+        </div>
+        {/* Job Info */}
+        <div style={sectionHdr}>Job Info</div>
+        <div style={grd2}>
+          <div style={{position:'relative'}}>
+            <label style={lbl}>Job Code *</label>
+            <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setShowJobDD(true);setF('job_number',e.target.value);}} onFocus={()=>setShowJobDD(true)} onBlur={()=>setTimeout(()=>setShowJobDD(false),200)} placeholder="Search jobs..." style={inputS}/>
+            {showJobDD&&jobMatches.length>0&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',zIndex:50,marginTop:2,maxHeight:240,overflow:'auto'}}>
+              {jobMatches.map(j=><div key={j.id} onMouseDown={()=>pickJob(j)} style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid #F4F4F2',fontSize:12}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <div style={{fontWeight:700,color:'#1A1A1A'}}>{j.job_number}</div>
+                <div style={{color:'#6B6056'}}>{j.job_name}</div>
+              </div>)}
+            </div>}
+          </div>
+          <div><label style={lbl}>Project Name</label><input value={form.job_name} onChange={e=>setF('job_name',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Address</label><input value={form.address} onChange={e=>setF('address',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>City, State, Zip</label><input value={form.city_state_zip} onChange={e=>setF('city_state_zip',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Crew on Job</label><input value={form.crew_on_job} onChange={e=>setF('crew_on_job',e.target.value)} style={inputS}/></div>
+        </div>
+        {/* Material Info */}
+        <div style={sectionHdr}>Material Info</div>
+        <div style={grd2}>
+          <div><label style={lbl}>Material Style</label><input value={form.material_style} onChange={e=>setF('material_style',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Color Name</label><input value={form.color_name} onChange={e=>setF('color_name',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Color Code</label><input value={form.color_code} onChange={e=>setF('color_code',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>Height of Fence</label><input value={form.height_of_fence} onChange={e=>setF('height_of_fence',e.target.value)} placeholder="e.g. 8 or 8' Combo" style={inputS}/></div>
+          <div><label style={lbl}>Linear Feet</label><input type="number" value={form.linear_feet} onChange={e=>setF('linear_feet',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>2nd Height (optional)</label><input value={form.second_height} onChange={e=>setF('second_height',e.target.value)} style={inputS}/></div>
+          <div><label style={lbl}>2nd Linear Feet (optional)</label><input type="number" value={form.second_linear_feet} onChange={e=>setF('second_linear_feet',e.target.value)} style={inputS}/></div>
+        </div>
+        {/* Material Line Items */}
+        <div style={sectionHdr}>Material Line Items</div>
+        <div style={{border:'1px solid #E5E3E0',borderRadius:8,overflow:'auto',marginBottom:14}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F9F8F6'}}>
+              {['Size / Design','Type','Mat. Qty Each','Ship Date','Backorder','Notes',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {(()=>{
+                const out=[];
+                let lastGroup=null;
+                items.forEach((row,idx)=>{
+                  if(row.group!==lastGroup){
+                    out.push(<tr key={`hdr-${row.group}-${idx}`} style={{background:'#FDF4F4'}}>
+                      <td colSpan={7} style={{padding:'6px 10px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>{row.group}</td>
+                    </tr>);
+                    lastGroup=row.group;
+                  }
+                  const isEmpty=!n(row.mat_qty_each);
+                  const td={padding:'6px 10px',borderBottom:'1px solid #F4F4F2',verticalAlign:'middle',opacity:isEmpty?0.55:1};
+                  const inp={...inputS,padding:'4px 8px',fontSize:12};
+                  out.push(<tr key={idx} style={{background:idx%2===0?'#FFF':'#FAFAF8'}}>
+                    <td style={td}>{row.group==='CUSTOM'?<input value={row.size_design} onChange={e=>updateItem(idx,'size_design',e.target.value)} placeholder="Size" style={{...inp,width:90}}/>:row.size_design}</td>
+                    <td style={td}>{row.group==='CUSTOM'?<select value={row.item_type} onChange={e=>updateItem(idx,'item_type',e.target.value)} style={{...inp,width:120}}>{MR_ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>:row.item_type}</td>
+                    <td style={td}><input type="number" value={row.mat_qty_each} onChange={e=>updateItem(idx,'mat_qty_each',e.target.value)} style={{...inp,width:70,fontWeight:700}}/></td>
+                    <td style={td}><input type="date" value={row.ship_date} onChange={e=>updateItem(idx,'ship_date',e.target.value)} style={{...inp,width:135}}/></td>
+                    <td style={{...td,textAlign:'center'}}><input type="checkbox" checked={!!row.backorder} onChange={e=>updateItem(idx,'backorder',e.target.checked)} style={{accentColor:'#8B2020',width:16,height:16}}/></td>
+                    <td style={td}><input value={row.notes} onChange={e=>updateItem(idx,'notes',e.target.value)} style={{...inp,width:'100%',minWidth:100}}/></td>
+                    <td style={td}>{row.group==='CUSTOM'?<button onClick={()=>removeItem(idx)} style={{background:'none',border:'none',color:'#DC2626',fontSize:14,cursor:'pointer'}} title="Remove">×</button>:null}</td>
+                  </tr>);
+                });
+                return out;
+              })()}
+            </tbody>
+          </table>
+        </div>
+        <button onClick={addCustomItem} style={{...btnS,marginBottom:14,padding:'6px 14px',fontSize:12}}>+ Add Custom Item</button>
+        {/* Extra Notes */}
+        <div style={sectionHdr}>Extra Notes</div>
+        <textarea value={form.notes} onChange={e=>setF('notes',e.target.value)} rows={3} placeholder="Additional instructions, special requirements, delivery notes..." style={{...inputS,resize:'vertical',marginBottom:14}}/>
+        {/* Submit */}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>{setForm(emptyForm());setItems(buildDefaultMRItems('',''));setJobSearch('');setSaveErr(null);}} style={btnS}>Clear Form</button>
+          <button onClick={submit} disabled={saving} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:saving?0.5:1}}>{saving?'Submitting...':'Submit Request'}</button>
+        </div>
+      </div>
+    </div>}
+    {/* REQUEST QUEUE */}
+    {tab==='queue'&&<div>
+      {/* Filter pills */}
+      <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+        {[['all','All'],['pending','Pending'],['confirmed','Confirmed'],['fulfilled','Fulfilled'],['cancelled','Cancelled']].map(([k,l])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'6px 14px',borderRadius:20,border:queueFilter===k?'2px solid #8B2020':'1px solid #E5E3E0',background:queueFilter===k?'#FDF4F4':'#FFF',color:queueFilter===k?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({countCounts[k]??requests.filter(r=>r.status===k).length})</button>)}
+      </div>
+      {filteredRequests.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No material requests{queueFilter!=='all'?` with status "${queueFilter}"`:''}</div>:<div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {filteredRequests.map(r=>{
+          const s=MR_STATUS_STYLE[r.status]||MR_STATUS_STYLE.pending;
+          const isExp=expandedId===r.id;
+          const isCancelConfirm=cancelConfirmId===r.id;
+          return<div key={r.id} style={{...card,padding:0,overflow:'hidden',borderLeft:`4px solid ${s.color}`}}>
+            <div onClick={()=>toggleExpand(r.id)} style={{padding:'14px 18px',cursor:'pointer'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                    <span style={{display:'inline-block',padding:'3px 10px',borderRadius:12,background:s.bg,color:s.color,fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>{s.label}</span>
+                    <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>#{r.job_number||'—'}</span>
+                    <span style={{fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{r.job_name||'—'}</span>
+                  </div>
+                  <div style={{fontSize:11,color:'#6B6056',display:'flex',gap:14,flexWrap:'wrap'}}>
+                    <span>Requested by <b style={{color:'#1A1A1A'}}>{r.requested_by||'—'}</b></span>
+                    <span>{fD(r.request_date)}</span>
+                    {r.height_of_fence&&<span>Height: <b style={{color:'#1A1A1A'}}>{r.height_of_fence}</b></span>}
+                    {n(r.linear_feet)>0&&<span>LF: <b style={{color:'#1A1A1A'}}>{n(r.linear_feet).toLocaleString()}</b></span>}
+                    {r.material_style&&<span>Style: <b style={{color:'#1A1A1A'}}>{r.material_style}</b></span>}
+                    {r.color_name&&<span>Color: <b style={{color:'#1A1A1A'}}>{r.color_name}</b></span>}
+                    {r.projected_start_date&&<span>Start: <b style={{color:'#1A1A1A'}}>{fD(r.projected_start_date)}</b></span>}
+                  </div>
+                  {r.status==='confirmed'&&<div style={{marginTop:6,fontSize:11,color:'#1D4ED8',fontWeight:600}}>✓ Confirmed by {r.confirmed_by||'—'}{r.estimated_ship_date?` — Ship: ${fD(r.estimated_ship_date)}`:''}</div>}
+                </div>
+                <span style={{fontSize:12,color:'#9E9B96'}}>{isExp?'▲':'▼'}</span>
+              </div>
+            </div>
+            {isExp&&<div style={{padding:'0 18px 18px',borderTop:'1px solid #E5E3E0'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10,marginTop:12,fontSize:12}}>
+                {[['Address',r.address],['City/State/Zip',r.city_state_zip],['Crew',r.crew_on_job],['Color Code',r.color_code],['2nd Height',r.second_height],['2nd LF',r.second_linear_feet]].filter(([,v])=>v).map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{l}</div><div style={{fontWeight:600,color:'#1A1A1A'}}>{v}</div></div>)}
+              </div>
+              {/* Items table */}
+              <div style={{marginTop:14}}>
+                <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Line Items</div>
+                {!reqItems[r.id]?<div style={{padding:12,color:'#9E9B96',fontSize:12}}>Loading...</div>:reqItems[r.id].length===0?<div style={{padding:12,color:'#9E9B96',fontSize:12}}>No items</div>:<div style={{border:'1px solid #E5E3E0',borderRadius:6,overflow:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead><tr style={{background:'#F9F8F6'}}>{['Size','Type','Qty','Ship Date','Backorder','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+                    <tbody>{reqItems[r.id].map((it,i)=><tr key={it.id||i} style={{borderBottom:'1px solid #F4F4F2'}}>
+                      <td style={{padding:'6px 10px'}}>{it.size_design||'—'}</td>
+                      <td style={{padding:'6px 10px'}}>{it.item_type||'—'}</td>
+                      <td style={{padding:'6px 10px',fontWeight:700}}>{it.mat_qty_each||'—'}</td>
+                      <td style={{padding:'6px 10px'}}>{fD(it.ship_date)}</td>
+                      <td style={{padding:'6px 10px'}}>{it.backorder?'✓':''}</td>
+                      <td style={{padding:'6px 10px',color:'#6B6056'}}>{it.notes||''}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>}
+              </div>
+              {r.notes&&<div style={{marginTop:10,padding:'8px 12px',background:'#F9F8F6',borderRadius:6,fontSize:12,color:'#6B6056'}}><b>Notes:</b> {r.notes}</div>}
+              {/* Action buttons */}
+              <div style={{marginTop:14,display:'flex',gap:8,flexWrap:'wrap'}}>
+                {r.status==='pending'&&<div style={{flex:1,minWidth:280,padding:12,background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8}}>
+                  <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:8}}>Confirm Receipt</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                    <div><label style={{...lbl,fontSize:10}}>Confirmed By</label><input value={confirmForm.confirmed_by} onChange={e=>setConfirmForm(p=>({...p,confirmed_by:e.target.value}))} placeholder="Max / Carlos" style={{...inputS,padding:'6px 10px',fontSize:12}}/></div>
+                    <div><label style={{...lbl,fontSize:10}}>Est. Ship Date</label><input type="date" value={confirmForm.estimated_ship_date} onChange={e=>setConfirmForm(p=>({...p,estimated_ship_date:e.target.value}))} style={{...inputS,padding:'6px 10px',fontSize:12}}/></div>
+                  </div>
+                  <input value={confirmForm.notes} onChange={e=>setConfirmForm(p=>({...p,notes:e.target.value}))} placeholder="Notes (optional)" style={{...inputS,padding:'6px 10px',fontSize:12,marginBottom:8}}/>
+                  <button onClick={()=>confirmReceipt(r)} style={{...btnP,padding:'6px 16px',fontSize:12,background:'#065F46'}}>Confirm</button>
+                </div>}
+                {r.status==='confirmed'&&<button onClick={()=>markFulfilled(r)} style={{...btnP,padding:'8px 18px',fontSize:12,background:'#065F46'}}>Mark Fulfilled</button>}
+                {(r.status==='pending'||r.status==='confirmed')&&(isCancelConfirm?<div style={{display:'flex',gap:4,alignItems:'center',padding:'6px 10px',background:'#FEF2F2',borderRadius:6,border:'1px solid #FECACA'}}>
+                  <span style={{fontSize:11,color:'#991B1B',fontWeight:700}}>Cancel this request?</span>
+                  <button onClick={()=>cancelRequest(r)} style={{background:'#991B1B',border:'none',borderRadius:4,padding:'4px 10px',color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>Yes</button>
+                  <button onClick={()=>setCancelConfirmId(null)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:4,padding:'4px 10px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>No</button>
+                </div>:<button onClick={()=>setCancelConfirmId(r.id)} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'6px 12px',color:'#EF4444',fontSize:11,fontWeight:600,cursor:'pointer'}}>Cancel Request</button>)}
+              </div>
+            </div>}
+          </div>;
+        })}
+      </div>}
+    </div>}
+  </div>);
+}
+
 /* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
 const CHAT_WELCOME = "Hi! I'm the FCA Assistant. Ask me anything about the app — how to find something, what a field means, or how to complete a task.";
 const CHAT_QUICK_PROMPTS = {
@@ -5787,7 +6142,7 @@ function HelpPage(){
 const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
-  {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
+  {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'material_requests',label:'Material Requests',icon:'🚚'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'HELP',items:[{key:'help',label:'Help',icon:'❓'}]},
@@ -5834,6 +6189,7 @@ export default function App(){
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
+            {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey}/>}
             {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
