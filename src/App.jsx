@@ -1012,11 +1012,16 @@ function WeeklyDigest({jobs,active}){
       sbGet('weather_days',`weather_date=gte.${weekAgoDate}&select=id`).catch(()=>[]),
       sbGet('change_orders',`status=eq.Pending&select=id`).catch(()=>[]),
       sbGet('production_removals',`removed_date=gte.${weekAgoDate}&select=reason`).catch(()=>[]),
-    ]).then(([wd,co,rem])=>{
+    ]).then(([wdRaw,coRaw,remRaw])=>{
+      // sbGet may return a PostgREST error object instead of an array on failure.
+      // Normalize each result to a guaranteed array before touching array methods.
+      const wd=Array.isArray(wdRaw)?wdRaw:[];
+      const co=Array.isArray(coRaw)?coRaw:[];
+      const rem=Array.isArray(remRaw)?remRaw:[];
       // Compute top reason from removals
-      const reasonCounts={};(rem||[]).forEach(r=>{const k=r.reason||'Unspecified';reasonCounts[k]=(reasonCounts[k]||0)+1;});
+      const reasonCounts={};rem.forEach(r=>{const k=r.reason||'Unspecified';reasonCounts[k]=(reasonCounts[k]||0)+1;});
       let topReason=null,topCount=0;Object.entries(reasonCounts).forEach(([k,c])=>{if(c>topCount){topReason=k;topCount=c;}});
-      setDigestStats({leftToBill:tl,zeroBilled,weatherDays:(wd||[]).length,pendingCO:(co||[]).length,newJobs,compJobs,productionRemovals:{count:(rem||[]).length,topReason}});
+      setDigestStats({leftToBill:tl,zeroBilled,weatherDays:wd.length,pendingCO:co.length,newJobs,compJobs,productionRemovals:{count:rem.length,topReason}});
     });
   },[jobs,active]);
   const sendDigest=async()=>{setSending(true);try{
@@ -6106,7 +6111,7 @@ function ChatWidget({currentPage}){
       console.log('[ChatWidget] request body',payload);
       const res=await fetch(url,{
         method:'POST',
-        headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
       const rawText=await res.text();
@@ -6117,13 +6122,18 @@ function ChatWidget({currentPage}){
         throw new Error(`Invalid JSON response: ${rawText.slice(0,120)}`);
       }
       console.log('[ChatWidget] parsed data',data);
-      // Edge function now always returns 200 — check for `message` field first regardless of status.
-      // Only treat as failure if no `message` is present.
-      const reply=(data?.message||data?.text||'').trim();
-      if(reply){
-        setMessages(m=>[...m,{role:'assistant',content:reply}]);
+      // Edge function returns {message: "..."} on success.
+      // Also accept legacy {text} and raw Anthropic {content:[{text}]} shapes defensively.
+      let reply=null;
+      if(typeof data?.message==='string')reply=data.message;
+      else if(typeof data?.text==='string')reply=data.text;
+      else if(Array.isArray(data?.content)&&typeof data.content[0]?.text==='string')reply=data.content[0].text;
+      else if(typeof data?.message?.content?.[0]?.text==='string')reply=data.message.content[0].text;
+      const trimmed=(reply||'').trim();
+      if(trimmed){
+        setMessages(m=>[...m,{role:'assistant',content:trimmed}]);
       }else{
-        const errMsg=data?.error||data?.details||`Empty response (status ${res.status})`;
+        const errMsg=data?.error||data?.details||`No message field in response (status ${res.status})`;
         throw new Error(errMsg);
       }
     }catch(e){
