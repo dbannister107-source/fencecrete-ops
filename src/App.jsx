@@ -6545,7 +6545,6 @@ function PipelinePage({jobs,onRefresh}){
   const[lostExpanded,setLostExpanded]=useState(false);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
-  const thirtyAgo=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
   const filtered=useMemo(()=>{
     let f=leads;
     if(repF)f=f.filter(l=>l.sales_rep===repF);
@@ -6555,13 +6554,11 @@ function PipelinePage({jobs,onRefresh}){
   },[leads,repF,mktF,search]);
   const byStage=useMemo(()=>{
     const m={};LEAD_STAGES.forEach(s=>m[s.key]=[]);
-    filtered.forEach(l=>{
-      if(l.stage==='won'){const dt=l.won_date||l.updated_at;if(dt&&dt.slice(0,10)<thirtyAgo)return;}
-      if(l.stage==='lost'){const dt=l.lost_date||l.updated_at;if(dt&&dt.slice(0,10)<thirtyAgo)return;}
-      if(m[l.stage])m[l.stage].push(l);
-    });
+    filtered.forEach(l=>{if(m[l.stage])m[l.stage].push(l);});
+    m.won.sort((a,b)=>(b.won_date||b.updated_at||'').localeCompare(a.won_date||a.updated_at||''));
+    m.lost.sort((a,b)=>(b.lost_date||b.updated_at||'').localeCompare(a.lost_date||a.updated_at||''));
     return m;
-  },[filtered,thirtyAgo]);
+  },[filtered]);
   const onDragStart=(e,lead)=>{setDragLead(lead);try{e.dataTransfer.effectAllowed='move';}catch(err){}};
   const onDrop=async(toStage)=>{
     const lead=dragLead;setDragLead(null);
@@ -6691,15 +6688,15 @@ function PipelinePage({jobs,onRefresh}){
         const total=items.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
         const collapsed=(col.key==='won'&&!wonExpanded)||(col.key==='lost'&&!lostExpanded);
         const toggle=col.key==='won'?()=>setWonExpanded(e=>!e):col.key==='lost'?()=>setLostExpanded(e=>!e):null;
-        return <div key={col.key} onDragOver={e=>e.preventDefault()} onDrop={()=>onDrop(col.key)} style={{background:col.bg,borderRadius:12,padding:8,minHeight:200,border:`1px solid ${col.accent}`}}>
-          <div onClick={toggle} style={{padding:'10px 12px',background:col.accent,borderRadius:8,marginBottom:8,cursor:toggle?'pointer':'default'}}>
+        return <div key={col.key} onDragOver={e=>e.preventDefault()} onDrop={()=>onDrop(col.key)} style={{background:col.bg,borderRadius:12,padding:8,border:`1px solid ${col.accent}`,display:'flex',flexDirection:'column',maxHeight:'calc(100vh - 260px)',minHeight:200}}>
+          <div onClick={toggle} style={{padding:'10px 12px',background:col.accent,borderRadius:8,marginBottom:8,cursor:toggle?'pointer':'default',flexShrink:0}}>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:12,color:col.color,letterSpacing:0.5}}>{col.label}{toggle&&<span style={{float:'right'}}>{collapsed?'▸':'▾'}</span>}</div>
             <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>
               <span style={{background:'#FFF',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{items.length}</span>
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&(items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>))}
+          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>)}</div>}
         </div>;
       })}
     </div>}
