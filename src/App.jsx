@@ -84,7 +84,7 @@ const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style'
 const _STYLE_LIST = ['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
 // Canonical 6-color palette used for NEW jobs and line items.
 // Existing jobs may hold legacy colors (Painted, Adobe, 860, etc.) — those are preserved via colorOptionsFor().
-const STANDARD_COLORS=['LAC','Silversmoke','Café','Outback','Regular Brown','Green'];
+const STANDARD_COLORS=['LAC','Silversmoke #860','Café','Outback #677','Regular Brown','Buff Green'];
 const isLegacyColor=(c)=>!!c&&!STANDARD_COLORS.includes(c);
 // Builds the color dropdown options for an EXISTING job: 6 standard colors + the job's current
 // legacy color (tagged " (legacy)") if present, so users don't accidentally lose it.
