@@ -5626,6 +5626,97 @@ function MapPage({jobs,onNav}){
   </div>);
 }
 
+/* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
+const CHAT_WELCOME = "Hi! I'm the FCA Assistant. Ask me anything about the app — how to find something, what a field means, or how to complete a task.";
+const CHAT_QUICK_PROMPTS = {
+  projects: ["How do I add a new project?","What do the status colors mean?","How do I filter by market?"],
+  production: ["How do I move a job to production?","What does group by do?","How do I schedule a job?"],
+  pm_billing: ["What's Left to Bill?","How is % Billed calculated?","How do I edit billing?"],
+  _default: ["What can I do here?","How do I find a project?","What do the add-on badges mean?"],
+};
+function ChatWidget({currentPage}){
+  const[open,setOpen]=useState(false);
+  const[messages,setMessages]=useState([]);// array of {role:'user'|'assistant',content}
+  const[input,setInput]=useState('');
+  const[sending,setSending]=useState(false);
+  const[err,setErr]=useState(null);
+  const lastSentRef=useRef(0);
+  const scrollRef=useRef(null);
+  const quickPrompts=CHAT_QUICK_PROMPTS[currentPage]||CHAT_QUICK_PROMPTS._default;
+  // Auto-scroll to bottom when messages or typing-indicator changes
+  useEffect(()=>{if(scrollRef.current){scrollRef.current.scrollTop=scrollRef.current.scrollHeight;}},[messages,sending,open]);
+  // Reset conversation when panel closes
+  const closeChat=()=>{setOpen(false);setMessages([]);setInput('');setErr(null);};
+  const sendMessage=async(text)=>{
+    const trimmed=(text||'').trim();
+    if(!trimmed||sending)return;
+    // Rate limit: 1 request per 2 seconds
+    const now=Date.now();
+    if(now-lastSentRef.current<2000){setErr('Please wait a moment before sending another message.');setTimeout(()=>setErr(null),2000);return;}
+    lastSentRef.current=now;
+    const nextMessages=[...messages,{role:'user',content:trimmed}];
+    setMessages(nextMessages);
+    setInput('');
+    setSending(true);
+    setErr(null);
+    try{
+      const res=await fetch(`${SB}/functions/v1/chat-assistant`,{
+        method:'POST',
+        headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({messages:nextMessages,currentPage:currentPage||'dashboard'})
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok){throw new Error(data?.error||`Request failed (${res.status})`);}
+      const reply=(data?.text||'').trim();
+      if(!reply)throw new Error('Empty response from assistant');
+      setMessages(m=>[...m,{role:'assistant',content:reply}]);
+    }catch(e){
+      console.error('[ChatWidget] send failed:',e);
+      setErr("Sorry, I couldn't connect. Try again.");
+      // Roll back the user message? No — keep it visible so they can see what they asked and retry
+    }
+    setSending(false);
+  };
+  const onInputKey=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input);}};
+  // Chat button (closed state)
+  if(!open){
+    return<button onClick={()=>setOpen(true)} title="Ask the FCA Assistant" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8B2020',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
+  }
+  // Typing indicator (3 animated dots)
+  const typingDots=<div style={{display:'inline-flex',gap:4,padding:'10px 14px',background:'#E8E8E6',borderRadius:14,alignSelf:'flex-start',maxWidth:'80%'}}>
+    <span style={{width:6,height:6,borderRadius:3,background:'#9E9B96',animation:'fcDot 1.2s infinite ease-in-out',animationDelay:'0s'}}/>
+    <span style={{width:6,height:6,borderRadius:3,background:'#9E9B96',animation:'fcDot 1.2s infinite ease-in-out',animationDelay:'0.2s'}}/>
+    <span style={{width:6,height:6,borderRadius:3,background:'#9E9B96',animation:'fcDot 1.2s infinite ease-in-out',animationDelay:'0.4s'}}/>
+  </div>;
+  return<div style={{position:'fixed',bottom:24,right:24,width:380,maxWidth:'calc(100vw - 32px)',height:520,maxHeight:'calc(100vh - 48px)',background:'#F4F4F2',borderRadius:14,boxShadow:'0 8px 40px rgba(0,0,0,0.22)',display:'flex',flexDirection:'column',overflow:'hidden',zIndex:800,border:'1px solid #E5E3E0'}}>
+    <style>{`@keyframes fcDot{0%,80%,100%{opacity:0.3;transform:scale(0.8);}40%{opacity:1;transform:scale(1);}}`}</style>
+    {/* Header */}
+    <div style={{padding:'12px 16px',background:'#8B2020',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span style={{fontSize:18}}>💬</span>
+        <span style={{fontFamily:'Inter',fontWeight:800,fontSize:14}}>FCA Assistant</span>
+      </div>
+      <button onClick={closeChat} title="Close" style={{background:'none',border:'none',color:'#FFF',fontSize:20,cursor:'pointer',padding:0,lineHeight:1,width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:4}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.15)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>×</button>
+    </div>
+    {/* Messages area */}
+    <div ref={scrollRef} style={{flex:1,overflow:'auto',padding:'14px',display:'flex',flexDirection:'column',gap:10,background:'#F4F4F2'}}>
+      {messages.length===0&&<div style={{alignSelf:'flex-start',background:'#E8E8E6',color:'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5}}>{CHAT_WELCOME}</div>}
+      {messages.map((m,i)=><div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'#8B2020':'#E8E8E6',color:m.role==='user'?'#FFF':'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{m.content}</div>)}
+      {sending&&typingDots}
+      {err&&<div style={{alignSelf:'center',background:'#FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:10,fontSize:11,fontWeight:600,textAlign:'center',maxWidth:'85%'}}>{err}</div>}
+    </div>
+    {/* Quick prompts */}
+    {messages.length<2&&<div style={{padding:'0 14px 8px',display:'flex',gap:6,flexWrap:'wrap',flexShrink:0}}>
+      {quickPrompts.map((q,i)=><button key={i} onClick={()=>sendMessage(q)} disabled={sending} style={{padding:'6px 10px',border:'1px solid #8B202040',background:'#FFF',color:'#8B2020',borderRadius:14,fontSize:11,fontWeight:600,cursor:sending?'not-allowed':'pointer',opacity:sending?0.5:1,lineHeight:1.3,textAlign:'left'}}>{q}</button>)}
+    </div>}
+    {/* Input area */}
+    <div style={{padding:'10px 12px',background:'#FFF',borderTop:'1px solid #E5E3E0',display:'flex',gap:8,flexShrink:0}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={onInputKey} disabled={sending} placeholder="Ask me anything about the app..." style={{flex:1,padding:'10px 12px',border:'1px solid #D1CEC9',borderRadius:10,fontSize:13,background:'#FFF',color:'#1A1A1A',outline:'none'}}/>
+      <button onClick={()=>sendMessage(input)} disabled={sending||!input.trim()} style={{padding:'10px 16px',background:'#8B2020',border:'none',borderRadius:10,color:'#FFF',fontSize:13,fontWeight:700,cursor:(sending||!input.trim())?'not-allowed':'pointer',opacity:(sending||!input.trim())?0.5:1}}>{sending?'…':'Send'}</button>
+    </div>
+  </div>;
+}
+
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch,onRefresh}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
@@ -5754,6 +5845,7 @@ export default function App(){
         </div>
       </div>
       {showSearch&&<GlobalSearch jobs={jobs} onSelect={j=>{setOpenJob(j);setPage('projects');setShowSearch(false);}}/>}
+      <ChatWidget currentPage={page}/>
     </div>
   );
 }
