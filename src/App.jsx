@@ -586,7 +586,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
   const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
   const[latestPmLF,setLatestPmLF]=useState(null);
+  const[salesOrigin,setSalesOrigin]=useState(null);
   useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
+  useEffect(()=>{
+    if(isNew||!job?.job_number){setSalesOrigin(null);return;}
+    sbGet('leads',`job_number=eq.${encodeURIComponent(job.job_number)}&limit=1`).then(d=>setSalesOrigin((d&&d[0])||null)).catch(()=>setSalesOrigin(null));
+  },[job?.job_number,isNew]);
   useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
   const[coToast,setCOToast]=useState(null);
   const saveCO=async()=>{const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}
@@ -635,6 +640,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8B2020':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8B2020':'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
       <div style={{flex:1,overflow:'auto',padding:20}}>
+        {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8B202033',borderLeft:'4px solid #8B2020',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
+            {onNav&&<button onClick={()=>{try{localStorage.setItem('fc_pipeline_highlight',so.id);}catch(e){}onNav('pipeline');}} style={{background:'#FFF',border:'1px solid #8B2020',borderRadius:6,padding:'3px 10px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>View Lead →</button>}
+          </div>
+          <div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>This project originated from the sales pipeline.</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,fontSize:12}}>
+            <div><span style={{color:'#9E9B96'}}>Lead created:</span> <b>{fD(so.created_at)}</b>{so.sales_rep?<span style={{color:'#6B6056'}}> by {so.sales_rep}</span>:null}</div>
+            <div><span style={{color:'#9E9B96'}}>Source:</span> <b>{so.source||'—'}</b></div>
+            <div><span style={{color:'#9E9B96'}}>Proposal sent:</span> <b>{fD(so.proposal_sent_date)}</b>{n(so.proposal_value)>0?<span style={{color:'#6B6056'}}> · {$k(so.proposal_value)}</span>:null}</div>
+            <div><span style={{color:'#9E9B96'}}>Won:</span> <b style={{color:'#065F46'}}>{fD(so.won_date)}</b></div>
+            {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
+          </div>
+        </div>;})()}
         {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='requirements'?<div>
           <div style={{fontSize:11,color:'#6B6056',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -732,6 +751,18 @@ const lineSubtotal=(li)=>{
 function NewProjectForm({jobs,onClose,onSaved}){
   const todayISO=new Date().toISOString().split('T')[0];
   const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
+  const[leadMatch,setLeadMatch]=useState(null);
+  const linkLeadToJob=async()=>{
+    if(!leadMatch)return;
+    try{
+      const today=new Date().toISOString().slice(0,10);
+      const nowIso=new Date().toISOString();
+      await sbPatch('leads',leadMatch.lead.id,{stage:'won',won_date:today,job_number:leadMatch.jobRow.job_number||null,updated_at:nowIso,stage_entered_at:nowIso});
+      toast.success(`Linked to lead from ${leadMatch.lead.sales_rep||'sales'}`);
+    }catch(e){toast.error('Link failed: '+e.message);}
+    const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);
+  };
+  const skipLeadMatch=()=>{const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);};
   const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
@@ -859,6 +890,26 @@ function NewProjectForm({jobs,onClose,onSaved}){
       logAct(jobRow,'job_created','','',jobRow.job_number||jobRow.job_name);
       fireNewProjectEmail(jobRow);
       setSaving(false);
+      // STEP 3b — Check for matching proposal lead (auto-link)
+      try{
+        const candidates=await sbGet('leads','stage=eq.proposal_sent&select=*');
+        const normalize=(s)=>(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const custNorm=normalize(jobRow.customer_name);
+        const cv=n(jobRow.adj_contract_value||jobRow.contract_value);
+        const scored=(candidates||[]).map(l=>{
+          const lnorm=normalize(l.company_name);
+          if(!custNorm||!lnorm)return null;
+          const fuzzy=custNorm===lnorm||custNorm.includes(lnorm)||lnorm.includes(custNorm);
+          if(!fuzzy)return null;
+          const lv=n(l.estimated_value||l.proposal_value);
+          if(cv>0&&lv>0&&Math.abs(cv-lv)/Math.max(cv,lv)>0.10)return null;
+          return l;
+        }).filter(Boolean).sort((a,b)=>n(b.estimated_value||b.proposal_value)-n(a.estimated_value||a.proposal_value));
+        if(scored.length>0){
+          setLeadMatch({lead:scored[0],jobRow,message:liWarning?`Project ${f.job_name} created (with warnings)`:`Project ${f.job_name} created`});
+          return;
+        }
+      }catch(err){console.warn('[NewProject] lead match skipped:',err);}
       // If a non-blocking line-items warning fired, show it for 3 seconds before closing.
       if(liWarning){
         setSaveErr(liWarning);
@@ -1036,6 +1087,26 @@ function NewProjectForm({jobs,onClose,onSaved}){
     {sec!=='review'&&<div style={{padding:'12px 24px',background:'#FFF',borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',flexShrink:0}}>
       <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i>0)setSec(NP_SECS[i-1]);}} disabled={sec==='info'} style={{...btnS,opacity:sec==='info'?0.3:1}}>← Previous</button>
       <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i<NP_SECS.length-1)setSec(NP_SECS[i+1]);}} style={btnP}>Next →</button>
+    </div>}
+    {leadMatch&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw'}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🔗 Matching Proposal Found</div>
+        <div style={{fontSize:13,color:'#6B6056',marginBottom:14}}>This project may match an open proposal in the sales pipeline.</div>
+        <div style={{background:'#FDF4F4',border:'1px solid #8B202033',borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>{leadMatch.lead.company_name}</div>
+          {leadMatch.lead.project_description&&<div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>{leadMatch.lead.project_description}</div>}
+          <div style={{display:'flex',gap:12,fontSize:12,color:'#6B6056'}}>
+            <span>Rep: <b style={{color:'#1A1A1A'}}>{leadMatch.lead.sales_rep||'—'}</b></span>
+            <span>Proposal: <b style={{color:'#8B2020'}}>{$k(leadMatch.lead.proposal_value||leadMatch.lead.estimated_value)}</b></span>
+            <span>Sent: <b>{fD(leadMatch.lead.proposal_sent_date)}</b></span>
+          </div>
+        </div>
+        <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>Linking will mark the lead as <b>Won</b> and attach job #{leadMatch.jobRow.job_number}.</div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={skipLeadMatch} style={{...btnS,flex:1}}>Skip</button>
+          <button onClick={linkLeadToJob} style={{...btnP,flex:2}}>Link to Lead</button>
+        </div>
+      </div>
     </div>}
   </div>);
 }
@@ -6296,24 +6367,39 @@ const LEAD_SOURCES=['Inbound Call','Referral','Website','Bid Invitation','Cold O
 const FENCE_TYPES_LEAD=['PC','SW','WI','Mixed','Other'];
 const COMPANY_TYPES=['GC','Developer','MUD','Homeowner','Municipality','Other'];
 
-function LeadCard({lead,onDragStart,onClick}){
+function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted}){
   const mc=MC[lead.market]||'#6B6056';
   const mb=MB[lead.market]||'#F4F4F2';
   const stageDate=lead.stage_entered_at||lead.updated_at||lead.created_at;
   const days=stageDate?Math.floor((Date.now()-new Date(stageDate).getTime())/86400000):0;
   const today=new Date().toISOString().slice(0,10);
   const fuOverdue=lead.follow_up_date&&lead.follow_up_date<today;
-  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}>
+  const acv=linkedJob?n(linkedJob.adj_contract_value||linkedJob.contract_value):0;
+  const billed=linkedJob?n(linkedJob.ytd_invoiced):0;
+  const pct=acv>0?Math.round(billed/acv*100):0;
+  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8B2020':'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8B202022,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
     <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
     {lead.project_description&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
-    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6,alignItems:'center'}}>
       {n(lead.estimated_value)>0&&<span style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#8B2020'}}>{$k(lead.estimated_value)}</span>}
       {n(lead.estimated_lf)>0&&<span style={{fontSize:11,color:'#6B6056'}}>{n(lead.estimated_lf).toLocaleString()} LF</span>}
+      {capacity&&n(lead.estimated_lf)>0&&<span title={`Plant backlog: ${capacity.backlog.toLocaleString()} PC LF`} style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:capacity.bg,color:capacity.c,border:`1px solid ${capacity.c}33`}}>{capacity.label}</span>}
     </div>
     <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
       {lead.market&&<span style={pill(mc,mb)}>{MS[lead.market]||lead.market}</span>}
       {lead.sales_rep&&<span style={{fontSize:11,color:'#6B6056'}}>{lead.sales_rep}</span>}
     </div>
+    {lead.stage==='won'&&linkedJob&&<div onClick={e=>{e.stopPropagation();onOpenProject&&onOpenProject(linkedJob);}} style={{marginTop:8,padding:'8px 10px',background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,cursor:'pointer'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+        <span style={{fontSize:11,fontWeight:700,color:'#065F46'}}>Project #{linkedJob.job_number} →</span>
+        <span style={pill(SC[linkedJob.status]||'#6B6056',SB_[linkedJob.status]||'#F4F4F2')}>{SS[linkedJob.status]||linkedJob.status}</span>
+      </div>
+      {acv>0&&<>
+        <div style={{fontSize:10,color:'#6B6056',marginBottom:3}}>Billed: <b>{pct}%</b> ({$k(billed)} of {$k(acv)})</div>
+        <div style={{height:4,background:'#D1FAE5',borderRadius:2,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(pct,100)}%`,background:'#10B981'}}/></div>
+      </>}
+    </div>}
+    {lead.stage==='won'&&!linkedJob&&lead.job_number&&<div style={{marginTop:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:8,fontSize:11,color:'#9E9B96'}}>Project #{lead.job_number} — not yet in system</div>}
     <div style={{display:'flex',gap:8,marginTop:6,fontSize:10,color:'#9E9B96',flexWrap:'wrap'}}>
       <span>{days}d in stage</span>
       {lead.follow_up_date&&<span style={{color:fuOverdue?'#B45309':'#9E9B96',fontWeight:fuOverdue?700:400}}>F/U {fD(lead.follow_up_date)}</span>}
@@ -6526,7 +6612,7 @@ const excelDateToIso=(v)=>{
   const d=new Date(v);return isNaN(d.getTime())?null:d.toISOString().slice(0,10);
 };
 
-function PipelinePage({jobs,onRefresh}){
+function PipelinePage({jobs,onRefresh,onOpenProject}){
   const[leads,setLeads]=useState([]);
   const[contacts,setContacts]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -6543,8 +6629,21 @@ function PipelinePage({jobs,onRefresh}){
   const[toast,setToast]=useState(null);
   const[wonExpanded,setWonExpanded]=useState(false);
   const[lostExpanded,setLostExpanded]=useState(false);
+  const[highlightId,setHighlightId]=useState(null);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
+  useEffect(()=>{try{const h=localStorage.getItem('fc_pipeline_highlight');if(h){setHighlightId(h);localStorage.removeItem('fc_pipeline_highlight');setTimeout(()=>setHighlightId(null),5000);}}catch(e){}},[]);
+  // Job lookup by job_number for won cards
+  const jobsByNumber=useMemo(()=>{const m={};(jobs||[]).forEach(j=>{if(j.job_number)m[j.job_number]=j;});return m;},[jobs]);
+  // Production capacity (global for all cards)
+  const capacity=useMemo(()=>{
+    const backlog=(jobs||[]).filter(j=>j.status==='in_production'||j.status==='inventory_ready').reduce((s,j)=>s+n(j.total_lf_precast),0);
+    const months=backlog/15000;
+    let c='#065F46',bg='#D1FAE5';
+    if(months>4){c='#991B1B';bg='#FEE2E2';}
+    else if(months>=2){c='#B45309';bg='#FEF3C7';}
+    return{backlog,months,label:`${months.toFixed(1)} mo backlog`,c,bg};
+  },[jobs]);
   const filtered=useMemo(()=>{
     let f=leads;
     if(repF)f=f.filter(l=>l.sales_rep===repF);
@@ -6696,7 +6795,7 @@ function PipelinePage({jobs,onRefresh}){
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>)}</div>}
+          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id}/>)}</div>}
         </div>;
       })}
     </div>}
@@ -6725,7 +6824,7 @@ function PipelinePage({jobs,onRefresh}){
   </div>;
 }
 
-function ContactsPage({jobs}){
+function ContactsPage({jobs,onOpenProject,onOpenLead}){
   const[contacts,setContacts]=useState([]);
   const[leads,setLeads]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -6737,7 +6836,7 @@ function ContactsPage({jobs}){
   const[importBanner,setImportBanner]=useState(false);
   const[toast,setToast]=useState(null);
   const fetchContacts=useCallback(async()=>{setLoading(true);const d=await sbGet('contacts','select=*&order=company.asc');setContacts(Array.isArray(d)?d:[]);if(!d||d.length===0)setImportBanner(true);setLoading(false);},[]);
-  useEffect(()=>{fetchContacts();sbGet('leads','select=id,company_name,stage,estimated_value,created_at').then(d=>setLeads(Array.isArray(d)?d:[]));},[fetchContacts]);
+  useEffect(()=>{fetchContacts();sbGet('leads','select=id,company_name,project_description,stage,estimated_value,proposal_value,sales_rep,created_at,updated_at').then(d=>setLeads(Array.isArray(d)?d:[]));},[fetchContacts]);
   const jobsByCustomer=useMemo(()=>{const m={};(jobs||[]).forEach(j=>{if(!j.customer_name)return;const k=j.customer_name.toLowerCase();if(!m[k])m[k]=[];m[k].push(j);});return m;},[jobs]);
   const leadsByCompany=useMemo(()=>{const m={};leads.forEach(l=>{if(!l.company_name)return;const k=l.company_name.toLowerCase();if(!m[k])m[k]=[];m[k].push(l);});return m;},[leads]);
   const filtered=useMemo(()=>{
@@ -6798,7 +6897,7 @@ function ContactsPage({jobs}){
       </table>
     </div>}
     {showAdd&&<ContactForm onClose={()=>setShowAdd(false)} onSaved={()=>{fetchContacts();setToast('Contact saved');}}/>}
-    {detail&&<ContactDetail contact={detail} onClose={()=>setDetail(null)} onSaved={()=>{fetchContacts();setDetail(null);}} linkedJobs={jobsByCustomer[(detail.company||'').toLowerCase()]||[]} linkedLeads={leadsByCompany[(detail.company||'').toLowerCase()]||[]}/>}
+    {detail&&<ContactDetail contact={detail} onClose={()=>setDetail(null)} onSaved={()=>{fetchContacts();setDetail(null);}} linkedJobs={jobsByCustomer[(detail.company||'').toLowerCase()]||[]} linkedLeads={leadsByCompany[(detail.company||'').toLowerCase()]||[]} onOpenProject={onOpenProject} onOpenLead={onOpenLead}/>}
   </div>;
 }
 
@@ -6847,8 +6946,15 @@ function ContactForm({onClose,onSaved,initial}){
   </div>;
 }
 
-function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads}){
+function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenProject,onOpenLead}){
   const[f,setF]=useState({company:contact.company||'',type:contact.type||contact.company_type||'',name:contact.name||'',title:contact.title||'',phone:contact.phone||'',email:contact.email||'',market:contact.market||'',notes:contact.notes||''});
+  const summary=useMemo(()=>{
+    const ltv=(linkedJobs||[]).reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+    const activePipeline=(linkedLeads||[]).filter(l=>l.stage==='proposal_sent').reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
+    const dates=(linkedJobs||[]).map(j=>j.contract_date||j.created_at).filter(Boolean).sort();
+    return{ltv,activePipeline,totalProjects:(linkedJobs||[]).length,firstProject:dates[0]||null,returning:(linkedJobs||[]).length>=2};
+  },[linkedJobs,linkedLeads]);
+  const activeLeads=useMemo(()=>(linkedLeads||[]).filter(l=>l.stage!=='lost').sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')),[linkedLeads]);
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const[saving,setSaving]=useState(false);
   const save=async()=>{
@@ -6868,12 +6974,36 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads}){
   </div>);
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{width:520,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <div>
-          <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900}}>{contact.company||'Unnamed'}</div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900}}>{contact.company||'Unnamed'}</div>
+            {summary.returning&&<span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FDF4F4',color:'#8B2020',border:'1px solid #8B202033',textTransform:'uppercase',letterSpacing:0.5}}>Returning Customer</span>}
+          </div>
           <div style={{fontSize:12,color:'#6B6056'}}>{contact.type||contact.company_type||'—'} · {contact.market?(MS[contact.market]||contact.market):'—'}</div>
         </div>
         <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card,marginBottom:12,background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',borderColor:'#E5D3D3'}}>
+        <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Customer Summary</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12}}>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Lifetime Value</div>
+            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:'#8B2020'}}>{$k(summary.ltv)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Active Pipeline</div>
+            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:'#1D4ED8'}}>{$k(summary.activePipeline)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Total Projects</div>
+            <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800}}>{summary.totalProjects}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>First Project</div>
+            <div style={{fontFamily:'Inter',fontSize:14,fontWeight:700}}>{fD(summary.firstProject)}</div>
+          </div>
+        </div>
       </div>
       <div style={{...card}}>
         {fld('Company Name','company')}
@@ -6890,20 +7020,30 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads}){
         </div>
       </div>
       <div style={{...card,marginTop:12}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Jobs with this Customer ({linkedJobs.length})</div>
-        {linkedJobs.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No jobs</div>:
-        <div style={{maxHeight:240,overflow:'auto'}}>{linkedJobs.map(j=><div key={j.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',gap:8,fontSize:12}}>
-          <div><b>#{j.job_number}</b> {j.job_name}</div>
-          <div style={{color:'#6B6056'}}>{SS[j.status]||j.status} · {$k(j.adj_contract_value||j.contract_value)}</div>
-        </div>)}</div>}
+        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Active Leads ({activeLeads.length})</div>
+        {activeLeads.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No active leads</div>:
+        <div style={{maxHeight:260,overflow:'auto'}}>{activeLeads.map(l=>{const days=l.created_at?Math.floor((Date.now()-new Date(l.created_at).getTime())/86400000):0;const stageMeta=LEAD_STAGES.find(s=>s.key===l.stage);return <div key={l.id} onClick={()=>onOpenLead&&onOpenLead(l)} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',cursor:onOpenLead?'pointer':'default'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:2}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#1A1A1A',flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{l.project_description||'Untitled lead'}</div>
+            {stageMeta&&<span style={pill(stageMeta.color,stageMeta.accent)}>{stageMeta.label}</span>}
+          </div>
+          <div style={{fontSize:11,color:'#6B6056'}}>{$k(l.estimated_value||l.proposal_value)} · {l.sales_rep||'—'} · {days}d open</div>
+        </div>;})}</div>}
       </div>
       <div style={{...card,marginTop:12}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Leads ({linkedLeads.length})</div>
-        {linkedLeads.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No leads</div>:
-        <div>{linkedLeads.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',fontSize:12}}>
-          <div>{l.stage}</div>
-          <div style={{color:'#6B6056'}}>{$k(l.estimated_value)} · {fD(l.created_at)}</div>
-        </div>)}</div>}
+        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Projects ({linkedJobs.length})</div>
+        {linkedJobs.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No projects yet</div>:
+        <div style={{maxHeight:280,overflow:'auto'}}>{linkedJobs.map(j=>{const acv=n(j.adj_contract_value||j.contract_value);const billed=n(j.ytd_invoiced);const pct=acv>0?Math.round(billed/acv*100):0;const left=acv-billed;return <div key={j.id} onClick={()=>onOpenProject&&onOpenProject(j)} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',cursor:onOpenProject?'pointer':'default'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:3}}>
+            <div style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}><span style={{color:'#8B2020'}}>#{j.job_number}</span> {j.job_name}</div>
+            <span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]||j.status}</span>
+          </div>
+          <div style={{fontSize:11,color:'#6B6056',display:'flex',gap:10,flexWrap:'wrap'}}>
+            <span>{$k(acv)}</span>
+            <span>Billed {pct}%</span>
+            <span>Left {$k(left)}</span>
+          </div>
+        </div>;})}</div>}
       </div>
     </div>
   </div>;
@@ -7161,6 +7301,46 @@ function SalesDashboardPage({jobs,onNav}){
     return Object.entries(m).map(([name,value])=>({name,value}));
   },[lostLeads]);
   const topOpen=useMemo(()=>[...proposalsOpen].sort((a,b)=>n(b.estimated_value||b.proposal_value)-n(a.estimated_value||a.proposal_value)).slice(0,10),[proposalsOpen]);
+  // Forecast vs Actual: per-month forecast (leads in proposal_sent at start of month) vs actual (jobs signed that month)
+  const forecastActual=useMemo(()=>{
+    const months=[];
+    for(let i=5;i>=0;i--){
+      const start=new Date(today.getFullYear(),today.getMonth()-i,1);
+      const end=new Date(today.getFullYear(),today.getMonth()-i+1,1);
+      const startIso=start.toISOString().slice(0,10);
+      const endIso=end.toISOString().slice(0,10);
+      // Forecast: sum of estimated_value of leads that were in proposal_sent at the START of this month
+      const forecast=leads.reduce((s,l)=>{
+        const psd=l.proposal_sent_date||(l.stage==='proposal_sent'?(l.stage_entered_at||'').slice(0,10):null);
+        if(!psd||psd>=startIso)return s;
+        const wd=l.won_date||null;const ld=l.lost_date||null;
+        if(wd&&wd<startIso)return s;
+        if(ld&&ld<startIso)return s;
+        return s+n(l.estimated_value||l.proposal_value);
+      },0);
+      // Actual: sum of job contract_value where contract_date (or fallback) falls in this month
+      const actual=(jobs||[]).reduce((s,j)=>{
+        const d=(j.contract_date||j.active_entry_date||(j.created_at||'').slice(0,10));
+        if(!d||d<startIso||d>=endIso)return s;
+        return s+n(j.adj_contract_value||j.contract_value);
+      },0);
+      months.push({key:startIso.slice(0,7),label:start.toLocaleDateString('en-US',{month:'short'}),forecast,actual});
+    }
+    return months;
+  },[leads,jobs]);// eslint-disable-line
+  const forecastAccuracy=useMemo(()=>{
+    const cutoff=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    const forecastPool=leads.reduce((s,l)=>{
+      const psd=l.proposal_sent_date||(l.stage==='proposal_sent'?(l.stage_entered_at||'').slice(0,10):null);
+      if(!psd||psd>=cutoff)return s;
+      if(l.lost_date&&l.lost_date<cutoff)return s;
+      if(l.won_date&&l.won_date<cutoff)return s;
+      return s+n(l.estimated_value||l.proposal_value);
+    },0);
+    const actualClosed=leads.filter(l=>l.stage==='won'&&(l.won_date||'')>=cutoff).reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
+    const pct=forecastPool>0?Math.round((actualClosed/forecastPool)*100):0;
+    return{pct,forecastPool,actualClosed};
+  },[leads]);// eslint-disable-line
   const PIE_COLORS=['#8B2020','#B45309','#1D4ED8','#065F46','#9D174D','#6D28D9','#374151'];
   const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
   const kpi=(label,value,sub,color='#1A1A1A')=>(<div style={{...card}}>
@@ -7177,11 +7357,12 @@ function SalesDashboardPage({jobs,onNav}){
       {kpi('Win Rate (90d)',`${winRate.toFixed(0)}%`,`${recentWon.length}W · ${recentLost.length}L`,winRate>=50?'#065F46':winRate>=25?'#B45309':'#991B1B')}
       {kpi('Avg Days to Close',`${avgDaysToClose}d`,`${wonLeads.length} won leads`,'#1A1A1A')}
     </div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:20}}>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:20}}>
       {kpi('Proposals Sent MTD',mtd.proposalsSent,'this month','#1D4ED8')}
       {kpi('Deals Won MTD',mtd.wonCount,'this month','#065F46')}
       {kpi('Revenue Won MTD',$k(mtd.wonRevenue),`${mtd.wonCount} deals`,'#065F46')}
       {kpi('Deals Lost MTD',mtd.lostCount,$k(mtd.lostValue),'#991B1B')}
+      {kpi('Forecast Accuracy (90d)',`${forecastAccuracy.pct}%`,`${$k(forecastAccuracy.actualClosed)} of ${$k(forecastAccuracy.forecastPool)}`,forecastAccuracy.pct>=50?'#065F46':forecastAccuracy.pct>=25?'#B45309':'#991B1B')}
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
       <div style={{...card}}>
@@ -7242,6 +7423,21 @@ function SalesDashboardPage({jobs,onNav}){
           </PieChart>
         </ResponsiveContainer>}
       </div>
+    </div>
+    <div style={{...card,marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:4}}>Forecast vs Actual (last 6 months)</div>
+      <div style={{fontSize:11,color:'#9E9B96',marginBottom:12}}>Blue = proposal pipeline at start of month · Green = projects signed that month</div>
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={forecastActual} margin={{top:4,right:16,bottom:4,left:0}}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+          <XAxis dataKey="label" stroke="#6B6056" fontSize={11}/>
+          <YAxis tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
+          <Tooltip formatter={v=>$k(v)}/>
+          <Legend wrapperStyle={{fontSize:11}}/>
+          <Bar dataKey="forecast" fill="#3B82F6" name="Forecast" radius={[4,4,0,0]}/>
+          <Bar dataKey="actual" fill="#10B981" name="Actual Signed" radius={[4,4,0,0]}/>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
     <div style={{...card}}>
       <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -7390,8 +7586,8 @@ export default function App(){
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='help'&&<HelpPage/>}
-            {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs}/>}
-            {page==='contacts'&&<ContactsPage jobs={jobs}/>}
+            {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/>}
+            {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
             {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
           </>}
