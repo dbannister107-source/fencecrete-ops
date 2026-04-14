@@ -6366,10 +6366,47 @@ function WonModal({lead,onClose,onCreate}){
   </div>;
 }
 
+const normalizeLeadMarket=(v)=>{
+  if(!v)return null;
+  const s=String(v).trim();
+  const l=s.toLowerCase();
+  if(l==='dallas'||l==='dfw'||l==='dallas-fort worth'||l==='dallas/fort worth')return 'Dallas-Fort Worth';
+  if(l==='sa'||l==='san antonio')return 'San Antonio';
+  if(l==='houston')return 'Houston';
+  if(l==='austin')return 'Austin';
+  return s;
+};
+const normalizeFenceType=(v)=>{
+  if(!v)return null;
+  const s=String(v);
+  if(/precast/i.test(s))return 'PC';
+  if(/single wythe|brick sw/i.test(s))return 'SW';
+  if(/wrought iron|^wi$/i.test(s))return 'WI';
+  if(/ranch/i.test(s))return 'Other';
+  return s;
+};
+const normalizeLeadStage=(v)=>{
+  if(!v)return 'new_lead';
+  const s=String(v).trim().toLowerCase();
+  if(s==='proposal submitted'||s==='proposal sent')return 'proposal_sent';
+  if(s==='closed-won'||s==='closed won'||s==='won')return 'won';
+  if(s==='closed-lost'||s==='closed lost'||s==='lost')return 'lost';
+  if(s==='qualifying'||s==='qualified')return 'qualifying';
+  return 'new_lead';
+};
+const excelDateToIso=(v)=>{
+  if(!v)return null;
+  if(v instanceof Date)return v.toISOString().slice(0,10);
+  if(typeof v==='number'){const epoch=new Date(Date.UTC(1899,11,30));const d=new Date(epoch.getTime()+v*86400000);return isNaN(d.getTime())?null:d.toISOString().slice(0,10);}
+  const d=new Date(v);return isNaN(d.getTime())?null:d.toISOString().slice(0,10);
+};
+
 function PipelinePage({jobs,onRefresh}){
   const[leads,setLeads]=useState([]);
   const[contacts,setContacts]=useState([]);
   const[loading,setLoading]=useState(true);
+  const[importing,setImporting]=useState(false);
+  const importInputRef=useRef(null);
   const[repF,setRepF]=useState(null);
   const[mktF,setMktF]=useState(null);
   const[search,setSearch]=useState('');
@@ -6422,6 +6459,74 @@ function PipelinePage({jobs,onRefresh}){
     await sbPatch('leads',lead.id,{...data,stage:'lost',lost_date:today,updated_at:nowIso,stage_entered_at:nowIso});
     setLostModal(null);await fetchLeads();setToast('Marked as Lost');
   };
+  const handleImportFile=async(e)=>{
+    const file=e.target.files&&e.target.files[0];
+    if(!file)return;
+    setImporting(true);
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+      const sheetName=wb.SheetNames.find(n=>/sales|crm|pipeline|lead/i.test(n))||wb.SheetNames[0];
+      const sheet=wb.Sheets[sheetName];
+      const rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:false});
+      const existing=await sbGet('leads','select=company_name,project_description,created_at');
+      const existKey=new Set((existing||[]).map(l=>`${l.company_name||''}|${l.project_description||''}|${(l.created_at||'').slice(0,10)}`));
+      let open=0,won=0,lost=0,skipped=0,total=0;
+      const toInsert=[];
+      for(const r of rows){
+        const company=r['Customer Name']||r['customer_name']||r['Customer']||null;
+        const proj=r['Project Name']||r['project_name']||null;
+        if(!company&&!proj)continue;
+        const createdIso=excelDateToIso(r['Date Created']||r['date_created'])||null;
+        const key=`${company||''}|${proj||''}|${createdIso||''}`;
+        if(existKey.has(key)){skipped++;continue;}
+        existKey.add(key);
+        const stage=normalizeLeadStage(r['Stage']);
+        const fenceType=normalizeFenceType(r['Product Type']);
+        const market=normalizeLeadMarket(r['Market']);
+        const jnRaw=r['Job Number']||'';
+        const jobNumber=(jnRaw&&String(jnRaw).trim().toLowerCase()!=='not active')?String(jnRaw).trim():null;
+        const cv=n(r['Contract Value']);
+        const noteParts=[];
+        if(r['Project Type'])noteParts.push(`Type: ${r['Project Type']}`);
+        if(r['Product Summary'])noteParts.push(`Summary: ${r['Product Summary']}`);
+        if(r['Style'])noteParts.push(`Style: ${r['Style']}`);
+        const row={
+          company_name:company||null,
+          contact_name:r['Customer Contact']||null,
+          project_description:proj||null,
+          market:market,
+          sales_rep:r['Sales Rep']||null,
+          fence_type:fenceType,
+          estimated_lf:n(r['Linear Feet'])||null,
+          estimated_value:cv||null,
+          expected_close_date:excelDateToIso(r['Est Project Start Date']),
+          stage:stage,
+          job_number:(stage==='won')?jobNumber:null,
+          proposal_value:(stage==='proposal_sent')?(cv||null):null,
+          win_probability:stage==='proposal_sent'?50:stage==='won'?100:stage==='lost'?0:null,
+          won_date:stage==='won'?(createdIso||new Date().toISOString().slice(0,10)):null,
+          lost_date:stage==='lost'?(createdIso||new Date().toISOString().slice(0,10)):null,
+          source:'Inbound Call',
+          notes:noteParts.join(' · ')||null,
+          created_at:createdIso?new Date(createdIso).toISOString():undefined,
+          stage_entered_at:createdIso?new Date(createdIso).toISOString():undefined,
+        };
+        Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
+        toInsert.push(row);
+        total++;
+        if(stage==='won')won++;else if(stage==='lost')lost++;else open++;
+      }
+      const CHUNK=50;
+      for(let i=0;i<toInsert.length;i+=CHUNK){
+        await sbPost('leads',toInsert.slice(i,i+CHUNK));
+      }
+      await fetchLeads();
+      setToast(`Imported ${total} leads (${open} open, ${won} won, ${lost} lost)${skipped?` · ${skipped} duplicates skipped`:''}`);
+    }catch(err){console.error(err);setToast('Import failed: '+err.message);}
+    setImporting(false);
+    if(importInputRef.current)importInputRef.current.value='';
+  };
   const afterProjectCreated=async(jobNumber)=>{
     const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
     await sbPatch('leads',lead.id,{stage:'won',won_date:today,job_number:jobNumber,updated_at:nowIso,stage_entered_at:nowIso});
@@ -6432,7 +6537,11 @@ function PipelinePage({jobs,onRefresh}){
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Sales Pipeline</h1>
-      <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
+      <div style={{display:'flex',gap:8}}>
+        <input ref={importInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:'none'}}/>
+        <button onClick={()=>importInputRef.current?.click()} disabled={importing} style={btnS}>{importing?'Importing...':'Import from Excel'}</button>
+        <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
+      </div>
     </div>
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
