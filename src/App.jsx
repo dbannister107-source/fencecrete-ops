@@ -82,7 +82,18 @@ const PMS=PM_LIST.map(p=>p.id);
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
 const _STYLE_LIST = ['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
-const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), style_single_wythe:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), color:['LAC','Painted','10#61078','Café','Adobe','8#860','Regular Brown','Outback','Silversmoke 8085','Green','Stain','10#860','8#677','3.5#860','1.5#860','Dune 6058','Sandstone 5237','Pebble 641','No Color','Other'].map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
+// Canonical 6-color palette used for NEW jobs and line items.
+// Existing jobs may hold legacy colors (Painted, Adobe, 860, etc.) — those are preserved via colorOptionsFor().
+const STANDARD_COLORS=['LAC','Silversmoke','Café','Outback','Regular Brown','Green'];
+const isLegacyColor=(c)=>!!c&&!STANDARD_COLORS.includes(c);
+// Builds the color dropdown options for an EXISTING job: 6 standard colors + the job's current
+// legacy color (tagged " (legacy)") if present, so users don't accidentally lose it.
+const colorOptionsFor=(current)=>{
+  const opts=STANDARD_COLORS.map(c=>({v:c,l:c}));
+  if(isLegacyColor(current))opts.push({v:current,l:`${current} (legacy)`});
+  return opts;
+};
+const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), style_single_wythe:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), color:STANDARD_COLORS.map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
 const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'inventory_ready', inventory_ready:'active_install', active_install:'fence_complete', fence_complete:'fully_complete', fully_complete:'closed' };
 
 // ═══ MOLD SHARING ═══
@@ -470,7 +481,13 @@ function LineItemsEditor({job,onChange}){
             <td style={td}><input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} style={{...inp,width:'100%'}}/></td>
             <td style={td}><input value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}/></td>
             <td style={td}><input value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}><input value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%'}}/></td>
+            <td style={td}>
+              <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%'}} title={isLegacyColor(l.color)?'Legacy color — contact admin to change':''}>
+                <option value="">—</option>
+                {colorOptionsFor(l.color).map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+              {isLegacyColor(l.color)&&<div style={{fontSize:9,color:'#B45309',fontStyle:'italic',marginTop:2}}>Legacy color — contact admin to change</div>}
+            </td>
             <td style={td}><input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} style={{...inp,width:'100%'}}/></td>
             <td style={{...td,fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(l.line_value)}</td>
             <td style={{...td,textAlign:'center'}}><input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{accentColor:'#8B2020'}}/></td>
@@ -871,7 +888,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
                 <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>
-                <div>{fLbl('Color')}<input value={li.color} onChange={e=>u('color',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Color')}<select value={li.color||''} onChange={e=>u('color',e.target.value)} style={inputS}><option value="">— Select —</option>{STANDARD_COLORS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                 <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Precast'?rateHint('contract_rate_precast'):rateHint('contract_rate_single_wythe')} style={inputS}/></div>
               </>}
               {(lt==='Wrought Iron'||lt==='Wood')&&<>
@@ -1346,7 +1363,15 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0}){
   const bulkStatus=async s=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();};
   const bulkRep=async r=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{sales_rep:r});logAct(j,'field_update','sales_rep',j.sales_rep,r);}}setSel(new Set());setToast(`Assigned to ${r}`);onRefresh();};
   const visCD=ALL_COLS.filter(c=>visCols.includes(c.key));
-  const inlineField=(j,k)=>{const dd=DD[k];if(dd)return<select autoFocus value={inlE?.value||''} onChange={e=>{setInlE({...inlE,value:e.target.value});}} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;if(k==='est_start_date'||k==='last_billed')return<input autoFocus type="date" value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;return<input autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;};
+  const inlineField=(j,k)=>{
+    // For the color column, compose standard palette + the row's current legacy value (if any)
+    // so editing an existing job never silently drops the legacy color.
+    if(k==='color'){
+      const opts=colorOptionsFor(j?.color);
+      return<select autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;
+    }
+    const dd=DD[k];if(dd)return<select autoFocus value={inlE?.value||''} onChange={e=>{setInlE({...inlE,value:e.target.value});}} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;if(k==='est_start_date'||k==='last_billed')return<input autoFocus type="date" value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;return<input autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;
+  };
   const fTC=filtered.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const fLTB=filtered.reduce((s,j)=>s+n(j.left_to_bill),0);
   const fAvgB=filtered.length>0?filtered.reduce((s,j)=>s+n(j.pct_billed),0)/filtered.length:0;
