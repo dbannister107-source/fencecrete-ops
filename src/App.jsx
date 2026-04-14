@@ -151,7 +151,61 @@ const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeigh
 const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#9E9B96' });
 
 /* ═══ SHARED ═══ */
-function Toast({message,onDone,isError}){useEffect(()=>{const t=setTimeout(onDone,isError?6000:2500);return()=>clearTimeout(t);},[onDone,isError]);return<div style={{position:'fixed',top:12,left:'50%',transform:'translateX(-50%)',background:isError?'#DC2626':'#8B2020',color:'#fff',padding:isError?'12px 24px':'8px 20px',borderRadius:isError?10:20,fontSize:13,fontWeight:600,zIndex:9999,maxWidth:'90vw',boxShadow:isError?'0 4px 16px rgba(220,38,38,0.4)':'none'}}>{message}</div>;}
+/* ═══ VIEWPORT / RESPONSIVE ═══ */
+function useViewport(){
+  const get=()=>{const w=typeof window!=='undefined'?window.innerWidth:1200;return{w,mobile:w<768,tablet:w>=768&&w<1024,desktop:w>=1024};};
+  const[v,setV]=useState(get);
+  useEffect(()=>{let r;const fn=()=>{cancelAnimationFrame(r);r=requestAnimationFrame(()=>setV(get()));};window.addEventListener('resize',fn);return()=>{window.removeEventListener('resize',fn);cancelAnimationFrame(r);};},[]);
+  return v;
+}
+
+/* ═══ TOAST STORE (sonner-style, stacked) ═══ */
+let __toastListeners=[];
+let __toastCounter=0;
+const __notify=(t)=>{__toastListeners.forEach(fn=>fn(t));};
+const pushToast=(type,message)=>{const id=++__toastCounter;__notify({id,type:type||'success',message});return id;};
+const toast={success:(m)=>pushToast('success',m),error:(m)=>pushToast('error',m),info:(m)=>pushToast('info',m)};
+function ToastHost(){
+  const[items,setItems]=useState([]);
+  const v=useViewport();
+  useEffect(()=>{
+    const fn=(t)=>{
+      setItems(prev=>[...prev,t].slice(-3));
+      setTimeout(()=>setItems(prev=>prev.filter(x=>x.id!==t.id)),4000);
+    };
+    __toastListeners.push(fn);
+    return()=>{__toastListeners=__toastListeners.filter(x=>x!==fn);};
+  },[]);
+  const palette={success:{c:'#065F46',bg:'#ECFDF5',border:'#10B981',icon:'✓'},error:{c:'#991B1B',bg:'#FEF2F2',border:'#DC2626',icon:'✕'},info:{c:'#1E40AF',bg:'#EFF6FF',border:'#3B82F6',icon:'ⓘ'}};
+  const pos=v.mobile?{top:12,left:'50%',transform:'translateX(-50%)',alignItems:'center'}:{bottom:24,right:24,alignItems:'flex-end'};
+  return <div style={{position:'fixed',zIndex:9999,display:'flex',flexDirection:'column',gap:8,pointerEvents:'none',maxWidth:'94vw',...pos}}>
+    {items.map(t=>{const p=palette[t.type]||palette.success;return <div key={t.id} onClick={()=>setItems(prev=>prev.filter(x=>x.id!==t.id))} style={{pointerEvents:'auto',cursor:'pointer',background:'#FFF',borderLeft:`4px solid ${p.border}`,borderRadius:8,padding:'10px 14px',boxShadow:'0 4px 16px rgba(0,0,0,0.12)',display:'flex',alignItems:'center',gap:10,minWidth:240,maxWidth:420,fontSize:13}}>
+      <span style={{color:p.c,fontWeight:800,fontSize:14,background:p.bg,borderRadius:10,width:22,height:22,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{p.icon}</span>
+      <span style={{color:'#1A1A1A',fontWeight:500,flex:1}}>{t.message}</span>
+    </div>;})}
+  </div>;
+}
+
+/* ═══ Back-compat Toast — proxies to toast store ═══ */
+function Toast({message,onDone,isError}){
+  useEffect(()=>{pushToast(isError?'error':'success',message);const t=setTimeout(onDone,isError?6000:2500);return()=>clearTimeout(t);// eslint-disable-next-line
+  },[]);
+  return null;
+}
+
+/* ═══ SKELETON LOADER ═══ */
+function Skeleton({w='100%',h=14,r=6,style}){return <div style={{width:w,height:h,borderRadius:r,background:'linear-gradient(90deg,#EFEDE9 0%,#F8F6F3 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.4s ease-in-out infinite',...style}}/>;}
+function SkeletonRows({rows=8,cols=6}){return <div>{Array.from({length:rows}).map((_,i)=><div key={i} style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:12,padding:'10px 12px',borderBottom:'1px solid #F4F4F2'}}>{Array.from({length:cols}).map((_,j)=><Skeleton key={j} h={14}/>)}</div>)}</div>;}
+function SkeletonKanban({cols=5,cards=3}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>{Array.from({length:cols}).map((_,i)=><div key={i}><Skeleton h={48} r={8} style={{marginBottom:8}}/>{Array.from({length:cards}).map((_,j)=><Skeleton key={j} h={110} r={10} style={{marginBottom:8}}/>)}</div>)}</div>;}
+function SkeletonKpis({n:nKpis=4}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${nKpis},1fr)`,gap:12}}>{Array.from({length:nKpis}).map((_,i)=><div key={i} style={{...card}}><Skeleton h={28} w="60%" style={{marginBottom:8}}/><Skeleton h={12} w="40%"/></div>)}</div>;}
+
+/* ═══ EMPTY STATE ═══ */
+function EmptyState({icon='📭',title,subtitle,cta,onCta,compact}){return <div style={{textAlign:'center',padding:compact?'24px 16px':'48px 24px',color:'#9E9B96'}}>
+  <div style={{fontSize:compact?32:44,marginBottom:8,opacity:0.6}}>{icon}</div>
+  <div style={{fontSize:14,fontWeight:700,color:'#6B6056',marginBottom:4}}>{title}</div>
+  {subtitle&&<div style={{fontSize:12,color:'#9E9B96',marginBottom:cta?14:0,maxWidth:280,margin:'0 auto 14px'}}>{subtitle}</div>}
+  {cta&&<button onClick={onCta} style={{...btnP,fontSize:12}}>{cta}</button>}
+</div>;}
 function KPI({label,value,color='#8B2020',sub}){return<div style={card}><div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color}}>{value}</div><div style={{fontSize:12,color:'#6B6056',marginTop:4}}>{label}</div>{sub&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{sub}</div>}</div>;}
 function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
 // Multi-select dropdown with checkbox options, "All" clear row, and click-outside close.
@@ -987,16 +1041,88 @@ function NewProjectForm({jobs,onClose,onSaved}){
 }
 
 /* ═══ GLOBAL SEARCH ═══ */
-function GlobalSearch({jobs,onSelect}){
-  const[q,setQ]=useState('');const[open,setOpen]=useState(false);const ref=useRef();
-  useEffect(()=>{const h=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();setOpen(true);setTimeout(()=>ref.current?.focus(),50);}if(e.key==='Escape')setOpen(false);};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
-  const results=useMemo(()=>{if(!q||q.length<2)return[];const lq=q.toLowerCase();return jobs.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name} ${j.address} ${j.notes}`.toLowerCase().includes(lq)).slice(0,8);},[q,jobs]);
-  const pick=j=>{onSelect(j);setQ('');setOpen(false);};
+// Fuzzy subsequence matcher: "brier" matches "Briarwood" etc.
+const fuzzyMatch=(query,text)=>{
+  if(!query||!text)return false;
+  const q=query.toLowerCase(),t=text.toLowerCase();
+  if(t.includes(q))return true;
+  let qi=0;for(let i=0;i<t.length&&qi<q.length;i++)if(t[qi===q.length?qi-1:qi]===undefined)break;else if(t[i]===q[qi])qi++;
+  return qi===q.length;
+};
+const PAGE_INDEX=[
+  {key:'dashboard',label:'Dashboard',icon:'🏠',group:'Pages'},
+  {key:'projects',label:'Projects',icon:'📋',group:'Pages'},
+  {key:'production',label:'Production Board',icon:'🗂',group:'Pages'},
+  {key:'production_planning',label:'Production Planning',icon:'⚙',group:'Pages'},
+  {key:'material_calc',label:'Material Calculator',icon:'🧮',group:'Pages'},
+  {key:'material_requests',label:'Material Requests',icon:'🚚',group:'Pages'},
+  {key:'daily_report',label:'Daily Production Report',icon:'🏭',group:'Pages'},
+  {key:'pm_billing',label:'PM Bill Sheet',icon:'📊',group:'Pages'},
+  {key:'pm_daily_report',label:'PM Daily Report',icon:'📋',group:'Pages'},
+  {key:'schedule',label:'Install Schedule',icon:'📅',group:'Pages'},
+  {key:'billing',label:'Billing',icon:'💰',group:'Pages'},
+  {key:'reports',label:'Reports',icon:'📈',group:'Pages'},
+  {key:'import_projects',label:'Import Projects',icon:'📤',group:'Pages'},
+  {key:'pipeline',label:'Sales Pipeline',icon:'🔀',group:'Pages'},
+  {key:'contacts',label:'Contacts',icon:'👤',group:'Pages'},
+  {key:'sales_dashboard',label:'Sales Dashboard',icon:'📊',group:'Pages'},
+  {key:'proposals',label:'Proposals',icon:'📋',group:'Pages'},
+  {key:'help',label:'Help',icon:'❓',group:'Pages'},
+];
+
+function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
+  const[q,setQ]=useState('');
+  const[cursor,setCursor]=useState(0);
+  const[recent,setRecent]=useState(()=>{try{return JSON.parse(localStorage.getItem('fc_cmdk_recent')||'[]');}catch(e){return[];}});
+  const ref=useRef();
+  useEffect(()=>{if(open){setQ('');setCursor(0);setTimeout(()=>ref.current?.focus(),50);}},[open]);
+  const jobHits=useMemo(()=>{if(!q||q.length<1)return[];return(jobs||[]).filter(j=>fuzzyMatch(q,`${j.job_name||''} ${j.job_number||''} ${j.customer_name||''} ${j.address||''}`)).slice(0,8).map(j=>({type:'job',key:'job-'+j.id,label:j.job_name,sub:`#${j.job_number} · ${j.customer_name||'—'}`,job:j,group:'Projects'}));},[q,jobs]);
+  const pageHits=useMemo(()=>{if(!q)return PAGE_INDEX.slice(0,5).map(p=>({type:'page',key:'page-'+p.key,label:p.label,icon:p.icon,pageKey:p.key,group:'Pages'}));return PAGE_INDEX.filter(p=>fuzzyMatch(q,p.label)).map(p=>({type:'page',key:'page-'+p.key,label:p.label,icon:p.icon,pageKey:p.key,group:'Pages'}));},[q]);
+  const actionHits=useMemo(()=>{const list=[{key:'act-new',label:'New Project',icon:'➕',pageKey:'projects'},{key:'act-lead',label:'New Lead',icon:'➕',pageKey:'pipeline'}];if(!q)return list.map(a=>({...a,type:'action',group:'Actions'}));return list.filter(a=>fuzzyMatch(q,a.label)).map(a=>({...a,type:'action',group:'Actions'}));},[q]);
+  const recentHits=useMemo(()=>{if(q)return[];return recent.slice(0,4).map(r=>({...r,group:'Recent'}));},[q,recent]);
+  const flat=useMemo(()=>[...recentHits,...jobHits,...pageHits,...actionHits],[recentHits,jobHits,pageHits,actionHits]);
+  const grouped=useMemo(()=>{const g={};flat.forEach(h=>{if(!g[h.group])g[h.group]=[];g[h.group].push(h);});return g;},[flat]);
+  const rememberRecent=(hit)=>{
+    const mini={type:hit.type,key:hit.key,label:hit.label,sub:hit.sub,icon:hit.icon,pageKey:hit.pageKey,job:hit.job};
+    const next=[mini,...recent.filter(r=>r.key!==hit.key)].slice(0,8);
+    setRecent(next);try{localStorage.setItem('fc_cmdk_recent',JSON.stringify(next));}catch(e){}
+  };
+  const pick=(hit)=>{
+    if(!hit)return;
+    rememberRecent(hit);
+    if(hit.type==='job'&&hit.job)onOpenJob(hit.job);
+    else if(hit.pageKey)onNavPage(hit.pageKey);
+    onClose();
+  };
+  useEffect(()=>{if(!open)return;const h=(e)=>{if(e.key==='Escape'){onClose();}else if(e.key==='ArrowDown'){e.preventDefault();setCursor(c=>Math.min(c+1,flat.length-1));}else if(e.key==='ArrowUp'){e.preventDefault();setCursor(c=>Math.max(c-1,0));}else if(e.key==='Enter'){e.preventDefault();pick(flat[cursor]);}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[open,flat,cursor]);// eslint-disable-line
   if(!open)return null;
-  return(<div style={{position:'fixed',inset:0,zIndex:500,background:'rgba(0,0,0,0.2)'}} onClick={()=>setOpen(false)}><div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:60,left:'50%',transform:'translateX(-50%)',width:460,background:'#FFF',borderRadius:12,border:'1px solid #E5E3E0',boxShadow:'0 8px 30px rgba(0,0,0,0.15)',overflow:'hidden'}}>
-    <div style={{display:'flex',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid #E5E3E0'}}><span style={{color:'#9E9B96',marginRight:8}}>⌕</span><input ref={ref} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search projects... (Esc to close)" style={{flex:1,border:'none',outline:'none',fontSize:14,color:'#1A1A1A',background:'transparent'}} onKeyDown={e=>{if(e.key==='Enter'&&results[0])pick(results[0]);if(e.key==='Escape')setOpen(false);}}/>{q&&<button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'#9E9B96',cursor:'pointer',fontSize:16}}>×</button>}</div>
-    {q.length>=2&&<div style={{maxHeight:320,overflow:'auto'}}>{results.length===0?<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No results</div>:results.map(j=><div key={j.id} onClick={()=>pick(j)} style={{padding:'10px 16px',cursor:'pointer',borderBottom:'1px solid #F4F4F2',display:'flex',gap:8,alignItems:'center'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.job_name}</div><div style={{fontSize:11,color:'#6B6056'}}>#{j.job_number} · {j.customer_name}</div></div><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span><span style={pill(SC[j.status]||'#6B6056',SB_[j.status]||'#F4F4F2')}>{SS[j.status]}</span></div>)}</div>}
-  </div></div>);
+  let idx=-1;
+  return <div style={{position:'fixed',inset:0,zIndex:800,background:'rgba(0,0,0,0.35)',backdropFilter:'blur(2px)'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'12vh',left:'50%',transform:'translateX(-50%)',width:560,maxWidth:'94vw',background:'#FFF',borderRadius:14,border:'1px solid #E5E3E0',boxShadow:'0 16px 48px rgba(0,0,0,0.22)',overflow:'hidden'}}>
+      <div style={{display:'flex',alignItems:'center',padding:'14px 18px',borderBottom:'1px solid #E5E3E0'}}>
+        <span style={{color:'#9E9B96',marginRight:10,fontSize:16}}>⌕</span>
+        <input ref={ref} value={q} onChange={e=>{setQ(e.target.value);setCursor(0);}} placeholder="Search projects, pages, actions..." style={{flex:1,border:'none',outline:'none',fontSize:15,color:'#1A1A1A',background:'transparent'}}/>
+        <span style={{fontSize:10,color:'#D1CEC9',background:'#F4F4F2',padding:'3px 6px',borderRadius:4,fontWeight:600}}>ESC</span>
+      </div>
+      <div style={{maxHeight:'60vh',overflow:'auto'}}>
+        {flat.length===0?<div style={{padding:32,textAlign:'center',color:'#9E9B96',fontSize:13}}>No results</div>:
+        Object.entries(grouped).map(([group,hits])=><div key={group}>
+          <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',letterSpacing:0.5,padding:'8px 18px 4px'}}>{group}</div>
+          {hits.map(hit=>{idx++;const sel=idx===cursor;return <div key={hit.key} onMouseEnter={()=>setCursor(idx)} onClick={()=>pick(hit)} style={{padding:'9px 18px',cursor:'pointer',display:'flex',gap:10,alignItems:'center',background:sel?'#FDF4F4':'transparent',borderLeft:sel?'3px solid #8B2020':'3px solid transparent'}}>
+            <span style={{fontSize:15,width:20,textAlign:'center'}}>{hit.icon||'📄'}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hit.label}</div>
+              {hit.sub&&<div style={{fontSize:11,color:'#6B6056',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hit.sub}</div>}
+            </div>
+            {hit.type==='job'&&hit.job&&<span style={pill(MC[hit.job.market]||'#6B6056',MB[hit.job.market]||'#F4F4F2')}>{MS[hit.job.market]||'—'}</span>}
+          </div>;})}
+        </div>)}
+      </div>
+      <div style={{padding:'8px 18px',borderTop:'1px solid #F4F4F2',fontSize:10,color:'#9E9B96',display:'flex',gap:14}}>
+        <span>↑↓ navigate</span><span>⏎ select</span><span>esc close</span>
+      </div>
+    </div>
+  </div>;
 }
 
 /* ═══ WEEKLY DIGEST ═══ */
@@ -6090,7 +6216,7 @@ function ChatWidget({currentPage}){
 }
 
 /* ═══ TOPBAR ═══ */
-function Topbar({jobs,live,onSearch,onRefresh}){
+function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
@@ -6103,8 +6229,9 @@ function Topbar({jobs,live,onSearch,onRefresh}){
     setRefreshState('done');
     setTimeout(()=>setRefreshState('idle'),1000);
   };
-  return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 24px',gap:16,flexShrink:0}}>
+  return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}}>
     <style>{`@keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#6B6056',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
     <div style={{flex:1}}/>
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
@@ -6552,7 +6679,7 @@ function PipelinePage({jobs,onRefresh}){
       <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
       {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
     </div>
-    {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading leads...</div>:
+    {loading?<SkeletonKanban cols={5} cards={3}/>:
     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,alignItems:'flex-start'}}>
       {LEAD_STAGES.map(col=>{
         const items=byStage[col.key]||[];
@@ -6567,7 +6694,7 @@ function PipelinePage({jobs,onRefresh}){
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>)}
+          {!collapsed&&(items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}}/>))}
         </div>;
       })}
     </div>}
@@ -6628,14 +6755,15 @@ function ContactsPage({jobs}){
       <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
       {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
     </div>
-    {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:
+    {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={8}/></div>:
+    filtered.length===0?<div style={{...card}}><EmptyState icon="👤" title="No contacts yet" subtitle={contacts.length===0?'Import from existing projects or add your first contact manually.':'No contacts match your filters.'} cta={contacts.length===0?'+ Add Contact':null} onCta={()=>setShowAdd(true)}/></div>:
     <div style={{...card,padding:0,overflow:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
           {['Company','Type','Contact Name','Title','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}
         </tr></thead>
         <tbody>
-          {filtered.length===0?<tr><td colSpan={8} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No contacts</td></tr>:
+          {
           filtered.map(c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <tr key={c.id} onClick={()=>setDetail(c)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <td style={{padding:'10px 12px',fontWeight:600}}>{c.company||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.type||c.company_type||c.contact_type||'—'}</td>
@@ -6771,35 +6899,96 @@ const NAV_GROUPS=[
   {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
+const MOBILE_NAV=[
+  {key:'dashboard',label:'Dashboard',icon:'🏠'},
+  {key:'projects',label:'Projects',icon:'📋'},
+  {key:'production',label:'Production',icon:'🗂'},
+  {key:'billing',label:'Billing',icon:'💰'},
+  {key:'__more',label:'More',icon:'☰'},
+];
+
+function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick}){
+  return <>
+    <div style={{padding:collapsed?'16px 8px':'24px 20px 20px',textAlign:collapsed?'center':'left'}}>
+      {!collapsed?<div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FCA Command Center</div>
+      :<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
+    </div>
+    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>)}</div>)}</nav>
+    <div style={{padding:collapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
+      {!collapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
+      <button onClick={()=>setCollapsed(!collapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{collapsed?'→':'←'}</button>
+    </div>
+  </>;
+}
+
+function MoreMenuSheet({page,setPage,onClose,jobs}){
+  return <div style={{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.5)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#1A1A1A',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'82vh',overflow:'auto',paddingBottom:80}}>
+      <div style={{padding:'16px 20px',borderBottom:'1px solid #2A2A2A',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020'}}>All Sections</div>
+        <button onClick={onClose} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:14,width:32,height:32,cursor:'pointer'}}>✕</button>
+      </div>
+      <div style={{padding:'8px 8px 24px'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>
+        {g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}
+        {g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onClose();}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'14px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#D1CEC9',fontSize:15,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:18,width:24,textAlign:'center'}}>{ni.icon}</span>{ni.label}</button>)}
+      </div>)}</div>
+    </div>
+  </div>;
+}
+
+function MobileBottomNav({page,setPage,onMore}){
+  return <div style={{position:'fixed',left:0,right:0,bottom:0,height:56,background:'#1A1A1A',borderTop:'1px solid #2A2A2A',display:'flex',zIndex:600,boxShadow:'0 -2px 12px rgba(0,0,0,0.2)'}}>
+    {MOBILE_NAV.map(item=>{
+      const isMore=item.key==='__more';
+      const active=!isMore&&page===item.key;
+      return <button key={item.key} onClick={()=>{if(isMore)onMore();else setPage(item.key);}} style={{flex:1,background:'transparent',border:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,color:active?'#8B2020':'#9E9B96',cursor:'pointer',borderTop:active?'3px solid #8B2020':'3px solid transparent',padding:0}}>
+        <span style={{fontSize:18}}>{item.icon}</span>
+        <span style={{fontSize:10,fontWeight:600}}>{item.label}</span>
+      </button>;
+    })}
+  </div>;
+}
+
 export default function App(){
-  const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);const[sideCollapsed,setSideCollapsed]=useState(false);
+  const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
+  const[sideCollapsed,setSideCollapsed]=useState(()=>{try{return localStorage.getItem('fc_side_collapsed')==='1';}catch(e){return false;}});
+  const[tabletOverlay,setTabletOverlay]=useState(false);
+  const[showMoreMenu,setShowMoreMenu]=useState(false);
   const[refreshKey,setRefreshKey]=useState(0);
+  const v=useViewport();
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
-  // Global refresh — fetches the main jobs list AND increments refreshKey so pages with internal fetches can re-run them.
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
   useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:STYLE_LABEL(s.style_name)}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
   const live=useRealtime(setJobs);
-  const isMobile=typeof window!=='undefined'&&window.innerWidth<768;
-  const sideW=sideCollapsed||isMobile?48:220;
+  useEffect(()=>{try{localStorage.setItem('fc_side_collapsed',sideCollapsed?'1':'0');}catch(e){}},[sideCollapsed]);
+  // Global Cmd+K / Ctrl+K
+  useEffect(()=>{const h=(e)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setShowSearch(true);}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+  useEffect(()=>{setTabletOverlay(false);},[page]);
+  // Sidebar mode
+  const desktopSideW=sideCollapsed?64:240;
+  const showInlineSidebar=v.desktop||(v.tablet&&!tabletOverlay);
+  const showOverlaySidebar=v.tablet&&tabletOverlay;
+  const inlineW=v.desktop?desktopSideW:64;
+  const contentBottomPad=v.mobile?72:0;
   return(
     <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
-      <style>{`@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
-      <div style={{width:sideW,minWidth:sideW,maxWidth:sideW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
-        <div style={{padding:sideCollapsed?'16px 8px':'24px 20px 20px',textAlign:sideCollapsed?'center':'left'}}>
-          {!sideCollapsed&&<><div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FCA Command Center</div></>}
-          {sideCollapsed&&<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
+      <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
+      {showInlineSidebar&&<div style={{width:inlineW,minWidth:inlineW,maxWidth:inlineW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
+        <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={v.tablet?true:sideCollapsed} setCollapsed={v.tablet?(()=>setTabletOverlay(true)):setSideCollapsed}/>
+      </div>}
+      {showOverlaySidebar&&<div style={{position:'fixed',inset:0,zIndex:650,background:'rgba(0,0,0,0.5)'}} onClick={()=>setTabletOverlay(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{width:240,height:'100%',background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'2px 0 16px rgba(0,0,0,0.3)'}}>
+          <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={false} setCollapsed={()=>setTabletOverlay(false)} onNavClick={()=>setTabletOverlay(false)}/>
         </div>
-        <nav style={{flex:1,padding:sideCollapsed?'0 4px':'0 8px',overflow:'auto'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>{!sideCollapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{sideCollapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>setPage(ni.key)} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:sideCollapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:sideCollapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!sideCollapsed&&ni.label}</button>)}</div>)}</nav>
-        <div style={{padding:sideCollapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
-          {!sideCollapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
-          <button onClick={()=>setSideCollapsed(!sideCollapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{sideCollapsed?'→':'←'}</button>
-        </div>
-      </div>
+      </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh}/>
-        <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
-          {loading?<div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'50vh',color:'#9E9B96'}}>Loading...</div>:<>
+        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile}/>
+        <div style={{flex:1,overflow:'auto',padding:v.mobile?'16px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
+          {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <SkeletonKpis n={v.mobile?2:4}/>
+            <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
+          </div>:<>
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
@@ -6827,7 +7016,10 @@ export default function App(){
           </>}
         </div>
       </div>
-      {showSearch&&<GlobalSearch jobs={jobs} onSelect={j=>{setOpenJob(j);setPage('projects');setShowSearch(false);}}/>}
+      <CommandPalette open={showSearch} onClose={()=>setShowSearch(false)} jobs={jobs} onNavPage={(k)=>setPage(k)} onOpenJob={(j)=>{setOpenJob(j);setPage('projects');}}/>
+      {v.mobile&&<MobileBottomNav page={page} setPage={setPage} onMore={()=>setShowMoreMenu(true)}/>}
+      {showMoreMenu&&<MoreMenuSheet page={page} setPage={setPage} onClose={()=>setShowMoreMenu(false)} jobs={jobs}/>}
+      <ToastHost/>
       <ChatWidget currentPage={page}/>
     </div>
   );
