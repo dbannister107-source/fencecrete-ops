@@ -6504,13 +6504,11 @@ const normalizeLeadMarket=(v)=>{
   return s;
 };
 const normalizeFenceType=(v)=>{
-  if(!v)return null;
-  const s=String(v);
+  const s=v?String(v):'';
   if(/precast/i.test(s))return 'PC';
   if(/single wythe|brick sw/i.test(s))return 'SW';
-  if(/wrought iron|^wi$/i.test(s))return 'WI';
   if(/ranch/i.test(s))return 'Other';
-  return s;
+  return 'PC';
 };
 const normalizeLeadStage=(v)=>{
   if(!v)return 'new_lead';
@@ -6586,6 +6584,7 @@ function PipelinePage({jobs,onRefresh}){
     await sbPatch('leads',lead.id,{...data,stage:'lost',lost_date:today,updated_at:nowIso,stage_entered_at:nowIso});
     setLostModal(null);await fetchLeads();setToast('Marked as Lost');
   };
+  const[importPreview,setImportPreview]=useState(null);
   const handleImportFile=async(e)=>{
     const file=e.target.files&&e.target.files[0];
     if(!file)return;
@@ -6596,16 +6595,17 @@ function PipelinePage({jobs,onRefresh}){
       const sheetName=wb.SheetNames.find(n=>/sales|crm|pipeline|lead/i.test(n))||wb.SheetNames[0];
       const sheet=wb.Sheets[sheetName];
       const rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:false});
-      const existing=await sbGet('leads','select=company_name,project_description,created_at');
-      const existKey=new Set((existing||[]).map(l=>`${l.company_name||''}|${l.project_description||''}|${(l.created_at||'').slice(0,10)}`));
-      let open=0,won=0,lost=0,skipped=0,total=0;
+      const existing=await sbGet('leads','select=company_name,project_description,estimated_value');
+      const dedupeKey=(company,proj,val)=>`${(company||'').trim().toLowerCase()}|${(proj||'').trim().toLowerCase()}|${n(val)||0}`;
+      const existKey=new Set((existing||[]).map(l=>dedupeKey(l.company_name,l.project_description,l.estimated_value)));
+      let open=0,won=0,lost=0,skipped=0;
       const toInsert=[];
       for(const r of rows){
-        const company=r['Customer Name']||r['customer_name']||r['Customer']||null;
-        const proj=r['Project Name']||r['project_name']||null;
+        const company=r['Customer Name']||null;
+        const proj=r['Project Name']||null;
         if(!company&&!proj)continue;
-        const createdIso=excelDateToIso(r['Date Created']||r['date_created'])||null;
-        const key=`${company||''}|${proj||''}|${createdIso||''}`;
+        const cv=n(r['Contract Value'])||null;
+        const key=dedupeKey(company,proj,cv);
         if(existKey.has(key)){skipped++;continue;}
         existKey.add(key);
         const stage=normalizeLeadStage(r['Stage']);
@@ -6613,11 +6613,7 @@ function PipelinePage({jobs,onRefresh}){
         const market=normalizeLeadMarket(r['Market']);
         const jnRaw=r['Job Number']||'';
         const jobNumber=(jnRaw&&String(jnRaw).trim().toLowerCase()!=='not active')?String(jnRaw).trim():null;
-        const cv=n(r['Contract Value']);
-        const noteParts=[];
-        if(r['Project Type'])noteParts.push(`Type: ${r['Project Type']}`);
-        if(r['Product Summary'])noteParts.push(`Summary: ${r['Product Summary']}`);
-        if(r['Style'])noteParts.push(`Style: ${r['Style']}`);
+        const createdIso=excelDateToIso(r['Date Created']);
         const row={
           company_name:company||null,
           contact_name:r['Customer Contact']||null,
@@ -6626,33 +6622,42 @@ function PipelinePage({jobs,onRefresh}){
           sales_rep:r['Sales Rep']||null,
           fence_type:fenceType,
           estimated_lf:n(r['Linear Feet'])||null,
-          estimated_value:cv||null,
+          estimated_value:cv,
+          proposal_value:cv,
           expected_close_date:excelDateToIso(r['Est Project Start Date']),
           stage:stage,
           job_number:(stage==='won')?jobNumber:null,
-          proposal_value:(stage==='proposal_sent')?(cv||null):null,
           win_probability:stage==='proposal_sent'?50:stage==='won'?100:stage==='lost'?0:null,
-          won_date:stage==='won'?(createdIso||new Date().toISOString().slice(0,10)):null,
-          lost_date:stage==='lost'?(createdIso||new Date().toISOString().slice(0,10)):null,
+          won_date:stage==='won'?createdIso:null,
+          lost_date:stage==='lost'?createdIso:null,
           source:'Inbound Call',
-          notes:noteParts.join(' · ')||null,
+          notes:r['Style']?`Style: ${r['Style']}`:null,
           created_at:createdIso?new Date(createdIso).toISOString():undefined,
           stage_entered_at:createdIso?new Date(createdIso).toISOString():undefined,
         };
         Object.keys(row).forEach(k=>{if(row[k]===undefined)delete row[k];});
         toInsert.push(row);
-        total++;
         if(stage==='won')won++;else if(stage==='lost')lost++;else open++;
       }
-      const CHUNK=50;
-      for(let i=0;i<toInsert.length;i+=CHUNK){
-        await sbPost('leads',toInsert.slice(i,i+CHUNK));
-      }
-      await fetchLeads();
-      setToast(`Imported ${total} leads (${open} open, ${won} won, ${lost} lost)${skipped?` · ${skipped} duplicates skipped`:''}`);
-    }catch(err){console.error(err);setToast('Import failed: '+err.message);}
+      setImportPreview({rows:toInsert,open,won,lost,skipped,fileName:file.name});
+    }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
     setImporting(false);
     if(importInputRef.current)importInputRef.current.value='';
+  };
+  const confirmImport=async()=>{
+    if(!importPreview)return;
+    setImporting(true);
+    try{
+      const CHUNK=50;
+      for(let i=0;i<importPreview.rows.length;i+=CHUNK){
+        await sbPost('leads',importPreview.rows.slice(i,i+CHUNK));
+      }
+      const total=importPreview.rows.length;
+      setImportPreview(null);
+      await fetchLeads();
+      toast.success(`Imported ${total} leads`);
+    }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
+    setImporting(false);
   };
   const afterProjectCreated=async(jobNumber)=>{
     const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
@@ -6666,7 +6671,7 @@ function PipelinePage({jobs,onRefresh}){
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Sales Pipeline</h1>
       <div style={{display:'flex',gap:8}}>
         <input ref={importInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:'none'}}/>
-        <button onClick={()=>importInputRef.current?.click()} disabled={importing} style={btnS}>{importing?'Importing...':'Import from Excel'}</button>
+        {leads.length<10&&<button onClick={()=>importInputRef.current?.click()} disabled={importing} style={btnS} title="Available until pipeline has 10+ leads">{importing?'Parsing...':'Import Leads from Excel'}</button>}
         <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
       </div>
     </div>
@@ -6702,6 +6707,24 @@ function PipelinePage({jobs,onRefresh}){
     {propModal&&<ProposalSentModal lead={propModal} onClose={()=>setPropModal(null)} onSave={saveProposal}/>}
     {lostModal&&<LostModal lead={lostModal} onClose={()=>setLostModal(null)} onSave={saveLost}/>}
     {wonModal&&<WonModal lead={wonModal} onClose={()=>setWonModal(null)} onCreate={afterProjectCreated}/>}
+    {importPreview&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!importing&&setImportPreview(null)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:460,maxWidth:'94vw'}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>Import Preview</div>
+        <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>{importPreview.fileName}</div>
+        <div style={{fontSize:14,marginBottom:8}}>Found <b>{importPreview.rows.length}</b> leads</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12}}>
+          <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#1D4ED8'}}>{importPreview.open}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Open</div></div>
+          <div style={{background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#065F46'}}>{importPreview.won}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Won</div></div>
+          <div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#991B1B'}}>{importPreview.lost}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Lost</div></div>
+        </div>
+        {importPreview.skipped>0&&<div style={{fontSize:12,color:'#B45309',background:'#FEF3C7',border:'1px solid #FDE68A',padding:'8px 12px',borderRadius:8,marginBottom:12}}>⚠ {importPreview.skipped} duplicate row(s) skipped (matched on company + project + value)</div>}
+        {importPreview.rows.length===0?<div style={{fontSize:13,color:'#9E9B96',marginBottom:16}}>Nothing new to import.</div>:<div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>Import these leads into the pipeline?</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>setImportPreview(null)} disabled={importing} style={{...btnS,flex:1}}>Cancel</button>
+          {importPreview.rows.length>0&&<button onClick={confirmImport} disabled={importing} style={{...btnP,flex:2}}>{importing?'Importing...':`Import ${importPreview.rows.length} Leads`}</button>}
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
