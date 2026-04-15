@@ -41,7 +41,8 @@
       "Bash(awk 'NR==1726' src/App.jsx)",
       "Bash(awk 'NR>=7440 && NR<=7525' src/App.jsx)",
       "Bash(awk 'NR>=7410 && NR<=7445' src/App.jsx)",
-      "Bash(awk 'NR==1995 || NR==2343 || NR==2360 || NR==2522 {printf \"L%d:\\\\n\", NR; for\\(i=1;i<=length\\($0\\);i+=250\\){print substr\\($0,i,250\\)}; print \"---\"}' src/App.jsx)"
+      "Bash(awk 'NR==1995 || NR==2343 || NR==2360 || NR==2522 {printf \"L%d:\\\\n\", NR; for\\(i=1;i<=length\\($0\\);i+=250\\){print substr\\($0,i,250\\)}; print \"---\"}' src/App.jsx)",
+      "Bash(npx supabase *)"
     ]
   }
 }
