@@ -49,6 +49,20 @@
      text and defaults only. */
   @media (max-width: 767px) {
     body { font-size: 15px; }
+
+    /* Phase 4: mobile-friendly form inputs (spec §3).
+       - 44px minimum touch target for all inputs/selects/textareas.
+       - 16px font-size on text inputs prevents iOS Safari from zooming
+         the viewport on focus. Inline style fontSize is kept lower
+         (13px) throughout the app, so we use !important here to beat it.
+       These rules are scoped to <768px so desktop layout stays intact. */
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+      min-height: 44px;
+      font-size: 16px !important;
+    }
+    textarea { min-height: 88px; }
   }
   input, select, textarea, button { font-family: inherit; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }

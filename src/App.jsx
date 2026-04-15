@@ -693,6 +693,13 @@ function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setL
 
 /* ═══ EDIT PANEL ═══ */
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
+  const isMobile = useIsMobile();
+  // Phase 4: close the panel on Escape.
+  useEffect(()=>{
+    const onKey=(e)=>{if(e.key==='Escape')onClose&&onClose();};
+    window.addEventListener('keydown',onKey);
+    return ()=>window.removeEventListener('keydown',onKey);
+  },[onClose]);
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
@@ -740,17 +747,25 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#6B6056','#F4F4F2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
-    <div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
-      <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,background:'#F9F8F6'}}>
-        <div><div style={{fontFamily:'Inter',fontSize:16,fontWeight:800}}>{isNew?'New Project':(form.job_name||'Untitled')}</div><div style={{fontSize:12,color:'#6B6056'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div></div>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          {saveErr&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
-          {!isNew&&onNav&&<button onClick={()=>{
+    <div style={isMobile
+      ? {position:'fixed',inset:0,background:'#FFF',zIndex:200,display:'flex',flexDirection:'column'}
+      : {position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
+      <div style={{padding:isMobile?'12px 14px':'16px 20px',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexShrink:0,background:'#F9F8F6'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+          {isMobile && <button onClick={onClose} aria-label="Back" style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#1A1A1A',padding:'4px 6px',lineHeight:1}}>←</button>}
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontFamily:'Inter',fontSize:isMobile?15:16,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'New Project':(form.job_name||'Untitled')}</div>
+            <div style={{fontSize:12,color:'#6B6056',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+          {saveErr&&!isMobile&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
+          {!isNew&&onNav&&!isMobile&&<button onClick={()=>{
             try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.total_lf_precast||form.lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
             onNav('material_requests');
           }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8B2020',borderRadius:8,padding:'8px 14px',color:'#8B2020',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
           <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8B2020'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
-          <button onClick={onClose} style={btnS}>Close</button>
+          {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8B2020':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8B2020':'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
@@ -1361,6 +1376,11 @@ function WeeklyDigest({jobs,active}){
 
 /* ═══ DASHBOARD ═══ */
 function Dashboard({jobs,onNav,refreshKey=0}){
+  const isMobile = useIsMobile();
+  const isTablet = useIsMobile(1024); // true below 1024px → tablet or mobile
+  // Phase 4: responsive KPI grid — 4 cols desktop, 2 tablet, 1 mobile.
+  const kpiCols = isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(4,1fr)';
+  const pairCols = isMobile ? '1fr' : 'repeat(2,1fr)';
   const[showRemindConfirm,setShowRemindConfirm]=useState(false);
   const[remindSending,setRemindSending]=useState(false);
   const[dashToast,setDashToast]=useState(null);
@@ -1417,8 +1437,8 @@ function Dashboard({jobs,onNav,refreshKey=0}){
 
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}>
+    <h1 style={{fontFamily:'Syne',fontSize:isMobile?20:24,fontWeight:900,marginBottom:20}}>Dashboard</h1>
+    <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:16,marginBottom:16}}>
       <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
       <KPI label="YTD Billed" value={$k(ty)} color="#065F46" sub="All jobs incl. closed"/>
       <KPI label="Left to Bill" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
@@ -1448,7 +1468,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       </div>
     </div>
     {/* Capacity KPIs — mold + batch plant */}
-    {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+    {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:pairCols,gap:16,marginBottom:16}}>
       <div style={{...card,padding:14,borderLeft:`4px solid ${moldCol}`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
           <div style={{fontSize:11,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
