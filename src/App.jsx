@@ -2993,13 +2993,42 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     return null;
   };
   const fmtLoadedAt=reportsLoadedAt?reportsLoadedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'—';
+  // Build a quick lookup for report metadata (title + slug for URL)
+  const allReports=useMemo(()=>[...executiveReports,...salesReports,...productionReports,...reports],[]);// eslint-disable-line
+  const byId=useMemo(()=>{const m={};allReports.forEach(r=>{m[r.id]=r;});return m;},[allReports]);
+  const toSlug=(id)=>String(id||'').replace(/_/g,'-');
+  const fromSlug=(slug)=>String(slug||'').replace(/-/g,'_');
+  // Sync activeRpt <-> URL hash (#/reports/<slug>) for bookmarkability + browser back button
+  useEffect(()=>{
+    const readHash=()=>{const h=typeof window!=='undefined'?window.location.hash:'';const m=h.match(/#\/reports\/([\w-]+)/);const id=m?fromSlug(m[1]):null;if(id&&byId[id])setActiveRpt(id);else setActiveRpt(null);};
+    readHash();
+    window.addEventListener('hashchange',readHash);
+    // When the Reports page unmounts, clear the hash so returning to Reports
+    // always lands on the index view.
+    return()=>{window.removeEventListener('hashchange',readHash);try{if(window.location.hash.startsWith('#/reports/')){window.history.replaceState(null,'',window.location.pathname+window.location.search);}}catch(e){}};
+  },[byId]);
+  const openReport=(id)=>{try{window.location.hash=`#/reports/${toSlug(id)}`;}catch(e){}setActiveRpt(id);};
+  const closeReport=()=>{try{if(window.location.hash.startsWith('#/reports/'))window.history.back();else window.location.hash='';}catch(e){}setActiveRpt(null);};
   const renderReportCard=(r)=><div key={r.id} style={{...card,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
     <div>
-      <div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.title}</div>
+      <div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.icon?<span style={{marginRight:6}}>{r.icon}</span>:null}{r.title}</div>
       <div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>{r.desc}</div>
     </div>
-    <button onClick={()=>setActiveRpt(activeRpt===r.id?null:r.id)} style={activeRpt===r.id?btnP:btnS}>{activeRpt===r.id?'Close':'View Report'}</button>
+    <button onClick={()=>openReport(r.id)} style={btnS}>View Report →</button>
   </div>;
+  // FULL-PAGE REPORT VIEW
+  if(activeRpt){
+    const meta=byId[activeRpt];
+    return(<div>
+      <button onClick={closeReport} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',padding:'4px 0',marginBottom:10,display:'inline-flex',alignItems:'center',gap:4}}>← Back to Reports</button>
+      {meta&&<div style={{marginBottom:6}}>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:4}}>{meta.icon?<span style={{marginRight:8}}>{meta.icon}</span>:null}{meta.title}</h1>
+        {meta.desc&&<div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{meta.desc}</div>}
+      </div>}
+      <div style={{...card}}><ErrorBoundary label={`Report: ${activeRpt}`}>{renderReport()}</ErrorBoundary></div>
+    </div>);
+  }
+  // INDEX VIEW — just the cards
   return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:6}}>Reports</h1>
     {/* EXECUTIVE */}
@@ -3028,7 +3057,6 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {/* FINANCIAL + EXISTING REPORTS */}
     <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>💰 Sales, Finance & Operations</div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(renderReportCard)}</div>
-    {activeRpt&&<div style={card}><ErrorBoundary label={`Report: ${activeRpt}`}>{renderReport()}</ErrorBoundary></div>}
   </div>);
 }
 // Page-level wrapper that traps crashes in any single report or card render
