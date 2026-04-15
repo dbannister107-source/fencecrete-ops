@@ -212,6 +212,27 @@ const pill = (c,bg,ring) => ({ display:'inline-flex', alignItems:'center', paddi
 // Convenience: build a status pill style straight from a status slug.
 const statusPill = (slug) => pill(SC[slug]||'#6B7280', SB_[slug]||'#E5E7EB', SR[slug]||'#9CA3AF');
 
+// Phase 3: standard mobile card container + card shell shared across
+// all card-list rollouts (Projects, Bill Sheet, Contacts, etc.).
+const mobileCardStyle = (accent='#E5E3E0') => ({
+  background:'#FFF',
+  border:'1px solid #E5E3E0',
+  borderLeft:`4px solid ${accent}`,
+  borderRadius:12,
+  padding:'14px 14px 12px',
+  boxShadow:'0 1px 2px rgba(0,0,0,0.04)',
+  cursor:'pointer',
+  WebkitTapHighlightColor:'transparent',
+});
+const MobileCards = ({items,renderCard,emptyMessage='No records.'}) => {
+  if (!items || items.length === 0) {
+    return <div style={{padding:32,textAlign:'center',color:'#9E9B96',fontSize:14}}>{emptyMessage}</div>;
+  }
+  return <div style={{display:'flex',flexDirection:'column',gap:10,padding:'4px 0 16px'}}>
+    {items.map((it,i) => <React.Fragment key={it.id || i}>{renderCard(it,i)}</React.Fragment>)}
+  </div>;
+};
+
 // Phase 3: viewport breakpoint hook. Returns true below `bp` px wide.
 // Used by pages that render a card stack on mobile instead of a table.
 const useIsMobile = (bp = 768) => {
@@ -1841,6 +1862,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
 
 /* ═══ BILLING PAGE ═══ */
 function BillingPage({jobs,onRefresh,onNav}){
+  const isMobile = useIsMobile();
   const[bilQuickView,setBilQuickView]=useState(null);
   const[bilAdminPin,setBilAdminPin]=useState(null);const[bilPin,setBilPin]=useState('');const[bilPinErr,setBilPinErr]=useState(false);
   const bilAdminReset=async(sub)=>{try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});try{await sbPost('activity_log',{job_id:sub.job_id,job_number:sub.job_number,job_name:sub.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}setBilAdminPin(null);setBilPin('');setArDetail(null);fetchArSubs();setToast('Submission reset by admin');}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
@@ -1977,7 +1999,47 @@ function BillingPage({jobs,onRefresh,onNav}){
         <span style={{fontSize:12,color:'#6B6056'}}>{shown.length} jobs</span>
       </div>
       <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
-      <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
+      {isMobile ? <MobileCards
+        items={shown}
+        emptyMessage="No jobs to bill"
+        renderCard={j=>{
+          const cv=n(j.adj_contract_value||j.contract_value);
+          const ltb=n(j.left_to_bill);
+          const pct=Math.round(n(j.pct_billed)*100);
+          return <div style={mobileCardStyle(SC[j.status]||'#9CA3AF')} onClick={()=>setBilQuickView(j)}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</div>
+                <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{j.job_number||'—'}{j.style?` · ${j.style}`:''}</div>
+              </div>
+              <span style={statusPill(j.status)}>{SS[j.status]}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
+              <div>
+                <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Contract</div>
+                <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{$k(cv)}</div>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>YTD</div>
+                <div style={{fontSize:13,fontWeight:700,color:'#065F46',marginTop:2}}>{$k(n(j.ytd_invoiced))}</div>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Left</div>
+                <div style={{fontSize:13,fontWeight:800,color:ltb>100000?'#991B1B':ltb>50000?'#B45309':'#065F46',marginTop:2}}>{$k(ltb)}</div>
+              </div>
+            </div>
+            <div style={{marginTop:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#6B6056',marginBottom:3}}>
+                <span style={{textTransform:'uppercase',fontWeight:600}}>% Billed</span>
+                <span style={{fontWeight:700}}>{pct}%</span>
+              </div>
+              <div style={{height:4,background:'#F1EFEC',borderRadius:2,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8B2020',borderRadius:2}}/>
+              </div>
+            </div>
+          </div>;
+        }}
+      /> : <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 440px)'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
         <tr>{['Project','Style','Color','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','Last Billed',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
         </thead>
         <tbody>{shown.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
@@ -1992,7 +2054,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           <td style={{padding:'8px 10px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><PBar pct={n(j.pct_billed)*100} h={4}/><span style={{fontSize:11}}>{fmtPct(j.pct_billed)}</span></div></td>
           <td style={{padding:'8px 10px'}} onClick={()=>startEdit(j,'last_billed')}>{editId===j.id&&editField==='last_billed'?<input autoFocus type="date" value={editVal||''} onChange={e=>setEditVal(e.target.value)} onBlur={()=>saveEdit(j)} onKeyDown={e=>e.key==='Enter'&&saveEdit(j)} style={{...inputS,width:130,padding:'4px 8px'}}/>:<span style={{cursor:'pointer',borderBottom:'1px dashed #E5E3E0'}}>{fD(j.last_billed)}</span>}</td>
           <td style={{padding:'8px 10px'}}><button onClick={()=>setConfirmFullJob(j)} title="Mark 100% billed" style={{background:'#D1FAE5',border:'1px solid #065F4630',borderRadius:6,color:'#065F46',fontSize:14,cursor:'pointer',padding:'2px 8px'}}>✓</button></td>
-        </tr>)}</tbody></table></div>
+        </tr>)}</tbody></table></div>}
       {/* Recently Fully Billed */}
       <div style={{marginTop:24}}>
         <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#6B6056',padding:0,marginBottom:showRecent?12:0}}>
@@ -5326,6 +5388,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
 
 /* ═══ WEATHER DAYS PAGE ═══ */
 function WeatherDaysPage({jobs}){
+  const isMobile = useIsMobile();
   const[days,setDays]=useState([]);const[loading,setLoading]=useState(true);const[showForm,setShowForm]=useState(false);const[editDay,setEditDay]=useState(null);
   const[mktF,setMktF]=useState(null);const[pmF,setPmF]=useState('');const[toast,setToast]=useState(null);
   const[form,setForm]=useState({job_id:'',weather_date:new Date().toISOString().split('T')[0],hours_lost:'',reason:'Rain',logged_by:'',notes:''});
@@ -5353,7 +5416,30 @@ function WeatherDaysPage({jobs}){
       <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
       <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
     </div>
-    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
+    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:isMobile?<MobileCards
+      items={filtered}
+      emptyMessage="No weather days logged yet"
+      renderCard={d=><div style={mobileCardStyle('#B45309')} onClick={()=>openForm(d)}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700}}>{d.job_name||'—'}</div>
+            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{fD(d.weather_date)}{d.pm?` · ${d.pm}`:''}</div>
+          </div>
+          {d.market && <span style={pill(MC[d.market]||'#6B6056',MB[d.market]||'#F4F4F2',MC[d.market])}>{MS[d.market]||d.market}</span>}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Hours Lost</div>
+            <div style={{fontSize:14,fontWeight:700,color:'#B45309',marginTop:2}}>{d.hours_lost||'—'}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Reason</div>
+            <div style={{fontSize:14,fontWeight:600,marginTop:2}}>{d.reason||'—'}</div>
+          </div>
+        </div>
+        {d.notes && <div style={{marginTop:8,fontSize:12,color:'#6B6056',fontStyle:'italic'}}>{d.notes}</div>}
+      </div>}
+    />:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Name','Market','PM','Hours Lost','Reason','Notes','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>{filtered.map(d=><tr key={d.id} onClick={()=>openForm(d)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
           <td style={{padding:'8px 10px'}}>{fD(d.weather_date)}</td>
@@ -5385,6 +5471,7 @@ function WeatherDaysPage({jobs}){
 
 /* ═══ CHANGE ORDERS PAGE ═══ */
 function ChangeOrdersPage({jobs}){
+  const isMobile = useIsMobile();
   const[orders,setOrders]=useState([]);const[loading,setLoading]=useState(true);
   const[statusF,setStatusF]=useState(null);const[toast,setToast]=useState(null);
   const[showForm,setShowForm]=useState(false);const[editCO,setEditCO]=useState(null);
@@ -5418,7 +5505,30 @@ function ChangeOrdersPage({jobs}){
       <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select>
       <span style={{fontSize:12,color:'#6B6056'}}>{filtered.length} change orders</span>
     </div>
-    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
+    {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:isMobile?<MobileCards
+      items={filtered}
+      emptyMessage="No change orders found"
+      renderCard={o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B7280','#E5E7EB'];return <div style={{...mobileCardStyle(sc2),opacity:o.status==='Rejected'?0.55:1}} onClick={()=>openEditCO(o)}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</div>
+            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{o.co_number||'—'}{o.date_submitted?` · ${fD(o.date_submitted)}`:''}</div>
+          </div>
+          <span style={pill(sc2,sb2,sc2)}>{o.status||'—'}</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Amount</div>
+            <div style={{fontSize:14,fontWeight:800,color:o.status==='Rejected'?'#991B1B':n(o.amount)>0?'#065F46':'#1A1A1A',marginTop:2}}>{o.status==='Rejected'?<s>{$(o.amount)}</s>:$(o.amount)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Approved By</div>
+            <div style={{fontSize:13,fontWeight:600,marginTop:2}}>{o.approved_by||'—'}</div>
+          </div>
+        </div>
+        {o.description && <div style={{marginTop:8,fontSize:12,color:'#6B6056'}}>{o.description}</div>}
+      </div>;}}
+    />:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2',opacity:o.status==='Rejected'?0.5:1}}>
           <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</td>
@@ -7344,6 +7454,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
 }
 
 function ContactsPage({jobs,onOpenProject,onOpenLead}){
+  const isMobile = useIsMobile();
   const[contacts,setContacts]=useState([]);
   const[leads,setLeads]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -7395,6 +7506,27 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
     </div>
     {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={8}/></div>:
     filtered.length===0?<div style={{...card}}><EmptyState icon="👤" title="No contacts yet" subtitle={contacts.length===0?'Import from existing projects or add your first contact manually.':'No contacts match your filters.'} cta={contacts.length===0?'+ Add Contact':null} onCta={()=>setShowAdd(true)}/></div>:
+    isMobile?<MobileCards
+      items={filtered}
+      emptyMessage="No contacts found"
+      renderCard={c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <div style={mobileCardStyle('#8B2020')} onClick={()=>setDetail(c)}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.company||'—'}</div>
+            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{c.type||c.company_type||c.contact_type||'—'}{jc>0?` · ${jc} job${jc===1?'':'s'}`:''}</div>
+          </div>
+          {c.market && <span style={pill(MC[c.market]||'#6B6056',MB[c.market]||'#F4F4F2',MC[c.market])}>{MS[c.market]||c.market}</span>}
+        </div>
+        {(c.name||c.title) && <div style={{fontSize:13,marginTop:8}}>
+          {c.name && <span style={{fontWeight:600}}>{c.name}</span>}
+          {c.title && <span style={{color:'#6B6056'}}>{c.name?' · ':''}{c.title}</span>}
+        </div>}
+        {(c.phone||c.email) && <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC',fontSize:12,color:'#6B6056',display:'flex',flexDirection:'column',gap:3}}>
+          {c.phone && <span>📞 {c.phone}</span>}
+          {c.email && <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>✉ {c.email}</span>}
+        </div>}
+      </div>;}}
+    />:
     <div style={{...card,padding:0,overflow:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
@@ -7638,6 +7770,7 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
 }
 
 function ProposalsPage({jobs}){
+  const isMobile = useIsMobile();
   const[leads,setLeads]=useState([]);
   const[loading,setLoading]=useState(true);
   const[repF,setRepF]=useState(null);
@@ -7726,6 +7859,42 @@ function ProposalsPage({jobs}){
     </div>
     {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={12}/></div>:
     sorted.length===0?<div style={{...card}}><EmptyState icon="📋" title="No open proposals" subtitle="Proposals will appear here once leads move into the Proposal Sent stage in the Pipeline."/></div>:
+    isMobile?<MobileCards
+      items={sorted}
+      emptyMessage="No open proposals"
+      renderCard={l=>{
+        const overdue=l.follow_up_date&&l.follow_up_date<today;
+        const weighted=n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100);
+        const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
+        return <div style={{...mobileCardStyle(overdue?'#B45309':'#8B2020'),background:overdue?'#FFFBEB':'#FFF'}} onClick={()=>setDetail(l)}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.company_name||'—'}</div>
+              <div style={{fontSize:12,color:'#6B6056',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</div>
+            </div>
+            {l.market && <span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2',MC[l.market])}>{MS[l.market]||l.market}</span>}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
+            <div>
+              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Est. Value</div>
+              <div style={{fontSize:13,fontWeight:800,color:'#8B2020',marginTop:2}}>{$k(l.estimated_value||l.proposal_value)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Win %</div>
+              <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{l.win_probability==null?'—':`${l.win_probability}%`}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Weighted</div>
+              <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{$k(weighted)}</div>
+            </div>
+          </div>
+          <div style={{marginTop:8,fontSize:11,color:'#6B6056',display:'flex',justifyContent:'space-between'}}>
+            <span>{l.sales_rep||'—'}{l.proposal_sent_date?` · Sent ${fD(l.proposal_sent_date)}`:''}</span>
+            <span style={{fontWeight:700,color:days>30?'#B45309':'#6B6056'}}>{days}d out</span>
+          </div>
+        </div>;
+      }}
+    />:
     <div style={{...card,padding:0,overflow:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',position:'sticky',top:0}}>
