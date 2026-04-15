@@ -43,6 +43,13 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
+  /* Phase 2: mobile readability bump — slightly larger body on <768px
+     (spec §7: 15px mobile / 14px desktop). Inline-styled components that
+     set an explicit font-size override this, so the effect is on unstyled
+     text and defaults only. */
+  @media (max-width: 767px) {
+    body { font-size: 15px; }
+  }
   input, select, textarea, button { font-family: inherit; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: #F4F4F2; }
