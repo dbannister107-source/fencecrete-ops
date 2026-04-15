@@ -8151,20 +8151,16 @@ function ProfileModal({ onClose }){
 /* ═══ APP (auth-gated) ═══ */
 function AppShell(){
   const{profile}=useAuth();
-  const role=profile?.role||'viewer';
-  const allowedGroups=useMemo(()=>ROLE_NAV_GROUPS[role]||ROLE_NAV_GROUPS.viewer,[role]);
-  const filteredNav=useMemo(()=>NAV_GROUPS.filter(g=>allowedGroups.has(g.label)),[allowedGroups]);
-  // Pick a safe landing page the user can actually see
-  const firstAllowedKey=useMemo(()=>{const first=filteredNav[0]?.items?.[0]?.key;return first||'help';},[filteredNav]);
-  const[page,setPage]=useState(firstAllowedKey);const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
+  const isAdmin=profile?.role==='admin';
+  // Phase 1: everyone sees everything. Only admins get an extra Admin link appended.
+  const filteredNav=useMemo(()=>isAdmin?[...NAV_GROUPS,{label:'ADMIN',items:[{key:'admin',label:'User Management',icon:'🔐'}]}]:NAV_GROUPS,[isAdmin]);
+  const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
   const[showProfile,setShowProfile]=useState(false);
   const[sideCollapsed,setSideCollapsed]=useState(()=>{try{return localStorage.getItem('fc_side_collapsed')==='1';}catch(e){return false;}});
   const[tabletOverlay,setTabletOverlay]=useState(false);
   const[showMoreMenu,setShowMoreMenu]=useState(false);
   const[refreshKey,setRefreshKey]=useState(0);
   const v=useViewport();
-  // If current page becomes disallowed (e.g. after role change), redirect
-  useEffect(()=>{const allowedKeys=new Set(filteredNav.flatMap(g=>g.items.map(i=>i.key)));if(!allowedKeys.has(page))setPage(firstAllowedKey);},[filteredNav,page,firstAllowedKey]);
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
@@ -8222,6 +8218,7 @@ function AppShell(){
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
             {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
+            {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8B2020'}}>🔐 User Management</div><div style={{fontSize:13,color:'#6B6056',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
         </div>
       </div>
