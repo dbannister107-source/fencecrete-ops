@@ -80,7 +80,9 @@ insert into user_profiles (email, full_name, title, location, role, market) valu
   ('violet@fencecrete.com','Violet Mendez','HR Director','HQ','viewer',null),
   ('yvonne@fencecrete.com','Yvonne Garcia','Admin Assistant','San Antonio','viewer','San Antonio'),
   ('larry@fencecrete.com','Larry Delgado','Mechanic','San Antonio','viewer','San Antonio'),
-  ('aaron@fencecrete.com','Aaron Lloyd','Mechanic','Houston','viewer','Houston')
+  ('aaron@fencecrete.com','Aaron Lloyd','Mechanic','Houston','viewer','Houston'),
+  ('wang@woodlake-group.com','Chester Wang','PE Sponsor','Woodlake Group','viewer',null),
+  ('mike@lakestatepartners.com','Mike Kell','PE Sponsor','Lake State Partners','viewer',null)
 on conflict (email) do update set
   full_name = excluded.full_name,
   title = excluded.title,
