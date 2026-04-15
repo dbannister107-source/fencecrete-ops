@@ -204,6 +204,23 @@ const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeigh
 const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#9E9B96' });
 
 /* ═══ SHARED ═══ */
+/* ═══ ERROR BOUNDARY ═══ */
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return{error};}
+  componentDidCatch(error,info){console.error('[ErrorBoundary]',this.props.label||'',error,info);}
+  render(){
+    if(this.state.error){
+      return <div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderLeft:'4px solid #991B1B',borderRadius:10,padding:16,color:'#991B1B'}}>
+        <div style={{fontWeight:800,marginBottom:4}}>⚠ {this.props.label||'Component'} failed to render</div>
+        <div style={{fontSize:12,fontFamily:'monospace',color:'#7F1D1D',whiteSpace:'pre-wrap'}}>{String(this.state.error.message||this.state.error)}</div>
+        <button onClick={()=>this.setState({error:null})} style={{marginTop:10,background:'#991B1B',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontSize:12,cursor:'pointer'}}>Retry</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
 /* ═══ VIEWPORT / RESPONSIVE ═══ */
 function useViewport(){
   const get=()=>{const w=typeof window!=='undefined'?window.innerWidth:1200;return{w,mobile:w<768,tablet:w>=768&&w<1024,desktop:w>=1024};};
@@ -1191,7 +1208,6 @@ const PAGE_INDEX=[
   {key:'contacts',label:'Contacts',icon:'👤',group:'Pages'},
   {key:'sales_dashboard',label:'Sales Dashboard',icon:'📊',group:'Pages'},
   {key:'proposals',label:'Proposals',icon:'📋',group:'Pages'},
-  {key:'help',label:'Help',icon:'❓',group:'Pages'},
 ];
 
 function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
@@ -2349,11 +2365,11 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
 }
 
 /* ═══ REPORTS PAGE ═══ */
-function ReportsPage({jobs,onNav,onOpenJob}){
+function ReportsPageInner({jobs,onNav,onOpenJob}){
   const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   // Sales data — used by Waterfall, Rep Scorecard
   const[leads,setLeads]=useState([]);
-  useEffect(()=>{sbGet('leads','select=*&order=updated_at.desc').then(d=>setLeads(Array.isArray(d)?d:[])).catch(()=>{});},[]);
+  useEffect(()=>{sbGet('leads','select=*&order=updated_at.desc').then(d=>{if(Array.isArray(d))setLeads(d);else console.error('[Reports] leads fetch returned non-array:',d);}).catch(e=>console.error('[Reports] leads fetch failed:',e));},[]);
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -2369,16 +2385,17 @@ function ReportsPage({jobs,onNav,onOpenJob}){
   const[calcStyles,setCalcStyles]=useState([]);
   const[reportsLoadedAt,setReportsLoadedAt]=useState(null);
   useEffect(()=>{
+    const safeGet=(t,q)=>sbGet(t,q).then(d=>{if(Array.isArray(d))return d;console.error(`[Reports] ${t} returned non-array:`,d);return[];}).catch(e=>{console.error(`[Reports] ${t} fetch failed:`,e);return[];});
     Promise.all([
-      sbGet('mold_inventory','select=style_name,total_molds'),
-      sbGet('plant_config','select=key,value'),
-      sbGet('material_calc_styles','select=style_name,cy_per_panel'),
+      safeGet('mold_inventory','select=style_name,total_molds'),
+      safeGet('plant_config','select=key,value'),
+      safeGet('material_calc_styles','select=style_name,cy_per_panel'),
     ]).then(([molds,cfg,cs])=>{
-      setMoldInventory(molds||[]);
-      const m={};(cfg||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);
-      setCalcStyles(cs||[]);
+      setMoldInventory(Array.isArray(molds)?molds:[]);
+      const m={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{if(r&&r.key)m[r.key]=n(r.value);});setPlantCfg(m);
+      setCalcStyles(Array.isArray(cs)?cs:[]);
       setReportsLoadedAt(new Date());
-    }).catch(e=>console.error('Reports data load failed:',e));
+    }).catch(e=>console.error('[Reports] data load failed:',e));
   },[]);
   // Only physical mold sets — drop child styles that share a parent's molds
   const physicalMolds=useMemo(()=>moldInventory.filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name)),[moldInventory]);
@@ -3011,9 +3028,11 @@ function ReportsPage({jobs,onNav,onOpenJob}){
     {/* FINANCIAL + EXISTING REPORTS */}
     <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>💰 Sales, Finance & Operations</div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(renderReportCard)}</div>
-    {activeRpt&&<div style={card}>{renderReport()}</div>}
+    {activeRpt&&<div style={card}><ErrorBoundary label={`Report: ${activeRpt}`}>{renderReport()}</ErrorBoundary></div>}
   </div>);
 }
+// Page-level wrapper that traps crashes in any single report or card render
+function ReportsPage(props){return <ErrorBoundary label="Reports Page"><ReportsPageInner {...props}/></ErrorBoundary>;}
 
 /* ═══ MATERIAL CALCULATOR PAGE ═══ */
 function MaterialCalcPage({jobs,preJob}){
@@ -6734,29 +6753,6 @@ function InstallSchedulePage({jobs}){
   </div>);
 }
 
-/* ═══ HELP PAGE ═══ */
-function HelpPage(){
-  return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Help</h1>
-    <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Documentation and support</div>
-    <div style={{...card,padding:24}}>
-      <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:'#8B2020'}}>Quick Help</div>
-      <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7}}>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Dashboard</b> — overview of active projects, KPIs, pipeline status, and PM workload.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Projects</b> — full project database with filters, inline edit, and CSV export. Active and Closed tabs.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Production Plan</b> — kanban board showing jobs by stage. Unlock with PIN 2020 to move cards.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Material Calculator</b> — calculates posts/panels/rails/caps from style, height, and LF. Save to job creates a production order.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Production Orders</b> — Max's view of all jobs with saved material calculations.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Daily Production Report</b> — Max builds tomorrow's plan; Luis logs actuals per shift; leadership reviews history.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>PM Bill Sheet</b> — PMs submit monthly LF reports per project. AR reviews and marks invoiced.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Billing</b> — AR exception dashboard showing submitted vs missing bill sheets.</div>
-        <div style={{marginBottom:16}}><b style={{color:'#1A1A1A'}}>Import Projects</b> — 4-step Excel import for the Master Project Tracker with preview and safety guards.</div>
-      </div>
-      <div style={{fontSize:13,color:'#6B6056',marginTop:20,paddingTop:16,borderTop:'1px solid #E5E3E0'}}>For issues or feature requests, contact <b style={{color:'#8B2020'}}>david@fencecrete.com</b></div>
-    </div>
-  </div>);
-}
-
 /* ═══ SALES — PIPELINE & CONTACTS ═══ */
 const LEAD_STAGES=[
   {key:'new_lead',label:'NEW LEAD',color:'#6B7280',bg:'#F9FAFB',accent:'#F4F4F2'},
@@ -7875,7 +7871,6 @@ const NAV_GROUPS=[
   {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'material_requests',label:'Material Requests',icon:'🚚'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
-  {label:'HELP',items:[{key:'help',label:'Help',icon:'❓'}]},
   {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
@@ -7892,7 +7887,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
   const auth=useAuth();
   return <>
     <div style={{padding:collapsed?'16px 8px':'24px 20px 20px',textAlign:collapsed?'center':'left'}}>
-      {!collapsed?<div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>FCA Command Center</div>
+      {!collapsed?<div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>Fencecrete</div>
       :<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
     </div>
     <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map(g=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>)}</div>)}</nav>
@@ -7983,7 +7978,7 @@ function LoginPage(){
     <style>{`@keyframes fcSpin2{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020',letterSpacing:-0.5}}>FCA Command Center</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020',letterSpacing:-0.5}}>Fencecrete</div>
         <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Fencecrete America</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
@@ -8046,7 +8041,7 @@ function RecoveryPage({ accessToken, onDone }){
   return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020'}}>FCA Command Center</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020'}}>Fencecrete</div>
         <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Set a new password</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28}}>
@@ -8213,7 +8208,6 @@ function AppShell(){
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
-            {page==='help'&&<HelpPage/>}
             {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
@@ -8239,6 +8233,7 @@ export default function App(){
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recoveryToken, setRecoveryToken] = useState(null);
+  useEffect(()=>{try{document.title='Fencecrete';}catch(e){}},[]);
   // Detect recovery hash from password-reset email
   useEffect(()=>{
     if (typeof window === 'undefined') return;
@@ -8298,7 +8293,7 @@ export default function App(){
     return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
-        <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900,color:'#8B2020'}}>FCA Command Center</div>
+        <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900,color:'#8B2020'}}>Fencecrete</div>
         <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8B2020 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
       </div>
     </div>;
