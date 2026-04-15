@@ -211,6 +211,19 @@ const btnS = { ...btnP, background:'#F4F4F2', color:'#6B6056', border:'1px solid
 const pill = (c,bg,ring) => ({ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:9999, fontSize:11, fontWeight:600, background:bg||(c+'18'), color:c, border:`1px solid ${ring||c}`, lineHeight:1.4, whiteSpace:'nowrap' });
 // Convenience: build a status pill style straight from a status slug.
 const statusPill = (slug) => pill(SC[slug]||'#6B7280', SB_[slug]||'#E5E7EB', SR[slug]||'#9CA3AF');
+
+// Phase 3: viewport breakpoint hook. Returns true below `bp` px wide.
+// Used by pages that render a card stack on mobile instead of a table.
+const useIsMobile = (bp = 768) => {
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setIsMobile(window.innerWidth < bp);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [bp]);
+  return isMobile;
+};
 const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#6B6056' });
 const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#9E9B96' });
 
@@ -1561,7 +1574,71 @@ const COL_GROUPS=[
   {label:'Team',keys:['sales_rep','pm','job_type']},
   {label:'Other',keys:['notes','documents_needed','file_location','address','city','state','zip']}
 ];
+// Phase 3: mobile card renderer for Projects (Active + Closed tabs).
+// Each card = primary row (job name + status pill), metric strip (contract,
+// LF, %), and a muted second row (job number · market · PM). Tap fires onTap.
+function ProjectCardList({jobs,onTap,emptyMessage='No projects found.'}){
+  if(!jobs||jobs.length===0){
+    return <div style={{padding:32,textAlign:'center',color:'#9E9B96',fontSize:14}}>{emptyMessage}</div>;
+  }
+  return <div style={{display:'flex',flexDirection:'column',gap:10,padding:'4px 0 16px'}}>
+    {jobs.map(j=>{
+      const cv = n(j.adj_contract_value||j.contract_value);
+      const ltb = n(j.left_to_bill);
+      const pct = Math.round(n(j.pct_billed)*100);
+      const total = lfTotal(j);
+      return <div key={j.id}
+        onClick={()=>onTap&&onTap(j)}
+        style={{
+          background:'#FFF',
+          border:'1px solid #E5E3E0',
+          borderLeft:`4px solid ${SC[j.status]||'#9CA3AF'}`,
+          borderRadius:12,
+          padding:'14px 14px 12px',
+          boxShadow:'0 1px 2px rgba(0,0,0,0.04)',
+          cursor:'pointer',
+          WebkitTapHighlightColor:'transparent',
+        }}
+      >
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,color:'#1A1A1A',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</div>
+            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>
+              {j.job_number||'—'}{j.market?` · ${MS[j.market]||j.market}`:''}{j.pm?` · ${j.pm}`:''}
+            </div>
+          </div>
+          <span style={statusPill(j.status)}>{SS[j.status]||j.status}</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600,letterSpacing:0.3}}>Contract</div>
+            <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A',marginTop:2}}>{$k(cv)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600,letterSpacing:0.3}}>Left to Bill</div>
+            <div style={{fontSize:13,fontWeight:700,color:ltb>100000?'#991B1B':ltb>50000?'#B45309':'#065F46',marginTop:2}}>{$k(ltb)}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600,letterSpacing:0.3}}>Total LF</div>
+            <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A',marginTop:2}}>{total>0?total.toLocaleString():'—'}</div>
+          </div>
+        </div>
+        {pct>0 && <div style={{marginTop:8}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#6B6056',marginBottom:3}}>
+            <span style={{textTransform:'uppercase',fontWeight:600,letterSpacing:0.3}}>% Billed</span>
+            <span style={{fontWeight:700}}>{pct}%</span>
+          </div>
+          <div style={{height:4,background:'#F1EFEC',borderRadius:2,overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8B2020',borderRadius:2}}/>
+          </div>
+        </div>}
+      </div>;
+    })}
+  </div>;
+}
+
 function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
+  const isMobile = useIsMobile();
   const[projTab,setProjTab]=useState('active');
   const[search,setSearch]=useState('');
   const[statusF,setStatusF]=useState(new Set());
@@ -1721,16 +1798,20 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     {/* Active tab bulk actions + table */}
     {projTab==='active'&&<>
     {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span><select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select><select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select><button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
-    <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
+    {!isMobile && <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr><th style={{width:40,padding:'10px 8px',borderBottom:'1px solid #E5E3E0'}}><input type="checkbox" checked={sel.size===filtered.length&&filtered.length>0} onChange={()=>{if(sel.size===filtered.length)setSel(new Set());else setSel(new Set(filtered.map(j=>j.id)));}} /></th>{visCD.map(c=><th key={c.key} onClick={()=>toggleSort(c.key)} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,userSelect:'none',background:c.tintHdr||'#F9F8F6'}}>{c.label} {sortCol===c.key&&(sortDir==='asc'?'↑':'↓')}</th>)}</tr></thead>
         <tbody>{filtered.map((j,i)=><tr key={j.id} onClick={()=>{if(!editMode&&!sel.size){setEditJob(j);setIsNew(false);}}} style={{cursor:editMode?'default':'pointer',borderLeft:`3px solid ${SC[j.status]||'transparent'}`,background:i%2===0?'#FFF':'#FAFAF8'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
           <td style={{width:40,padding:'8px 8px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(j.id)} onChange={()=>{const s=new Set(sel);if(s.has(j.id))s.delete(j.id);else s.add(j.id);setSel(s);}}/></td>
           {visCD.map(c=><td key={c.key} onClick={e=>{if(editMode){e.stopPropagation();setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?'cell':'pointer',background:c.tint||'transparent'}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>)}
         </tr>)}</tbody></table>
-    </div>
+    </div>}
+    {/* Phase 3: mobile card view. Inline-edit and bulk select are skipped on mobile —
+        tap opens the EditPanel, same as desktop non-edit mode. */}
+    {isMobile && <ProjectCardList jobs={filtered} onTap={j=>{setEditJob(j);setIsNew(false);}}/>}
     </>}
-    {/* Closed tab table */}
-    {projTab==='closed'&&<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 320px)'}}>
+    {/* Closed tab table (desktop) + card list (mobile) */}
+    {projTab==='closed'&&isMobile&&<ProjectCardList jobs={closedJobs} onTap={j=>{setEditJob(j);setIsNew(false);}}/>}
+    {projTab==='closed'&&!isMobile&&<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 320px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
         <tr>{[['Job #',''],['Job Name',''],['PM',''],['Market',''],['Style',''],['Color',''],['Closed Date',''],['Contract Value',''],['PC LF','#D1FAE5'],['SW LF',''],['WI LF',''],['Gates',''],['Total LF','#F4F4F2'],['YTD Invoiced',''],['% Billed','']].map(([h,bg])=><th key={h} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,background:bg||'transparent'}}>{h}</th>)}</tr>
       </thead>
