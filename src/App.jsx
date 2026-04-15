@@ -556,11 +556,11 @@ const DEF_VIS=['status','market','job_number','job_name','customer_name','fence_
 // Monthly billing cycle — maps the 10 LF fields on jobs to the cycle table columns,
 // plus the grouped layout for the review modal. Used by PMBillingPage (Start Cycle),
 // BillingPage (Monthly Cycles tab + review modal), and Dashboard (status card).
-const CYCLE_LF_MAP=[['labor_post_only','lf_precast_post_only','Post Only'],['labor_post_panels','lf_precast_post_panels','Post & Panels'],['labor_complete','lf_precast_complete','Complete'],['sw_foundation','lf_sw_foundation','Foundation'],['sw_columns','lf_sw_columns','Columns'],['sw_panels','lf_sw_panels','Panels'],['sw_complete','lf_sw_complete','Complete'],['wi_gates','lf_wi_gates','Gates'],['wi_fencing','lf_wi_fencing','Fencing'],['wi_columns','lf_wi_columns','Columns']];
+const CYCLE_LF_MAP=[['labor_post_only','lf_precast_post_only','Post Only'],['labor_post_panels','lf_precast_post_panels','Post & Panels'],['labor_complete','lf_precast_complete','Complete'],['sw_foundation','lf_sw_foundation','Foundation'],['sw_columns','lf_sw_columns','Columns'],['sw_panels','lf_sw_panels','Panels'],['sw_complete','lf_sw_complete','Complete'],['wi_gates','lf_wi_gates','Gates'],['wi_fencing','lf_wi_fencing','Fencing'],['wi_columns','lf_wi_columns','Posts']];
 const CYCLE_LF_GROUPS=[
   {title:'Precast',keys:['lf_precast_post_only','lf_precast_post_panels','lf_precast_complete'],labels:['Post Only','Post & Panels','Complete']},
   {title:'Single Wythe',keys:['lf_sw_foundation','lf_sw_columns','lf_sw_panels','lf_sw_complete'],labels:['Foundation','Columns','Panels','Complete']},
-  {title:'Wrought Iron',keys:['lf_wi_gates','lf_wi_fencing','lf_wi_columns'],labels:['Gates','Fencing','Columns']},
+  {title:'Wrought Iron',keys:['lf_wi_gates','lf_wi_fencing','lf_wi_columns'],labels:['Gates','Fencing','Posts']},
 ];
 const cycleStatus=(c)=>c.invoice_sent?'invoiced':c.accounting_approved?'approved':c.accounting_approved_by?'review':'pending';
 const CYCLE_STATUS_META={pending:{label:'Pending',c:'#6B6056',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
@@ -574,7 +574,9 @@ const PM_BILL_LF_TABLE=[['labor_post_only','Post Only'],['labor_post_panels','Po
 const PM_BILL_LF_GROUPS=[
   {title:'Precast',fields:[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete']]},
   {title:'Single Wythe',fields:[['sw_foundation','SW Foundation'],['sw_columns','SW Columns'],['sw_panels','SW Panels'],['sw_complete','SW Complete']]},
-  {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Columns'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['remove_existing','Remove Existing'],['gate_controls','Gate Controls']]},
+  // Demo (remove_existing) is intentionally placed last — it is tracked
+  // but excluded from any LF subtotal or grand total.
+  {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Posts'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['gate_controls','Gate Controls'],['remove_existing','Demo']]},
 ];
 const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['net_contract_value','sales_tax','contract_value','change_orders','adj_contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]}];
 
@@ -1992,7 +1994,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
   const hasAnyReviewed=arReviewedCount>0;
   const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${s.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
-  const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
+  const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
@@ -2306,6 +2308,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const[saving,setSaving]=useState(null);
   const[toast,setToast]=useState(null);
   const[filterTab,setFilterTab]=useState('missing');
+  const[search,setSearch]=useState('');
   const[selected,setSelected]=useState(new Set());
   const[showBatchConfirm,setShowBatchConfirm]=useState(false);
   const[batchSubmitting,setBatchSubmitting]=useState(false);
@@ -2313,7 +2316,43 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
 
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls'];
-  const calcLFTotal=(form)=>LF_FIELDS.reduce((s,f)=>s+n(form[f]),0);
+  // Precast fields are entered as NUMBER OF POSTS and converted to LF
+  // using saved material calc data. Fields not listed here are entered
+  // directly in LF (or pieces with a 1:1 LF stand-in for Single Wythe
+  // until the proper formula is defined).
+  const PRECAST_POST_FIELDS=new Set(['labor_post_only','labor_post_panels','labor_complete']);
+  // Demo (remove_existing) is tracked but NEVER added to any LF subtotal.
+  const DEMO_FIELD='remove_existing';
+  // Convert a Precast post count to LF for a given job. Uses the job's
+  // saved material calc (posts + total LF) to derive LF-per-post; falls
+  // back to 6 ft spacing when calc data is unavailable.
+  const calcPrecastLF=(numPosts,job)=>{
+    const posts=n(numPosts);
+    if(posts<=0)return 0;
+    const linePosts=n(job?.material_posts_line);
+    const cornerPosts=n(job?.material_posts_corner);
+    const stopPosts=n(job?.material_posts_stop);
+    const totalPosts=linePosts+cornerPosts+stopPosts;
+    const totalLF=n(job?.material_calc_lf)||n(job?.lf_precast);
+    if(totalPosts>0&&totalLF>0){
+      const lfPerPost=totalLF/totalPosts;
+      return Math.round(posts*lfPerPost*10)/10;
+    }
+    return Math.round(posts*6*10)/10;
+  };
+  // Per-section LF totals for a form, honoring post→LF conversion.
+  // Demo is always excluded. Returns { precast, sw, oneLine, grand }.
+  const calcSectionLFs=(form,job)=>{
+    const precast=['labor_post_only','labor_post_panels','labor_complete']
+      .reduce((s,f)=>s+calcPrecastLF(form[f],job),0);
+    // Single Wythe: 1 piece = 1 LF placeholder until proper formula lands.
+    const sw=['sw_foundation','sw_columns','sw_panels','sw_complete']
+      .reduce((s,f)=>s+n(form[f]),0);
+    // One Line Items: direct LF values (WI Posts + Demo both here, Demo excluded).
+    const oneLine=['wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','gate_controls']
+      .reduce((s,f)=>s+n(form[f]),0);
+    return{precast:Math.round(precast*10)/10,sw,oneLine,grand:Math.round((precast+sw+oneLine)*10)/10};
+  };
   const emptyForm=()=>({pct_complete:'',notes:'',...Object.fromEntries(LF_FIELDS.map(f=>[f,'']))});
   const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);setExpandedRow(null);setEditingRow(null);setSelected(new Set());};
   const selMonthLabel=monthLabel(selMonth);
@@ -2331,16 +2370,62 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const totalLFSubmitted=useMemo(()=>(subs||[]).reduce((s,x)=>s+n(x.total_lf),0),[subs]);
 
   const getStatus=(j)=>{const s=subByJob[j.id];if(!s)return'missing';if(s.ar_reviewed)return'reviewed';return'submitted';};
-  const filteredJobs=useMemo(()=>{if(filterTab==='all')return activeJobs;return activeJobs.filter(j=>getStatus(j)===filterTab);},[activeJobs,filterTab,subByJob]);
+  const filteredJobs=useMemo(()=>{
+    let f=activeJobs;
+    if(filterTab!=='all')f=f.filter(j=>getStatus(j)===filterTab);
+    if(search.trim()){
+      const q=search.trim().toLowerCase();
+      f=f.filter(j=>`${j.job_number||''} ${j.job_name||''} ${j.customer_name||''} ${j.pm||''} ${j.market||''}`.toLowerCase().includes(q));
+    }
+    return f;
+  },[activeJobs,filterTab,subByJob,search]);
 
   const getForm=(jobId)=>forms[jobId]||emptyForm();
   const updateForm=(jobId,field,val)=>setForms(prev=>({...prev,[jobId]:{...(prev[jobId]||emptyForm()),[field]:val}}));
   const expandRow=(jobId)=>{if(expandedRow===jobId){setExpandedRow(null);setEditingRow(null);}else{setExpandedRow(jobId);setEditingRow(null);const j=jobs.find(x=>x.id===jobId);if(j)fetchLineItemsForJob(j.job_number);}};
-  const openEdit=(job,sub)=>{const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||'',...Object.fromEntries(LF_FIELDS.map(f=>[f,n(sub[f])!==0?String(n(sub[f])):'']))};setForms(prev=>({...prev,[job.id]:form}));setEditingRow(job.id);setExpandedRow(job.id);};
+  // Reverse-convert a stored Precast LF back to an approximate post count
+  // so the PM sees the same units they originally entered. Uses the same
+  // job ratio as calcPrecastLF; rounds to the nearest whole post.
+  const lfToPosts=(lf,job)=>{
+    const v=n(lf);
+    if(v<=0)return 0;
+    const linePosts=n(job?.material_posts_line);
+    const cornerPosts=n(job?.material_posts_corner);
+    const stopPosts=n(job?.material_posts_stop);
+    const totalPosts=linePosts+cornerPosts+stopPosts;
+    const totalLF=n(job?.material_calc_lf)||n(job?.lf_precast);
+    const lfPerPost=(totalPosts>0&&totalLF>0)?(totalLF/totalPosts):6;
+    return Math.round(v/lfPerPost);
+  };
+  const openEdit=(job,sub)=>{
+    const form={pct_complete:sub.pct_complete_pm!=null?String(sub.pct_complete_pm):'',notes:sub.notes||''};
+    LF_FIELDS.forEach(f=>{
+      const stored=n(sub[f]);
+      if(PRECAST_POST_FIELDS.has(f)){
+        const posts=lfToPosts(stored,job);
+        form[f]=posts>0?String(posts):'';
+      }else{
+        form[f]=stored!==0?String(stored):'';
+      }
+    });
+    setForms(prev=>({...prev,[job.id]:form}));
+    setEditingRow(job.id);
+    setExpandedRow(job.id);
+  };
 
   const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
 
-  const buildPayload=(job,formVals)=>({billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:parseInt(job.total_lf)||0,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,lf_panels_washed:0,pct_complete_pm:parseFloat(formVals.pct_complete)||0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false});
+  // Precast labor_post_* fields are STORED AS THE CONVERTED LF so the
+  // downstream totals, AR dashboard, and read-only displays keep working
+  // without needing to re-derive LF on every read. SW fields and
+  // one-line-items are stored as entered. Demo is stored but excluded
+  // from total_lf. total_lf holds the Grand Total LF installed this
+  // period (Precast LF + SW LF + One Line Items LF), replacing the
+  // former contracted-total value.
+  const buildPayload=(job,formVals)=>{
+    const totals=calcSectionLFs(formVals,job);
+    return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:calcPrecastLF(formVals.labor_post_only,job),labor_post_panels:calcPrecastLF(formVals.labor_post_panels,job),labor_complete:calcPrecastLF(formVals.labor_complete,job),sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,lf_panels_washed:0,pct_complete_pm:parseFloat(formVals.pct_complete)||0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};
+  };
 
   const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload=buildPayload(job,form);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Submitted: ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));setEditingRow(null);setExpandedRow(null);}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
 
@@ -2357,9 +2442,99 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     </div>
   </div>);
 
-  const LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
-  const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(sub[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>{sec.fields.map(([label,field])=>{const v=n(sub[field]);return v>0?<div key={field} style={{background:'#F9F8F6',borderRadius:6,padding:'4px 8px'}}><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()}</div></div>:null;}).filter(Boolean)}</div></div>;}).filter(Boolean);
-  const renderLFForm=(jobId)=>{const form=getForm(jobId);return LF_SECTIONS.map(sec=><div key={sec.title} style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:6}}>{sec.fields.map(([label,field])=><div key={field}><label style={{display:'block',fontSize:9,color:'#9E9B96',marginBottom:1}}>{label}</label><input type="number" value={form[field]} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/></div>)}</div></div>);};
+  // LF_SECTIONS now carries per-field input metadata:
+  //   unit: '# Posts' | 'pieces' | 'LF'  (shown next to the label)
+  //   kind: 'posts' (Precast → convert to LF) | 'pieces' (SW, 1:1 placeholder)
+  //         | 'lf' (direct LF)
+  //   excludeFromTotal: true marks Demo as never-in-total
+  // Demo is placed last in One Line Items with a distinct background.
+  const LF_SECTIONS=[
+    {title:'Precast',bg:'#FEF3C7',fields:[
+      ['Labor Post Only','labor_post_only','# Posts','posts'],
+      ['Labor Post & Panels','labor_post_panels','# Posts','posts'],
+      ['Labor Complete','labor_complete','# Posts','posts'],
+    ]},
+    {title:'Single Wythe',bg:'#DBEAFE',fields:[
+      ['Foundation','sw_foundation','pieces','pieces'],
+      ['Columns','sw_columns','pieces','pieces'],
+      ['Panels','sw_panels','pieces','pieces'],
+      ['Complete','sw_complete','pieces','pieces'],
+    ]},
+    {title:'One Line Items',bg:'#EDE9FE',fields:[
+      ['WI Gates','wi_gates','LF','lf'],
+      ['WI Fencing','wi_fencing','LF','lf'],
+      ['WI Posts','wi_columns','LF','lf'],
+      ['Bonds','line_bonds','LF','lf'],
+      ['Permits','line_permits','LF','lf'],
+      ['Gate Controls','gate_controls','LF','lf'],
+      ['Demo','remove_existing','LF','lf',{excludeFromTotal:true}],
+    ]},
+  ];
+  // Read-only grid for already-submitted rows. Stored Precast fields
+  // are already converted LF, so we display them as "LF" everywhere.
+  const renderLFReadOnly=(sub)=>LF_SECTIONS.map(sec=>{
+    const hasData=sec.fields.some(([,f])=>n(sub[f])>0);
+    if(!hasData)return null;
+    return<div key={sec.title} style={{marginBottom:8}}>
+      <div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>
+        {sec.fields.map(([label,field,,,meta])=>{
+          const v=n(sub[field]);
+          if(v<=0)return null;
+          const isDemo=meta&&meta.excludeFromTotal;
+          return<div key={field} style={{background:isDemo?'#FEF2F2':'#F9F8F6',borderRadius:6,padding:'4px 8px',border:isDemo?'1px dashed #FCA5A5':'none'}}>
+            <div style={{fontSize:9,color:isDemo?'#B45309':'#9E9B96',textTransform:'uppercase',fontWeight:isDemo?700:600}}>{label}{isDemo?' *':''}</div>
+            <div style={{fontFamily:'Inter',fontSize:13,fontWeight:700}}>{v.toLocaleString()} LF</div>
+          </div>;
+        }).filter(Boolean)}
+      </div>
+    </div>;
+  }).filter(Boolean);
+  // Editable form with per-Precast-field post→LF hint, section subtotals,
+  // and a grand total footer. Demo is visually separated and excluded
+  // from every total.
+  const renderLFForm=(jobId,job)=>{
+    const form=getForm(jobId);
+    const totals=calcSectionLFs(form,job);
+    const sectionSub=(sec)=>{
+      if(sec.title==='Precast')return totals.precast;
+      if(sec.title==='Single Wythe')return totals.sw;
+      return totals.oneLine;
+    };
+    return<>
+      {LF_SECTIONS.map(sec=>{
+        const sub=sectionSub(sec);
+        return<div key={sec.title} style={{marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8}}>
+            {sec.fields.map(([label,field,unit,kind,meta])=>{
+              const isDemo=meta&&meta.excludeFromTotal;
+              const raw=form[field];
+              const hint=kind==='posts'&&n(raw)>0
+                ? `→ ${calcPrecastLF(raw,job).toLocaleString()} LF`
+                : null;
+              return<div key={field} style={isDemo?{background:'#FEF2F2',border:'1px dashed #FCA5A5',borderRadius:6,padding:'6px 8px'}:undefined}>
+                <label style={{display:'block',fontSize:9,color:isDemo?'#B45309':'#9E9B96',marginBottom:2,fontWeight:isDemo?700:500}}>
+                  {label} <span style={{opacity:0.8}}>({unit})</span>
+                  {isDemo&&<span style={{marginLeft:4,fontSize:8,textTransform:'uppercase',color:'#B45309'}}>Excluded from total</span>}
+                </label>
+                <input type="number" value={raw} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/>
+                {hint&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{hint}</div>}
+              </div>;
+            })}
+          </div>
+          <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#6B6056'}}>
+            <span>{sec.title} LF This Period: <b style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>{sub.toLocaleString()}</b></span>
+          </div>
+        </div>;
+      })}
+      <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8B2020',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+        <span style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total LF This Period</span>
+        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8B2020'}}>{totals.grand.toLocaleString()} LF</span>
+      </div>
+      {n(form[DEMO_FIELD])>0&&<div style={{fontSize:10,color:'#9E9B96',textAlign:'right',marginTop:2,fontStyle:'italic'}}>Demo not included in LF total ({n(form[DEMO_FIELD]).toLocaleString()} LF tracked separately)</div>}
+    </>;
+  };
 
   const filterTabs=[['all','All',activeJobs.length,'#6B6056','#F4F4F2'],['missing','Missing',missingCount,'#991B1B','#FEE2E2'],['submitted','Submitted',submittedNotReviewed,'#065F46','#D1FAE5'],['reviewed','Reviewed',reviewedCount,'#1D4ED8','#DBEAFE']];
 
@@ -2383,8 +2558,20 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       </div>
       <div style={{height:8,background:'#E5E3E0',borderRadius:8,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:8,transition:'width .4s ease'}}/></div>
     </div>
-    {/* Filter tabs */}
-    <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>{filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}</div>
+    {/* Search + filter tabs */}
+    <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+      <div style={{position:'relative',flex:'0 0 auto'}}>
+        <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'#9E9B96',pointerEvents:'none'}}>🔍</span>
+        <input
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          placeholder="Search jobs, customer, PM..."
+          style={{...inputS,width:260,padding:'8px 30px 8px 32px',fontSize:12}}
+        />
+        {search&&<button onClick={()=>setSearch('')} aria-label="Clear search" style={{position:'absolute',right:6,top:'50%',transform:'translateY(-50%)',background:'#F4F4F2',border:'none',borderRadius:10,width:18,height:18,fontSize:11,color:'#6B6056',cursor:'pointer',lineHeight:1,padding:0,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
+      </div>
+      {filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
+    </div>
     {/* Batch submit for Missing tab */}
     {filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
       <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#6B6056',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8B2020'}}/>Select all missing jobs</label>
@@ -2413,6 +2600,10 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
               {lfTotal(j)>0&&<span style={{fontWeight:700,color:'#1A1A1A'}}>{lfTotal(j).toLocaleString()} Total LF</span>}
             </span>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
+              {/* Phase PM-overhaul: Grand Total LF for the period, pulled from the stored
+                  submission.total_lf (Precast LF + SW LF + One-Line-Items LF, Demo excluded). */}
+              {sub&&n(sub.total_lf)>0&&<span title="Grand Total LF submitted this period (Demo excluded)" style={{fontSize:11,fontWeight:800,color:'#8B2020',background:'#FDF4F4',border:'1px solid #8B202030',padding:'2px 8px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>{n(sub.total_lf).toLocaleString()} LF</span>}
+              {sub&&n(sub.remove_existing)>0&&<span title="Demo LF (tracked separately, not in total)" style={{fontSize:10,fontWeight:700,color:'#B45309',background:'#FEF2F2',border:'1px dashed #FCA5A5',padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0}}>Demo {n(sub.remove_existing).toLocaleString()}</span>}
               {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button>}
               {status==='submitted'&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
               {status==='reviewed'&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>}
@@ -2430,10 +2621,10 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
               {(n(j.lf_installed_to_date)>0||lfPC(j)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=lfPC(j)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
                 📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#6B6056'}}> · last {fD(j.lf_last_billed_date)}</span>}
               </div>;})()}
-              {renderLFForm(j.id)}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={{...inputS,padding:'6px 10px',fontSize:13}}/></div>
-                <div style={{display:'flex',alignItems:'flex-end'}}><div style={{background:'#F9F8F6',borderRadius:6,padding:'6px 10px',fontSize:12}}>Total LF: <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{calcLFTotal(form).toLocaleString()}</span></div></div>
+              {renderLFForm(j.id,j)}
+              <div style={{marginBottom:10,marginTop:12}}>
+                <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>% Complete</label>
+                <input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>updateForm(j.id,'pct_complete',e.target.value)} placeholder="e.g. 65" style={{...inputS,padding:'6px 10px',fontSize:13}}/>
               </div>
               <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
               <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'8px 0',fontSize:13,opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
@@ -2519,7 +2710,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const fetchProdBillSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${prodBillingMonth}&order=created_at.desc`);setProdBillSubs(d||[]);},[prodBillingMonth]);
   useEffect(()=>{fetchProdBillSubs();},[fetchProdBillSubs,refreshKey]);
   const prodSubByJob=useMemo(()=>{const m={};(prodBillSubs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[prodBillSubs]);
-  const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Columns','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Remove','remove_existing'],['Gate Ctrl','gate_controls']]}];
+  const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing']]}];
   const[groupBy,setGroupBy]=useState('status');const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);const[search,setSearch]=useState('');const[addonsF,setAddonsF]=useState(new Set());
   // Edit lock — defaults to locked on every page load (intentionally not persisted).
   const[editUnlocked,setEditUnlocked]=useState(false);const[showPinModal,setShowPinModal]=useState(false);const[pinInput,setPinInput]=useState('');const[pinError,setPinError]=useState(false);
