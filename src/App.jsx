@@ -1989,6 +1989,75 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||'',invoiced_amount:sub.invoiced_amount||'',invoice_number:sub.invoice_number||'',invoice_date:sub.invoice_date||new Date().toISOString().split('T')[0]});};
+  const[expandedArRow,setExpandedArRow]=useState(null);
+  const toggleArRow=id=>setExpandedArRow(prev=>prev===id?null:id);
+  // Read-only detail panel for the Billing AR table. Displays stored
+  // pm_bill_submissions values grouped by section; empty fields render
+  // as "—". Fields `precast_other_lf` and `one_line_other_lf` are
+  // forward-compatible placeholders — they resolve to "—" until those
+  // columns exist.
+  const renderBillDetail=(sub)=>{
+    const s=sub||{};
+    const precastFields=[['Labor Post Only','labor_post_only'],['Labor Post & Panels','labor_post_panels'],['Labor Complete','labor_complete'],['Other','precast_other_lf']];
+    const swFields=[['Foundation','sw_foundation'],['SW Columns','sw_columns'],['Accent Columns','sw_accent_columns'],['Large Columns','sw_large_columns'],['Panels','sw_panels'],['Complete','sw_complete'],['Other','sw_other_lf']];
+    const oneFields=[['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Other','one_line_other_lf']];
+    const pcsFields=[['WI Gates','wi_gates','pcs'],['Gate Controls','gate_controls','pcs'],['Bonds','line_bonds','$'],['Permits','line_permits','$']];
+    const sumLF=fs=>fs.reduce((t,[,f])=>t+n(s[f]),0);
+    const precastSub=sumLF(precastFields);const swSub=sumLF(swFields);const oneSub=sumLF(oneFields);
+    const grand=precastSub+swSub+oneSub;
+    const demo=n(s.remove_existing);
+    const anyData=!!sub&&(grand>0||demo>0||n(s.wi_gates)>0||n(s.gate_controls)>0||n(s.line_bonds)>0||n(s.line_permits)>0);
+    if(!anyData)return<div style={{padding:32,textAlign:'center',color:'#6B6056',fontSize:13,fontStyle:'italic'}}>No PM bill sheet data submitted for this job yet.</div>;
+    const fmtLF=v=>v>0?v.toLocaleString()+' LF':'—';
+    const fmtPcs=v=>v>0?v.toLocaleString()+' pcs':'—';
+    const fmt$=v=>v>0?'$'+v.toLocaleString():'—';
+    const cardBase={background:'#FFF',borderRadius:8,overflow:'hidden',flex:'1 1 200px',minWidth:200,display:'flex',flexDirection:'column'};
+    const headerBase={padding:'7px 12px',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5};
+    const fieldRow=(label,val,alt,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 12px',fontSize:11,background:alt?'rgba(0,0,0,0.025)':'transparent'}}>
+      <span style={{color:'#6B6056'}}>{label}</span>
+      <span style={{color:'#1A1A1A',fontWeight:600,fontFamily:'Inter'}}>{val}</span>
+    </div>;
+    const subtotalRow=(v)=><div style={{borderTop:'1px solid #E5E3E0',padding:'7px 12px',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:800,marginTop:'auto'}}>
+      <span style={{color:'#6B6056',textTransform:'uppercase',letterSpacing:0.4}}>Subtotal</span>
+      <span style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>{v.toLocaleString()} LF</span>
+    </div>;
+    const renderLFCard=(title,bg,headerBg,headerColor,border,fields,subtotal)=><div style={{...cardBase,background:bg,border:`1px solid ${border}`}}>
+      <div style={{...headerBase,background:headerBg,color:headerColor}}>{title}</div>
+      <div style={{display:'flex',flexDirection:'column',flex:1}}>
+        {fields.map(([label,field],i)=>fieldRow(label,fmtLF(n(s[field])),i%2===1,i))}
+        {subtotalRow(subtotal)}
+      </div>
+    </div>;
+    return<div style={{padding:16,background:'#FAFAFA',borderTop:'3px solid #8B2020',animation:'fadeSlide .18s ease-out'}}>
+      <style>{`@keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12,alignItems:'stretch'}}>
+        {renderLFCard('Precast','#F9FAFB','#E5E7EB','#374151','#E5E7EB',precastFields,precastSub)}
+        {renderLFCard('Single Wythe','#EFF6FF','#DBEAFE','#1D4ED8','#BFDBFE',swFields,swSub)}
+        {renderLFCard('One Line Items','#F0FDF4','#DCFCE7','#15803D','#BBF7D0',oneFields,oneSub)}
+        <div style={{...cardBase,background:'#FEFCE8',border:'1px solid #FDE68A'}}>
+          <div style={{...headerBase,background:'#FEF9C3',color:'#A16207'}}>Pieces & $</div>
+          <div style={{display:'flex',flexDirection:'column',flex:1}}>
+            {pcsFields.map(([label,field,kind],i)=>{
+              const v=n(s[field]);
+              const disp=kind==='$'?fmt$(v):fmtPcs(v);
+              return fieldRow(label,disp,i%2===1,i);
+            })}
+          </div>
+        </div>
+        <div style={{...cardBase,background:'#FEF2F2',border:'1px solid #FECACA'}}>
+          <div style={{...headerBase,background:'#FEE2E2',color:'#991B1B'}}>Demo</div>
+          <div style={{display:'flex',flexDirection:'column',flex:1}}>
+            {fieldRow('Demo',fmtLF(demo),false,0)}
+            <div style={{padding:'8px 12px',fontSize:10,color:'#9E9B96',fontStyle:'italic',marginTop:'auto'}}>Excluded from LF totals</div>
+          </div>
+        </div>
+      </div>
+      <div style={{background:'#8B2020',color:'#FFF',padding:'12px 18px',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 3px rgba(139,32,32,0.25)'}}>
+        <span style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:1}}>Total LF This Period</span>
+        <span style={{fontSize:22,fontWeight:900,fontFamily:'Inter'}}>{grand.toLocaleString()} LF</span>
+      </div>
+    </div>;
+  };
   const[resetConfirm,setResetConfirm]=useState(null);
   const arUnreviewed=useMemo(()=>arSubs.filter(s=>!s.ar_reviewed),[arSubs]);
   const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
@@ -2044,11 +2113,13 @@ function BillingPage({jobs,onRefresh,onNav}){
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 480px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
           <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-            <tr>{['Job #','Job Name','PM','Market','Style','Color','Height','Bill Sheet','Submitted Date','AR Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
+            <tr>{['','Job #','Job Name','PM','Market','Style','Color','Height','Bill Sheet','Submitted Date','AR Status','Actions'].map((h,i)=><th key={i} style={{...thS,width:i===0?28:undefined}}>{h}</th>)}</tr>
           </thead>
           <tbody>{arTableData.map(({job:j,sub,status})=>{
             const borderColor=status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
-            return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1}}>
+            const isExp=expandedArRow===j.id;
+            return<React.Fragment key={j.id}><tr onClick={()=>toggleArRow(j.id)} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1,cursor:'pointer',background:isExp?'#F9F8F6':undefined}}>
+              <td style={{padding:'8px 6px',fontSize:11,color:'#8B2020',textAlign:'center',width:28,userSelect:'none'}}>{isExp?'▼':'▶'}</td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
@@ -2059,11 +2130,13 @@ function BillingPage({jobs,onRefresh,onNav}){
               <td style={{padding:'8px 10px'}}>{status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
               <td style={{padding:'8px 10px'}}>{sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
-              <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
+              <td style={{padding:'8px 10px'}} onClick={e=>e.stopPropagation()}><div style={{display:'flex',gap:4}}>
                 {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
                 {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
               </div></td>
-            </tr>;})}
+            </tr>
+            {isExp&&<tr><td colSpan={12} style={{padding:0,background:'#FAFAFA',borderBottom:'1px solid #E5E3E0'}}>{renderBillDetail(sub)}</td></tr>}
+            </React.Fragment>;})}
           </tbody>
         </table>
         {arTableData.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{color:'#9E9B96',fontSize:14}}>No jobs match current filters</div></div>}
