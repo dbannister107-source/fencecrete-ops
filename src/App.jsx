@@ -7914,9 +7914,9 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
   const groups=navGroups||NAV_GROUPS;
   const auth=useAuth();
   return <>
-    <div style={{padding:collapsed?'16px 8px':'24px 20px 20px',textAlign:collapsed?'center':'left'}}>
-      {!collapsed?<div style={{fontFamily:'Syne',fontSize:15,fontWeight:900,color:'#8B2020',whiteSpace:'nowrap',overflow:'hidden'}}>Fencecrete</div>
-      :<div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,color:'#8B2020'}}>F</div>}
+    <div style={{padding:12,textAlign:collapsed?'center':'left',background:'#FFF',borderBottom:'1px solid #2A2A2A'}}>
+      {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:160,width:'100%',height:'auto',display:'block'}}/>
+      :<div style={{width:6,height:28,background:'#8B2020',borderRadius:2,margin:'0 auto'}}/>}
     </div>
     <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map(g=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'10px 0':'10px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#9E9B96',fontSize:14,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>)}</div>)}</nav>
     <div style={{padding:collapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
@@ -8006,8 +8006,8 @@ function LoginPage(){
     <style>{`@keyframes fcSpin2{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020',letterSpacing:-0.5}}>Fencecrete</div>
-        <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Fencecrete America</div>
+        <img src="/logo.png" alt="Fencecrete" style={{maxWidth:280,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
+        <div style={{fontSize:13,color:'#6B6056',marginTop:10}}>Fencecrete America</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
         {mode==='login'?<>
@@ -8069,8 +8069,8 @@ function RecoveryPage({ accessToken, onDone }){
   return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:900,color:'#8B2020'}}>Fencecrete</div>
-        <div style={{fontSize:13,color:'#6B6056',marginTop:4}}>Set a new password</div>
+        <img src="/logo.png" alt="Fencecrete" style={{maxWidth:280,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
+        <div style={{fontSize:13,color:'#6B6056',marginTop:10}}>Set a new password</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28}}>
         <form onSubmit={submit}>
@@ -8320,8 +8320,8 @@ export default function App(){
   if (loading) {
     return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
-        <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900,color:'#8B2020'}}>Fencecrete</div>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:14}}>
+        <img src="/logo.png" alt="Fencecrete" style={{maxWidth:220,width:'100%',height:'auto'}}/>
         <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8B2020 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
       </div>
     </div>;
