@@ -8007,7 +8007,6 @@ function LoginPage(){
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
         <img src="/logo.png" alt="Fencecrete" style={{maxWidth:280,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
-        <div style={{fontSize:13,color:'#6B6056',marginTop:10}}>Fencecrete America</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
         {mode==='login'?<>
