@@ -2595,6 +2595,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const[selMonth,setSelMonth]=useState(curBillingMonth);
   const[subs,setSubs]=useState([]);
   const[expandedRow,setExpandedRow]=useState(null);
+  const[extraSectionsByJob,setExtraSectionsByJob]=useState({});
   const[forms,setForms]=useState({});
   const[editingRow,setEditingRow]=useState(null);
   const[saving,setSaving]=useState(null);
@@ -2832,7 +2833,8 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const renderLFForm=(jobId,job)=>{
     const form=getForm(jobId);
     const totals=calcSectionLFs(form,job);
-    const[extraSections,setExtraSections]=useState([]);
+    const extraSections=extraSectionsByJob[jobId]||[];
+    const setExtraSections=(val)=>setExtraSectionsByJob(prev=>({...prev,[jobId]:typeof val==='function'?val(prev[jobId]||[]):val}));
 
     // Determine which sections to show based on job contract
     const visibleSections=LF_SECTIONS.filter(sec=>{
