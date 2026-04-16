@@ -2187,7 +2187,6 @@ function BillingPage({jobs,onRefresh,onNav}){
   const isMobile = useIsMobile();
   const[bilQuickView,setBilQuickView]=useState(null);
   
-  const 
   const[bilRemindSending,setBilRemindSending]=useState(false);
   const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
