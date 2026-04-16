@@ -12,6 +12,22 @@ L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-i
 /* ═══ CONFIG ═══ */
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
+
+// Access control — only these emails can edit project records
+const EDIT_EMAILS = new Set([
+  'david@fencecrete.com',
+  'amiee@fencecrete.com',
+  'contracts@fencecrete.com',
+  'alex@fencecrete.com',
+]);
+// Only Amiee can approve/reject change orders
+const AMIEE_EMAILS = new Set([
+  'amiee@fencecrete.com',
+  'contracts@fencecrete.com',
+]);
+const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
+const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim());
+
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H })).json();
 const sbPatch = async (t, id, b) => (await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) })).json();
@@ -796,6 +812,11 @@ function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setL
 /* ═══ EDIT PANEL ═══ */
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const isMobile = useIsMobile();
+  const auth = useAuth();
+  const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
+  const canEdit = isNew || canEditProjects(currentUserEmail);
+  const roInput = canEdit ? {} : {pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'};
+  const roStyle = (extra={}) => canEdit ? extra : {...extra,pointerEvents:'none',opacity:0.7,cursor:'default'};
   // Phase 4: close the panel on Escape.
   useEffect(()=>{
     const onKey=(e)=>{if(e.key==='Escape')onClose&&onClose();};
@@ -826,8 +847,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     const today=new Date().toISOString().split('T')[0];
     // Only Amiee can approve COs
     const currentUser=auth?.user?.email||'';
-    const isAmiee=currentUser.toLowerCase().includes('amiee')||currentUser.toLowerCase().includes('contracts');
-    if(!isAmiee){setCOToast({msg:'Only Amiee can approve change orders',kind:'error'});return;}
+    if(!canApproveCO(currentUser)){setCOToast({msg:'Only Amiee can approve change orders',kind:'error'});return;}
     try{
       await sbPatch('change_orders',c.id,{status:'approved',approved_by:currentUser,date_approved:today});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
@@ -839,8 +859,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   };
   const rejectCO=async(c)=>{
     const currentUser=auth?.user?.email||'';
-    const isAmiee=currentUser.toLowerCase().includes('amiee')||currentUser.toLowerCase().includes('contracts');
-    if(!isAmiee){setCOToast({msg:'Only Amiee can reject change orders',kind:'error'});return;}
+    if(!canApproveCO(currentUser)){setCOToast({msg:'Only Amiee can reject change orders',kind:'error'});return;}
     try{
       await sbPatch('change_orders',c.id,{status:'rejected'});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
@@ -882,12 +901,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.total_lf_precast||form.lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
             onNav('material_requests');
           }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
-          <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
+          {canEdit
+            ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
+            : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
+          }
           {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
+      {!canEdit&&!isNew&&<div style={{padding:'8px 20px',background:'#FEF3C7',borderBottom:'1px solid #FDE68A',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+        <span style={{fontSize:16}}>🔒</span>
+        <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
+      </div>}
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
-      <div style={{flex:1,overflow:'auto',padding:20}}>
+      <div style={{flex:1,overflow:'auto',padding:20,pointerEvents:canEdit?'auto':'none'}}>
         {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8A261D33',borderLeft:'4px solid #8A261D',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
             <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
