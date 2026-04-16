@@ -2788,7 +2788,8 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
             <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
             <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
-            {(j.third_party_billing||j.ocip_ccip)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
+            {(j.third_party_billing===true||j.ocip_ccip===true)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
+            {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#6D28D9',background:'#EDE9FE',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
             <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
