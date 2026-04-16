@@ -2788,8 +2788,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
             <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
             <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
-            <span title="Adjusted Contract Value (contract + approved COs)" style={{fontSize:11,fontWeight:700,color:'#8B2020',background:'#FDF4F4',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>Contract: {$(n(j.adj_contract_value)||n(j.contract_value))}</span>
-            <span title="Total approved change orders" style={{fontSize:11,fontWeight:700,color:pmApprovedCOByJob[j.id]>0?'#065F46':'#9E9B96',background:pmApprovedCOByJob[j.id]>0?'#D1FAE5':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>COs: {pmApprovedCOByJob[j.id]>0?$(pmApprovedCOByJob[j.id]):'—'}</span>
+            {(j.third_party_billing||j.ocip_ccip)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
             <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
