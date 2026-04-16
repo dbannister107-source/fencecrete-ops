@@ -697,8 +697,8 @@ function LineItemsEditor({job,onChange}){
     }catch(e){setErr('Save failed: '+e.message);}
     setSaving(false);
   };
-  const fieldLabel={display:'block',fontSize:10,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600,letterSpacing:0.3};
-  const inp={...inputS,padding:'6px 10px',fontSize:12};
+  const fieldLabel={display:'block',fontSize:11,color:'#6B6056',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
+  const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
   const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other']];
   return<div>
@@ -711,60 +711,67 @@ function LineItemsEditor({job,onChange}){
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
       {lines.map((l,idx)=>{
         const isPC=l.fence_type==='PC';
-        return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F9F8F6',padding:'8px 14px',borderBottom:'1px solid #E5E3E0'}}>
-            <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{l.line_number||idx+1}</span>
+        return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.05)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F4F4F2',padding:'14px 20px',borderBottom:'1px solid #E5E3E0'}}>
+            <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{l.line_number||idx+1}</span>
             {confirmDel===idx
-              ? <span style={{display:'flex',gap:4,alignItems:'center'}}>
-                  <span style={{fontSize:11,color:'#991B1B',fontWeight:600}}>Delete?</span>
-                  <button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:4,padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>Yes</button>
-                  <button onClick={()=>setConfirmDel(null)} style={{background:'#F4F4F2',color:'#6B6056',border:'none',borderRadius:4,padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>No</button>
+              ? <span style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <span style={{fontSize:12,color:'#991B1B',fontWeight:700}}>Delete this line?</span>
+                  <button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>Yes</button>
+                  <button onClick={()=>setConfirmDel(null)} style={{background:'#FFF',color:'#6B6056',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>No</button>
                 </span>
-              : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:6,width:26,height:26,fontSize:14,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
+              : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
           </div>
-          <div style={{padding:'12px 14px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'1.1fr 0.9fr 1fr 1.4fr 1.4fr 1fr 1.1fr auto',gap:10,alignItems:'end'}}>
-              <div><label style={fieldLabel}>Type</label>
+          <div style={{padding:20}}>
+            {/* Row 1: Type, Height, LF, Rate, Line Value */}
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
+              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Type</label>
                 <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
                   {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
                 </select>
               </div>
-              <div><label style={fieldLabel}>LF</label>
-                <input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder="0" style={{...inp,width:'100%'}}/>
-              </div>
-              <div><label style={fieldLabel}>Height</label>
+              <div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
                 <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
                   <option value="">—</option>
                   {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
                   {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
                 </select>
               </div>
-              <div><label style={fieldLabel}>Style</label>
-                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%'}}>
+              <div style={{width:110,flexShrink:0}}><label style={fieldLabel}>LF</label>
+                <input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder="0" style={{...inp,width:'100%'}}/>
+              </div>
+              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Rate ($/LF)</label>
+                <input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
+              </div>
+              <div style={{width:150,flexShrink:0}}><label style={fieldLabel}>Line Value</label>
+                <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
+              </div>
+            </div>
+            {/* Row 2: Style, Color, Produced */}
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
+              <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
+                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%',minWidth:180}}>
                   <option value="">—</option>
                   {styleOpts.map(s=><option key={s} value={s}>{STYLE_LABEL(s)}</option>)}
                   {l.style&&!styleOpts.includes(l.style)&&<option value={l.style}>{STYLE_LABEL(l.style)}</option>}
                 </select>
               </div>
-              <div><label style={fieldLabel}>Color</label>
-                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%'}}>
+              <div style={{flex:'2 1 200px',minWidth:180}}><label style={fieldLabel}>Color</label>
+                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%',minWidth:160}}>
                   <option value="">—</option>
                   {colorOpts.map(c=><option key={c} value={c}>{c}</option>)}
                   {l.color&&!colorOpts.includes(l.color)&&<option value={l.color}>{l.color}</option>}
                 </select>
               </div>
-              <div><label style={fieldLabel}>Rate ($/LF)</label>
-                <input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
-              </div>
-              <div><label style={fieldLabel}>Line Value</label>
-                <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right'}}>{$(l.line_value)}</div>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:60}}>
-                <label style={{...fieldLabel,textAlign:'center'}}>Produced</label>
-                <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} disabled={!isPC} title={isPC?'':'Only applies to PC lines'} style={{width:18,height:18,accentColor:'#8B2020',opacity:isPC?1:0.4,marginTop:6}}/>
-              </div>
+              {isPC&&<div style={{flex:'1 1 140px',minWidth:140,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <label style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',fontSize:14,fontWeight:700,color:'#1A1A1A',minHeight:44,boxSizing:'border-box'}}>
+                  <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{width:24,height:24,accentColor:'#8B2020',margin:0,flexShrink:0}}/>
+                  Produced
+                </label>
+              </div>}
             </div>
-            <div style={{marginTop:10}}>
+            {/* Row 3: Description */}
+            <div>
               <label style={fieldLabel}>Description</label>
               <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder="Optional notes for this line" style={{...inp,width:'100%'}}/>
             </div>
