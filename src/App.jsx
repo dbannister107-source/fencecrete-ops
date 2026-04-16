@@ -7506,7 +7506,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
 }
 
 /* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
-const CHAT_WELCOME = "Hi! I'm the FCA Assistant. Ask me anything about the app — how to find something, what a field means, or how to complete a task.";
+const CHAT_WELCOME = "Hi! I'm Chorizo 🌶️ Ask me anything about the app — how to find something, what a field means, or how to complete a task.";
 const CHAT_QUICK_PROMPTS = {
   projects: ["How do I add a new project?","What do the status colors mean?","How do I filter by market?"],
   production: ["How do I move a job to production?","What does group by do?","How do I schedule a job?"],
@@ -7579,7 +7579,7 @@ function ChatWidget({currentPage}){
   const onInputKey=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input);}};
   // Chat button (closed state)
   if(!open){
-    return<button onClick={()=>setOpen(true)} title="Ask the FCA Assistant" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8A261D',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
+    return<button onClick={()=>setOpen(true)} title="Ask Chorizo 🌶️" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8A261D',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
   }
   // Typing indicator (3 animated dots)
   const typingDots=<div style={{display:'inline-flex',gap:4,padding:'10px 14px',background:'#E8E8E6',borderRadius:14,alignSelf:'flex-start',maxWidth:'80%'}}>
@@ -7592,8 +7592,8 @@ function ChatWidget({currentPage}){
     {/* Header */}
     <div style={{padding:'12px 16px',background:'#8A261D',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <span style={{fontSize:18}}>💬</span>
-        <span style={{fontFamily:'Inter',fontWeight:800,fontSize:14}}>FCA Assistant</span>
+        <span style={{fontSize:18}}>🌶️</span>
+        <span style={{fontFamily:'Inter',fontWeight:800,fontSize:14}}>Chorizo</span>
       </div>
       <button onClick={closeChat} title="Close" style={{background:'none',border:'none',color:'#FFF',fontSize:20,cursor:'pointer',padding:0,lineHeight:1,width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:4}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.15)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>×</button>
     </div>
