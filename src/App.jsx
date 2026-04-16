@@ -156,7 +156,7 @@ const PMS=PM_LIST.map(p=>p.id);
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
-const _STYLE_LIST = ['Rock Style','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
+const _STYLE_LIST = ['Rock Style','Block Style Regular','Block Style Long','Vertical Wood','Split Face CMU Block','Boxwood','Brick Style','Rock Z Panel','Smooth','Stucco','Horizontal B&B','Ledgestone','Used Brick Style','Combo Vert./Horizontal'];
 // Canonical 6-color palette used for NEW jobs and line items.
 // Existing jobs may hold legacy colors (Painted, Adobe, 860, etc.) — those are preserved via colorOptionsFor().
 const STANDARD_COLORS=['LAC','Silversmoke #860','Café','Outback #677','Regular Brown','Buff Green'];
