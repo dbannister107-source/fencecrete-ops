@@ -9819,3 +9819,4 @@ export default function App(){
     {!session?<LoginPage/>:<AppShell/>}
   </AuthContext.Provider>;
 }
+export default App;
