@@ -879,23 +879,74 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
                 <div key={k}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label><input type="number" value={form[k]??''} onChange={e=>set(k,e.target.value)} placeholder="0" style={inputS}/></div>
               )}
             </div>
-            {/* Contract Value Summary */}
+            {/* Sales Tax */}
             {(()=>{
-              const ncv=n(form.net_contract_value);
-              const co=n(form.change_orders);
-              const pa=n(form.permit_amount);
-              const pp=n(form.pp_bond_amount);
-              const mb=n(form.maint_bond_amount);
-              const acv=ncv+co+pa+pp+mb;
-              const line=(label,v,prefix)=>v>0?<div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',fontSize:13}}><span style={{color:'#6B6056'}}>{prefix}{label}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(v)}</span></div>:null;
-              return<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:16}}>
-                <div style={{fontSize:10,color:'#9E9B96',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Value Summary</div>
-                {[line('Net Contract Value',ncv,''),line('Change Orders',co,'+ '),line('Permit Amount',pa,'+ '),line('P&P Bond Amount',pp,'+ '),line('Maint Bond Amount',mb,'+ ')].filter(Boolean)}
-                <div style={{borderTop:'2px solid #8B2020',marginTop:6,paddingTop:8,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-                  <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Adjusted Contract Value</span>
-                  <span style={{fontFamily:'Inter',fontWeight:900,fontSize:20,color:'#8B2020'}}>{$(acv)}</span>
-                </div>
+              const TAX_RATE=0.0825;
+              const HEIGHT_BASIS={'4':23.00,'5':24.75,'6':26.00,'7':27.50,'8':29.25,'9':30.50,'10':31.75};
+              const STYLE_BASIS={'Ranch - 2 Rail':13.50,'Ranch - 3 Rail':15.75,'Ranch - 4 Rail':16.50};
+              const styleKey=(form.style||'').trim();
+              const heightKey=String(form.height_precast||'').replace(/['"]/g,'').trim();
+              const pcBasis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
+              const pcLF=n(form.lf_precast||form.total_lf_precast);
+              const pcTax=pcLF*pcBasis*TAX_RATE;
+              const wiLF=n(form.lf_wrought_iron);
+              const wiRate=n(form.contract_rate_wrought_iron);
+              const wiContract=wiLF*wiRate;
+              const wiTaxBasis=wiContract*0.33;
+              const wiTax=wiTaxBasis*TAX_RATE;
+              const totalTax=form.tax_exempt?0:(pcTax+wiTax);
+              const row=(label,val,bold)=><div key={label} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}}>
+                <span style={{color:bold?'#1A1A1A':'#6B6056',fontWeight:bold?700:500}}>{label}</span>
+                <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8B2020':'#1A1A1A'}}>{val}</span>
               </div>;
+              return<>
+                <div style={{marginTop:4,marginBottom:10,fontSize:11,color:'#8B2020',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Sales Tax</div>
+                <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13,marginBottom:10}}>
+                  <input type="checkbox" checked={!!form.tax_exempt} onChange={e=>set('tax_exempt',e.target.checked)} style={{width:16,height:16,accentColor:'#8B2020'}}/>
+                  Tax Exempt
+                  {form.tax_exempt&&<span style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,background:'#D1FAE5',color:'#065F46',fontSize:10,fontWeight:800,letterSpacing:0.5}}>TAX EXEMPT</span>}
+                </label>
+                {!form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:16}}>
+                  {pcLF>0&&<>
+                    {row('PC Fence Tax Basis',pcBasis>0?`$${pcBasis.toFixed(2)}/LF`:'—')}
+                    {row('PC LF',`${pcLF.toLocaleString()} LF`)}
+                    {row('PC Sales Tax',$(pcTax))}
+                  </>}
+                  {wiLF>0&&wiRate>0&&<>
+                    <div style={{height:1,background:'#E5E3E0',margin:'6px 0'}}/>
+                    {row('WI Contract Value',$(wiContract))}
+                    {row('WI Tax (33% basis)',$(wiTaxBasis))}
+                    {row('WI Sales Tax',$(wiTax))}
+                  </>}
+                  {pcLF<=0&&(wiLF<=0||wiRate<=0)&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
+                  <div style={{borderTop:'2px solid #8B2020',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                    <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total Sales Tax</span>
+                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8B2020'}}>{$(pcTax+wiTax)}</span>
+                  </div>
+                </div>}
+                {form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px dashed #D1FAE5',borderRadius:10,padding:14,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                  <span style={{fontSize:12,fontWeight:800,color:'#065F46',textTransform:'uppercase',letterSpacing:0.5}}>Total Sales Tax</span>
+                  <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#065F46'}}>$0.00</span>
+                </div>}
+                {(()=>{
+                  const ncv=n(form.net_contract_value);
+                  const co=n(form.change_orders);
+                  const pa=n(form.permit_amount);
+                  const pp=n(form.pp_bond_amount);
+                  const mb=n(form.maint_bond_amount);
+                  const stax=n(form.sales_tax_amount)||totalTax;
+                  const acv=n(form.adj_contract_value)||(ncv+co+pa+pp+mb+stax);
+                  const line=(label,v,prefix)=>v>0?<div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',fontSize:13}}><span style={{color:'#6B6056'}}>{prefix}{label}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(v)}</span></div>:null;
+                  return<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:16}}>
+                    <div style={{fontSize:10,color:'#9E9B96',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Value Summary</div>
+                    {[line('Net Contract Value',ncv,''),line('Change Orders',co,'+ '),line('Permit Amount',pa,'+ '),line('P&P Bond Amount',pp,'+ '),line('Maint Bond Amount',mb,'+ '),line('Sales Tax',stax,'+ ')].filter(Boolean)}
+                    <div style={{borderTop:'2px solid #8B2020',marginTop:6,paddingTop:8,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                      <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Adjusted Contract Value</span>
+                      <span style={{fontFamily:'Inter',fontWeight:900,fontSize:20,color:'#8B2020'}}>{$(acv)}</span>
+                    </div>
+                  </div>;
+                })()}
+              </>;
             })()}
           </>}
           {tab==='contract'&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
