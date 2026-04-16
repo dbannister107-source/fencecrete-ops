@@ -203,8 +203,8 @@ const sumGroup = (obj, group) => PLAN_PIECE_TYPES.filter(pt=>pt.group===group).r
 /* ═══ STYLES ═══ */
 const card = { background:'#FFF', border:'1px solid #E5E3E0', borderRadius:12, padding:20, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' };
 const inputS = { width:'100%', padding:'8px 12px', background:'#FFF', border:'1px solid #D1CEC9', borderRadius:8, color:'#1A1A1A', fontSize:13 };
-const btnP = { padding:'8px 16px', background:'#8B2020', border:'none', borderRadius:8, color:'#fff', fontWeight:600, cursor:'pointer', fontSize:13 };
-const btnS = { ...btnP, background:'#F4F4F2', color:'#6B6056', border:'1px solid #E5E3E0' };
+const btnP = { padding:'8px 16px', background:'#8A261D', border:'none', borderRadius:8, color:'#fff', fontWeight:600, cursor:'pointer', fontSize:13 };
+const btnS = { ...btnP, background:'#F4F4F2', color:'#625650', border:'1px solid #E5E3E0' };
 // Phase 2 standardized pill: rounded-full with a thin ring (matches StatusBadge).
 // Third arg `ring` is optional — when omitted, the ring is derived from the text
 // color so legacy two-arg callers still look consistent.
@@ -258,14 +258,14 @@ function MobileKanban({columns, renderCard, emptyMessage='No items'}) {
     <div style={{display:'flex',gap:6,overflowX:'auto',padding:'4px 0 12px',marginBottom:8,borderBottom:'1px solid #E5E3E0',WebkitOverflowScrolling:'touch'}}>
       {columns.map((c,i)=>{
         const isActive = i === safeActive;
-        const color = c.color || '#8B2020';
+        const color = c.color || '#8A261D';
         const bg = c.bg || '#FDF4F4';
         return <button key={c.key} onClick={()=>setActive(i)} style={{
           padding:'8px 14px',
           borderRadius:20,
           border:isActive?`2px solid ${color}`:'1px solid #E5E3E0',
           background:isActive?bg:'#FFF',
-          color:isActive?color:'#6B6056',
+          color:isActive?color:'#625650',
           fontSize:12,
           fontWeight:700,
           cursor:'pointer',
@@ -289,9 +289,9 @@ function MobileKanban({columns, renderCard, emptyMessage='No items'}) {
     </div>
     {/* Prev / next footer */}
     {columns.length > 1 && <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 4px',marginTop:8,borderTop:'1px solid #F1EFEC'}}>
-      <button onClick={()=>go(-1)} disabled={safeActive===0} style={{background:'none',border:'none',color:safeActive===0?'#9E9B96':'#8B2020',fontSize:14,fontWeight:700,cursor:safeActive===0?'default':'pointer',padding:'6px 12px',WebkitTapHighlightColor:'transparent'}}>← Prev</button>
-      <span style={{fontSize:11,color:'#6B6056'}}>{safeActive+1} / {columns.length}</span>
-      <button onClick={()=>go(1)} disabled={safeActive===columns.length-1} style={{background:'none',border:'none',color:safeActive===columns.length-1?'#9E9B96':'#8B2020',fontSize:14,fontWeight:700,cursor:safeActive===columns.length-1?'default':'pointer',padding:'6px 12px',WebkitTapHighlightColor:'transparent'}}>Next →</button>
+      <button onClick={()=>go(-1)} disabled={safeActive===0} style={{background:'none',border:'none',color:safeActive===0?'#9E9B96':'#8A261D',fontSize:14,fontWeight:700,cursor:safeActive===0?'default':'pointer',padding:'6px 12px',WebkitTapHighlightColor:'transparent'}}>← Prev</button>
+      <span style={{fontSize:11,color:'#625650'}}>{safeActive+1} / {columns.length}</span>
+      <button onClick={()=>go(1)} disabled={safeActive===columns.length-1} style={{background:'none',border:'none',color:safeActive===columns.length-1?'#9E9B96':'#8A261D',fontSize:14,fontWeight:700,cursor:safeActive===columns.length-1?'default':'pointer',padding:'6px 12px',WebkitTapHighlightColor:'transparent'}}>Next →</button>
     </div>}
   </div>;
 }
@@ -308,8 +308,8 @@ const useIsMobile = (bp = 768) => {
   }, [bp]);
   return isMobile;
 };
-const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#6B6056' });
-const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8B2020':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8B2020':'#9E9B96' });
+const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#625650' });
+const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#9E9B96' });
 
 /* ═══ SHARED ═══ */
 /* ═══ ERROR BOUNDARY ═══ */
@@ -380,12 +380,12 @@ function SkeletonKpis({n:nKpis=4}){return <div style={{display:'grid',gridTempla
 /* ═══ EMPTY STATE ═══ */
 function EmptyState({icon='📭',title,subtitle,cta,onCta,compact}){return <div style={{textAlign:'center',padding:compact?'24px 16px':'48px 24px',color:'#9E9B96'}}>
   <div style={{fontSize:compact?32:44,marginBottom:8,opacity:0.6}}>{icon}</div>
-  <div style={{fontSize:14,fontWeight:700,color:'#6B6056',marginBottom:4}}>{title}</div>
+  <div style={{fontSize:14,fontWeight:700,color:'#625650',marginBottom:4}}>{title}</div>
   {subtitle&&<div style={{fontSize:12,color:'#9E9B96',marginBottom:cta?14:0,maxWidth:280,margin:'0 auto 14px'}}>{subtitle}</div>}
   {cta&&<button onClick={onCta} style={{...btnP,fontSize:12}}>{cta}</button>}
 </div>;}
-function KPI({label,value,color='#8B2020',sub}){return<div style={card}><div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color}}>{value}</div><div style={{fontSize:12,color:'#6B6056',marginTop:4}}>{label}</div>{sub&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{sub}</div>}</div>;}
-function PBar({pct:p,color='#8B2020',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
+function KPI({label,value,color='#8A261D',sub}){return<div style={card}><div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color}}>{value}</div><div style={{fontSize:12,color:'#625650',marginTop:4}}>{label}</div>{sub&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{sub}</div>}</div>;}
+function PBar({pct:p,color='#8A261D',h=6}){return<div style={{height:h,background:'#E5E3E0',borderRadius:h,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(Math.max(p,0),100)}%`,background:color,borderRadius:h,transition:'width .3s'}}/></div>;}
 // Multi-select dropdown with checkbox options, "All" clear row, and click-outside close.
 // `selected` is a Set; `onChange` receives a new Set.
 function MultiSelect({label,options,selected,onChange,width=160}){
@@ -397,16 +397,16 @@ function MultiSelect({label,options,selected,onChange,width=160}){
   const clearAll=()=>onChange(new Set());
   const sz=sel.size;
   const displayText=sz===0?label:sz>2?`${sz} selected`:[...sel].map(v=>{const o=options.find(x=>x.v===v);return o?o.l:v;}).join(', ');
-  const cbox=(on)=><span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:14,borderRadius:3,border:on?'2px solid #8B2020':'1px solid #D1CEC9',background:on?'#8B2020':'#FFF',color:'#FFF',fontSize:9,fontWeight:700,flexShrink:0}}>{on?'✓':''}</span>;
+  const cbox=(on)=><span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:14,borderRadius:3,border:on?'2px solid #8A261D':'1px solid #D1CEC9',background:on?'#8A261D':'#FFF',color:'#FFF',fontSize:9,fontWeight:700,flexShrink:0}}>{on?'✓':''}</span>;
   return<div ref={ref} style={{position:'relative',width}}>
     <button onClick={()=>setOpen(o=>!o)} style={{...inputS,width:'100%',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:4,overflow:'hidden',padding:'8px 10px'}}>
       <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:sz===0?'#9E9B96':'#1A1A1A',fontSize:13}}>{displayText}</span>
       <span style={{fontSize:10,color:'#9E9B96'}}>▾</span>
     </button>
     {open&&<div style={{position:'absolute',top:'100%',left:0,marginTop:4,minWidth:Math.max(width,200),background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:50,maxHeight:320,overflow:'auto',padding:'4px 0'}}>
-      <div onClick={clearAll} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:sz===0?700:500,color:sz===0?'#8B2020':'#6B6056',background:sz===0?'#FDF4F4':'transparent'}}>{cbox(sz===0)}<span>All</span></div>
+      <div onClick={clearAll} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:sz===0?700:500,color:sz===0?'#8A261D':'#625650',background:sz===0?'#FDF4F4':'transparent'}}>{cbox(sz===0)}<span>All</span></div>
       <div style={{borderTop:'1px solid #F4F4F2',margin:'2px 0'}}/>
-      {options.map(o=>{const on=sel.has(o.v);return<div key={o.v} onClick={()=>toggle(o.v)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:on?700:400,color:on?'#8B2020':'#1A1A1A',background:on?'#FDF4F4':'transparent'}}>{cbox(on)}<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.l}</span></div>;})}
+      {options.map(o=>{const on=sel.has(o.v);return<div key={o.v} onClick={()=>toggle(o.v)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:'pointer',fontSize:12,fontWeight:on?700:400,color:on?'#8A261D':'#1A1A1A',background:on?'#FDF4F4':'transparent'}}>{cbox(on)}<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.l}</span></div>;})}
     </div>}
   </div>;
 }
@@ -423,7 +423,7 @@ function LfBadges({job,size='sm'}){
   const pc=lfPC(job),sw=lfSW(job),wi=lfWI(job),g=lfGates(job);
   if(pc<=0&&sw<=0&&wi<=0&&g<=0)return null;
   const fs=size==='lg'?12:11;
-  const b={display:'inline-block',padding:'1px 6px',borderRadius:4,background:'#F4F4F2',color:'#6B6056',fontSize:fs-1,fontWeight:600,marginLeft:4};
+  const b={display:'inline-block',padding:'1px 6px',borderRadius:4,background:'#F4F4F2',color:'#625650',fontSize:fs-1,fontWeight:600,marginLeft:4};
   return<span style={{display:'inline-flex',alignItems:'center',flexWrap:'wrap',gap:2,fontSize:fs}}>
     {pc>0&&<b style={{color:'#1A1A1A',fontWeight:700}}>{pc.toLocaleString()} PC LF</b>}
     {pc<=0&&sw>0&&<b style={{color:'#1A1A1A',fontWeight:700}}>{sw.toLocaleString()} SW LF</b>}
@@ -434,14 +434,14 @@ function LfBadges({job,size='sm'}){
     {g>0&&<span style={b}>{g} gates</span>}
   </span>;
 }
-function renderCell(j,k){const v=j[k];if(k==='status')return<span style={statusPill(v)}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#6B6056',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf_precast'){const x=lfPC(j);return x>0?<span style={{fontWeight:700,color:'#065F46'}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_single_wythe'){const x=n(j.lf_single_wythe);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_wrought_iron'){const x=n(j.lf_wrought_iron);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_masonry'){const x=lfSW(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_wrought_iron'){const x=lfWI(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='number_of_gates'){const x=lfGates(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf'){const x=lfTotal(j);return x>0?<span style={{fontWeight:700}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8B2020',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#6B6056',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
+function renderCell(j,k){const v=j[k];if(k==='status')return<span style={statusPill(v)}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#625650',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf_precast'){const x=lfPC(j);return x>0?<span style={{fontWeight:700,color:'#065F46'}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_single_wythe'){const x=n(j.lf_single_wythe);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_wrought_iron'){const x=n(j.lf_wrought_iron);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_masonry'){const x=lfSW(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_wrought_iron'){const x=lfWI(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='number_of_gates'){const x=lfGates(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf'){const x=lfTotal(j);return x>0?<span style={{fontWeight:700}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8A261D',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#625650',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
 
 /* ═══ PROJECT QUICK VIEW ═══ */
 function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   if(!job)return null;
   const reqFlags=[{k:'aia_billing',l:'AIA'},{k:'bonds',l:'Bonds'},{k:'certified_payroll',l:'Cert Payroll'},{k:'ocip_ccip',l:'OCIP/CCIP'},{k:'third_party_billing',l:'3rd Party'}];
   const secStyle={marginBottom:16};
-  const secTitle={fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,paddingBottom:4,borderBottom:'1px solid #E5E3E0'};
+  const secTitle={fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8,paddingBottom:4,borderBottom:'1px solid #E5E3E0'};
   const grd={display:'grid',gridTemplateColumns:'1fr 1fr',gap:8};
   const lbl={fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600};
   const val={fontFamily:'Inter',fontSize:13,fontWeight:700,color:'#1A1A1A'};
@@ -449,7 +449,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
     <div style={{background:'#FFF',borderRadius:16,width:680,maxWidth:'96vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
       {/* Header */}
-      <div style={{background:'#8B2020',borderRadius:'16px 16px 0 0',padding:'16px 24px',color:'#FFF',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+      <div style={{background:'#8A261D',borderRadius:'16px 16px 0 0',padding:'16px 24px',color:'#FFF',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
         <div>
           <div style={{fontSize:12,opacity:0.7,marginBottom:2}}>#{job.job_number}</div>
           <div style={{fontFamily:'Syne',fontSize:20,fontWeight:800}}>{job.job_name}</div>
@@ -467,7 +467,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
           <div style={grd}>
             <div><div style={lbl}>Customer</div><div style={val}>{job.customer_name||'—'}</div></div>
             <div><div style={lbl}>Job Type</div><div style={val}>{job.job_type||'—'}</div></div>
-            <div><div style={lbl}>Primary Fence Type</div><div style={{marginTop:2}}>{job.primary_fence_type?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:job.primary_fence_type==='Precast'?'#8B2020':job.primary_fence_type==='Masonry'?'#185FA5':'#374151',color:'#FFF'}}>{job.primary_fence_type}</span>:<span style={{color:'#9E9B96'}}>—</span>}{Array.isArray(job.fence_addons)&&job.fence_addons.length>0&&<span style={{marginLeft:6}}>{job.fence_addons.map(a=>{const[bg,l2]=addC[a]||['#6B6056',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF',marginRight:3}}>{l2}</span>;})}</span>}</div></div>
+            <div><div style={lbl}>Primary Fence Type</div><div style={{marginTop:2}}>{job.primary_fence_type?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:job.primary_fence_type==='Precast'?'#8A261D':job.primary_fence_type==='Masonry'?'#185FA5':'#374151',color:'#FFF'}}>{job.primary_fence_type}</span>:<span style={{color:'#9E9B96'}}>—</span>}{Array.isArray(job.fence_addons)&&job.fence_addons.length>0&&<span style={{marginLeft:6}}>{job.fence_addons.map(a=>{const[bg,l2]=addC[a]||['#625650',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF',marginRight:3}}>{l2}</span>;})}</span>}</div></div>
             <div><div style={lbl}>Address</div><div style={val}>{[job.address,job.city,job.state].filter(Boolean).join(', ')||'—'}</div></div>
             <div><div style={lbl}>Contract Date</div><div style={val}>{fD(job.contract_date)}</div></div>
             <div><div style={lbl}>Est. Start Date</div><div style={val}>{fD(job.est_start_date)}</div></div>
@@ -482,7 +482,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
             <div><div style={lbl}>PC LF</div><div style={{...val,color:lfPC(job)>0?'#065F46':'#9E9B96'}}>{lfPC(job)>0?lfPC(job).toLocaleString():'—'}</div></div>
             <div><div style={lbl}>SW LF</div><div style={val}>{lfSW(job)>0?lfSW(job).toLocaleString():'—'}</div></div>
             <div><div style={lbl}>WI LF</div><div style={val}>{lfWI(job)>0?lfWI(job).toLocaleString():'—'}</div></div>
-            <div><div style={lbl}>Total LF</div><div style={{...val,color:'#8B2020'}}>{lfTotal(job).toLocaleString()}</div></div>
+            <div><div style={lbl}>Total LF</div><div style={{...val,color:'#8A261D'}}>{lfTotal(job).toLocaleString()}</div></div>
             <div><div style={lbl}># Gates</div><div style={val}>{n(job.number_of_gates)||'—'}</div></div>
             <div><div style={lbl}>Gate Height</div><div style={val}>{job.gate_height||'—'}</div></div>
           </div>
@@ -503,7 +503,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
             <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden',marginBottom:4}}>
               <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:barCol,transition:'width 0.3s'}}/>
             </div>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056'}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650'}}>
               <span style={{fontWeight:700,color:barCol}}>{pct}% complete</span>
               {job.lf_last_billed_date&&<span>Last billed: {fD(job.lf_last_billed_date)}</span>}
             </div>
@@ -514,12 +514,12 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
             <div><div style={lbl}>Contract Value</div><div style={val}>{$(job.contract_value)}</div></div>
             <div><div style={lbl}>Change Orders</div><div style={{...val,color:n(job.change_orders)>0?'#065F46':n(job.change_orders)<0?'#991B1B':'#9E9B96'}}>{n(job.change_orders)?$(job.change_orders):'—'}</div></div>
-            <div><div style={lbl}>Adj Contract</div><div style={{...val,color:'#8B2020'}}>{$(job.adj_contract_value||job.contract_value)}</div></div>
+            <div><div style={lbl}>Adj Contract</div><div style={{...val,color:'#8A261D'}}>{$(job.adj_contract_value||job.contract_value)}</div></div>
             <div><div style={lbl}>YTD Invoiced</div><div style={{...val,color:'#065F46'}}>{$(job.ytd_invoiced)}</div></div>
             <div><div style={lbl}>% Billed</div><div style={val}>{fmtPct(job.pct_billed)}</div></div>
             <div><div style={lbl}>Left to Bill</div><div style={{...val,color:'#B45309'}}>{$(job.left_to_bill)}</div></div>
           </div>
-          <div style={{display:'flex',gap:8,marginBottom:8,fontSize:12,color:'#6B6056'}}>
+          <div style={{display:'flex',gap:8,marginBottom:8,fontSize:12,color:'#625650'}}>
             <span>Method: <b style={{color:'#1A1A1A'}}>{job.billing_method||'—'}</b></span>
             {job.billing_date&&<span>Date: <b style={{color:'#1A1A1A'}}>{job.billing_date}</b></span>}
           </div>
@@ -529,7 +529,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
         <div style={secStyle}><div style={secTitle}>Bill Sheet Status — {monthLabel(curBillingMonth())}</div>
           {billSub?<div style={{background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:8,padding:10}}>
             <div style={{fontSize:13,fontWeight:700,color:'#065F46',marginBottom:4}}>✓ Submitted {billSub.submitted_at?new Date(billSub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}{billSub.submitted_by?' by '+billSub.submitted_by:''}</div>
-            <div style={{display:'flex',gap:12,fontSize:12,color:'#6B6056'}}>{n(billSub.total_lf)>0&&<span>Total LF: <b>{n(billSub.total_lf).toLocaleString()}</b></span>}</div>
+            <div style={{display:'flex',gap:12,fontSize:12,color:'#625650'}}>{n(billSub.total_lf)>0&&<span>Total LF: <b>{n(billSub.total_lf).toLocaleString()}</b></span>}</div>
           </div>:<div style={{background:'#FEE2E2',border:'1px solid #EF444440',borderRadius:8,padding:10}}>
             <div style={{fontSize:13,fontWeight:700,color:'#991B1B'}}>✗ Not submitted for {monthLabel(curBillingMonth())}</div>
           </div>}
@@ -563,7 +563,7 @@ const CYCLE_LF_GROUPS=[
   {title:'Wrought Iron',keys:['lf_wi_gates','lf_wi_fencing','lf_wi_columns'],labels:['Gates','Fencing','Posts']},
 ];
 const cycleStatus=(c)=>c.invoice_sent?'invoiced':c.accounting_approved?'approved':c.accounting_approved_by?'review':'pending';
-const CYCLE_STATUS_META={pending:{label:'Pending',c:'#6B6056',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
+const CYCLE_STATUS_META={pending:{label:'Pending',c:'#625650',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
 const curBillingMonth=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;};
 const monthLabel=(ym)=>{if(!ym)return'';const[y,m]=ym.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});};
 const fmtPct1=(v)=>(Math.round(n(v)*1000)/10).toFixed(1)+'%';
@@ -580,7 +580,7 @@ const PM_BILL_LF_GROUPS=[
 ];
 const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]}];
 
-const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#6B6056',job_created:'#8B2020'};
+const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#625650',job_created:'#8A261D'};
 
 /* ═══ REALTIME HOOK ═══ */
 function useRealtime(setJobs) {
@@ -697,7 +697,7 @@ function LineItemsEditor({job,onChange}){
     }catch(e){setErr('Save failed: '+e.message);}
     setSaving(false);
   };
-  const fieldLabel={display:'block',fontSize:11,color:'#6B6056',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
+  const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
   const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other']];
@@ -705,7 +705,7 @@ function LineItemsEditor({job,onChange}){
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-      <div style={{fontSize:12,color:'#6B6056',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Fence Line Items ({lines.length})</div>
+      <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Fence Line Items ({lines.length})</div>
       <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:'6px 14px',fontSize:12,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
     </div>
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -718,7 +718,7 @@ function LineItemsEditor({job,onChange}){
               ? <span style={{display:'flex',gap:6,alignItems:'center'}}>
                   <span style={{fontSize:12,color:'#991B1B',fontWeight:700}}>Delete this line?</span>
                   <button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>Yes</button>
-                  <button onClick={()=>setConfirmDel(null)} style={{background:'#FFF',color:'#6B6056',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>No</button>
+                  <button onClick={()=>setConfirmDel(null)} style={{background:'#FFF',color:'#625650',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>No</button>
                 </span>
               : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
           </div>
@@ -765,7 +765,7 @@ function LineItemsEditor({job,onChange}){
               </div>
               {isPC&&<div style={{flex:'1 1 140px',minWidth:140,display:'flex',alignItems:'center',justifyContent:'center'}}>
                 <label style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',fontSize:14,fontWeight:700,color:'#1A1A1A',minHeight:44,boxSizing:'border-box'}}>
-                  <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{width:24,height:24,accentColor:'#8B2020',margin:0,flexShrink:0}}/>
+                  <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{width:24,height:24,accentColor:'#8A261D',margin:0,flexShrink:0}}/>
                   Produced
                 </label>
               </div>}
@@ -780,18 +780,18 @@ function LineItemsEditor({job,onChange}){
       })}
       {lines.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:12,border:'1px dashed #E5E3E0',borderRadius:10,background:'#F9F8F6'}}>No line items — click "+ Add Line" to create one</div>}
     </div>
-    <button onClick={addLine} style={{width:'100%',padding:'10px',marginTop:10,border:'1px dashed #8B2020',background:'#FDF4F4',color:'#8B2020',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
+    <button onClick={addLine} style={{width:'100%',padding:'10px',marginTop:10,border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
     {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
       <span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>
       <span style={{marginLeft:'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Total LF: {totals.total.toLocaleString()}</span>
-      <span style={{fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8B2020'}}>Total Value: {$(totals.value)}</span>
+      <span style={{fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8A261D'}}>Total Value: {$(totals.value)}</span>
     </div>}
     {dirty&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontStyle:'italic'}}>⚠ Unsaved changes — click "Save Lines" to commit</div>}
   </div>;
 }
 
 /* ═══ ACTIVITY HISTORY ═══ */
-function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setLd]=useState(true);useEffect(()=>{sbGet('activity_log',`job_id=eq.${jobId}&order=created_at.desc&limit=50`).then(d=>{setLogs(d||[]);setLd(false);});},[jobId]);if(ld)return<div style={{padding:20,color:'#9E9B96'}}>Loading...</div>;if(!logs.length)return<div style={{padding:20,color:'#9E9B96'}}>No activity yet</div>;return<div>{logs.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #E5E3E0',display:'flex',gap:10,alignItems:'flex-start'}}><span style={{...pill(ACT_C[l.action]||'#6B6056',(ACT_C[l.action]||'#6B6056')+'18'),fontSize:10,whiteSpace:'nowrap',marginTop:2}}>{(l.action||'').replace(/_/g,' ')}</span><div style={{flex:1}}><div style={{fontSize:12}}>{l.field_name==='status'?`Status: ${l.old_value} → ${l.new_value}`:l.action==='job_created'?`Created: ${l.new_value}`:l.field_name==='notes'?'Notes updated':`${l.field_name}: updated`}</div><div style={{fontSize:10,color:'#9E9B96'}} title={new Date(l.created_at).toLocaleString()}>{relT(l.created_at)} · {l.changed_by}</div></div></div>)}</div>;}
+function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setLd]=useState(true);useEffect(()=>{sbGet('activity_log',`job_id=eq.${jobId}&order=created_at.desc&limit=50`).then(d=>{setLogs(d||[]);setLd(false);});},[jobId]);if(ld)return<div style={{padding:20,color:'#9E9B96'}}>Loading...</div>;if(!logs.length)return<div style={{padding:20,color:'#9E9B96'}}>No activity yet</div>;return<div>{logs.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #E5E3E0',display:'flex',gap:10,alignItems:'flex-start'}}><span style={{...pill(ACT_C[l.action]||'#625650',(ACT_C[l.action]||'#625650')+'18'),fontSize:10,whiteSpace:'nowrap',marginTop:2}}>{(l.action||'').replace(/_/g,' ')}</span><div style={{flex:1}}><div style={{fontSize:12}}>{l.field_name==='status'?`Status: ${l.old_value} → ${l.new_value}`:l.action==='job_created'?`Created: ${l.new_value}`:l.field_name==='notes'?'Notes updated':`${l.field_name}: updated`}</div><div style={{fontSize:10,color:'#9E9B96'}} title={new Date(l.created_at).toLocaleString()}>{relT(l.created_at)} · {l.changed_by}</div></div></div>)}</div>;}
 
 /* ═══ EDIT PANEL ═══ */
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
@@ -846,7 +846,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     }catch(e){console.error('[CO reject] failed:',e);setCOToast({msg:'Reject failed: '+e.message,kind:'error'});}
   };
   const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
-  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#6B6056','#F4F4F2']};
+  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#625650','#F4F4F2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
     <div style={isMobile
@@ -857,7 +857,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           {isMobile && <button onClick={onClose} aria-label="Back" style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#1A1A1A',padding:'4px 6px',lineHeight:1}}>←</button>}
           <div style={{minWidth:0,flex:1}}>
             <div style={{fontFamily:'Inter',fontSize:isMobile?15:16,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'New Project':(form.job_name||'Untitled')}</div>
-            <div style={{fontSize:12,color:'#6B6056',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div>
+            <div style={{fontSize:12,color:'#625650',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div>
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
@@ -865,55 +865,55 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           {!isNew&&onNav&&!isMobile&&<button onClick={()=>{
             try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.total_lf_precast||form.lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
             onNav('material_requests');
-          }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8B2020',borderRadius:8,padding:'8px 14px',color:'#8B2020',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
-          <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8B2020'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
+          }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
+          <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
           {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
-      <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8B2020':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8B2020':'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
       <div style={{flex:1,overflow:'auto',padding:20}}>
-        {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8B202033',borderLeft:'4px solid #8B2020',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
+        {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8A261D33',borderLeft:'4px solid #8A261D',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-            <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
-            {onNav&&<button onClick={()=>{try{localStorage.setItem('fc_pipeline_highlight',so.id);}catch(e){}onNav('pipeline');}} style={{background:'#FFF',border:'1px solid #8B2020',borderRadius:6,padding:'3px 10px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>View Lead →</button>}
+            <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
+            {onNav&&<button onClick={()=>{try{localStorage.setItem('fc_pipeline_highlight',so.id);}catch(e){}onNav('pipeline');}} style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:6,padding:'3px 10px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>View Lead →</button>}
           </div>
-          <div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>This project originated from the sales pipeline.</div>
+          <div style={{fontSize:12,color:'#625650',marginBottom:6}}>This project originated from the sales pipeline.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,fontSize:12}}>
-            <div><span style={{color:'#9E9B96'}}>Lead created:</span> <b>{fD(so.created_at)}</b>{so.sales_rep?<span style={{color:'#6B6056'}}> by {so.sales_rep}</span>:null}</div>
+            <div><span style={{color:'#9E9B96'}}>Lead created:</span> <b>{fD(so.created_at)}</b>{so.sales_rep?<span style={{color:'#625650'}}> by {so.sales_rep}</span>:null}</div>
             <div><span style={{color:'#9E9B96'}}>Source:</span> <b>{so.source||'—'}</b></div>
-            <div><span style={{color:'#9E9B96'}}>Proposal sent:</span> <b>{fD(so.proposal_sent_date)}</b>{n(so.proposal_value)>0?<span style={{color:'#6B6056'}}> · {$k(so.proposal_value)}</span>:null}</div>
+            <div><span style={{color:'#9E9B96'}}>Proposal sent:</span> <b>{fD(so.proposal_sent_date)}</b>{n(so.proposal_value)>0?<span style={{color:'#625650'}}> · {$k(so.proposal_value)}</span>:null}</div>
             <div><span style={{color:'#9E9B96'}}>Won:</span> <b style={{color:'#065F46'}}>{fD(so.won_date)}</b></div>
             {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
           </div>
         </div>;})()}
         {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='requirements'?<div>
-          <div style={{fontSize:11,color:'#6B6056',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
+          <div style={{fontSize:11,color:'#625650',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[{label:'AIA (G702/703)',field:'aia_billing'},{label:'Bonds',field:'bonds'},{label:'Certified Payroll',field:'certified_payroll'},{label:'OCIP/CCIP',field:'ocip_ccip'},{label:'3rd Party Billing',field:'third_party_billing'}].map(cb=><label key={cb.field} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13,color:'#1A1A1A'}}>
-              <input type="checkbox" checked={!!form[cb.field]} onChange={async e=>{const val=e.target.checked;set(cb.field,val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{[cb.field]:val});logAct(job,'field_update',cb.field,String(!val),String(val));}}} style={{width:16,height:16,accentColor:'#8B2020'}}/>
+              <input type="checkbox" checked={!!form[cb.field]} onChange={async e=>{const val=e.target.checked;set(cb.field,val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{[cb.field]:val});logAct(job,'field_update',cb.field,String(!val),String(val));}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
               {cb.label}
             </label>)}
           </div>
           <div style={{marginTop:20}}>
-            <div style={{fontSize:11,color:'#6B6056',marginBottom:4,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Manager</div>
+            <div style={{fontSize:11,color:'#625650',marginBottom:4,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Manager</div>
             <select value={form.pm||''} onChange={async e=>{const val=e.target.value;set('pm',val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{pm:val});logAct(job,'field_update','pm',form.pm,val);}}} style={inputS}><option value="">— Select —</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
           </div>
         </div>:<>
           {sec&&sec.fields.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const lbl=cd?cd.label:f.replace(/_/g,' ');const dd=DD[f];return(
-            <div key={f} style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
-              {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8B2020':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8B2020':'#6B6056',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8B2020'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical'}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={inputS}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600}}>Open →</a>}</div>:<input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={inputS}/>}</>}
+            <div key={f} style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
+              {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical'}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={inputS}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600}}>Open →</a>}</div>:<input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={inputS}/>}</>}
             </div>);})}
           {sec&&sec.computed&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:8,fontWeight:600,textTransform:'uppercase'}}>Auto-calculated</div>
             {sec.computed.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const val=f==='pct_billed'?`${adjCV>0?Math.round(n(form.ytd_invoiced)/adjCV*1000)/10:0}%`:f==='left_to_bill'?$(adjCV-n(form.ytd_invoiced)):(form[f]??'—');return(
-              <div key={f} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #E5E3E0'}}><span style={{fontSize:12,color:'#6B6056'}}>{cd?cd.label:f}</span><span style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{val}</span></div>);})}
+              <div key={f} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #E5E3E0'}}><span style={{fontSize:12,color:'#625650'}}>{cd?cd.label:f}</span><span style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{val}</span></div>);})}
           </div>}
           {tab==='contract'&&<>
             {/* Bonds & Permits */}
-            <div style={{marginTop:18,marginBottom:10,fontSize:11,color:'#8B2020',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Bonds & Permits</div>
+            <div style={{marginTop:18,marginBottom:10,fontSize:11,color:'#8A261D',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Bonds & Permits</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
               {[['Permit Amount','permit_amount'],['P&P Bond Amount','pp_bond_amount'],['Maint Bond Amount','maint_bond_amount']].map(([lbl,k])=>
-                <div key={k}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label><input type="number" value={form[k]??''} onChange={e=>set(k,e.target.value)} placeholder="0" style={inputS}/></div>
+                <div key={k}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label><input type="number" value={form[k]??''} onChange={e=>set(k,e.target.value)} placeholder="0" style={inputS}/></div>
               )}
             </div>
             {/* Sales Tax */}
@@ -933,13 +933,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
               const wiTax=wiTaxBasis*TAX_RATE;
               const totalTax=form.tax_exempt?0:(pcTax+wiTax);
               const row=(label,val,bold)=><div key={label} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}}>
-                <span style={{color:bold?'#1A1A1A':'#6B6056',fontWeight:bold?700:500}}>{label}</span>
-                <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8B2020':'#1A1A1A'}}>{val}</span>
+                <span style={{color:bold?'#1A1A1A':'#625650',fontWeight:bold?700:500}}>{label}</span>
+                <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8A261D':'#1A1A1A'}}>{val}</span>
               </div>;
               return<>
-                <div style={{marginTop:4,marginBottom:10,fontSize:11,color:'#8B2020',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Sales Tax</div>
+                <div style={{marginTop:4,marginBottom:10,fontSize:11,color:'#8A261D',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Sales Tax</div>
                 <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13,marginBottom:10}}>
-                  <input type="checkbox" checked={!!form.tax_exempt} onChange={e=>set('tax_exempt',e.target.checked)} style={{width:16,height:16,accentColor:'#8B2020'}}/>
+                  <input type="checkbox" checked={!!form.tax_exempt} onChange={e=>set('tax_exempt',e.target.checked)} style={{width:16,height:16,accentColor:'#8A261D'}}/>
                   Tax Exempt
                   {form.tax_exempt&&<span style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,background:'#D1FAE5',color:'#065F46',fontSize:10,fontWeight:800,letterSpacing:0.5}}>TAX EXEMPT</span>}
                 </label>
@@ -956,9 +956,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
                     {row('WI Sales Tax',$(wiTax))}
                   </>}
                   {pcLF<=0&&(wiLF<=0||wiRate<=0)&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
-                  <div style={{borderTop:'2px solid #8B2020',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                  <div style={{borderTop:'2px solid #8A261D',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
                     <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total Sales Tax</span>
-                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8B2020'}}>{$(pcTax+wiTax)}</span>
+                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8A261D'}}>{$(pcTax+wiTax)}</span>
                   </div>
                 </div>}
                 {form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px dashed #D1FAE5',borderRadius:10,padding:14,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
@@ -973,13 +973,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
                   const mb=n(form.maint_bond_amount);
                   const stax=n(form.sales_tax_amount)||totalTax;
                   const acv=n(form.adj_contract_value)||(ncv+co+pa+pp+mb+stax);
-                  const line=(label,v,prefix)=>v>0?<div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',fontSize:13}}><span style={{color:'#6B6056'}}>{prefix}{label}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(v)}</span></div>:null;
+                  const line=(label,v,prefix)=>v>0?<div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',fontSize:13}}><span style={{color:'#625650'}}>{prefix}{label}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(v)}</span></div>:null;
                   return<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:16}}>
                     <div style={{fontSize:10,color:'#9E9B96',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Value Summary</div>
                     {[line('Net Contract Value',ncv,''),line('Change Orders',co,'+ '),line('Permit Amount',pa,'+ '),line('P&P Bond Amount',pp,'+ '),line('Maint Bond Amount',mb,'+ '),line('Sales Tax',stax,'+ ')].filter(Boolean)}
-                    <div style={{borderTop:'2px solid #8B2020',marginTop:6,paddingTop:8,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                    <div style={{borderTop:'2px solid #8A261D',marginTop:6,paddingTop:8,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
                       <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Adjusted Contract Value</span>
-                      <span style={{fontFamily:'Inter',fontWeight:900,fontSize:20,color:'#8B2020'}}>{$(acv)}</span>
+                      <span style={{fontFamily:'Inter',fontWeight:900,fontSize:20,color:'#8A261D'}}>{$(acv)}</span>
                     </div>
                   </div>;
                 })()}
@@ -992,7 +992,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
               {latestPmLF?.billing_period&&<div style={{fontSize:9,color:'#9E9B96'}}>{new Date(latestPmLF.billing_period+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'})}</div>}
             </div>
             {!latestPmLF?<div style={{color:'#9E9B96',fontSize:11,padding:8,textAlign:'center'}}>No PM bill sheet entries on file</div>:PM_BILL_LF_GROUPS.map(g=><div key={g.title} style={{marginBottom:8}}>
-              <div style={{fontSize:9,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{g.title}</div>
+              <div style={{fontSize:9,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>{g.title}</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(100px,1fr))',gap:6}}>
                 {g.fields.map(([k,l])=>{const v=n(latestPmLF[k]);return<div key={k} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'5px 7px'}}>
                   <div style={{fontSize:8,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{l}</div>
@@ -1008,29 +1008,29 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>Change Orders</span><button onClick={()=>setShowCOForm(!showCOForm)} style={{...btnP,padding:'4px 12px',fontSize:11}}>+ Add CO</button></div>
           {showCOForm&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:8,border:'1px solid #E5E3E0'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(f=>({...f,status:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(f=>({...f,approved_by:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(f=>({...f,date_approved:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(f=>({...f,status:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(f=>({...f,approved_by:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(f=>({...f,date_approved:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
             </div>
-            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
-            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
+            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
+            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
             <div style={{display:'flex',gap:6}}><button onClick={saveCO} style={{...btnP,padding:'4px 12px',fontSize:11}}>Save</button><button onClick={()=>setShowCOForm(false)} style={{...btnS,padding:'4px 12px',fontSize:11}}>Cancel</button></div>
           </div>}
-          {coToast&&<div style={{marginBottom:6,padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:600,background:coToast.kind==='success'?'#D1FAE5':coToast.kind==='error'?'#FEE2E2':'#F4F4F2',color:coToast.kind==='success'?'#065F46':coToast.kind==='error'?'#991B1B':'#6B6056',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{coToast.msg}</span><button onClick={()=>setCOToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button></div>}
+          {coToast&&<div style={{marginBottom:6,padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:600,background:coToast.kind==='success'?'#D1FAE5':coToast.kind==='error'?'#FEE2E2':'#F4F4F2',color:coToast.kind==='success'?'#065F46':coToast.kind==='error'?'#991B1B':'#625650',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{coToast.msg}</span><button onClick={()=>setCOToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button></div>}
           {coList.length>0&&<div style={{fontSize:12}}>
-            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#6B6056','#F4F4F2'];return<div key={c.id} style={{display:'flex',flexDirection:'column',gap:3,padding:'6px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
+            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#625650','#F4F4F2'];return<div key={c.id} style={{display:'flex',flexDirection:'column',gap:3,padding:'6px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
               <div style={{display:'flex',gap:8,alignItems:'center'}}>
                 <span style={{fontWeight:600}}>{c.co_number||'—'}</span>
                 <span style={{color:'#9E9B96'}}>{fD(c.date_submitted||c.date)}</span>
                 <span style={{fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</span>
-                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{c.description||''}</span>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#625650'}}>{c.description||''}</span>
                 <span style={pill(sc2,sb2)}>{c.status}</span>
                 {c.status==='Pending'&&<span style={{display:'flex',gap:4}}>
                   <button onClick={()=>approveCO(c)} style={{background:'#065F46',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Approve</button>
-                  <button onClick={()=>rejectCO(c)} style={{background:'#6B6056',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Reject</button>
+                  <button onClick={()=>rejectCO(c)} style={{background:'#625650',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Reject</button>
                 </span>}
               </div>
               {c.status==='Approved'&&(c.approved_by||c.date_approved)&&<div style={{fontSize:10,color:'#065F46',paddingLeft:4}}>
@@ -1093,7 +1093,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const updateLineItem=(idx,key,val)=>setF(p=>({...p,lineItems:p.lineItems.map((l,i)=>i===idx?{...l,[key]:val}:l)}));
   // Fetch avg rates when market changes
   useEffect(()=>{if(!f.market)return;const mj=jobs.filter(j=>j.market===f.market);const avg=(field)=>{const valid=mj.filter(j=>n(j[field])>0);return valid.length?Math.round(valid.reduce((s,j)=>s+n(j[field]),0)/valid.length*100)/100:0;};setAvgRates({contract_rate_precast:avg('contract_rate_precast'),contract_rate_single_wythe:avg('contract_rate_single_wythe'),contract_rate_wrought_iron:avg('contract_rate_wrought_iron'),gate_rate:avg('gate_rate')});},[f.market,jobs]);
-  const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
+  const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
   // Auto-calc from line items
   const ncv=f.lineItems.reduce((s,li)=>s+lineSubtotal(li),0);
   const stax=n(f.sales_tax);const cv=ncv+stax;const acv=cv;
@@ -1240,13 +1240,13 @@ function NewProjectForm({jobs,onClose,onSaved}){
   return(<div style={{position:'fixed',inset:0,background:'#F4F4F2',zIndex:250,display:'flex',flexDirection:'column'}}>
     {/* Header */}
     <div style={{padding:'12px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
-      <div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#8B2020'}}>New Project</div><div style={{fontSize:11,color:'#9E9B96'}}>Section {secIdx} of {NP_SECS.length} — {NP_LABELS[sec]}</div></div>
+      <div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#8A261D'}}>New Project</div><div style={{fontSize:11,color:'#9E9B96'}}>Section {secIdx} of {NP_SECS.length} — {NP_LABELS[sec]}</div></div>
       <div style={{display:'flex',gap:8}}><button onClick={onClose} style={btnS}>Cancel</button></div>
     </div>
     {/* Progress bar */}
-    <div style={{height:3,background:'#E5E3E0',flexShrink:0}}><div style={{height:'100%',background:'#8B2020',width:`${secIdx/NP_SECS.length*100}%`,transition:'width .3s'}}/></div>
+    <div style={{height:3,background:'#E5E3E0',flexShrink:0}}><div style={{height:'100%',background:'#8A261D',width:`${secIdx/NP_SECS.length*100}%`,transition:'width .3s'}}/></div>
     {/* Section tabs */}
-    <div style={{display:'flex',gap:4,padding:'10px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',flexShrink:0,flexWrap:'wrap'}}>{NP_SECS.map(s=><button key={s} onClick={()=>setSec(s)} style={{padding:'6px 14px',borderRadius:8,border:sec===s?'1px solid #8B2020':'1px solid #E5E3E0',background:sec===s?'#8B2020':'#FFF',color:sec===s?'#fff':'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>{NP_LABELS[s]}</button>)}</div>
+    <div style={{display:'flex',gap:4,padding:'10px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',flexShrink:0,flexWrap:'wrap'}}>{NP_SECS.map(s=><button key={s} onClick={()=>setSec(s)} style={{padding:'6px 14px',borderRadius:8,border:sec===s?'1px solid #8A261D':'1px solid #E5E3E0',background:sec===s?'#8A261D':'#FFF',color:sec===s?'#fff':'#625650',fontSize:12,fontWeight:600,cursor:'pointer'}}>{NP_LABELS[s]}</button>)}</div>
     {/* Body */}
     <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
       {/* Sticky Contract Summary — visible on fence & contract sections */}
@@ -1263,16 +1263,16 @@ function NewProjectForm({jobs,onClose,onSaved}){
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
             {fLbl('Job Code')}
             <div style={{display:'inline-flex',border:'1px solid #E5E3E0',borderRadius:6,overflow:'hidden',marginBottom:4}}>
-              <button type="button" onClick={()=>switchJobCodeMode('auto')} title="Auto-generate commercial job code (e.g. 26H017)" style={{padding:'3px 10px',border:'none',background:jobCodeMode==='auto'?'#8B2020':'#FFF',color:jobCodeMode==='auto'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Auto</button>
-              <button type="button" onClick={()=>switchJobCodeMode('manual')} title="Residential entry — plain-number job code (e.g. 10167)" style={{padding:'3px 10px',border:'none',borderLeft:'1px solid #E5E3E0',background:jobCodeMode==='manual'?'#8B2020':'#FFF',color:jobCodeMode==='manual'?'#FFF':'#6B6056',fontSize:10,fontWeight:700,cursor:'pointer'}}>Residential</button>
+              <button type="button" onClick={()=>switchJobCodeMode('auto')} title="Auto-generate commercial job code (e.g. 26H017)" style={{padding:'3px 10px',border:'none',background:jobCodeMode==='auto'?'#8A261D':'#FFF',color:jobCodeMode==='auto'?'#FFF':'#625650',fontSize:10,fontWeight:700,cursor:'pointer'}}>Auto</button>
+              <button type="button" onClick={()=>switchJobCodeMode('manual')} title="Residential entry — plain-number job code (e.g. 10167)" style={{padding:'3px 10px',border:'none',borderLeft:'1px solid #E5E3E0',background:jobCodeMode==='manual'?'#8A261D':'#FFF',color:jobCodeMode==='manual'?'#FFF':'#625650',fontSize:10,fontWeight:700,cursor:'pointer'}}>Residential</button>
             </div>
           </div>
           <div style={{display:'flex',gap:4,alignItems:'center'}}>
             <input value={f.job_number} onChange={e=>set('job_number',e.target.value)} placeholder={jobCodeMode==='auto'?(jnLoading?'Generating...':'e.g. 26H017'):'e.g. 10167'} style={{...inputS,flex:1}}/>
-            {jobCodeMode==='auto'&&f.market&&<button type="button" onClick={()=>genJobNum(f.market)} title="Regenerate job number" style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 8px',cursor:'pointer',fontSize:14,color:'#6B6056',lineHeight:1}} disabled={jnLoading}>↻</button>}
+            {jobCodeMode==='auto'&&f.market&&<button type="button" onClick={()=>genJobNum(f.market)} title="Regenerate job number" style={{background:'none',border:'1px solid #D1CEC9',borderRadius:6,padding:'6px 8px',cursor:'pointer',fontSize:14,color:'#625650',lineHeight:1}} disabled={jnLoading}>↻</button>}
           </div>
           {jobCodeMode==='auto'&&f.job_number&&f.market&&<div style={{fontSize:10,color:'#10B981',marginTop:2}}>Auto-generated — edit if needed</div>}
-          {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#6B6056',marginTop:2}}>Residential entry — type any job code</div>}
+          {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#625650',marginTop:2}}>Residential entry — type any job code</div>}
         </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
@@ -1288,7 +1288,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div style={{gridColumn:'1/-1'}}>{fLbl('Notes')}<textarea value={f.notes} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
       </div>}
       {sec==='fence'&&<div>
-        <div style={{marginBottom:14,fontSize:12,color:'#6B6056'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
+        <div style={{marginBottom:14,fontSize:12,color:'#625650'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
         {f.lineItems.map((li,idx)=>{
           const sub=lineSubtotal(li);
           const u=(k,v)=>updateLineItem(idx,k,v);
@@ -1297,13 +1297,13 @@ function NewProjectForm({jobs,onClose,onSaved}){
           return<div key={idx} style={{background:'#FAFAFA',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:10}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
               <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,background:'#FDF4F4',padding:'3px 8px',borderRadius:4,border:'1px solid #8B202030'}}>Line {idx+1}</span>
+                <span style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,background:'#FDF4F4',padding:'3px 8px',borderRadius:4,border:'1px solid #8A261D30'}}>Line {idx+1}</span>
                 <select value={lt} onChange={e=>u('line_type',e.target.value)} style={{...inputS,width:200,fontWeight:700,fontSize:13}}>
                   {LINE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#8B2020'}}>{$(sub)}</span>
+                <span style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#8A261D'}}>{$(sub)}</span>
                 {f.lineItems.length>1&&<button onClick={()=>removeLineItem(idx)} style={{background:'none',border:'1px solid #DC2626',borderRadius:6,padding:'4px 10px',color:'#DC2626',fontSize:11,fontWeight:700,cursor:'pointer'}}>× Remove</button>}
               </div>
             </div>
@@ -1340,11 +1340,11 @@ function NewProjectForm({jobs,onClose,onSaved}){
                 <div>{fLbl('Rate ($/LF) (optional)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} style={inputS}/></div>
               </>}
             </div>
-            {isLFType&&n(li.lf)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#6B6056'}}>{n(li.lf).toLocaleString()} LF × ${n(li.rate)}/LF = <b style={{color:'#8B2020'}}>{$(sub)}</b></div>}
-            {lt==='Gate'&&n(li.quantity)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#6B6056'}}>{n(li.quantity)} × {$(n(li.rate))} = <b style={{color:'#8B2020'}}>{$(sub)}</b></div>}
+            {isLFType&&n(li.lf)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.lf).toLocaleString()} LF × ${n(li.rate)}/LF = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
+            {lt==='Gate'&&n(li.quantity)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.quantity)} × {$(n(li.rate))} = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
           </div>;
         })}
-        <button onClick={addLineItem} style={{width:'100%',padding:'12px',border:'1px dashed #8B2020',background:'#FDF4F4',color:'#8B2020',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',marginTop:6}}>+ Add Line Item</button>
+        <button onClick={addLineItem} style={{width:'100%',padding:'12px',border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',marginTop:6}}>+ Add Line Item</button>
       </div>}
       {sec==='contract'&&<div>
         <div style={{display:'grid',gridTemplateColumns:grd,gap:12,marginBottom:20}}>
@@ -1362,7 +1362,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       {sec==='requirements'&&<div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
           {[['AIA (G702/703)','aia_billing'],['Bonds','bonds'],['Certified Payroll','certified_payroll'],['OCIP/CCIP','ocip_ccip'],['3rd Party Billing','third_party_billing'],['Included on Billing Schedule','included_on_billing_schedule'],['Included on LF Schedule','included_on_lf_schedule']].map(([l,k])=><label key={k} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13}}>
-            <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:18,height:18,accentColor:'#8B2020'}}/>{l}
+            <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:18,height:18,accentColor:'#8A261D'}}/>{l}
           </label>)}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
@@ -1373,7 +1373,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       {sec==='schedule'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>{fLbl('Est. Start Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Active Entry Date')}<input type="date" value={f.active_entry_date} onChange={e=>set('active_entry_date',e.target.value)} style={inputS}/></div>
-        <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#6B6056'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
+        <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
       </div>}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
@@ -1386,8 +1386,8 @@ function NewProjectForm({jobs,onClose,onSaved}){
         </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',derivedFenceType],['Line Items',f.lineItems.length],['Total LF',totalLF.toLocaleString()],['Gates',lineAgg.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
-            {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
+            <div style={{fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
+            {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#625650'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
           </div>)}
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}><button onClick={()=>setSec('schedule')} style={btnS}>← Go Back</button><button onClick={submit} disabled={saving||missing.length>0} style={{...btnP,flex:1,padding:'14px 0',fontSize:16,opacity:saving||missing.length>0?0.5:1}}>{saving?'Creating...':'Create Project'}</button></div>
@@ -1401,17 +1401,17 @@ function NewProjectForm({jobs,onClose,onSaved}){
     {leadMatch&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
       <div style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw'}}>
         <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🔗 Matching Proposal Found</div>
-        <div style={{fontSize:13,color:'#6B6056',marginBottom:14}}>This project may match an open proposal in the sales pipeline.</div>
-        <div style={{background:'#FDF4F4',border:'1px solid #8B202033',borderRadius:10,padding:14,marginBottom:14}}>
+        <div style={{fontSize:13,color:'#625650',marginBottom:14}}>This project may match an open proposal in the sales pipeline.</div>
+        <div style={{background:'#FDF4F4',border:'1px solid #8A261D33',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>{leadMatch.lead.company_name}</div>
-          {leadMatch.lead.project_description&&<div style={{fontSize:12,color:'#6B6056',marginBottom:6}}>{leadMatch.lead.project_description}</div>}
-          <div style={{display:'flex',gap:12,fontSize:12,color:'#6B6056'}}>
+          {leadMatch.lead.project_description&&<div style={{fontSize:12,color:'#625650',marginBottom:6}}>{leadMatch.lead.project_description}</div>}
+          <div style={{display:'flex',gap:12,fontSize:12,color:'#625650'}}>
             <span>Rep: <b style={{color:'#1A1A1A'}}>{leadMatch.lead.sales_rep||'—'}</b></span>
-            <span>Proposal: <b style={{color:'#8B2020'}}>{$k(leadMatch.lead.proposal_value||leadMatch.lead.estimated_value)}</b></span>
+            <span>Proposal: <b style={{color:'#8A261D'}}>{$k(leadMatch.lead.proposal_value||leadMatch.lead.estimated_value)}</b></span>
             <span>Sent: <b>{fD(leadMatch.lead.proposal_sent_date)}</b></span>
           </div>
         </div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>Linking will mark the lead as <b>Won</b> and attach job #{leadMatch.jobRow.job_number}.</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:16}}>Linking will mark the lead as <b>Won</b> and attach job #{leadMatch.jobRow.job_number}.</div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={skipLeadMatch} style={{...btnS,flex:1}}>Skip</button>
           <button onClick={linkLeadToJob} style={{...btnP,flex:2}}>Link to Lead</button>
@@ -1488,13 +1488,13 @@ function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
         {flat.length===0?<div style={{padding:32,textAlign:'center',color:'#9E9B96',fontSize:13}}>No results</div>:
         Object.entries(grouped).map(([group,hits])=><div key={group}>
           <div style={{fontSize:10,fontWeight:800,color:'#9E9B96',textTransform:'uppercase',letterSpacing:0.5,padding:'8px 18px 4px'}}>{group}</div>
-          {hits.map(hit=>{idx++;const sel=idx===cursor;return <div key={hit.key} onMouseEnter={()=>setCursor(idx)} onClick={()=>pick(hit)} style={{padding:'9px 18px',cursor:'pointer',display:'flex',gap:10,alignItems:'center',background:sel?'#FDF4F4':'transparent',borderLeft:sel?'3px solid #8B2020':'3px solid transparent'}}>
+          {hits.map(hit=>{idx++;const sel=idx===cursor;return <div key={hit.key} onMouseEnter={()=>setCursor(idx)} onClick={()=>pick(hit)} style={{padding:'9px 18px',cursor:'pointer',display:'flex',gap:10,alignItems:'center',background:sel?'#FDF4F4':'transparent',borderLeft:sel?'3px solid #8A261D':'3px solid transparent'}}>
             <span style={{fontSize:15,width:20,textAlign:'center'}}>{hit.icon||'📄'}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hit.label}</div>
-              {hit.sub&&<div style={{fontSize:11,color:'#6B6056',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hit.sub}</div>}
+              {hit.sub&&<div style={{fontSize:11,color:'#625650',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hit.sub}</div>}
             </div>
-            {hit.type==='job'&&hit.job&&<span style={pill(MC[hit.job.market]||'#6B6056',MB[hit.job.market]||'#F4F4F2')}>{MS[hit.job.market]||'—'}</span>}
+            {hit.type==='job'&&hit.job&&<span style={pill(MC[hit.job.market]||'#625650',MB[hit.job.market]||'#F4F4F2')}>{MS[hit.job.market]||'—'}</span>}
           </div>;})}
         </div>)}
       </div>
@@ -1539,10 +1539,10 @@ function WeeklyDigest({jobs,active}){
   return(<div style={card}>
     <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Weekly Digest</div>
     {digestStats&&<div style={{marginBottom:12}}>
-      {[['Total Left to Bill',$(digestStats.leftToBill)],['Jobs with 0% billed (active)',digestStats.zeroBilled+' jobs'],['Weather days logged this week',digestStats.weatherDays],['Change orders pending approval',digestStats.pendingCO],['New jobs added this week',digestStats.newJobs],['Jobs completed this week',digestStats.compJobs]].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={{color:'#6B6056'}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>)}
+      {[['Total Left to Bill',$(digestStats.leftToBill)],['Jobs with 0% billed (active)',digestStats.zeroBilled+' jobs'],['Weather days logged this week',digestStats.weatherDays],['Change orders pending approval',digestStats.pendingCO],['New jobs added this week',digestStats.newJobs],['Jobs completed this week',digestStats.compJobs]].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={{color:'#625650'}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>)}
       <div style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
         <div style={{display:'flex',justifyContent:'space-between'}}>
-          <span style={{color:'#6B6056'}}>Jobs pulled from production this week</span>
+          <span style={{color:'#625650'}}>Jobs pulled from production this week</span>
           <span style={{fontWeight:700,color:pr&&pr.count>0?'#B45309':'#1A1A1A'}}>{pr?pr.count:0}</span>
         </div>
         {pr&&pr.count>0&&pr.topReason&&<div style={{fontSize:10,color:'#9E9B96',fontStyle:'italic',marginTop:2}}>Most common: {pr.topReason}</div>}
@@ -1624,9 +1624,9 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       <KPI label="Left to Bill" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
       <div style={card}>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#065F46'}}>{tlfPC.toLocaleString()}</div>
-        <div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Precast LF <span style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>(production)</span></div>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>Precast LF <span style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>(production)</span></div>
         <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>Backlog — active pipeline</div>
-        <div style={{fontSize:11,color:'#6B6056',marginTop:4}}>Total LF (all types): <b style={{color:'#1A1A1A'}}>{tlf.toLocaleString()}</b></div>
+        <div style={{fontSize:11,color:'#625650',marginTop:4}}>Total LF (all types): <b style={{color:'#1A1A1A'}}>{tlf.toLocaleString()}</b></div>
         <div style={{borderTop:'1px solid #E5E3E0',marginTop:10,paddingTop:10}}>
           <div style={{display:'flex',alignItems:'baseline',gap:6}}>
             <span style={{fontFamily:'Inter',fontSize:20,fontWeight:800,color:blColor}}>{blMonths.toFixed(1)}</span>
@@ -1639,7 +1639,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
           <div style={{display:'flex',gap:6,flexWrap:'wrap',fontSize:9}}>
             {blMktLTB.filter(m=>m.ltb>0).map(m=><div key={m.market} style={{display:'flex',alignItems:'center',gap:3}}>
               <div style={{width:6,height:6,borderRadius:1,background:MC[m.market]}}/>
-              <span style={{color:'#6B6056'}}>{m.name}</span>
+              <span style={{color:'#625650'}}>{m.name}</span>
               <span style={{fontWeight:700}}>{$k(m.ltb)}</span>
               <span style={{color:'#9E9B96'}}>{Math.round(m.ltb/blMktTotal*100)}%</span>
             </div>)}
@@ -1651,24 +1651,24 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:pairCols,gap:16,marginBottom:16}}>
       <div style={{...card,padding:14,borderLeft:`4px solid ${moldCol}`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-          <div style={{fontSize:11,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
+          <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
           <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:moldCol}}>{capSnap.panelsPlanned.toLocaleString()}/{capSnap.panelCapacity.toLocaleString()}</div>
         </div>
         <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(moldPct,100)}%`,height:'100%',background:moldCol}}/></div>
-        <div style={{fontSize:11,color:'#6B6056',marginTop:4,fontWeight:600}}>{moldPct}% of panel capacity today (primary)</div>
+        <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{moldPct}% of panel capacity today (primary)</div>
       </div>
       <div style={{...card,padding:14,borderLeft:`4px solid ${cyCol}`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-          <div style={{fontSize:11,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>🏭 Batch Plant</div>
+          <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🏭 Batch Plant</div>
           <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:cyCol}}>{capSnap.cyPlanned.toFixed(1)}/{capSnap.cyCap} CYD</div>
         </div>
         <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:cyCol}}/></div>
-        <div style={{fontSize:11,color:'#6B6056',marginTop:4,fontWeight:600}}>{cyPct}% — panels × cy × 1.4 / 52.8 (secondary)</div>
+        <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{cyPct}% — panels × cy × 1.4 / 52.8 (secondary)</div>
       </div>
     </div>;})()}
     {/* 2026 Revenue Goal */}
     {(()=>{
-      const r=140,cx=160,cy=160;const circ=Math.PI*r;const offset=circ*(1-pct2026);const arcColor=achieved2026?'#065F46':'#8B2020';
+      const r=140,cx=160,cy=160;const circ=Math.PI*r;const offset=circ*(1-pct2026);const arcColor=achieved2026?'#065F46':'#8A261D';
       const goalEmoji=pct2026>=1?'🎯🏆':pct2026>=0.9?'🤑':pct2026>=0.8?'😤':pct2026>=0.66?'🚀':pct2026>=0.51?'🔥':pct2026>=0.36?'💪':pct2026>=0.21?'👀':pct2026>=0.11?'🐢':'😴';
       return<div style={{...card,marginBottom:16,borderTop:`3px solid ${arcColor}`}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:8}}>
@@ -1696,8 +1696,8 @@ function Dashboard({jobs,onNav,refreshKey=0}){
           {/* Stats column */}
           <div style={{flex:'1 1 240px',minWidth:220}}>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
-              <span style={{padding:'6px 14px',borderRadius:20,background:'#FDF4F4',color:'#8B2020',fontSize:13,fontWeight:700,border:'1px solid #8B202020'}}>YTD: {$k(ytd2026)}</span>
-              <span style={{padding:'6px 14px',borderRadius:20,background:'#F4F4F2',color:'#6B6056',fontSize:13,fontWeight:700,border:'1px solid #E5E3E0'}}>Remaining: {$k(remaining2026)}</span>
+              <span style={{padding:'6px 14px',borderRadius:20,background:'#FDF4F4',color:'#8A261D',fontSize:13,fontWeight:700,border:'1px solid #8A261D20'}}>YTD: {$k(ytd2026)}</span>
+              <span style={{padding:'6px 14px',borderRadius:20,background:'#F4F4F2',color:'#625650',fontSize:13,fontWeight:700,border:'1px solid #E5E3E0'}}>Remaining: {$k(remaining2026)}</span>
               <span style={{padding:'6px 14px',borderRadius:20,background:'#1A1A1A',color:'#FFF',fontSize:13,fontWeight:700}}>Goal: $36M</span>
             </div>
             <PBar pct={pct2026*100} color={arcColor} h={8}/>
@@ -1711,43 +1711,43 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
         <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Bill Sheets — {monthLabel(dashBillingMonth)}</div>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} title="Send reminder emails to PMs with missing bill sheets" style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer',opacity:remindSending?0.5:1}}>{remindSending?'Sending...':'📧 Send Reminders'}</button>
-          {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
+          <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} title="Send reminder emails to PMs with missing bill sheets" style={{background:'none',border:'none',color:'#8A261D',fontSize:12,fontWeight:700,cursor:'pointer',opacity:remindSending?0.5:1}}>{remindSending?'Sending...':'📧 Send Reminders'}</button>
+          {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8A261D',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
         </div>
       </div>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
         <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:bsColor}}>{bsSubmitted}</span>
-        <span style={{fontSize:14,color:'#6B6056'}}>/ {bsTotal} Submitted</span>
+        <span style={{fontSize:14,color:'#625650'}}>/ {bsTotal} Submitted</span>
         <span style={{fontSize:20,fontWeight:800,color:bsColor,marginLeft:'auto'}}>{bsPct}%</span>
       </div>
       <PBar pct={bsPct} color={bsColor} h={10}/>
       <div style={{display:'flex',gap:12,marginTop:12,flexWrap:'wrap'}}>{pmCounts.map(p=><div key={p.id} style={{flex:'1 1 0',minWidth:100,background:'#F9F8F6',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
-        <div style={{fontSize:11,fontWeight:700,color:'#6B6056',marginBottom:2}}>{p.short}</div>
+        <div style={{fontSize:11,fontWeight:700,color:'#625650',marginBottom:2}}>{p.short}</div>
         <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:p.submitted===p.total&&p.total>0?'#10B981':'#EF4444'}}>{p.submitted}/{p.total}</div>
       </div>)}</div>
     </div>;})()}
     {/* ═══ PIPELINE STAGE SUMMARY ═══ */}
     {(()=>{const PIPELINE_STAGES=[{key:'contract_review',label:'Review',color:'#6B7280',bg:'#F3F4F6'},{key:'production_queue',label:'Prod Queue',color:'#7C3AED',bg:'#EDE9FE'},{key:'in_production',label:'In Prod',color:'#1D4ED8',bg:'#DBEAFE'},{key:'material_ready',label:'Inventory',color:'#B45309',bg:'#FEF3C7'},{key:'active_install',label:'Active Install',color:'#C2410C',bg:'#FFEDD5'},{key:'fence_complete',label:'Fence Complete',color:'#0F766E',bg:'#CCFBF1'},{key:'fully_complete',label:'Fully Complete',color:'#15803D',bg:'#DCFCE7'}];const stData=PIPELINE_STAGES.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+lfPC(j),0),lfAll:sj.reduce((x,j)=>x+lfTotal(j),0)};});const fcCount=stData.find(s=>s.key==='fully_complete')?.count||0;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0);const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);const pipeLFAll=stData.reduce((s2,d)=>s2+d.lfAll,0);return<div style={{...card,marginBottom:16}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Production Pipeline</div><div style={{fontSize:12,color:'#6B6056'}}>{pipeTotal} active projects | <b style={{color:'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</b> <span style={{color:'#9E9B96'}}>({pipeLFAll.toLocaleString()} total)</span></div></div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Production Pipeline</div><div style={{fontSize:12,color:'#625650'}}>{pipeTotal} active projects | <b style={{color:'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</b> <span style={{color:'#9E9B96'}}>({pipeLFAll.toLocaleString()} total)</span></div></div>
       <div style={{display:'flex',gap:4,alignItems:'stretch',flexWrap:'wrap'}}>
         {stData.map((s,i)=><React.Fragment key={s.key}>
           {i>0&&<span style={{color:'#D1CEC9',fontSize:16,alignSelf:'center'}}>→</span>}
           <div onClick={()=>onNav&&onNav('production')} style={{flex:'1 1 0',minWidth:80,background:s.bg,border:`1px solid ${s.color}40`,borderRadius:10,padding:'10px 6px',textAlign:'center',cursor:onNav?'pointer':'default'}}>
             <div style={{fontSize:9,fontWeight:700,color:s.color,textTransform:'uppercase',marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.label}</div>
             <div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:s.color}}>{s.count}</div>
-            <div style={{fontSize:10,color:'#6B6056',marginTop:2}}>{s.lf.toLocaleString()} PC LF</div>
+            <div style={{fontSize:10,color:'#625650',marginTop:2}}>{s.lf.toLocaleString()} PC LF</div>
           </div>
         </React.Fragment>)}
       </div>
-      <div style={{fontSize:12,color:'#6B6056',marginTop:10}}>Fully Complete: {fcCount} jobs | Closed: {closedJobs.length} jobs</div>
+      <div style={{fontSize:12,color:'#625650',marginTop:10}}>Fully Complete: {fcCount} jobs | Closed: {closedJobs.length} jobs</div>
     </div>;})()}
     {/* ═══ PM WORKLOAD CARDS ═══ */}
     <div style={{...card,marginBottom:16}}>
       <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:12}}>PM Workload</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
         {PM_LIST.map(p=>{const pj=jobs.filter(j=>j.pm===p.id&&j.status!=='closed'&&j.status!=='cancelled'&&j.status!=='lost');const pLF=pj.reduce((s,j)=>s+n(j.total_lf),0);const pCV=pj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const bsSubIds=new Set(dashBillSubs.map(s2=>s2.job_id));const pSub=pj.filter(j=>bsSubIds.has(j.id)).length;const pAll=pj.length;return<div key={p.id} onClick={()=>onNav&&onNav('projects')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,cursor:onNav?'pointer':'default'}}>
-          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8B2020',marginBottom:8}}>{p.label}</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:11,color:'#6B6056',marginBottom:8}}>
+          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8A261D',marginBottom:8}}>{p.label}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:11,color:'#625650',marginBottom:8}}>
             <div>Jobs: <b style={{color:'#1A1A1A'}}>{pAll}</b></div>
             <div>LF: <b style={{color:'#1A1A1A'}}>{pLF.toLocaleString()}</b></div>
             <div style={{gridColumn:'1/-1'}}>Contract: <b style={{color:'#1A1A1A'}}>{$k(pCV)}</b></div>
@@ -1759,26 +1759,26 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     {showRemindConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowRemindConfirm(false)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Send Bill Sheet Reminders?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will email all PMs with missing bill sheets for <b style={{color:'#1A1A1A'}}>{monthLabel(curBillingMonth())}</b> and send you an AR summary. Continue?</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>This will email all PMs with missing bill sheets for <b style={{color:'#1A1A1A'}}>{monthLabel(curBillingMonth())}</b> and send you an AR summary. Continue?</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowRemindConfirm(false)} style={btnS}>Cancel</button><button onClick={sendReminders} style={btnP}>Send Reminders</button></div>
       </div>
     </div>}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>!CLOSED_SET.has(s)).map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#6B6056',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Pipeline by Status</div>{STS.filter(s=>!CLOSED_SET.has(s)).map(s=>{const sj=active.filter(j=>j.status===s);const sv=sj.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);return(<div key={s} style={{marginBottom:14}}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span><span style={pill(SC[s],SB_[s])}>{SS[s]}</span> <span style={{color:'#625650',marginLeft:6}}>{sj.length}</span></span><span style={{color:'#9E9B96'}}>{$k(sv)}</span></div><PBar pct={tc>0?sv/tc*100:0} color={SC[s]}/></div>);})}</div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Top 15 Left to Bill</div><table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{top15.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#8B2020',fontSize:13}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table></div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Top 15 Left to Bill</div><table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{top15.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#8A261D',fontSize:13}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table></div>
       {/* Alerts */}
       <div style={{...card,borderColor:alerts.length>0?'#B4530930':'#E5E3E0'}}>
         <div style={{fontFamily:'Inter',fontWeight:700,marginBottom:8,color:'#B45309'}}>Billing Alerts ({alerts.length})</div>
-        <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>{[['🔴 Critical',crit],['🟡 Warning',warn],['🟠 Watch',watch]].map(([l,b])=>b.length>0&&<span key={l} style={{fontSize:11,color:'#6B6056'}}>{l}: {b.length} — {$k(b.reduce((s,j)=>s+n(j.contract_value),0))}</span>)}</div>
-        <table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{alerts.slice(0,12).map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${n(j.contract_age)>=90?'#991B1B':n(j.contract_age)>=60?'#B45309':'#D97706'}`}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,fontSize:12}}>{$(j.contract_value)}</td><td style={{padding:'5px 8px',textAlign:'right',fontSize:12,color:'#B45309'}}>{j.contract_age}d</td></tr>)}</tbody></table>
+        <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>{[['🔴 Critical',crit],['🟡 Warning',warn],['🟠 Watch',watch]].map(([l,b])=>b.length>0&&<span key={l} style={{fontSize:11,color:'#625650'}}>{l}: {b.length} — {$k(b.reduce((s,j)=>s+n(j.contract_value),0))}</span>)}</div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{alerts.slice(0,12).map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${n(j.contract_age)>=90?'#991B1B':n(j.contract_age)>=60?'#B45309':'#D97706'}`}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,fontSize:12}}>{$(j.contract_value)}</td><td style={{padding:'5px 8px',textAlign:'right',fontSize:12,color:'#B45309'}}>{j.contract_age}d</td></tr>)}</tbody></table>
       </div>
     </div>
     {/* Activity Feed */}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:10}}>Recent Activity</div>{actLogs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No activity yet</div>:actLogs.map(l=><div key={l.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={pill(ACT_C[l.action]||'#6B6056',(ACT_C[l.action]||'#6B6056')+'18')}>{(l.action||'').replace(/_/g,' ')}</span><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.job_name}</span><span style={{color:'#9E9B96',flexShrink:0}}>{relT(l.created_at)}</span></div>)}</div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:10}}>Recent Activity</div>{actLogs.length===0?<div style={{color:'#9E9B96',fontSize:12}}>No activity yet</div>:actLogs.map(l=><div key={l.id} style={{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}><span style={pill(ACT_C[l.action]||'#625650',(ACT_C[l.action]||'#625650')+'18')}>{(l.action||'').replace(/_/g,' ')}</span><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.job_name}</span><span style={{color:'#9E9B96',flexShrink:0}}>{relT(l.created_at)}</span></div>)}</div>
       <WeeklyDigest jobs={jobs} active={active}/>
     </div>
   </div>);
@@ -1824,7 +1824,7 @@ function ProjectCardList({jobs,onTap,emptyMessage='No projects found.'}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700,color:'#1A1A1A',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</div>
-            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>
+            <div style={{fontSize:12,color:'#625650',marginTop:2}}>
               {j.job_number||'—'}{j.market?` · ${MS[j.market]||j.market}`:''}{j.pm?` · ${j.pm}`:''}
             </div>
           </div>
@@ -1845,12 +1845,12 @@ function ProjectCardList({jobs,onTap,emptyMessage='No projects found.'}){
           </div>
         </div>
         {pct>0 && <div style={{marginTop:8}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#6B6056',marginBottom:3}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#625650',marginBottom:3}}>
             <span style={{textTransform:'uppercase',fontWeight:600,letterSpacing:0.3}}>% Billed</span>
             <span style={{fontWeight:700}}>{pct}%</span>
           </div>
           <div style={{height:4,background:'#F1EFEC',borderRadius:2,overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8B2020',borderRadius:2}}/>
+            <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8A261D',borderRadius:2}}/>
           </div>
         </div>}
       </div>;
@@ -1973,17 +1973,17 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <div style={{display:'flex',alignItems:'baseline',gap:16}}>
           <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>Projects</h1>
           <div style={{display:'flex',gap:4}}>
-            <button onClick={()=>setProjTab('active')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='active'?'#8B2020':'#6B6056',fontWeight:projTab==='active'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='active'?'2px solid #8B2020':'2px solid transparent'}}>Active</button>
-            <button onClick={()=>setProjTab('closed')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='closed'?'#8B2020':'#6B6056',fontWeight:projTab==='closed'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='closed'?'2px solid #8B2020':'2px solid transparent'}}>Closed{closedCount>0&&<span style={{marginLeft:4,background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:8,fontSize:10,fontWeight:600}}>{closedCount}</span>}</button>
+            <button onClick={()=>setProjTab('active')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='active'?'#8A261D':'#625650',fontWeight:projTab==='active'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='active'?'2px solid #8A261D':'2px solid transparent'}}>Active</button>
+            <button onClick={()=>setProjTab('closed')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='closed'?'#8A261D':'#625650',fontWeight:projTab==='closed'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='closed'?'2px solid #8A261D':'2px solid transparent'}}>Closed{closedCount>0&&<span style={{marginLeft:4,background:'#F4F4F2',color:'#625650',padding:'1px 6px',borderRadius:8,fontSize:10,fontWeight:600}}>{closedCount}</span>}</button>
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
-          {projTab==='active'&&<button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8B2020':'#6B6056',border:editMode?'1px solid #8B2020':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>}
+          {projTab==='active'&&<button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8A261D':'#625650',border:editMode?'1px solid #8A261D':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>}
           <div style={{position:'relative'}} ref={colRef}><button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns ({visCols.length})</button>
             {showCols&&<div style={{position:'absolute',right:0,top:36,width:360,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:480,overflow:'auto'}}>
               {COL_GROUPS.map(g=>{const gk=g.keys.filter(k=>ALL_COLS.some(c=>c.key===k));const allOn=gk.every(k=>visCols.includes(k));return<div key={g.label} style={{marginBottom:12}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5}}>{g.label}</span><button onClick={()=>{if(allOn)setVisCols(v=>v.filter(k=>!gk.includes(k)));else setVisCols(v=>[...new Set([...v,...gk])]);}} style={{background:'none',border:'none',color:'#8B2020',fontSize:10,fontWeight:600,cursor:'pointer'}}>{allOn?'Deselect All':'Select All'}</button></div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...v,k])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8B2020':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8B2020':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>{g.label}</span><button onClick={()=>{if(allOn)setVisCols(v=>v.filter(k=>!gk.includes(k)));else setVisCols(v=>[...new Set([...v,...gk])]);}} style={{background:'none',border:'none',color:'#8A261D',fontSize:10,fontWeight:600,cursor:'pointer'}}>{allOn?'Deselect All':'Select All'}</button></div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...v,k])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8A261D':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8A261D':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
               </div>;})}
             </div>}
           </div>
@@ -1998,29 +1998,29 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
         <MultiSelect label="All Types" width={140} selected={primaryTypeF} onChange={setPrimaryTypeF} options={[{v:'Precast',l:'Precast'},{v:'Masonry',l:'Masonry'},{v:'Wrought Iron',l:'Wrought Iron'}]}/>
         <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'},{v:'SW',l:'Single Wythe (SW)'},{v:'R',l:'Removal (R)'},{v:'LS',l:'Lump Sum (LS)'}]}/>
-        {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8B2020',borderRadius:6,padding:'6px 12px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
+        {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:240}}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
         <select value={closedYearF} onChange={e=>setClosedYearF(e.target.value)} style={{...inputS,width:140}}><option value="">All Years</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="older">2023 & Earlier</option></select>
-        {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #8B2020',borderRadius:6,padding:'6px 12px',color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
+        {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
-      {projTab==='active'&&<div style={{fontSize:12,color:'#6B6056',padding:'4px 0'}}>Showing {filtered.length} jobs | {$k(fTC)} contract value | {$k(fLTB)} left to bill | {Math.round(fAvgB*100)}% avg billed</div>}
+      {projTab==='active'&&<div style={{fontSize:12,color:'#625650',padding:'4px 0'}}>Showing {filtered.length} jobs | {$k(fTC)} contract value | {$k(fLTB)} left to bill | {Math.round(fAvgB*100)}% avg billed</div>}
     </div>
     {/* Closed tab stats */}
     {projTab==='closed'&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:12}}>
-      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{closedStats.count}</div><div style={{fontSize:10,color:'#6B6056'}}>Total Closed Jobs</div></div>
-      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$k(closedStats.cv)}</div><div style={{fontSize:10,color:'#6B6056'}}>Total Contract Value</div></div>
-      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{closedStats.lfPC.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Precast LF</div><div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>Total: {closedStats.lf.toLocaleString()} LF</div></div>
-      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:closedStats.avgPct>=90?'#065F46':'#B45309'}}>{closedStats.avgPct}%</div><div style={{fontSize:10,color:'#6B6056'}}>Avg % Billed at Close</div></div>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{closedStats.count}</div><div style={{fontSize:10,color:'#625650'}}>Total Closed Jobs</div></div>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$k(closedStats.cv)}</div><div style={{fontSize:10,color:'#625650'}}>Total Contract Value</div></div>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{closedStats.lfPC.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Precast LF</div><div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>Total: {closedStats.lf.toLocaleString()} LF</div></div>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:closedStats.avgPct>=90?'#065F46':'#B45309'}}>{closedStats.avgPct}%</div><div style={{fontSize:10,color:'#625650'}}>Avg % Billed at Close</div></div>
     </div>}
     {/* Active tab bulk actions + table */}
     {projTab==='active'&&<>
     {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span><select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select><select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select><button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
     {!isMobile && <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr><th style={{width:40,padding:'10px 8px',borderBottom:'1px solid #E5E3E0'}}><input type="checkbox" checked={sel.size===filtered.length&&filtered.length>0} onChange={()=>{if(sel.size===filtered.length)setSel(new Set());else setSel(new Set(filtered.map(j=>j.id)));}} /></th>{visCD.map(c=><th key={c.key} onClick={()=>toggleSort(c.key)} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,userSelect:'none',background:c.tintHdr||'#F9F8F6'}}>{c.label} {sortCol===c.key&&(sortDir==='asc'?'↑':'↓')}</th>)}</tr></thead>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr><th style={{width:40,padding:'10px 8px',borderBottom:'1px solid #E5E3E0'}}><input type="checkbox" checked={sel.size===filtered.length&&filtered.length>0} onChange={()=>{if(sel.size===filtered.length)setSel(new Set());else setSel(new Set(filtered.map(j=>j.id)));}} /></th>{visCD.map(c=><th key={c.key} onClick={()=>toggleSort(c.key)} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,userSelect:'none',background:c.tintHdr||'#F9F8F6'}}>{c.label} {sortCol===c.key&&(sortDir==='asc'?'↑':'↓')}</th>)}</tr></thead>
         <tbody>{filtered.map((j,i)=><tr key={j.id} onClick={()=>{if(!editMode&&!sel.size){setEditJob(j);setIsNew(false);}}} style={{cursor:editMode?'default':'pointer',borderLeft:`3px solid ${SC[j.status]||'transparent'}`,background:i%2===0?'#FFF':'#FAFAF8'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
           <td style={{width:40,padding:'8px 8px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(j.id)} onChange={()=>{const s=new Set(sel);if(s.has(j.id))s.delete(j.id);else s.add(j.id);setSel(s);}}/></td>
           {visCD.map(c=><td key={c.key} onClick={e=>{if(editMode){e.stopPropagation();setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?'cell':'pointer',background:c.tint||'transparent'}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>)}
@@ -2034,13 +2034,13 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     {projTab==='closed'&&isMobile&&<ProjectCardList jobs={closedJobs} onTap={j=>{setEditJob(j);setIsNew(false);}}/>}
     {projTab==='closed'&&!isMobile&&<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 320px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
-        <tr>{[['Job #',''],['Job Name',''],['PM',''],['Market',''],['Style',''],['Color',''],['Closed Date',''],['Contract Value',''],['PC LF','#D1FAE5'],['SW LF',''],['WI LF',''],['Gates',''],['Total LF','#F4F4F2'],['YTD Invoiced',''],['% Billed','']].map(([h,bg])=><th key={h} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,background:bg||'transparent'}}>{h}</th>)}</tr>
+        <tr>{[['Job #',''],['Job Name',''],['PM',''],['Market',''],['Style',''],['Color',''],['Closed Date',''],['Contract Value',''],['PC LF','#D1FAE5'],['SW LF',''],['WI LF',''],['Gates',''],['Total LF','#F4F4F2'],['YTD Invoiced',''],['% Billed','']].map(([h,bg])=><th key={h} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,background:bg||'transparent'}}>{h}</th>)}</tr>
       </thead>
-      <tbody>{closedJobs.map((j,i)=><tr key={j.id} onClick={()=>{setEditJob(j);setIsNew(false);}} style={{cursor:'pointer',background:i%2===0?'#FFF':'#FAFAF8',color:'#6B6056'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
+      <tbody>{closedJobs.map((j,i)=><tr key={j.id} onClick={()=>{setEditJob(j);setIsNew(false);}} style={{cursor:'pointer',background:i%2===0?'#FFF':'#FAFAF8',color:'#625650'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
         <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
         <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
         <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
-        <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+        <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
         <td style={{padding:'8px 10px',fontSize:11}}>{j.style||'—'}</td>
         <td style={{padding:'8px 10px',fontSize:11}}>{j.color||'—'}</td>
         <td style={{padding:'8px 10px',fontSize:11}}>{fD(j.closed_date)}</td>
@@ -2126,8 +2126,8 @@ function BillingPage({jobs,onRefresh,onNav}){
     const grand=precastSub+swSub+oneSub;
     const demo=n(s.remove_existing);
     const anyData=!!sub&&(grand>0||demo>0||n(s.wi_gates)>0||n(s.gate_controls)>0||n(s.line_bonds)>0||n(s.line_permits)>0);
-    if(!anyData)return<div style={{marginTop:14,paddingTop:14,borderTop:'2px solid #8B2020'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>PM Bill Sheet</div>
+    if(!anyData)return<div style={{marginTop:14,paddingTop:14,borderTop:'2px solid #8A261D'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>PM Bill Sheet</div>
       <div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:13}}>No PM bill sheet data submitted yet.</div>
     </div>;
     const fmtLF=v=>v>0?v.toLocaleString()+' LF':'—';
@@ -2136,12 +2136,12 @@ function BillingPage({jobs,onRefresh,onNav}){
     const cardBase={background:'#FFF',borderRadius:8,overflow:'hidden',flex:'1 1 200px',minWidth:200,display:'flex',flexDirection:'column'};
     const headerBase={padding:'7px 12px',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5};
     const fieldRow=(label,val,alt,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 12px',fontSize:11,background:alt?'rgba(0,0,0,0.025)':'transparent'}}>
-      <span style={{color:'#6B6056'}}>{label}</span>
+      <span style={{color:'#625650'}}>{label}</span>
       <span style={{color:'#1A1A1A',fontWeight:600,fontFamily:'Inter'}}>{val}</span>
     </div>;
     const subtotalRow=(v)=><div style={{borderTop:'1px solid #E5E3E0',padding:'7px 12px',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:800,marginTop:'auto'}}>
-      <span style={{color:'#6B6056',textTransform:'uppercase',letterSpacing:0.4}}>Subtotal</span>
-      <span style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>{v.toLocaleString()} LF</span>
+      <span style={{color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>Subtotal</span>
+      <span style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{v.toLocaleString()} LF</span>
     </div>;
     const renderLFCard=(title,bg,headerBg,headerColor,border,fields,subtotal)=><div style={{...cardBase,background:bg,border:`1px solid ${border}`}}>
       <div style={{...headerBase,background:headerBg,color:headerColor}}>{title}</div>
@@ -2150,8 +2150,8 @@ function BillingPage({jobs,onRefresh,onNav}){
         {subtotalRow(subtotal)}
       </div>
     </div>;
-    return<div style={{marginTop:14,paddingTop:14,borderTop:'2px solid #8B2020'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>PM Bill Sheet</div>
+    return<div style={{marginTop:14,paddingTop:14,borderTop:'2px solid #8A261D'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>PM Bill Sheet</div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12,alignItems:'stretch'}}>
         {renderLFCard('Precast','#F9FAFB','#E5E7EB','#374151','#E5E7EB',precastFields,precastSub)}
         {renderLFCard('Single Wythe','#EFF6FF','#DBEAFE','#1D4ED8','#BFDBFE',swFields,swSub)}
@@ -2174,7 +2174,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           </div>
         </div>
       </div>
-      <div style={{background:'#8B2020',color:'#FFF',padding:'12px 18px',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 3px rgba(139,32,32,0.25)'}}>
+      <div style={{background:'#8A261D',color:'#FFF',padding:'12px 18px',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 3px rgba(139,32,32,0.25)'}}>
         <span style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:1}}>Total LF This Period</span>
         <span style={{fontSize:22,fontWeight:900,fontFamily:'Inter'}}>{grand.toLocaleString()} LF</span>
       </div>
@@ -2186,14 +2186,14 @@ function BillingPage({jobs,onRefresh,onNav}){
   const hasAnyReviewed=arReviewedCount>0;
   const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${s.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
   const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing']]}];
-  const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'};
+  const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Billing</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs — 2 only */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8B2020':'#6B6056',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8B2020':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&arStats.missing>0&&<span style={{marginLeft:6,background:'#FEE2E2',color:'#991B1B',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{arStats.missing} missing</span>}</button>)}
+      {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8A261D':'#625650',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8A261D':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&arStats.missing>0&&<span style={{marginLeft:6,background:'#FEE2E2',color:'#991B1B',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{arStats.missing} missing</span>}</button>)}
     </div>
 
     {/* ═══ TAB: PM SUBMISSIONS ═══ */}
@@ -2201,9 +2201,9 @@ function BillingPage({jobs,onRefresh,onNav}){
       {/* Month + Filters */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:12,flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Billing Month</label>
+          <label style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Billing Month</label>
           <input type="month" value={arMonth} onChange={e=>setArMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
-          <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{arMonthLabel}</span>
+          <span style={{fontSize:14,fontWeight:800,color:'#8A261D'}}>{arMonthLabel}</span>
         </div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={sendBilReminders} disabled={bilRemindSending} style={{...btnP,padding:'8px 16px',fontSize:12,opacity:bilRemindSending?0.6:1}}>{bilRemindSending?'Sending...':'📧 Send Reminders'}</button>
@@ -2226,10 +2226,10 @@ function BillingPage({jobs,onRefresh,onNav}){
       </div>
       {/* Summary stats */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#6B6056'}}>Total Active Jobs</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#6B6056'}}>Submitted</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#6B6056'}}>Missing</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arStats.reviewed}</div><div style={{fontSize:11,color:'#6B6056'}}>Reviewed by AR</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#625650'}}>Total Active Jobs</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#625650'}}>Submitted</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arStats.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Reviewed by AR</div></div>
       </div>
       {/* Main table */}
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 480px)'}}>
@@ -2241,18 +2241,18 @@ function BillingPage({jobs,onRefresh,onNav}){
             const borderColor=status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
             return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1}}>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
-              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
+              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
-              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.style||'—'}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.color||'—'}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{j.height_precast||'—'}</td>
+              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.style||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.color||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.height_precast||'—'}</td>
               <td style={{padding:'8px 10px'}}>{status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
               <td style={{padding:'8px 10px'}}>{sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
                 {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
-                {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
+                {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
               </div></td>
             </tr>;})}
           </tbody>
@@ -2263,7 +2263,7 @@ function BillingPage({jobs,onRefresh,onNav}){
 
     {/* ═══ TAB: ALL JOBS ═══ */}
     {billingTab==='alljobs'&&<div>
-      <div style={{...card,marginBottom:24}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Billing by Market</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>{MKTS.map(m=>{const mj=active.filter(j=>j.market===m);const mc=mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const mb=mj.reduce((s,j)=>s+n(j.ytd_invoiced),0);const mp=mc>0?Math.round(mb/mc*100):0;return<div key={m}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span style={{fontWeight:600,color:MC[m]}}>{MS[m]}</span><span style={{color:'#6B6056'}}>{mp}%</span></div><PBar pct={mp} color={MC[m]} h={8}/></div>;})}</div></div>
+      <div style={{...card,marginBottom:24}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Billing by Market</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>{MKTS.map(m=>{const mj=active.filter(j=>j.market===m);const mc=mj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const mb=mj.reduce((s,j)=>s+n(j.ytd_invoiced),0);const mp=mc>0?Math.round(mb/mc*100):0;return<div key={m}><div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}><span style={{fontWeight:600,color:MC[m]}}>{MS[m]}</span><span style={{color:'#625650'}}>{mp}%</span></div><PBar pct={mp} color={MC[m]} h={8}/></div>;})}</div></div>
       <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={bSearch} onChange={e=>setBSearch(e.target.value)} placeholder="Search by job name, number, or customer..." style={{...inputS,width:280}}/>
         <button onClick={()=>setBMktF(null)} style={fpill(!bMktF)}>All</button>
@@ -2271,9 +2271,9 @@ function BillingPage({jobs,onRefresh,onNav}){
         <select value={bPmF} onChange={e=>setBPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
         <button onClick={()=>setBStatusF(null)} style={fpill(!bStatusF)}>All</button>
         <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
-        <span style={{fontSize:12,color:'#6B6056'}}>{shown.length} jobs</span>
+        <span style={{fontSize:12,color:'#625650'}}>{shown.length} jobs</span>
       </div>
-      <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#6B6056',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
+      <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#625650',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
       {isMobile ? <MobileCards
         items={shown}
         emptyMessage="No jobs to bill"
@@ -2285,7 +2285,7 @@ function BillingPage({jobs,onRefresh,onNav}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name||'—'}</div>
-                <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{j.job_number||'—'}{j.style?` · ${j.style}`:''}</div>
+                <div style={{fontSize:12,color:'#625650',marginTop:2}}>{j.job_number||'—'}{j.style?` · ${j.style}`:''}</div>
               </div>
               <span style={statusPill(j.status)}>{SS[j.status]}</span>
             </div>
@@ -2304,12 +2304,12 @@ function BillingPage({jobs,onRefresh,onNav}){
               </div>
             </div>
             <div style={{marginTop:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#6B6056',marginBottom:3}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#625650',marginBottom:3}}>
                 <span style={{textTransform:'uppercase',fontWeight:600}}>% Billed</span>
                 <span style={{fontWeight:700}}>{pct}%</span>
               </div>
               <div style={{height:4,background:'#F1EFEC',borderRadius:2,overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8B2020',borderRadius:2}}/>
+                <div style={{height:'100%',width:`${Math.min(100,pct)}%`,background:pct>=90?'#059669':pct>=50?'#D97706':'#8A261D',borderRadius:2}}/>
               </div>
             </div>
           </div>;
@@ -2318,10 +2318,10 @@ function BillingPage({jobs,onRefresh,onNav}){
         <tr>{['Project','Style','Color','Market','Status','Contract','YTD Invoiced','Left to Bill','% Billed','Last Billed',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
         </thead>
         <tbody>{shown.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></td>
-          <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.style||''}>{j.style||'—'}</td>
-          <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.color||''}>{j.color||'—'}</td>
-          <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:500}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></td>
+          <td style={{padding:'8px 10px',fontSize:11,color:'#625650',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.style||''}>{j.style||'—'}</td>
+          <td style={{padding:'8px 10px',fontSize:11,color:'#625650',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={j.color||''}>{j.color||'—'}</td>
+          <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
           <td style={{padding:'8px 10px'}}><span style={statusPill(j.status)}>{SS[j.status]}</span></td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:600,color:'#065F46'}}>{$(j.ytd_invoiced)}</td>
@@ -2332,7 +2332,7 @@ function BillingPage({jobs,onRefresh,onNav}){
         </tr>)}</tbody></table></div>}
       {/* Recently Fully Billed */}
       <div style={{marginTop:24}}>
-        <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#6B6056',padding:0,marginBottom:showRecent?12:0}}>
+        <button onClick={()=>setShowRecent(!showRecent)} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontFamily:'Inter',fontWeight:700,fontSize:14,color:'#625650',padding:0,marginBottom:showRecent?12:0}}>
           <span style={{fontSize:12,transition:'transform .2s',transform:showRecent?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
           Recently Fully Billed ({recentlyBilled.length})
         </button>
@@ -2341,7 +2341,7 @@ function BillingPage({jobs,onRefresh,onNav}){
             <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job Name','Market','Contract Value','Date Billed','Sales Rep',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{recentlyBilled.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
               <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
-              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
               <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
               <td style={{padding:'8px 10px'}}>{fD(j.last_billed)}</td>
               <td style={{padding:'8px 10px'}}>{j.sales_rep||'—'}</td>
@@ -2356,7 +2356,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     {resetConfirm&&(()=>{const isPm=resetConfirm.type==='pm';const toDelete=isPm?arUnreviewed.filter(s=>s.pm===resetConfirm.pm):arUnreviewed;const preserved=isPm?arSubs.filter(s=>s.ar_reviewed&&s.pm===resetConfirm.pm).length:arReviewedCount;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setResetConfirm(null)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:460,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>{isPm?`Reset ${resetConfirm.label}'s Bill Sheets?`:`Reset All Bill Sheets for ${arMonthLabel}?`}</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will delete <b style={{color:'#991B1B'}}>{toDelete.length}</b> unreviewed submission{toDelete.length!==1?'s':''}. {preserved>0?<><b style={{color:'#1D4ED8'}}>{preserved}</b> reviewed submission{preserved!==1?'s':''} will NOT be affected. </>:''}PMs will need to resubmit. This cannot be undone.</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>This will delete <b style={{color:'#991B1B'}}>{toDelete.length}</b> unreviewed submission{toDelete.length!==1?'s':''}. {preserved>0?<><b style={{color:'#1D4ED8'}}>{preserved}</b> reviewed submission{preserved!==1?'s':''} will NOT be affected. </>:''}PMs will need to resubmit. This cannot be undone.</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setResetConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>resetMonth(isPm?resetConfirm.pm:null)} style={{...btnP,background:'#991B1B'}}>Reset Unreviewed ({toDelete.length})</button></div>
       </div>
     </div>;})()}
@@ -2368,8 +2368,8 @@ function BillingPage({jobs,onRefresh,onNav}){
           <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{s.job_name}</div>
           {s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
         </div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:4}}>#{s.job_number} · {s.pm} · {MS[s.market]||s.market||'—'}</div>
-        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>
+        <div style={{fontSize:12,color:'#625650',marginBottom:4}}>#{s.job_number} · {s.pm} · {MS[s.market]||s.market||'—'}</div>
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
           {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
           {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
           {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
@@ -2378,9 +2378,9 @@ function BillingPage({jobs,onRefresh,onNav}){
         <div style={{fontSize:11,color:'#9E9B96',marginBottom:14}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—'}{s.submitted_by?' by '+s.submitted_by:''}</div>
         {/* LF Sections */}
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
+          <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
           {AR_LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(s[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}>
-            <div style={{fontSize:9,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 6px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+            <div style={{fontSize:9,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 6px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>
               {sec.fields.map(([label,field])=>{const v=n(s[field]);return v>0?<div key={field} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 8px'}}>
                 <div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div>
@@ -2389,53 +2389,53 @@ function BillingPage({jobs,onRefresh,onNav}){
             </div>
           </div>;})}
           <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
-            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.total_lf).toLocaleString()}</div></div>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8A261D'}}>{n(s.total_lf).toLocaleString()}</div></div>
           </div>
           {(lfPC(arJob)>0||n(arJob.lf_installed_to_date)>0)&&(()=>{const existing=n(arJob.lf_installed_to_date);const thisSub=n(s.total_lf);const afterTotal=s.ar_reviewed?existing:existing+thisSub;const contracted=lfPC(arJob)||n(arJob.total_lf);const pctAfter=contracted>0?Math.round(afterTotal/contracted*100):0;return<div style={{marginTop:8,padding:'8px 10px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
             {s.ar_reviewed?<span>📊 <b>LF installed to date:</b> {existing.toLocaleString()} LF ({pctAfter}% of {contracted.toLocaleString()} LF contracted)</span>:<span>📊 <b>LF installed after this submission:</b> {existing.toLocaleString()} + {thisSub.toLocaleString()} = <b>{afterTotal.toLocaleString()} LF</b> ({pctAfter}% of {contracted.toLocaleString()} contracted)</span>}
           </div>;})()}
         </div>
-        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
+        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
         {/* Invoice History */}
         <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
+          <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
           {invLoading?<div style={{color:'#9E9B96',fontSize:12,padding:'8px 0'}}>Loading...</div>:invEntries.length===0?<div style={{color:'#9E9B96',fontSize:12,fontStyle:'italic',padding:'8px 0',textAlign:'center'}}>No invoices entered yet.</div>:<div style={{marginBottom:12}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>
-                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Date</th>
-                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Month</th>
-                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Invoice #</th>
-                <th style={{textAlign:'right',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Amount</th>
-                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Notes</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#625650',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Date</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#625650',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Month</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#625650',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Invoice #</th>
+                <th style={{textAlign:'right',padding:'4px 6px',color:'#625650',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Amount</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#625650',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Notes</th>
                 <th style={{width:32}}></th>
               </tr></thead>
               <tbody>{invEntries.map((e,i)=>{const isOB=e.notes&&e.notes.includes('Opening Balance');return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAFA'}}>
                 <td style={{padding:'5px 6px'}}>{e.invoice_date?new Date(e.invoice_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</td>
-                <td style={{padding:'5px 6px',color:'#6B6056'}}>{e.billing_month||'—'}</td>
-                <td style={{padding:'5px 6px',color:'#6B6056'}}>{e.invoice_number||'—'}</td>
+                <td style={{padding:'5px 6px',color:'#625650'}}>{e.billing_month||'—'}</td>
+                <td style={{padding:'5px 6px',color:'#625650'}}>{e.invoice_number||'—'}</td>
                 <td style={{padding:'5px 6px',textAlign:'right',fontWeight:700,color:'#065F46'}}>{$(e.invoice_amount)}</td>
-                <td style={{padding:'5px 6px',color:'#6B6056',fontSize:11}}>{isOB?<span style={{background:'#E5E3E0',color:'#6B6056',borderRadius:4,padding:'1px 6px',fontSize:10,fontWeight:600}}>Opening Balance</span>:e.notes||'—'}</td>
+                <td style={{padding:'5px 6px',color:'#625650',fontSize:11}}>{isOB?<span style={{background:'#E5E3E0',color:'#625650',borderRadius:4,padding:'1px 6px',fontSize:10,fontWeight:600}}>Opening Balance</span>:e.notes||'—'}</td>
                 <td style={{padding:'5px 6px',textAlign:'center'}}>{isOB?<span title="Opening balance — contact admin to adjust" style={{cursor:'not-allowed',color:'#9E9B96',fontSize:14}}>🔒</span>:<button onClick={()=>setInvDelConfirm({id:e.id,jobId:s.job_id,amount:e.invoice_amount})} style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626',fontSize:14,padding:2}} title="Remove entry">×</button>}</td>
               </tr>;})}
               </tbody>
             </table>
           </div>}
           <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:8,padding:'8px 12px',marginBottom:14,display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Adj Contract</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.adj_contract_value)}</div></div>
-            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>YTD Invoiced</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.ytd_invoiced)}</div></div>
-            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Left to Bill</div><div style={{fontWeight:800,fontSize:13,color:'#8B2020'}}>{$(arJob.left_to_bill)}</div></div>
-            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>% Billed</div><div style={{fontWeight:800,fontSize:13,color:'#8B2020'}}>{fmtPct1(arJob.pct_billed)}</div></div>
+            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Adj Contract</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.adj_contract_value)}</div></div>
+            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>YTD Invoiced</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.ytd_invoiced)}</div></div>
+            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Left to Bill</div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{$(arJob.left_to_bill)}</div></div>
+            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>% Billed</div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{fmtPct1(arJob.pct_billed)}</div></div>
           </div>
           <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingTop:10,borderTop:'1px solid #E5E3E0'}}>Add Invoice Entry</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
-            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label><input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS}/></div>
-            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label><input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS}/></div>
-            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label><input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label><input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label><input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label><input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS}/></div>
           </div>
-          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Invoice notes..." style={{...inputS,resize:'vertical'}}/></div>
-          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
+          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Invoice notes..." style={{...inputS,resize:'vertical'}}/></div>
+          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
-          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8B2020'}}>Add Invoice</button></div>
+          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice</button></div>
           {invEntries.filter(e=>!e.notes?.includes('Opening Balance')).length>0&&!s.ar_reviewed&&(
             <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #E5E3E0'}}>
               <button onClick={markArReviewed} style={{...btnP,background:'#065F46',width:'100%',justifyContent:'center',display:'flex',alignItems:'center',gap:6}}>
@@ -2449,7 +2449,7 @@ function BillingPage({jobs,onRefresh,onNav}){
               <span style={{fontSize:16}}>✅</span>
               <div>
                 <div style={{fontSize:12,fontWeight:700,color:'#065F46'}}>Submission Complete</div>
-                <div style={{fontSize:10,color:'#6B6056'}}>Processed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div>
+                <div style={{fontSize:10,color:'#625650'}}>Processed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div>
               </div>
             </div>
           )}
@@ -2465,10 +2465,10 @@ function BillingPage({jobs,onRefresh,onNav}){
     {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:17,fontWeight:800,marginBottom:16,color:'#1A1A1A'}}>Mark as 100% Billed?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:8}}>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:8}}>
           This will set YTD Invoiced to <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(n(confirmFullJob.adj_contract_value||confirmFullJob.contract_value))}</span> for <span style={{fontWeight:700,color:'#1A1A1A'}}>{confirmFullJob.job_name}</span>.
         </div>
-        <div style={{fontSize:13,color:'#6B6056',marginBottom:20}}>
+        <div style={{fontSize:13,color:'#625650',marginBottom:20}}>
           Current YTD Invoiced: <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(confirmFullJob.ytd_invoiced)}</span>
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmFullJob(null)} style={btnS}>Cancel</button><button onClick={confirmMarkFull} style={btnP}>Confirm — Mark Fully Billed</button></div>
@@ -2478,7 +2478,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     {undoJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setUndoJob(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:420}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:12}}>Undo billing for {undoJob.job_name}?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:20}}>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:20}}>
           This will reset YTD Invoiced from <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(undoJob.ytd_invoiced)}</span> back to <span style={{fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>$0</span>.
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
@@ -2487,7 +2487,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     {bilAdminPin&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:380,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:6,color:'#1A1A1A'}}>Admin Override Required</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:16}}>This submission for <b>{bilAdminPin.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:16}}>This submission for <b>{bilAdminPin.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
         <input autoFocus type="password" inputMode="numeric" maxLength={4} value={bilPin} onChange={e=>{setBilPin(e.target.value.replace(/\D/g,'').slice(0,4));setBilPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${bilPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
         {bilPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
@@ -2655,8 +2655,8 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   if(!selPM)return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Bill Sheet</h1>
     <div style={{...card,textAlign:'center',padding:40}}>
-      <div style={{fontSize:16,color:'#6B6056',marginBottom:20}}>Select your name to get started</div>
-      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8B2020';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8B2020';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
+      <div style={{fontSize:16,color:'#625650',marginBottom:20}}>Select your name to get started</div>
+      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8A261D';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8A261D';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
     </div>
   </div>);
 
@@ -2703,7 +2703,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     const hasData=sec.fields.some(([,f])=>n(sub[f])>0);
     if(!hasData)return null;
     return<div key={sec.title} style={{marginBottom:8}}>
-      <div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+      <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>
         {sec.fields.map(([label,field,,kind,meta])=>{
           const v=n(sub[field]);
@@ -2733,7 +2733,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       {LF_SECTIONS.map(sec=>{
         const sub=sectionSub(sec);
         return<div key={sec.title} style={{marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+          <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8}}>
             {sec.fields.map(([label,field,unit,kind,meta])=>{
               const isDemo=meta&&meta.excludeFromTotal;
@@ -2752,24 +2752,24 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
             })}
           </div>
           {sec.nonLF
-            ? <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',gap:16,fontSize:11,color:'#6B6056'}}>
-                <span>Pieces This Period: <b style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>{totals.pieces.toLocaleString()}</b></span>
-                <span>$ This Period: <b style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>${totals.dollars.toLocaleString()}</b></span>
+            ? <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',gap:16,fontSize:11,color:'#625650'}}>
+                <span>Pieces This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{totals.pieces.toLocaleString()}</b></span>
+                <span>$ This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>${totals.dollars.toLocaleString()}</b></span>
               </div>
-            : <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#6B6056'}}>
-                <span>{sec.title} LF This Period: <b style={{color:'#8B2020',fontFamily:'Inter',fontSize:13}}>{(sub||0).toLocaleString()}</b></span>
+            : <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#625650'}}>
+                <span>{sec.title} LF This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{(sub||0).toLocaleString()}</b></span>
               </div>}
         </div>;
       })}
-      <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8B2020',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+      <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8A261D',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
         <span style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total LF This Period</span>
-        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8B2020'}}>{totals.grand.toLocaleString()} LF</span>
+        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8A261D'}}>{totals.grand.toLocaleString()} LF</span>
       </div>
       {n(form[DEMO_FIELD])>0&&<div style={{fontSize:10,color:'#9E9B96',textAlign:'right',marginTop:2,fontStyle:'italic'}}>Demo not included in LF total ({n(form[DEMO_FIELD]).toLocaleString()} LF tracked separately)</div>}
     </>;
   };
 
-  const filterTabs=[['all','All',activeJobs.length,'#6B6056','#F4F4F2'],['missing','Missing',missingCount,'#991B1B','#FEE2E2'],['submitted','Submitted',submittedNotReviewed,'#065F46','#D1FAE5'],['reviewed','Reviewed',reviewedCount,'#1D4ED8','#DBEAFE']];
+  const filterTabs=[['all','All',activeJobs.length,'#625650','#F4F4F2'],['missing','Missing',missingCount,'#991B1B','#FEE2E2'],['submitted','Submitted',submittedNotReviewed,'#065F46','#D1FAE5'],['reviewed','Reviewed',reviewedCount,'#1D4ED8','#DBEAFE']];
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
@@ -2778,16 +2778,16 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     </div>
     {/* PM Selector + Month */}
     <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8B2020':'#F4F4F2',color:selPM===pm.id?'#fff':'#6B6056',fontSize:14,fontWeight:700,cursor:'pointer'}}>{pm.short}</button>)}
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8A261D':'#F4F4F2',color:selPM===pm.id?'#fff':'#625650',fontSize:14,fontWeight:700,cursor:'pointer'}}>{pm.short}</button>)}
       <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
       <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
-      <span style={{fontSize:14,fontWeight:800,color:'#8B2020'}}>{selMonthLabel}</span>
+      <span style={{fontSize:14,fontWeight:800,color:'#8A261D'}}>{selMonthLabel}</span>
     </div>
     {/* Progress bar */}
     <div style={{...card,marginBottom:12,padding:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
         <span style={{fontSize:13,fontWeight:700,color:'#1A1A1A'}}>{submittedCount} of {totalCount} submitted — {pct}%</span>
-        <span style={{fontSize:12,color:'#6B6056'}}>Total LF submitted: <b style={{color:'#1A1A1A'}}>{totalLFSubmitted.toLocaleString()}</b></span>
+        <span style={{fontSize:12,color:'#625650'}}>Total LF submitted: <b style={{color:'#1A1A1A'}}>{totalLFSubmitted.toLocaleString()}</b></span>
       </div>
       <div style={{height:8,background:'#E5E3E0',borderRadius:8,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:8,transition:'width .4s ease'}}/></div>
     </div>
@@ -2801,13 +2801,13 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
           placeholder="Search jobs, customer, PM..."
           style={{...inputS,width:260,padding:'8px 30px 8px 32px',fontSize:12}}
         />
-        {search&&<button onClick={()=>setSearch('')} aria-label="Clear search" style={{position:'absolute',right:6,top:'50%',transform:'translateY(-50%)',background:'#F4F4F2',border:'none',borderRadius:10,width:18,height:18,fontSize:11,color:'#6B6056',cursor:'pointer',lineHeight:1,padding:0,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
+        {search&&<button onClick={()=>setSearch('')} aria-label="Clear search" style={{position:'absolute',right:6,top:'50%',transform:'translateY(-50%)',background:'#F4F4F2',border:'none',borderRadius:10,width:18,height:18,fontSize:11,color:'#625650',cursor:'pointer',lineHeight:1,padding:0,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
       </div>
-      {filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
+      {filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
     </div>
     {/* Batch submit for Missing tab */}
     {filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#6B6056',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8B2020'}}/>Select all missing jobs</label>
+      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#625650',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8A261D'}}/>Select all missing jobs</label>
       {selected.size>0&&<button onClick={()=>setShowBatchConfirm(true)} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309'}}>Submit {selected.size} as $0 / No Activity</button>}
     </div>}
     {/* Job list — compact rows */}
@@ -2816,26 +2816,26 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
         return<div key={j.id} style={{background:rowBg,borderLeft:`3px solid ${borderColor}`,borderRadius:6,border:'1px solid #E5E3E0',overflow:'hidden'}}>
           {/* Compact row */}
           <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:48}}>
-            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,accentColor:'#8B2020'}}/>}
+            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,accentColor:'#8A261D'}}/>}
             <span style={{fontSize:16,color:iconColor,fontWeight:700,width:18,textAlign:'center'}}>{icon}</span>
             <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
             <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
             {(j.third_party_billing===true||j.ocip_ccip===true)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
             {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#6D28D9',background:'#EDE9FE',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
-            <span style={{fontSize:11,color:'#6B6056',display:'flex',gap:6,flexWrap:'nowrap'}}>
+            <span style={{fontSize:11,color:'#625650',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
               {lfPC(j)>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'1px 6px',borderRadius:4,fontWeight:700}}>{lfPC(j).toLocaleString()} PC</span>}
-              {lfSW(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfSW(j).toLocaleString()} SW</span>}
-              {lfWI(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfWI(j).toLocaleString()} WI</span>}
-              {lfGates(j)>0&&<span style={{background:'#F4F4F2',color:'#6B6056',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfGates(j)} gates</span>}
+              {lfSW(j)>0&&<span style={{background:'#F4F4F2',color:'#625650',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfSW(j).toLocaleString()} SW</span>}
+              {lfWI(j)>0&&<span style={{background:'#F4F4F2',color:'#625650',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfWI(j).toLocaleString()} WI</span>}
+              {lfGates(j)>0&&<span style={{background:'#F4F4F2',color:'#625650',padding:'1px 6px',borderRadius:4,fontWeight:600}}>{lfGates(j)} gates</span>}
               {lfTotal(j)>0&&<span style={{fontWeight:700,color:'#1A1A1A'}}>{lfTotal(j).toLocaleString()} Total LF</span>}
             </span>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               {/* Phase PM-overhaul: Grand Total LF for the period, pulled from the stored
                   submission.total_lf (Precast LF + SW LF + One-Line-Items LF, Demo excluded). */}
-              {sub&&n(sub.total_lf)>0&&<span title="Grand Total LF submitted this period (Demo excluded)" style={{fontSize:11,fontWeight:800,color:'#8B2020',background:'#FDF4F4',border:'1px solid #8B202030',padding:'2px 8px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>{n(sub.total_lf).toLocaleString()} LF</span>}
+              {sub&&n(sub.total_lf)>0&&<span title="Grand Total LF submitted this period (Demo excluded)" style={{fontSize:11,fontWeight:800,color:'#8A261D',background:'#FDF4F4',border:'1px solid #8A261D30',padding:'2px 8px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>{n(sub.total_lf).toLocaleString()} LF</span>}
               {sub&&n(sub.remove_existing)>0&&<span title="Demo LF (tracked separately, not in total)" style={{fontSize:10,fontWeight:700,color:'#B45309',background:'#FEF2F2',border:'1px dashed #FCA5A5',padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0}}>Demo {n(sub.remove_existing).toLocaleString()}</span>}
               {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button>}
               {status==='submitted'&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
@@ -2844,18 +2844,18 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
           </div>
           {/* Expanded inline form */}
           {isExp&&status!=='reviewed'&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#FFF'}}>
-            {(pmLineItemsByJob[j.job_number]||[]).length>0&&(()=>{const lis=pmLineItemsByJob[j.job_number];const lineTotal=lis.reduce((s,x)=>s+n(x.line_value),0);const contractTotal=lineTotal+n(j.lump_sum_amount)+n(j.change_orders);return<div style={{marginBottom:10,padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Contract Line Items ({lis.length})</div><div style={{display:'flex',flexDirection:'column',gap:3,marginBottom:6}}>{lis.map(li=><div key={li.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#1A1A1A'}}><span>#{li.line_number} · <b>{li.fence_type}</b> · {n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`} {li.style||''} {li.color?'· '+li.color:''}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</span></div>)}</div><div style={{borderTop:'1px solid #E5E3E0',paddingTop:6,display:'flex',flexDirection:'column',gap:2,fontSize:11}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Line items subtotal</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(lineTotal)}</span></div>{n(j.lump_sum_amount)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Lump sum</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.lump_sum_amount)}</span></div>}{n(j.change_orders)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Change orders</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</span></div>}<div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:4,marginTop:2}}><span style={{fontWeight:700,color:'#8B2020'}}>Total contract value</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{$(contractTotal)}</span></div></div></div>;})()}
+            {(pmLineItemsByJob[j.job_number]||[]).length>0&&(()=>{const lis=pmLineItemsByJob[j.job_number];const lineTotal=lis.reduce((s,x)=>s+n(x.line_value),0);const contractTotal=lineTotal+n(j.lump_sum_amount)+n(j.change_orders);return<div style={{marginBottom:10,padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Contract Line Items ({lis.length})</div><div style={{display:'flex',flexDirection:'column',gap:3,marginBottom:6}}>{lis.map(li=><div key={li.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#1A1A1A'}}><span>#{li.line_number} · <b>{li.fence_type}</b> · {n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`} {li.style||''} {li.color?'· '+li.color:''}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</span></div>)}</div><div style={{borderTop:'1px solid #E5E3E0',paddingTop:6,display:'flex',flexDirection:'column',gap:2,fontSize:11}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Line items subtotal</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(lineTotal)}</span></div>{n(j.lump_sum_amount)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Lump sum</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.lump_sum_amount)}</span></div>}{n(j.change_orders)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Change orders</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</span></div>}<div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:4,marginTop:2}}><span style={{fontWeight:700,color:'#8A261D'}}>Total contract value</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#8A261D'}}>{$(contractTotal)}</span></div></div></div>;})()}
             {status==='submitted'&&!isEditing?<>
               {renderLFReadOnly(sub)}
-              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#6B6056'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}</div>
-              {sub.notes&&<div style={{fontSize:12,color:'#6B6056',marginTop:4}}>Notes: {sub.notes}</div>}
+              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#625650'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}</div>
+              {sub.notes&&<div style={{fontSize:12,color:'#625650',marginTop:4}}>Notes: {sub.notes}</div>}
               <div style={{marginTop:10,display:'flex',gap:8}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
             </>:<>
               {(n(j.lf_installed_to_date)>0||lfPC(j)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=lfPC(j)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
-                📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#6B6056'}}> · last {fD(j.lf_last_billed_date)}</span>}
+                📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#625650'}}> · last {fD(j.lf_last_billed_date)}</span>}
               </div>;})()}
               {renderLFForm(j.id,j)}
-              <div style={{marginBottom:10,marginTop:12}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
+              <div style={{marginBottom:10,marginTop:12}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
               <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'8px 0',fontSize:13,opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
             </>}
           </div>}
@@ -2870,21 +2870,21 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     {showBatchConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!batchSubmitting&&setShowBatchConfirm(false)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Submit {selected.size} jobs with no activity?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>This will submit <b>{selected.size}</b> bill sheets for <b>{selMonthLabel}</b> with all LF fields set to 0 and notes "No activity this month". This cannot be undone individually but can be reset per-job.</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>This will submit <b>{selected.size}</b> bill sheets for <b>{selMonthLabel}</b> with all LF fields set to 0 and notes "No activity this month". This cannot be undone individually but can be reset per-job.</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowBatchConfirm(false)} disabled={batchSubmitting} style={btnS}>Cancel</button><button onClick={batchSubmitNoActivity} disabled={batchSubmitting} style={{...btnP,background:'#B45309'}}>{batchSubmitting?'Submitting...':'Yes, Submit'}</button></div>
       </div>
     </div>}
     {confirmReset&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmReset(null)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:420,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Reset Bill Sheet?</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.7,marginBottom:20}}>Reset bill sheet for <b style={{color:'#1A1A1A'}}>{confirmReset.job_name}</b>? This cannot be undone.</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>Reset bill sheet for <b style={{color:'#1A1A1A'}}>{confirmReset.job_name}</b>? This cannot be undone.</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setConfirmReset(null)} style={btnS}>Cancel</button><button onClick={()=>resetSub(confirmReset,false)} style={{...btnP,background:'#991B1B'}}>Yes, Reset</button></div>
       </div>
     </div>}
     {adminPinJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:380,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:6,color:'#1A1A1A'}}>Admin Override Required</div>
-        <div style={{fontSize:13,color:'#6B6056',lineHeight:1.6,marginBottom:16}}>This submission for <b>{adminPinJob.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:16}}>This submission for <b>{adminPinJob.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
         <input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminPin} onChange={e=>{setAdminPin(e.target.value.replace(/\D/g,'').slice(0,4));setAdminPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${adminPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
         {adminPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
@@ -2900,11 +2900,11 @@ function StartDateBadge({date,status}){
   const isPast=diff<0&&!CLOSED_SET.has(status);const isSoon=diff>=0&&diff<=7;
   if(isPast)return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,background:'#991B1B',color:'#FFF'}}>🚩 {fD(date)}</span>;
   if(isSoon)return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:6,fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#B45309',border:'1px solid #F9731640'}}>📅 {fD(date)}</span>;
-  return<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,color:'#8B2020'}}>📅 {fD(date)}</span>;
+  return<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,color:'#8A261D'}}>📅 {fD(date)}</span>;
 }
 const STAGE_THRESHOLDS={contract_review:[30,60],production_queue:[21,45],in_production:[30,60],material_ready:[14,30],active_install:[30,60],fence_complete:[7,14],fully_complete:[7,14]};
 const STAGE_DATE_KEY={material_ready:'inventory_ready_date',active_install:'active_install_date',fence_complete:'fence_complete_date',fully_complete:'fully_complete_date',in_production:'production_start_date'};
-function ProdCard({j,move,locked,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,lineItems}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#6B6056',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8B2020'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#6B6056',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div>{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#6B6056',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#EDE9FE',border:'1px solid #7C3AED40',borderRadius:6,fontSize:10,color:'#5B21B6'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#6B6056',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
+function ProdCard({j,move,locked,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,lineItems}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#625650',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#625650',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div>{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#EDE9FE',border:'1px solid #7C3AED40',borderRadius:6,fontSize:10,color:'#5B21B6'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#625650',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
 function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
@@ -2952,7 +2952,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
   const KANBAN_STS=['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
-  const columns=useMemo(()=>{if(groupBy==='status')return KANBAN_STS.map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));const groups={};filtered.forEach(j=>{const v=j[groupBy]||'';const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8B2020',bg:'#FDF4F4',jobs:sortByStart(g.jobs),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy]);
+  const columns=useMemo(()=>{if(groupBy==='status')return KANBAN_STS.map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));const groups={};filtered.forEach(j=>{const v=j[groupBy]||'';const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8A261D',bg:'#FDF4F4',jobs:sortByStart(g.jobs),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy]);
   const isS=groupBy==='status';const colArr=isS?columns:columns.cols;
   return(<div>
     {moveToast&&<Toast message={moveToast.msg} isError={!moveToast.ok} onDone={()=>setMoveToast(null)}/>}
@@ -2960,39 +2960,39 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Production</h1>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {editUnlocked
-          ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FDF4F4',border:'1px solid #8B202040',color:'#8B2020',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
-          :<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#F4F4F2',border:'1px solid #E5E3E0',color:'#6B6056',fontSize:12,fontWeight:700}}>🔒 View Only</span>}
+          ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FDF4F4',border:'1px solid #8A261D40',color:'#8A261D',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
+          :<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#F4F4F2',border:'1px solid #E5E3E0',color:'#625650',fontSize:12,fontWeight:700}}>🔒 View Only</span>}
         {editUnlocked
           ?<button onClick={()=>setEditUnlocked(false)} style={btnS}>Lock</button>
           :<button onClick={()=>{setPinError(false);setPinInput('');setShowPinModal(true);}} style={btnP}>Unlock Editing</button>}
       </div>
     </div>
-    <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</span><span style={{fontSize:12,color:'#6B6056'}}>in production pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
+    <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</span><span style={{fontSize:12,color:'#625650'}}>in production pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>{[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}</div>
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
-    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8B2020':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8B2020':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#6D28D9',bg:'#EDE9FE'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#6B6056',marginLeft:4}}>{filtered.length} jobs</span>}</div>
+    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#6D28D9',bg:'#EDE9FE'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#625650',marginLeft:4}}>{filtered.length} jobs</span>}</div>
     {isMobile
       ? <MobileKanban
           columns={colArr.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.bg,items:col.jobs}))}
           emptyMessage="No jobs in this stage"
           renderCard={j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>}
         />
-      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+lfPC(j),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#6B6056',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} PC LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>)}</div></div>;})}</div>}
+      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+lfPC(j),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#625650',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} PC LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>)}</div></div>;})}</div>}
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4}}>{s.job_name} \u2014 Bill Sheet {monthLabel(s.billing_month)}</div>
-        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
           {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
           {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
           {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
         </div>
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
+          <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
           {PROD_LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(s[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}>
-            <div style={{fontSize:9,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 6px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+            <div style={{fontSize:9,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4,padding:'3px 6px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:6}}>
               {sec.fields.map(([label,field])=>{const v=n(s[field]);return v>0?<div key={field} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 8px'}}>
                 <div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase'}}>{label}</div>
@@ -3001,11 +3001,11 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
             </div>
           </div>;})}
           <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
-            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8B2020'}}>{n(s.total_lf).toLocaleString()}</div></div>
+            <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8A261D'}}>{n(s.total_lf).toLocaleString()}</div></div>
           </div>
         </div>
-        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:14}}>
+        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
+        <div style={{fontSize:12,color:'#625650',marginBottom:14}}>
           Submitted by <b>{s.pm||'\u2014'}</b> on {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'\u2014'}
           {s.ar_reviewed&&<span style={{marginLeft:12,color:'#1D4ED8',fontWeight:600}}>\u2713 Reviewed by AR{s.ar_reviewed_by?' \u2014 '+s.ar_reviewed_by:''}</span>}
         </div>
@@ -3015,7 +3015,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     {showPinModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPinModal(false)}>
       <div style={{background:'#FFF',borderRadius:16,padding:28,width:320,boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:6,textAlign:'center'}}>Unlock Editing</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:16,textAlign:'center'}}>Enter the 4-digit PIN to enable edits</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:16,textAlign:'center'}}>Enter the 4-digit PIN to enable edits</div>
         <input autoFocus type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={4} value={pinInput} onChange={e=>{setPinInput(e.target.value.replace(/\D/g,'').slice(0,4));setPinError(false);}} onKeyDown={e=>{if(e.key==='Enter')submitPin();}} placeholder="••••" style={{width:'100%',padding:'14px 16px',fontSize:24,textAlign:'center',letterSpacing:8,border:`2px solid ${pinError?'#DC2626':'#E5E3E0'}`,borderRadius:10,outline:'none',marginBottom:10,fontFamily:'Inter',fontWeight:700}}/>
         {pinError&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:10}}>Incorrect PIN</div>}
         <div style={{display:'flex',gap:8}}>
@@ -3093,14 +3093,14 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   ];
   const[prodSec,setProdSec]=useState({pc:false,sw:false,wi:false});
   const renderReport=()=>{
-    if(activeRpt==='ltb_rep'){const reps={};active.forEach(j=>{const r=j.sales_rep||'Unassigned';if(!reps[r])reps[r]={rep:r,count:0,tc:0,ytd:0,ltb:0};reps[r].count++;reps[r].tc+=n(j.adj_contract_value||j.contract_value);reps[r].ytd+=n(j.ytd_invoiced);reps[r].ltb+=n(j.left_to_bill);});const data=Object.values(reps).sort((a,b)=>b.ltb-a.ltb);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Rep','Projects','Contract','YTD','LTB','%'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{data.map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:8,fontWeight:600}}>{r.rep}</td><td style={{padding:8}}>{r.count}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700}}>{$(r.tc)}</td><td style={{padding:8}}>{$(r.ytd)}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$(r.ltb)}</td><td style={{padding:8}}>{r.tc>0?Math.round(r.ytd/r.tc*100):0}%</td></tr>)}</tbody></table><div style={{marginTop:16}}><ResponsiveContainer width="100%" height={200}><BarChart data={data} barSize={30}><XAxis dataKey="rep" tick={{fill:'#6B6056',fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="ltb" fill="#8B2020" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div></div>;}
-    if(activeRpt==='aging'){const unbilled=active.filter(j=>n(j.pct_billed)===0);const bkts={'Not Started':unbilled.filter(j=>n(j.contract_age)<30),Watch:unbilled.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60),Overdue:unbilled.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90),Critical:unbilled.filter(j=>n(j.contract_age)>=90)};const colors={'Not Started':'#9E9B96',Watch:'#B45309',Overdue:'#C2410C',Critical:'#991B1B'};return<div>{Object.entries(bkts).map(([name,bj])=>bj.length>0&&<div key={name} style={{marginBottom:16}}><div style={{fontFamily:'Inter',fontWeight:700,color:colors[name],marginBottom:6}}>{name} ({bj.length}) — {$(bj.reduce((s,j)=>s+n(j.contract_value),0))}</div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><tbody>{bj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${colors[name]}`}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:colors[name]}}>{j.contract_age}d</td></tr>)}</tbody></table></div>)}</div>;}
-    if(activeRpt==='pipeline'){const data=MKTS.map(m=>{const d={name:MS[m]};STS.forEach(s=>{d[s]=jobs.filter(j=>j.market===m&&j.status===s).reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);});return d;});return<ResponsiveContainer width="100%" height={300}><BarChart data={data}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/>{STS.map(s=><Bar key={s} dataKey={s} stackId="a" fill={SC[s]} name={SS[s]}/>)}</BarChart></ResponsiveContainer>;}
-    if(activeRpt==='revenue'){const data=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],billed:mj.reduce((s,j)=>s+n(j.ytd_invoiced),0),remaining:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});return<ResponsiveContainer width="100%" height={260}><BarChart data={data} barSize={30}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="billed" fill="#065F46" name="Billed" radius={[4,4,0,0]}/><Bar dataKey="remaining" fill="#B45309" name="Remaining" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>;}
-    if(activeRpt==='prod_sched'){const pj=jobs.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).sort((a,b)=>new Date(a.est_start_date||'9999')-new Date(b.est_start_date||'9999'));return<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Code','Project','Market','Fence','LF','Est Start','Rep','Contract','LTB'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{pj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px'}}>{j.job_number}</td><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{j.fence_type||'—'}</td><td style={{padding:'6px 8px'}}>{n(j.total_lf).toLocaleString()}</td><td style={{padding:'6px 8px'}}><StartDateBadge date={j.est_start_date} status={j.status}/></td><td style={{padding:'6px 8px'}}>{j.sales_rep||'—'}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',color:'#8B2020',fontFamily:'Inter',fontWeight:700}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table>;}
-    if(activeRpt==='lf_week'){const weeks={};active.forEach(j=>{if(!j.est_start_date)return;const d=new Date(j.est_start_date);const mon=new Date(d);mon.setDate(mon.getDate()-mon.getDay()+1);const k=mon.toISOString().split('T')[0];if(!weeks[k])weeks[k]={week:k,total:0};MKTS.forEach(m=>{if(!weeks[k][m])weeks[k][m]=0;});weeks[k][j.market]=(weeks[k][j.market]||0)+n(j.total_lf);weeks[k].total+=n(j.total_lf);});const data=Object.values(weeks).sort((a,b)=>a.week.localeCompare(b.week)).slice(0,16);return<ResponsiveContainer width="100%" height={250}><BarChart data={data}><XAxis dataKey="week" tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>{const d=new Date(v);return`${d.getMonth()+1}/${d.getDate()}`;}} /><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false}/><Tooltip contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/>{MKTS.map(m=><Bar key={m} dataKey={m} stackId="a" fill={MC[m]} name={MS[m]}/>)}</BarChart></ResponsiveContainer>;}
-    if(activeRpt==='change_orders'){const co=jobs.filter(j=>n(j.change_orders)!==0).sort((a,b)=>n(b.change_orders)-n(a.change_orders));return<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Project','Market','Original','Change Orders','Adj. Contract','CO %'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{co.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:n(j.change_orders)>0?'#065F46':'#991B1B',fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value)}</td><td style={{padding:'6px 8px'}}>{n(j.contract_value)>0?Math.round(n(j.change_orders)/n(j.contract_value)*100):0}%</td></tr>)}</tbody></table>;}
-    if(activeRpt==='rep_matrix'){const matrix={};jobs.forEach(j=>{const r=j.sales_rep||'Unassigned';const m=j.market||'Other';if(!matrix[r])matrix[r]={};if(!matrix[r][m])matrix[r][m]={count:0,val:0};matrix[r][m].count++;matrix[r][m].val+=n(j.adj_contract_value||j.contract_value);});const repKeys=Object.keys(matrix).sort();const allMkts=[...MKTS,'Other'];const maxVal=Math.max(...repKeys.flatMap(r=>allMkts.map(m=>matrix[r]?.[m]?.val||0)),1);return<div style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr><th style={{padding:8,textAlign:'left',borderBottom:'2px solid #E5E3E0',color:'#6B6056',fontWeight:600,fontSize:11}}>Rep</th>{allMkts.map(m=><th key={m} style={{padding:8,textAlign:'center',borderBottom:'2px solid #E5E3E0',color:'#6B6056',fontWeight:600,fontSize:11}}>{MS[m]||m}</th>)}</tr></thead><tbody>{repKeys.map(r=><tr key={r} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',fontWeight:600}}>{r}</td>{allMkts.map(m=>{const cell=matrix[r]?.[m];const intensity=cell?Math.min(cell.val/maxVal,1):0;return<td key={m} style={{padding:'6px 8px',textAlign:'center',background:`rgba(139,32,32,${intensity*0.15})`}}>{cell?<div><div style={{fontWeight:700}}>{cell.count}</div><div style={{fontSize:10,color:'#6B6056'}}>{$k(cell.val)}</div></div>:'—'}</td>;})}</tr>)}</tbody></table></div>;}
+    if(activeRpt==='ltb_rep'){const reps={};active.forEach(j=>{const r=j.sales_rep||'Unassigned';if(!reps[r])reps[r]={rep:r,count:0,tc:0,ytd:0,ltb:0};reps[r].count++;reps[r].tc+=n(j.adj_contract_value||j.contract_value);reps[r].ytd+=n(j.ytd_invoiced);reps[r].ltb+=n(j.left_to_bill);});const data=Object.values(reps).sort((a,b)=>b.ltb-a.ltb);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Rep','Projects','Contract','YTD','LTB','%'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{data.map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:8,fontWeight:600}}>{r.rep}</td><td style={{padding:8}}>{r.count}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700}}>{$(r.tc)}</td><td style={{padding:8}}>{$(r.ytd)}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(r.ltb)}</td><td style={{padding:8}}>{r.tc>0?Math.round(r.ytd/r.tc*100):0}%</td></tr>)}</tbody></table><div style={{marginTop:16}}><ResponsiveContainer width="100%" height={200}><BarChart data={data} barSize={30}><XAxis dataKey="rep" tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="ltb" fill="#8A261D" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div></div>;}
+    if(activeRpt==='aging'){const unbilled=active.filter(j=>n(j.pct_billed)===0);const bkts={'Not Started':unbilled.filter(j=>n(j.contract_age)<30),Watch:unbilled.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60),Overdue:unbilled.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90),Critical:unbilled.filter(j=>n(j.contract_age)>=90)};const colors={'Not Started':'#9E9B96',Watch:'#B45309',Overdue:'#C2410C',Critical:'#991B1B'};return<div>{Object.entries(bkts).map(([name,bj])=>bj.length>0&&<div key={name} style={{marginBottom:16}}><div style={{fontFamily:'Inter',fontWeight:700,color:colors[name],marginBottom:6}}>{name} ({bj.length}) — {$(bj.reduce((s,j)=>s+n(j.contract_value),0))}</div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><tbody>{bj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${colors[name]}`}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:colors[name]}}>{j.contract_age}d</td></tr>)}</tbody></table></div>)}</div>;}
+    if(activeRpt==='pipeline'){const data=MKTS.map(m=>{const d={name:MS[m]};STS.forEach(s=>{d[s]=jobs.filter(j=>j.market===m&&j.status===s).reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);});return d;});return<ResponsiveContainer width="100%" height={300}><BarChart data={data}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/>{STS.map(s=><Bar key={s} dataKey={s} stackId="a" fill={SC[s]} name={SS[s]}/>)}</BarChart></ResponsiveContainer>;}
+    if(activeRpt==='revenue'){const data=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],billed:mj.reduce((s,j)=>s+n(j.ytd_invoiced),0),remaining:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});return<ResponsiveContainer width="100%" height={260}><BarChart data={data} barSize={30}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="billed" fill="#065F46" name="Billed" radius={[4,4,0,0]}/><Bar dataKey="remaining" fill="#B45309" name="Remaining" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>;}
+    if(activeRpt==='prod_sched'){const pj=jobs.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).sort((a,b)=>new Date(a.est_start_date||'9999')-new Date(b.est_start_date||'9999'));return<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Code','Project','Market','Fence','LF','Est Start','Rep','Contract','LTB'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{pj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px'}}>{j.job_number}</td><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{j.fence_type||'—'}</td><td style={{padding:'6px 8px'}}>{n(j.total_lf).toLocaleString()}</td><td style={{padding:'6px 8px'}}><StartDateBadge date={j.est_start_date} status={j.status}/></td><td style={{padding:'6px 8px'}}>{j.sales_rep||'—'}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',color:'#8A261D',fontFamily:'Inter',fontWeight:700}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table>;}
+    if(activeRpt==='lf_week'){const weeks={};active.forEach(j=>{if(!j.est_start_date)return;const d=new Date(j.est_start_date);const mon=new Date(d);mon.setDate(mon.getDate()-mon.getDay()+1);const k=mon.toISOString().split('T')[0];if(!weeks[k])weeks[k]={week:k,total:0};MKTS.forEach(m=>{if(!weeks[k][m])weeks[k][m]=0;});weeks[k][j.market]=(weeks[k][j.market]||0)+n(j.total_lf);weeks[k].total+=n(j.total_lf);});const data=Object.values(weeks).sort((a,b)=>a.week.localeCompare(b.week)).slice(0,16);return<ResponsiveContainer width="100%" height={250}><BarChart data={data}><XAxis dataKey="week" tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>{const d=new Date(v);return`${d.getMonth()+1}/${d.getDate()}`;}} /><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false}/><Tooltip contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/>{MKTS.map(m=><Bar key={m} dataKey={m} stackId="a" fill={MC[m]} name={MS[m]}/>)}</BarChart></ResponsiveContainer>;}
+    if(activeRpt==='change_orders'){const co=jobs.filter(j=>n(j.change_orders)!==0).sort((a,b)=>n(b.change_orders)-n(a.change_orders));return<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Project','Market','Original','Change Orders','Adj. Contract','CO %'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{co.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:n(j.change_orders)>0?'#065F46':'#991B1B',fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value)}</td><td style={{padding:'6px 8px'}}>{n(j.contract_value)>0?Math.round(n(j.change_orders)/n(j.contract_value)*100):0}%</td></tr>)}</tbody></table>;}
+    if(activeRpt==='rep_matrix'){const matrix={};jobs.forEach(j=>{const r=j.sales_rep||'Unassigned';const m=j.market||'Other';if(!matrix[r])matrix[r]={};if(!matrix[r][m])matrix[r][m]={count:0,val:0};matrix[r][m].count++;matrix[r][m].val+=n(j.adj_contract_value||j.contract_value);});const repKeys=Object.keys(matrix).sort();const allMkts=[...MKTS,'Other'];const maxVal=Math.max(...repKeys.flatMap(r=>allMkts.map(m=>matrix[r]?.[m]?.val||0)),1);return<div style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr><th style={{padding:8,textAlign:'left',borderBottom:'2px solid #E5E3E0',color:'#625650',fontWeight:600,fontSize:11}}>Rep</th>{allMkts.map(m=><th key={m} style={{padding:8,textAlign:'center',borderBottom:'2px solid #E5E3E0',color:'#625650',fontWeight:600,fontSize:11}}>{MS[m]||m}</th>)}</tr></thead><tbody>{repKeys.map(r=><tr key={r} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',fontWeight:600}}>{r}</td>{allMkts.map(m=>{const cell=matrix[r]?.[m];const intensity=cell?Math.min(cell.val/maxVal,1):0;return<td key={m} style={{padding:'6px 8px',textAlign:'center',background:`rgba(139,32,32,${intensity*0.15})`}}>{cell?<div><div style={{fontWeight:700}}>{cell.count}</div><div style={{fontSize:10,color:'#625650'}}>{$k(cell.val)}</div></div>:'—'}</td>;})}</tr>)}</tbody></table></div>;}
     if(activeRpt==='sales_product'){
       const aj=active;const totalLF=aj.reduce((s,j)=>s+n(j.total_lf),0);
       const pc={jobs:aj.filter(j=>lfPC(j)>0),lf:aj.reduce((s,j)=>s+lfPC(j),0),rev:aj.reduce((s,j)=>lfPC(j)>0&&n(j.contract_rate_precast)>0?s+lfPC(j)*n(j.contract_rate_precast):s,0)};
@@ -3115,7 +3115,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
       const overallPC=avgRate('lf_precast','contract_rate_precast');const overallSW=avgRate('lf_single_wythe','contract_rate_single_wythe');const overallWI=avgRate('lf_wrought_iron','contract_rate_wrought_iron');const overallGt=avgRate('number_of_gates','gate_rate');
       const rateColor=(v,avg)=>v===0?'#9E9B96':v>=avg?'#065F46':'#991B1B';
       const exportProductCSV=()=>{const rows=[['Product','Jobs','LF','Est Revenue'],['Precast',pc.jobs.length,pc.lf,pc.rev],['Single Wythe',sw.jobs.length,sw.lf,sw.rev],['Wrought Iron',wi.jobs.length,wi.lf,wi.rev],['Gates',gt.jobs.length,gt.count,gt.rev]];const csv=rows.map(r=>r.join(',')).join('\n');const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='sales-by-product.csv';a.click();};
-      const thS={textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase',borderBottom:'2px solid #E5E3E0'};
+      const thS={textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase',borderBottom:'2px solid #E5E3E0'};
       const tdS={padding:'6px 8px',fontSize:12};
       const pcJobs=[...pc.jobs].sort((a,b)=>lfPC(b)-lfPC(a));
       const swJobs=[...sw.jobs].sort((a,b)=>n(b.lf_single_wythe)-n(a.lf_single_wythe));
@@ -3125,14 +3125,14 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}><button onClick={exportProductCSV} style={btnP}>Export CSV</button></div>
         {/* Section 1 — Product Summary Cards */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
-          <div style={{...card,borderTop:'3px solid #8B2020'}}><div style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Precast (PC)</div><div style={{fontSize:22,fontWeight:800,color:'#8B2020',marginBottom:4}}>{pc.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#6B6056'}}>{pc.jobs.length} jobs · {totalLF>0?Math.round(pc.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(pc.rev)}</div></div>
-          <div style={{...card,borderTop:'3px solid #1D4ED8'}}><div style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Single Wythe / Masonry (SW)</div><div style={{fontSize:22,fontWeight:800,color:'#1D4ED8',marginBottom:4}}>{sw.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#6B6056'}}>{sw.jobs.length} jobs · {totalLF>0?Math.round(sw.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(sw.rev)}</div></div>
-          <div style={{...card,borderTop:'3px solid #6D28D9'}}><div style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Wrought Iron (WI)</div><div style={{fontSize:22,fontWeight:800,color:'#6D28D9',marginBottom:4}}>{wi.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#6B6056'}}>{wi.jobs.length} jobs · {totalLF>0?Math.round(wi.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(wi.rev)}</div></div>
-          <div style={{...card,borderTop:'3px solid #F59E0B'}}><div style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Gates</div><div style={{fontSize:22,fontWeight:800,color:'#F59E0B',marginBottom:4}}>{gt.count.toLocaleString()} Gates</div><div style={{fontSize:12,color:'#6B6056'}}>{gt.jobs.length} jobs · {aj.length>0?Math.round(gt.jobs.length/aj.length*100):0}% of jobs</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(gt.rev)}</div></div>
+          <div style={{...card,borderTop:'3px solid #8A261D'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Precast (PC)</div><div style={{fontSize:22,fontWeight:800,color:'#8A261D',marginBottom:4}}>{pc.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{pc.jobs.length} jobs · {totalLF>0?Math.round(pc.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(pc.rev)}</div></div>
+          <div style={{...card,borderTop:'3px solid #1D4ED8'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Single Wythe / Masonry (SW)</div><div style={{fontSize:22,fontWeight:800,color:'#1D4ED8',marginBottom:4}}>{sw.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{sw.jobs.length} jobs · {totalLF>0?Math.round(sw.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(sw.rev)}</div></div>
+          <div style={{...card,borderTop:'3px solid #6D28D9'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Wrought Iron (WI)</div><div style={{fontSize:22,fontWeight:800,color:'#6D28D9',marginBottom:4}}>{wi.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{wi.jobs.length} jobs · {totalLF>0?Math.round(wi.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(wi.rev)}</div></div>
+          <div style={{...card,borderTop:'3px solid #F59E0B'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Gates</div><div style={{fontSize:22,fontWeight:800,color:'#F59E0B',marginBottom:4}}>{gt.count.toLocaleString()} Gates</div><div style={{fontSize:12,color:'#625650'}}>{gt.jobs.length} jobs · {aj.length>0?Math.round(gt.jobs.length/aj.length*100):0}% of jobs</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(gt.rev)}</div></div>
         </div>
         {/* Section 2 — Stacked Bar Chart */}
         <div style={{marginBottom:24}}><div style={{fontWeight:700,fontSize:13,marginBottom:12}}>LF by Product Type — by Market</div>
-          <ResponsiveContainer width="100%" height={280}><BarChart data={chartData}><XAxis dataKey="name" tick={{fill:'#6B6056',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#6B6056',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v.toLocaleString()}/><Tooltip formatter={(v,name)=>[v.toLocaleString()+' LF',name]} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="PC" stackId="a" fill="#8B2020" name="Precast"/><Bar dataKey="SW" stackId="a" fill="#1D4ED8" name="Single Wythe"/><Bar dataKey="WI" stackId="a" fill="#6D28D9" name="Wrought Iron"/></BarChart></ResponsiveContainer>
+          <ResponsiveContainer width="100%" height={280}><BarChart data={chartData}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v.toLocaleString()}/><Tooltip formatter={(v,name)=>[v.toLocaleString()+' LF',name]} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="PC" stackId="a" fill="#8A261D" name="Precast"/><Bar dataKey="SW" stackId="a" fill="#1D4ED8" name="Single Wythe"/><Bar dataKey="WI" stackId="a" fill="#6D28D9" name="Wrought Iron"/></BarChart></ResponsiveContainer>
         </div>
         {/* Section 3 — Product Mix Table */}
         <div style={{marginBottom:24}}><div style={{fontWeight:700,fontSize:13,marginBottom:12}}>Product Mix by Market</div>
@@ -3148,13 +3148,13 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         {/* Section 4 — Product Detail Tables */}
         <div style={{marginBottom:24}}>
           {/* A. Precast */}
-          <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,pc:!p.pc}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#8B2020',padding:0}}>
+          <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,pc:!p.pc}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#8A261D',padding:0}}>
             <span style={{fontSize:11,transition:'transform .2s',transform:prodSec.pc?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
             Precast Jobs ({pcJobs.length}) — {pc.lf.toLocaleString()} LF · {$(pc.rev)} est. revenue
           </button>
           {prodSec.pc&&<div style={{overflow:'auto',marginTop:8}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Code','Project','Market','Style','Color','LF Precast','Height','Rate/LF','Est. PC Revenue','Status','Rep'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{pcJobs.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}>{j.style||'—'}</td><td style={tdS}>{j.color||'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_precast).toLocaleString()}</td><td style={tdS}>{j.height_precast||'—'}</td><td style={tdS}>{n(j.contract_rate_precast)>0?'$'+n(j.contract_rate_precast).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_precast)>0&&n(j.contract_rate_precast)>0?$(n(j.lf_precast)*n(j.contract_rate_precast)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
+              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}>{j.style||'—'}</td><td style={tdS}>{j.color||'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_precast).toLocaleString()}</td><td style={tdS}>{j.height_precast||'—'}</td><td style={tdS}>{n(j.contract_rate_precast)>0?'$'+n(j.contract_rate_precast).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_precast)>0&&n(j.contract_rate_precast)>0?$(n(j.lf_precast)*n(j.contract_rate_precast)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
             </tr>)}</tbody></table></div>}</div>
           {/* B. Single Wythe */}
           <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,sw:!p.sw}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#1D4ED8',padding:0}}>
@@ -3163,7 +3163,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           </button>
           {prodSec.sw&&<div style={{overflow:'auto',marginTop:8}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Code','Project','Market','Style SW','LF SW','Height SW','Rate/LF','Est. SW Revenue','Status','Rep'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{swJobs.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}>{j.style_single_wythe||'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe).toLocaleString()}</td><td style={tdS}>{j.height_single_wythe||'—'}</td><td style={tdS}>{n(j.contract_rate_single_wythe)>0?'$'+n(j.contract_rate_single_wythe).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe)>0&&n(j.contract_rate_single_wythe)>0?$(n(j.lf_single_wythe)*n(j.contract_rate_single_wythe)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
+              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}>{j.style_single_wythe||'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe).toLocaleString()}</td><td style={tdS}>{j.height_single_wythe||'—'}</td><td style={tdS}>{n(j.contract_rate_single_wythe)>0?'$'+n(j.contract_rate_single_wythe).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe)>0&&n(j.contract_rate_single_wythe)>0?$(n(j.lf_single_wythe)*n(j.contract_rate_single_wythe)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
             </tr>)}</tbody></table></div>}</div>
           {/* C. Wrought Iron & Gates */}
           <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,wi:!p.wi}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#6D28D9',padding:0}}>
@@ -3172,7 +3172,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           </button>
           {prodSec.wi&&<div style={{overflow:'auto',marginTop:8}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Code','Project','Market','Fence Type','LF WI','WI Rate','Gates','Gate Rate','Est. WI Rev','Est. Gate Rev','Status','Rep'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{wiGateJobs.map(j=>{const hasWI=n(j.lf_wrought_iron)>0;const hasGt=n(j.number_of_gates)>0;const ftPill=hasWI&&hasGt?pill('#6D28D9','#EDE9FE'):hasWI?pill('#6D28D9','#EDE9FE'):pill('#F59E0B','#FEF3C7');return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}><span style={ftPill}>{j.fence_type||'—'}</span></td><td style={{...tdS,fontWeight:700}}>{hasWI?n(j.lf_wrought_iron).toLocaleString():'—'}</td><td style={tdS}>{n(j.contract_rate_wrought_iron)>0?'$'+n(j.contract_rate_wrought_iron).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{hasGt?n(j.number_of_gates):'—'}</td><td style={tdS}>{n(j.gate_rate)>0?'$'+n(j.gate_rate).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700,color:'#6D28D9'}}>{hasWI&&n(j.contract_rate_wrought_iron)>0?$(n(j.lf_wrought_iron)*n(j.contract_rate_wrought_iron)):'—'}</td><td style={{...tdS,fontWeight:700,color:'#F59E0B'}}>{hasGt&&n(j.gate_rate)>0?$(n(j.number_of_gates)*n(j.gate_rate)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
+              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}><span style={ftPill}>{j.fence_type||'—'}</span></td><td style={{...tdS,fontWeight:700}}>{hasWI?n(j.lf_wrought_iron).toLocaleString():'—'}</td><td style={tdS}>{n(j.contract_rate_wrought_iron)>0?'$'+n(j.contract_rate_wrought_iron).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{hasGt?n(j.number_of_gates):'—'}</td><td style={tdS}>{n(j.gate_rate)>0?'$'+n(j.gate_rate).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700,color:'#6D28D9'}}>{hasWI&&n(j.contract_rate_wrought_iron)>0?$(n(j.lf_wrought_iron)*n(j.contract_rate_wrought_iron)):'—'}</td><td style={{...tdS,fontWeight:700,color:'#F59E0B'}}>{hasGt&&n(j.gate_rate)>0?$(n(j.number_of_gates)*n(j.gate_rate)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
             </tr>;})}</tbody></table></div>}</div>
         </div>
         {/* Section 5 — Average Rates */}
@@ -3188,7 +3188,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         </div>
       </div>;
     }
-    if(activeRpt==='outstanding'){const oc=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).sort((a,b)=>{const ad=a.complete_date?Math.round((Date.now()-new Date(a.complete_date).getTime())/86400000):0;const bd=b.complete_date?Math.round((Date.now()-new Date(b.complete_date).getTime())/86400000):0;return bd-ad;});const totalOut=oc.reduce((s,j)=>s+n(j.left_to_bill),0);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Project','Job #','PM','Market','Contract','Left to Bill','Complete Date','Days Since'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{oc.map(j=>{const days=j.complete_date?Math.round((Date.now()-new Date(j.complete_date).getTime())/86400000):0;return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}>{j.job_number||'—'}</td><td style={{padding:'6px 8px'}}>{j.pm||'—'}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>{$(j.left_to_bill)}</td><td style={{padding:'6px 8px'}}>{fD(j.complete_date)}</td><td style={{padding:'6px 8px',fontWeight:700,color:days>90?'#991B1B':days>30?'#B45309':'#6B6056'}}>{days}d</td></tr>;})}</tbody></table>{oc.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No outstanding collections</div>}<div style={{marginTop:12,padding:12,background:'#F9F8F6',borderRadius:8,fontFamily:'Inter',fontWeight:700}}>Total Outstanding: <span style={{color:'#991B1B'}}>{$(totalOut)}</span> across {oc.length} jobs</div></div>;}
+    if(activeRpt==='outstanding'){const oc=jobs.filter(j=>j.status==='fully_complete'&&!j.collected).sort((a,b)=>{const ad=a.complete_date?Math.round((Date.now()-new Date(a.complete_date).getTime())/86400000):0;const bd=b.complete_date?Math.round((Date.now()-new Date(b.complete_date).getTime())/86400000):0;return bd-ad;});const totalOut=oc.reduce((s,j)=>s+n(j.left_to_bill),0);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Project','Job #','PM','Market','Contract','Left to Bill','Complete Date','Days Since'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{oc.map(j=>{const days=j.complete_date?Math.round((Date.now()-new Date(j.complete_date).getTime())/86400000):0;return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}>{j.job_number||'—'}</td><td style={{padding:'6px 8px'}}>{j.pm||'—'}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>{$(j.left_to_bill)}</td><td style={{padding:'6px 8px'}}>{fD(j.complete_date)}</td><td style={{padding:'6px 8px',fontWeight:700,color:days>90?'#991B1B':days>30?'#B45309':'#625650'}}>{days}d</td></tr>;})}</tbody></table>{oc.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96'}}>No outstanding collections</div>}<div style={{marginTop:12,padding:12,background:'#F9F8F6',borderRadius:8,fontFamily:'Inter',fontWeight:700}}>Total Outstanding: <span style={{color:'#991B1B'}}>{$(totalOut)}</span> across {oc.length} jobs</div></div>;}
     // ═══ PRODUCTION REPORTS ═══
     if(activeRpt==='prod_backlog'){
       const backlogJobs=jobs.filter(j=>['production_queue','in_production'].includes(j.status));
@@ -3209,15 +3209,15 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
       const totCyd=rows.reduce((s,r)=>s+r.cyd,0);
       const maxLf=Math.max(...rows.map(r=>r.lf),1);
       return<div>
-        <div style={{fontSize:13,color:'#6B6056',marginBottom:12}}>All jobs in <b style={{color:'#1A1A1A'}}>production_queue</b> or <b style={{color:'#1A1A1A'}}>in_production</b> — grouped by style, with daily mold capacity and estimated production days.</div>
+        <div style={{fontSize:13,color:'#625650',marginBottom:12}}>All jobs in <b style={{color:'#1A1A1A'}}>production_queue</b> or <b style={{color:'#1A1A1A'}}>in_production</b> — grouped by style, with daily mold capacity and estimated production days.</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Style','Jobs','Total LF','Total Panels','Daily Capacity','Est Prod Days','CYD Required'].map(h=><th key={h} style={{textAlign:h==='Style'?'left':'right',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Style','Jobs','Total LF','Total Panels','Daily Capacity','Est Prod Days','CYD Required'].map(h=><th key={h} style={{textAlign:h==='Style'?'left':'right',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{rows.map(r=><tr key={r.style} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'6px 8px',fontWeight:600}}>{r.style}</td>
             <td style={{padding:'6px 8px',textAlign:'right'}}>{r.jobs}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.lf.toLocaleString()}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.panels.toLocaleString()}</td>
-            <td style={{padding:'6px 8px',textAlign:'right',color:'#6B6056'}}>{r.capacity>0?`${r.capacity}/day`:'—'}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',color:'#625650'}}>{r.capacity>0?`${r.capacity}/day`:'—'}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#7C3AED'}}>{r.days!=null?`~${r.days.toLocaleString()} days`:'—'}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#1D4ED8'}}>{r.cyd>0?r.cyd.toFixed(1)+' CYD':'—'}</td>
           </tr>)}
@@ -3226,23 +3226,23 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totJobs}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totLf.toLocaleString()}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totPanels.toLocaleString()}</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#6B6056'}}>—</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#625650'}}>—</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#7C3AED'}}>—</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#1D4ED8'}}>{totCyd.toFixed(1)} CYD</td>
           </tr>
           </tbody>
         </table>
         <div style={{marginTop:20}}>
-          <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>LF by Style</div>
+          <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>LF by Style</div>
           <div style={{display:'flex',flexDirection:'column',gap:6}}>{rows.map(r=><div key={r.style}>
             <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}>
               <span style={{fontWeight:600}}>{r.style}</span>
-              <span style={{fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{r.lf.toLocaleString()} LF</span>
+              <span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{r.lf.toLocaleString()} LF</span>
             </div>
-            <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${r.lf/maxLf*100}%`,height:'100%',background:'#8B2020'}}/></div>
+            <div style={{height:10,background:'#E5E3E0',borderRadius:5,overflow:'hidden'}}><div style={{width:`${r.lf/maxLf*100}%`,height:'100%',background:'#8A261D'}}/></div>
           </div>)}</div>
         </div>
-        <div style={{marginTop:16,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,fontSize:12,color:'#6B6056'}}>
+        <div style={{marginTop:16,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,fontSize:12,color:'#625650'}}>
           Total: <b style={{color:'#1A1A1A'}}>{totJobs} jobs</b> · <b style={{color:'#1A1A1A'}}>{totLf.toLocaleString()} LF</b> · <b style={{color:'#1A1A1A'}}>{totPanels.toLocaleString()} panels</b> · <b style={{color:'#1D4ED8'}}>{totCyd.toFixed(1)} CYD required</b> at current mold capacity
         </div>
       </div>;
@@ -3256,7 +3256,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
       const sec=(title,color,bg,rows,cols,emptyMsg)=>rows.length===0?<div style={{padding:10,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>{emptyMsg}</div>:<div style={{marginBottom:14}}>
         <div style={{fontSize:12,fontWeight:800,color,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5}}>{title} ({rows.length})</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{background:bg}}>{[...cols.map(c=>c[0]),'Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:bg}}>{[...cols.map(c=>c[0]),'Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{rows.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
             {cols.map(([label,get])=><td key={label} style={{padding:'6px 10px',fontSize:12}}>{get(j)||'—'}</td>)}
             <td style={{padding:'6px 10px'}}><button onClick={()=>{if(onOpenJob)onOpenJob(j);}} style={{background:'none',border:`1px solid ${color}40`,color,padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer'}}>Edit Job →</button></td>
@@ -3268,16 +3268,16 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           {total>0?`⚠️ ${total} ${total===1?'job needs':'jobs need'} attention before production can start`:'✓ All active jobs are ready for production'}
         </div>
         <div style={{fontSize:11,fontWeight:800,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>A) Missing Style ({missingStyle.length})</div>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Can't calculate materials without style confirmed.</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Can't calculate materials without style confirmed.</div>
         {sec('',(''),'#FEE2E2',missingStyle,[['Job #',j=>j.job_number],['Job Name',j=>j.job_name],['PM',j=>j.pm],['Market',j=>MS[j.market]||j.market],['LF',j=>n(j.total_lf).toLocaleString()]],'All active jobs have a style assigned')}
         <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>B) Missing Color ({missingColor.length})</div>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Style confirmed but color not yet chosen.</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Style confirmed but color not yet chosen.</div>
         {sec('',(''),'#FEF3C7',missingColor,[['Job #',j=>j.job_number],['Job Name',j=>j.job_name],['Style',j=>j.style],['PM',j=>j.pm],['LF',j=>n(j.total_lf).toLocaleString()]],'All active jobs with a style also have a color')}
         <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>C) Missing Material Calculation ({missingCalc.length})</div>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>Style + color are set but materials haven't been calculated yet — can't be added to a production plan.</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Style + color are set but materials haven't been calculated yet — can't be added to a production plan.</div>
         {missingCalc.length===0?<div style={{padding:10,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>All eligible jobs have material calculations</div>:
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{background:'#EDE9FE'}}>{['Job #','Job Name','PM','Style','Color','LF','Est Start','Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:'#EDE9FE'}}>{['Job #','Job Name','PM','Style','Color','LF','Est Start','Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{missingCalc.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'6px 10px'}}>{j.job_number}</td>
             <td style={{padding:'6px 10px',fontWeight:500}}>{j.job_name}</td>
@@ -3313,13 +3313,13 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
       const noDate=rows.filter(r=>r.status==='no_date').length;
       return<div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{onTrack}</div><div style={{fontSize:11,color:'#6B6056'}}>✓ On track</div></div>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #991B1B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#991B1B'}}>{atRisk}</div><div style={{fontSize:11,color:'#6B6056'}}>⚠ At risk</div></div>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #9E9B96'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B6056'}}>{noDate}</div><div style={{fontSize:11,color:'#6B6056'}}>No install date</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{onTrack}</div><div style={{fontSize:11,color:'#625650'}}>✓ On track</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #991B1B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#991B1B'}}>{atRisk}</div><div style={{fontSize:11,color:'#625650'}}>⚠ At risk</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #9E9B96'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#625650'}}>{noDate}</div><div style={{fontSize:11,color:'#625650'}}>No install date</div></div>
         </div>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:10}}>Projected ready date = today + estimated production days (assumes production starts tomorrow at current mold capacity).</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:10}}>Projected ready date = today + estimated production days (assumes production starts tomorrow at current mold capacity).</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Job','Style','Panels','Prod Days','Projected Ready','Est Install Start','Status'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Job','Style','Panels','Prod Days','Projected Ready','Est Install Start','Status'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{rows.map((r,i)=>{const bg=r.status==='at_risk'?'#FEE2E2':r.status==='on_track'?'#F0FDF4':'#FFF';const col=r.status==='at_risk'?'#991B1B':r.status==='on_track'?'#065F46':'#9E9B96';return<tr key={r.job.id} style={{borderBottom:'1px solid #F4F4F2',background:bg}}>
             <td style={{padding:'6px 8px'}}><div style={{fontWeight:600}}>{r.job.job_name}</div><div style={{fontSize:10,color:'#9E9B96'}}>#{r.job.job_number}</div></td>
             <td style={{padding:'6px 8px'}}>{r.job.style||'—'}</td>
@@ -3357,7 +3357,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Revenue Pipeline Waterfall</div>
-            <div style={{fontSize:12,color:'#6B6056'}}>Deal lifecycle from proposal to collected</div>
+            <div style={{fontSize:12,color:'#625650'}}>Deal lifecycle from proposal to collected</div>
           </div>
           <button onClick={()=>downloadCSV('waterfall.csv',stages.map(s=>({Stage:s.label,Count:s.count,Total:Math.round(s.total),Avg:Math.round(s.avg),AvgAge:s.avgAge})))} style={btnS}>Export CSV</button>
         </div>
@@ -3372,7 +3372,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           <BarChart data={stages} layout="vertical" margin={{top:4,right:80,bottom:4,left:40}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="label" stroke="#6B6056" fontSize={12} width={140}/>
+            <YAxis type="category" dataKey="label" stroke="#625650" fontSize={12} width={140}/>
             <Tooltip formatter={v=>$(v)}/>
             <Bar dataKey="total" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#1A1A1A',fontSize:11,fontWeight:700}}>
               {stages.map((s,i)=><Cell key={i} fill={s.color}/>)}
@@ -3380,7 +3380,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           </BarChart>
         </ResponsiveContainer>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginTop:12}}>
-          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Stage','Count','Total Value','Avg Value','Avg Age'].map(h=><th key={h} style={{textAlign:'left',padding:8,fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Stage','Count','Total Value','Avg Value','Avg Age'].map(h=><th key={h} style={{textAlign:'left',padding:8,fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{stages.map(s=><tr key={s.label} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:8,fontWeight:600}}><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:s.color,marginRight:8,verticalAlign:'middle'}}/>{s.label}</td>
             <td style={{padding:8}}>{s.count}</td>
@@ -3414,7 +3414,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Sales Rep Activity Scorecard</div>
-            <div style={{fontSize:12,color:'#6B6056'}}>Performance by rep — {repPeriod==='30d'?'last 30 days':repPeriod==='90d'?'last 90 days':repPeriod==='ytd'?'year to date':'all time'}</div>
+            <div style={{fontSize:12,color:'#625650'}}>Performance by rep — {repPeriod==='30d'?'last 30 days':repPeriod==='90d'?'last 90 days':repPeriod==='ytd'?'year to date':'all time'}</div>
           </div>
           <button onClick={()=>downloadCSV('rep_scorecard.csv',rows.map(r=>({Rep:r.rep,ProposalsSent:r.proposalsSent.length,ProposalVal:Math.round(r.propVal),Won:r.wonIn.length,WonVal:Math.round(r.wonVal),Lost:r.lostIn.length,LostVal:Math.round(r.lostVal),WinRate:r.winRate.toFixed(0)+'%',AvgClose:r.avgClose,OpenPipe:r.openPipe.length,OpenPipeVal:Math.round(r.pipeVal),Overdue:r.overdue.length,Weighted:Math.round(r.weighted)})))} style={btnS}>Export CSV</button>
         </div>
@@ -3426,17 +3426,17 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           {rows.map(r=>{const wrColor=r.winRate>50?'#065F46':r.winRate>=25?'#B45309':'#991B1B';return <div key={r.rep} style={{...card}}>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#1A1A1A',marginBottom:8}}>{r.rep}</div>
             <div style={{borderTop:'1px solid #F4F4F2',paddingTop:8,fontSize:12,display:'flex',flexDirection:'column',gap:4}}>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Proposals Sent</span><span><b>{r.proposalsSent.length}</b> <span style={{color:'#9E9B96'}}>({$k(r.propVal)})</span></span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Deals Won</span><span style={{color:'#065F46'}}><b>{r.wonIn.length}</b> ({$k(r.wonVal)})</span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Deals Lost</span><span style={{color:'#991B1B'}}><b>{r.lostIn.length}</b> ({$k(r.lostVal)})</span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Win Rate</span><span style={{color:wrColor,fontWeight:800}}>{r.winRate.toFixed(0)}%</span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Avg Days to Close</span><span><b>{r.avgClose}d</b></span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Open Pipeline</span><span><b>{r.openPipe.length}</b> ({$k(r.pipeVal)})</span></div>
-              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#6B6056'}}>Overdue Follow-ups</span><span style={{color:r.overdue.length>0?'#991B1B':'#9E9B96',fontWeight:r.overdue.length>0?800:400}}>{r.overdue.length}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Proposals Sent</span><span><b>{r.proposalsSent.length}</b> <span style={{color:'#9E9B96'}}>({$k(r.propVal)})</span></span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Deals Won</span><span style={{color:'#065F46'}}><b>{r.wonIn.length}</b> ({$k(r.wonVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Deals Lost</span><span style={{color:'#991B1B'}}><b>{r.lostIn.length}</b> ({$k(r.lostVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Win Rate</span><span style={{color:wrColor,fontWeight:800}}>{r.winRate.toFixed(0)}%</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Avg Days to Close</span><span><b>{r.avgClose}d</b></span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Open Pipeline</span><span><b>{r.openPipe.length}</b> ({$k(r.pipeVal)})</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Overdue Follow-ups</span><span style={{color:r.overdue.length>0?'#991B1B':'#9E9B96',fontWeight:r.overdue.length>0?800:400}}>{r.overdue.length}</span></div>
             </div>
             <div style={{borderTop:'1px solid #F4F4F2',marginTop:8,paddingTop:8,display:'flex',justifyContent:'space-between'}}>
-              <span style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Weighted</span>
-              <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>{$k(r.weighted)}</span>
+              <span style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Weighted</span>
+              <span style={{fontFamily:'Inter',fontWeight:800,color:'#8A261D'}}>{$k(r.weighted)}</span>
             </div>
           </div>;})}
         </div>
@@ -3445,9 +3445,9 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           <BarChart data={chartData} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="rep" stroke="#6B6056" fontSize={12} width={70}/>
+            <YAxis type="category" dataKey="rep" stroke="#625650" fontSize={12} width={70}/>
             <Tooltip formatter={v=>$(v)}/>
-            <Bar dataKey="won" fill="#065F46" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#6B6056',fontSize:11}}/>
+            <Bar dataKey="won" fill="#065F46" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#625650',fontSize:11}}/>
           </BarChart>
         </ResponsiveContainer>
       </div>;
@@ -3470,7 +3470,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Backlog Aging</div>
-            <div style={{fontSize:12,color:'#6B6056'}}>How long jobs have been in each status</div>
+            <div style={{fontSize:12,color:'#625650'}}>How long jobs have been in each status</div>
           </div>
           <button onClick={()=>downloadCSV('backlog_aging.csv',tableRows.map(j=>({JobNumber:j.job_number,JobName:j.job_name,Customer:j.customer_name,Market:MS[j.market]||j.market,PM:j.pm,Status:SS[j.status]||j.status,ContractValue:n(j.adj_contract_value||j.contract_value),LF:n(j.total_lf),DaysInStatus:j._days,ContractDate:j.contract_date})))} style={btnS}>Export CSV</button>
         </div>
@@ -3489,7 +3489,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
-            <XAxis dataKey="status" stroke="#6B6056" fontSize={11}/>
+            <XAxis dataKey="status" stroke="#625650" fontSize={11}/>
             <YAxis stroke="#9E9B96" fontSize={11} allowDecimals={false}/>
             <Tooltip/>
             <Legend wrapperStyle={{fontSize:11}}/>
@@ -3498,18 +3498,18 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         </ResponsiveContainer>
         <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Job #','Job Name','Customer','Market','PM','Status','Contract','LF','Days','Contract Date'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Job #','Job Name','Customer','Market','PM','Status','Contract','LF','Days','Contract Date'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
             <tbody>{tableRows.map(j=>{const bg=j._days>=180?'#FEF2F2':j._days>=90?'#FEF3C7':'transparent';return <tr key={j.id} onClick={()=>onOpenJob&&onOpenJob(j)} style={{borderBottom:'1px solid #F4F4F2',cursor:onOpenJob?'pointer':'default',background:bg}}>
               <td style={{padding:'8px 10px'}}>{j.job_number||'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:600,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td>
-              <td style={{padding:'8px 10px',color:'#6B6056',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.customer_name||'—'}</td>
-              <td style={{padding:'8px 10px'}}>{j.market?<span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>:'—'}</td>
+              <td style={{padding:'8px 10px',color:'#625650',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.customer_name||'—'}</td>
+              <td style={{padding:'8px 10px'}}>{j.market?<span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>:'—'}</td>
               <td style={{padding:'8px 10px'}}>{j.pm||'—'}</td>
               <td style={{padding:'8px 10px'}}><span style={statusPill(j.status)}>{SS[j.status]}</span></td>
               <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$k(j.adj_contract_value||j.contract_value)}</td>
               <td style={{padding:'8px 10px'}}>{n(j.total_lf).toLocaleString()}</td>
-              <td style={{padding:'8px 10px',fontWeight:800,color:j._days>=180?'#991B1B':j._days>=90?'#B45309':'#6B6056'}}>{j._days}d</td>
-              <td style={{padding:'8px 10px',color:'#6B6056'}}>{fD(j.contract_date)}</td>
+              <td style={{padding:'8px 10px',fontWeight:800,color:j._days>=180?'#991B1B':j._days>=90?'#B45309':'#625650'}}>{j._days}d</td>
+              <td style={{padding:'8px 10px',color:'#625650'}}>{fD(j.contract_date)}</td>
             </tr>;})}</tbody>
           </table>
         </div>
@@ -3534,21 +3534,21 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Left to Bill by PM</div>
-            <div style={{fontSize:12,color:'#6B6056'}}>Unbilled revenue by project manager</div>
+            <div style={{fontSize:12,color:'#625650'}}>Unbilled revenue by project manager</div>
           </div>
           <button onClick={()=>downloadCSV('ltb_by_pm.csv',pmRows.map(g=>({PM:g.pm,Jobs:g.jobs.length,ContractValue:Math.round(g.acv),YTDInvoiced:Math.round(g.ytd),LeftToBill:Math.round(g.ltb),PctBilled:g.acv>0?Math.round(g.ytd/g.acv*100)+'%':'0%'})))} style={btnS}>Export CSV</button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Left to Bill</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:'#8B2020',marginTop:4}}>{$k(totalLtb)}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Avg % Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,marginTop:4}}>{avgPctBilled}%</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Jobs with 0% Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:zeroBilled.length>10?'#991B1B':'#1A1A1A',marginTop:4}}>{zeroBilled.length}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Largest Unbilled</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700,marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{largestUnbilled?largestUnbilled.job_name:'—'}</div><div style={{fontSize:12,color:'#8B2020',fontWeight:700}}>{largestUnbilled?$k(largestUnbilled.left_to_bill):'—'}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Total Left to Bill</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:'#8A261D',marginTop:4}}>{$k(totalLtb)}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Avg % Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,marginTop:4}}>{avgPctBilled}%</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Jobs with 0% Billed</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color:zeroBilled.length>10?'#991B1B':'#1A1A1A',marginTop:4}}>{zeroBilled.length}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Largest Unbilled</div><div style={{fontFamily:'Inter',fontSize:13,fontWeight:700,marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{largestUnbilled?largestUnbilled.job_name:'—'}</div><div style={{fontSize:12,color:'#8A261D',fontWeight:700}}>{largestUnbilled?$k(largestUnbilled.left_to_bill):'—'}</div></div>
         </div>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={chartData} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="pm" stroke="#6B6056" fontSize={12} width={60}/>
+            <YAxis type="category" dataKey="pm" stroke="#625650" fontSize={12} width={60}/>
             <Tooltip formatter={v=>$(v)}/>
             <Legend wrapperStyle={{fontSize:11}}/>
             {MKTS.map(m=><Bar key={m} dataKey={MS[m]} stackId="a" fill={MC[m]}/>)}
@@ -3556,15 +3556,15 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         </ResponsiveContainer>
         <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['','PM','Jobs','Contract','YTD','Left to Bill','% Billed'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['','PM','Jobs','Contract','YTD','Left to Bill','% Billed'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
             <tbody>{pmRows.map(g=>{const pct=g.acv>0?Math.round(g.ytd/g.acv*100):0;const isOpen=expandedPm===g.pm;return <React.Fragment key={g.pm}>
               <tr onClick={()=>setExpandedPm(isOpen?null:g.pm)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:isOpen?'#FDF4F4':'transparent'}}>
-                <td style={{padding:'10px',width:20,color:'#8B2020'}}>{isOpen?'▾':'▸'}</td>
+                <td style={{padding:'10px',width:20,color:'#8A261D'}}>{isOpen?'▾':'▸'}</td>
                 <td style={{padding:'10px',fontWeight:700}}>{g.pm}</td>
                 <td style={{padding:'10px'}}>{g.jobs.length}</td>
                 <td style={{padding:'10px',fontFamily:'Inter',fontWeight:700}}>{$k(g.acv)}</td>
                 <td style={{padding:'10px'}}>{$k(g.ytd)}</td>
-                <td style={{padding:'10px',fontFamily:'Inter',fontWeight:700,color:'#8B2020'}}>{$k(g.ltb)}</td>
+                <td style={{padding:'10px',fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$k(g.ltb)}</td>
                 <td style={{padding:'10px'}}>{pct}%</td>
               </tr>
               {isOpen&&<tr><td colSpan={7} style={{padding:'0 10px 10px 30px',background:'#FDFBFB'}}>
@@ -3576,8 +3576,8 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
                     <td style={{padding:'4px 8px'}}>{$k(j.adj_contract_value||j.contract_value)}</td>
                     <td style={{padding:'4px 8px'}}>{$k(j.ytd_invoiced)}</td>
                     <td style={{padding:'4px 8px'}}>{(jpct*100).toFixed(0)}%</td>
-                    <td style={{padding:'4px 8px',color:'#8B2020',fontWeight:700}}>{$k(j.left_to_bill)}</td>
-                    <td style={{padding:'4px 8px',color:'#6B6056'}}>{fD(j.last_billed)}</td>
+                    <td style={{padding:'4px 8px',color:'#8A261D',fontWeight:700}}>{$k(j.left_to_bill)}</td>
+                    <td style={{padding:'4px 8px',color:'#625650'}}>{fD(j.last_billed)}</td>
                     <td style={{padding:'4px 8px'}}>{flags.map((f,i)=><div key={i} style={{fontSize:9,color:f.c,fontWeight:700}}>⚠ {f.t}</div>)}</td>
                   </tr>;})}</tbody>
                 </table>
@@ -3608,15 +3608,15 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Production Demand by Style</div>
-            <div style={{fontSize:12,color:'#6B6056'}}>Precast LF in pipeline by fence style and status</div>
+            <div style={{fontSize:12,color:'#625650'}}>Precast LF in pipeline by fence style and status</div>
           </div>
           <button onClick={()=>downloadCSV('prod_demand.csv',rows.map(r=>({Style:r.style==='__UNKNOWN__'?'(no style)':r.style,ContractReview:r.contract_review,MaterialReady:r.material_ready,InProduction:r.in_production,ActiveInstall:r.active_install,Total:r.total,Jobs:r.count,AvgPerJob:r.count>0?Math.round(r.total/r.count):0})))} style={btnS}>Export CSV</button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Pipeline PC LF</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#8B2020',marginTop:4}}>{totalPipeLf.toLocaleString()}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>In Production Now</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#6D28D9',marginTop:4}}>{inProdNow.toLocaleString()}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Ready to Produce</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#1D4ED8',marginTop:4}}>{readyToProd.toLocaleString()}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Unknown Style</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:unknownLF>10000?'#991B1B':'#9E9B96',marginTop:4}}>{unknownLF.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Total Pipeline PC LF</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#8A261D',marginTop:4}}>{totalPipeLf.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>In Production Now</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#6D28D9',marginTop:4}}>{inProdNow.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Ready to Produce</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#1D4ED8',marginTop:4}}>{readyToProd.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Unknown Style</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:unknownLF>10000?'#991B1B':'#9E9B96',marginTop:4}}>{unknownLF.toLocaleString()}</div></div>
         </div>
         <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>MKT:</span>
@@ -3627,7 +3627,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           <BarChart data={chartData} layout="vertical" margin={{top:4,right:16,bottom:4,left:40}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>v.toLocaleString()} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="style" stroke="#6B6056" fontSize={11} width={160}/>
+            <YAxis type="category" dataKey="style" stroke="#625650" fontSize={11} width={160}/>
             <Tooltip formatter={v=>v.toLocaleString()+' LF'}/>
             <Legend wrapperStyle={{fontSize:11}}/>
             <Bar dataKey="Contract Review" stackId="a" fill="#9CA3AF"/>
@@ -3638,7 +3638,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         </ResponsiveContainer>
         <div style={{...card,padding:0,overflow:'auto',marginTop:12}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Style','Contract Review','Inventory Ready','In Production','Active Install','Total LF','Jobs','Avg LF/Job'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>{['Style','Contract Review','Inventory Ready','In Production','Active Install','Total LF','Jobs','Avg LF/Job'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
             <tbody>{rows.map(r=>{const unk=r.style==='__UNKNOWN__';return <tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:unk?'#FEF2F2':'transparent'}}>
               <td style={{padding:'8px 10px',fontWeight:700,color:unk?'#991B1B':'#1A1A1A'}}>{unk?'(no style — data gap)':r.style}</td>
               <td style={{padding:'8px 10px'}}>{r.contract_review.toLocaleString()}</td>
@@ -3675,7 +3675,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   const renderReportCard=(r)=><div key={r.id} style={{...card,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
     <div>
       <div style={{fontFamily:'Inter',fontWeight:700,fontSize:14,marginBottom:4}}>{r.icon?<span style={{marginRight:6}}>{r.icon}</span>:null}{r.title}</div>
-      <div style={{fontSize:12,color:'#6B6056',marginBottom:12}}>{r.desc}</div>
+      <div style={{fontSize:12,color:'#625650',marginBottom:12}}>{r.desc}</div>
     </div>
     <button onClick={()=>openReport(r.id)} style={btnS}>View Report →</button>
   </div>;
@@ -3683,10 +3683,10 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   if(activeRpt){
     const meta=byId[activeRpt];
     return(<div>
-      <button onClick={closeReport} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:700,cursor:'pointer',padding:'4px 0',marginBottom:10,display:'inline-flex',alignItems:'center',gap:4}}>← Back to Reports</button>
+      <button onClick={closeReport} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:700,cursor:'pointer',padding:'4px 0',marginBottom:10,display:'inline-flex',alignItems:'center',gap:4}}>← Back to Reports</button>
       {meta&&<div style={{marginBottom:6}}>
         <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:4}}>{meta.icon?<span style={{marginRight:8}}>{meta.icon}</span>:null}{meta.title}</h1>
-        {meta.desc&&<div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{meta.desc}</div>}
+        {meta.desc&&<div style={{fontSize:13,color:'#625650',marginBottom:16}}>{meta.desc}</div>}
       </div>}
       <div style={{...card}}><ErrorBoundary label={`Report: ${activeRpt}`}>{renderReport()}</ErrorBoundary></div>
     </div>);
@@ -3696,7 +3696,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:6}}>Reports</h1>
     {/* EXECUTIVE */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
-      <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>📈 Executive</div>
+      <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>📈 Executive</div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>{executiveReports.map(renderReportCard)}</div>
     {/* SALES */}
@@ -3710,15 +3710,15 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:16}}>{productionReports.map(renderReportCard)}</div>
     {/* PRODUCTION COMING SOON */}
     <div style={{...card,padding:14,background:'#F9F8F6',borderStyle:'dashed',marginBottom:24}}>
-      <div style={{fontSize:11,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>📊 Coming Soon</div>
+      <div style={{fontSize:11,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>📊 Coming Soon</div>
       <div style={{fontSize:11,color:'#9E9B96',marginBottom:10}}>These reports activate once production actuals are being logged consistently:</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>{comingSoonReports.map(r=><div key={r.id} style={{border:'1px dashed #D1CEC9',borderRadius:8,padding:10,background:'#FFF',opacity:0.6}}>
-        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginBottom:2}}>{r.title}</div>
+        <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:2}}>{r.title}</div>
         <div style={{fontSize:10,color:'#9E9B96'}}>{r.desc}</div>
       </div>)}</div>
     </div>
     {/* FINANCIAL + EXISTING REPORTS */}
-    <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>💰 Sales, Finance & Operations</div>
+    <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>💰 Sales, Finance & Operations</div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>{reports.map(renderReportCard)}</div>
   </div>);
 }
@@ -3862,7 +3862,7 @@ function MaterialCalcPage({jobs,preJob}){
     <div style={{...card,marginBottom:20,padding:20}}>
       <div style={{display:'grid',gridTemplateColumns:'1.3fr 1.1fr 1.2fr 1fr auto',gap:12,alignItems:'start'}}>
         <div style={{position:'relative'}}>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job (optional)</label>
+          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job (optional)</label>
           <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setSelJob(null);setAutoFilled({style:false,height:false,lf:false});}} placeholder="Search by name or number..." style={inputS}/>
           {searchResults.length>0&&!selJob&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:240,overflow:'auto'}}>
             {searchResults.map(j=><button key={j.id} onClick={()=>pickJob(j)} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}
@@ -3870,20 +3870,20 @@ function MaterialCalcPage({jobs,preJob}){
           {selJob&&<div style={{marginTop:6,fontSize:11,color:'#065F46',fontWeight:600}}>Loaded: {selJob.job_name} (#{selJob.job_number})</div>}
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style {autoFilled.style&&styleInCalc&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style {autoFilled.style&&styleInCalc&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
           <select value={selStyle} onChange={e=>{setSelStyle(e.target.value);setAutoFilled(a=>({...a,style:false}));}} style={{...inputS,background:autoFilled.style&&styleInCalc?'#EFF6FF':'#FFF'}}><option value="">— Select Style —</option>{styles.map(s=><option key={s.id} value={s.style_name}>{s.style_name}</option>)}</select>
           {selJob&&selJob.style&&!styleInCalc&&<div style={{marginTop:4,fontSize:10,color:'#B45309',fontWeight:600}}>⚠ "{selJob.style}" not in calculator — select manually</div>}
-          {selJob&&<div style={{marginTop:4,fontSize:11,color:'#6B6056'}}>Color: <span style={{fontWeight:700,color:'#1A1A1A'}}>{color||'—'}</span></div>}
+          {selJob&&<div style={{marginTop:4,fontSize:11,color:'#625650'}}>Color: <span style={{fontWeight:700,color:'#1A1A1A'}}>{color||'—'}</span></div>}
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft) {autoFilled.height&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft) {autoFilled.height&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
           <div style={{display:'flex',gap:4,alignItems:'center'}}>
-            {[6,8,10,12].map(h2=><button key={h2} onClick={()=>{setHeight(h2);setAutoFilled(a=>({...a,height:false}));}} style={{padding:'6px 10px',borderRadius:6,border:n(height)===h2?'2px solid #8B2020':'1px solid #D1CEC9',background:n(height)===h2?(autoFilled.height?'#EFF6FF':'#FDF4F4'):'#FFF',color:n(height)===h2?'#8B2020':'#6B6056',fontSize:13,fontWeight:700,cursor:'pointer'}}>{h2}</button>)}
+            {[6,8,10,12].map(h2=><button key={h2} onClick={()=>{setHeight(h2);setAutoFilled(a=>({...a,height:false}));}} style={{padding:'6px 10px',borderRadius:6,border:n(height)===h2?'2px solid #8A261D':'1px solid #D1CEC9',background:n(height)===h2?(autoFilled.height?'#EFF6FF':'#FDF4F4'):'#FFF',color:n(height)===h2?'#8A261D':'#625650',fontSize:13,fontWeight:700,cursor:'pointer'}}>{h2}</button>)}
             <input type="number" value={[6,8,10,12].includes(n(height))?'':height} onChange={e=>{setHeight(e.target.value);setAutoFilled(a=>({...a,height:false}));}} placeholder="Custom" style={{...inputS,width:70,padding:'6px 8px',background:autoFilled.height&&![6,8,10,12].includes(n(height))?'#EFF6FF':'#FFF'}}/>
           </div>
         </div>
         <div>
-          <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Linear Feet {autoFilled.lf&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
+          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Linear Feet {autoFilled.lf&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
           <input type="number" value={lf} onChange={e=>{setLf(e.target.value);setAutoFilled(a=>({...a,lf:false}));}} placeholder="0" style={{...inputS,background:autoFilled.lf?'#EFF6FF':'#FFF'}}/>
         </div>
         <div style={{paddingTop:18}}>
@@ -3922,23 +3922,23 @@ function MaterialCalcPage({jobs,preJob}){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
         {/* POSTS */}
         <div style={{...card,padding:0,overflow:'hidden'}}>
-          <div style={secHead('#FFF','#8B2020')}>Posts</div>
+          <div style={secHead('#FFF','#8A261D')}>Posts</div>
           <div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Post Height</span><span style={{fontFamily:'Inter',fontWeight:800,fontSize:16}}>{result.postHeight}ft</span></div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Line Posts</span>{ovInput('linePosts',result.linePosts)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Corner Posts</span>{ovInput('cornerPosts',result.cornerPosts)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Stop Posts</span>{ovInput('stopPosts',result.stopPosts)}</div>
-            <div style={{...rowS,background:'#FDF4F4',fontWeight:700,borderBottom:'none'}}><span>Total Posts</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8B2020'}}>{ov('linePosts',result.linePosts)+ov('cornerPosts',result.cornerPosts)+ov('stopPosts',result.stopPosts)}</span></div>
+            <div style={rowS}><span style={{color:'#625650'}}>Post Height</span><span style={{fontFamily:'Inter',fontWeight:800,fontSize:16}}>{result.postHeight}ft</span></div>
+            <div style={rowS}><span style={{color:'#625650'}}>Line Posts</span>{ovInput('linePosts',result.linePosts)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Corner Posts</span>{ovInput('cornerPosts',result.cornerPosts)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Stop Posts</span>{ovInput('stopPosts',result.stopPosts)}</div>
+            <div style={{...rowS,background:'#FDF4F4',fontWeight:700,borderBottom:'none'}}><span>Total Posts</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8A261D'}}>{ov('linePosts',result.linePosts)+ov('cornerPosts',result.cornerPosts)+ov('stopPosts',result.stopPosts)}</span></div>
           </div>
         </div>
         {/* PANELS */}
         <div style={{...card,padding:0,overflow:'hidden'}}>
           <div style={secHead('#FFF','#1D4ED8')}>Panels{result.specialLabel?' ('+result.specialLabel+')':''}</div>
           <div>
-            {!result.isRanch&&<>{result.regularPanels>0&&<div style={rowS}><span style={{color:'#6B6056'}}>Regular Panels</span>{ovInput('regularPanels',result.regularPanels)}</div>}
-            {result.isCMU&&<div style={rowS}><span style={{color:'#6B6056'}}>Half Panels</span>{ovInput('halfPanels',result.halfPanels)}</div>}
-            {(result.isZPanel||result.bottomPanels>0)&&<div style={rowS}><span style={{color:'#6B6056'}}>Bottom Panels</span>{ovInput('bottomPanels',result.bottomPanels)}</div>}
-            {(result.isZPanel||result.topPanels>0)&&<div style={rowS}><span style={{color:'#6B6056'}}>Top Panels</span>{ovInput('topPanels',result.topPanels)}</div>}
+            {!result.isRanch&&<>{result.regularPanels>0&&<div style={rowS}><span style={{color:'#625650'}}>Regular Panels</span>{ovInput('regularPanels',result.regularPanels)}</div>}
+            {result.isCMU&&<div style={rowS}><span style={{color:'#625650'}}>Half Panels</span>{ovInput('halfPanels',result.halfPanels)}</div>}
+            {(result.isZPanel||result.bottomPanels>0)&&<div style={rowS}><span style={{color:'#625650'}}>Bottom Panels</span>{ovInput('bottomPanels',result.bottomPanels)}</div>}
+            {(result.isZPanel||result.topPanels>0)&&<div style={rowS}><span style={{color:'#625650'}}>Top Panels</span>{ovInput('topPanels',result.topPanels)}</div>}
             <div style={{...rowS,background:'#EFF6FF',fontWeight:700,borderBottom:'none'}}><span>Total Panels</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#1D4ED8'}}>{(ov('regularPanels',result.regularPanels)||0)+(ov('halfPanels',result.halfPanels)||0)+(ov('topPanels',result.topPanels)||0)+(ov('bottomPanels',result.bottomPanels)||0)}</span></div></>}
             {result.isRanch&&<div style={{padding:16,textAlign:'center',color:'#9E9B96'}}>Ranch Rail — no panels</div>}
           </div>
@@ -3947,11 +3947,11 @@ function MaterialCalcPage({jobs,preJob}){
         <div style={{...card,padding:0,overflow:'hidden'}}>
           <div style={secHead('#FFF','#B45309')}>Rails</div>
           <div>
-            {!result.isRanch&&<><div style={rowS}><span style={{color:'#6B6056'}}>Cap Rails</span>{ovInput('capRails',result.capRails)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Bottom Rails</span>{ovInput('bottomRails',result.bottomRails)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Middle Rails</span>{ovInput('middleRails',result.middleRails)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Top Rails</span>{ovInput('topRails',result.topRails)}</div></>}
-            {result.isRanch&&<div style={rowS}><span style={{color:'#6B6056'}}>Rails ({n(height)<=6?2:n(height)<=8?3:4}-hole)</span>{ovInput('totalRails',result.totalRails)}</div>}
+            {!result.isRanch&&<><div style={rowS}><span style={{color:'#625650'}}>Cap Rails</span>{ovInput('capRails',result.capRails)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Bottom Rails</span>{ovInput('bottomRails',result.bottomRails)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Middle Rails</span>{ovInput('middleRails',result.middleRails)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Top Rails</span>{ovInput('topRails',result.topRails)}</div></>}
+            {result.isRanch&&<div style={rowS}><span style={{color:'#625650'}}>Rails ({n(height)<=6?2:n(height)<=8?3:4}-hole)</span>{ovInput('totalRails',result.totalRails)}</div>}
             <div style={{...rowS,background:'#FFFBEB',fontWeight:700,borderBottom:'none'}}><span>Total Rails</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#B45309'}}>{result.isRanch?ov('totalRails',result.totalRails):(ov('capRails',result.capRails)+ov('bottomRails',result.bottomRails)+ov('middleRails',result.middleRails)+ov('topRails',result.topRails))}</span></div>
           </div>
         </div>
@@ -3959,8 +3959,8 @@ function MaterialCalcPage({jobs,preJob}){
         <div style={{...card,padding:0,overflow:'hidden'}}>
           <div style={secHead('#FFF','#065F46')}>Post Caps</div>
           <div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Line Caps</span>{ovInput('lineCaps',result.lineCaps)}</div>
-            <div style={rowS}><span style={{color:'#6B6056'}}>Stop Caps</span>{ovInput('stopCaps',result.stopCaps)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Line Caps</span>{ovInput('lineCaps',result.lineCaps)}</div>
+            <div style={rowS}><span style={{color:'#625650'}}>Stop Caps</span>{ovInput('stopCaps',result.stopCaps)}</div>
             <div style={{...rowS,background:'#ECFDF5',fontWeight:700,borderBottom:'none'}}><span>Total Caps</span><span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#065F46'}}>{ov('lineCaps',result.lineCaps)+ov('stopCaps',result.stopCaps)}</span></div>
             {result.totalCaps===0&&<div style={{padding:8,textAlign:'center',fontSize:11,color:'#9E9B96'}}>No caps for this style</div>}
           </div>
@@ -3995,7 +3995,7 @@ function MaterialCalcPage({jobs,preJob}){
             </div>
           </div>
           {/* EST INSTALL START BANNER */}
-          {(()=>{const d2=selJob?.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8B2020':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
+          {(()=>{const d2=selJob?.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8A261D':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
           {/* POSTS */}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
@@ -4127,19 +4127,19 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     </div>
     {/* Summary cards */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16,marginTop:12}}>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8B2020'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{ordersJobs.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Total Orders</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #7C3AED'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#7C3AED'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Needs Production</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{inProd.length}</div><div style={{fontSize:11,color:'#6B6056'}}>In Production</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{thisWeek.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Starting This Week</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{ordersJobs.length}</div><div style={{fontSize:11,color:'#625650'}}>Total Orders</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #7C3AED'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#7C3AED'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#625650'}}>Needs Production</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{inProd.length}</div><div style={{fontSize:11,color:'#625650'}}>In Production</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{thisWeek.length}</div><div style={{fontSize:11,color:'#625650'}}>Starting This Week</div></div>
     </div>
     {/* Plant Summary Stats */}
     {moldUtilization.length>0&&<div style={{...card,marginBottom:12,padding:14,borderLeft:'4px solid #1A1A1A'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',marginBottom:8}}>🏭 Plant Summary</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22}}>{moldTotals.molds}</div><div style={{fontSize:10,color:'#6B6056'}}>Total Molds</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#7C3AED'}}>~{moldTotals.panelsPerDay.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Max Panels/Day</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#B45309'}}>{n(plantCfg.max_lf_per_day)||2640} LF</div><div style={{fontSize:10,color:'#6B6056'}}>Max LF/Day</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#1D4ED8'}}>{(n(plantCfg.daily_cy_capacity)||52.8).toFixed(1)} CYD</div><div style={{fontSize:10,color:'#6B6056'}}>Batch Plant/Day</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22}}>{moldTotals.molds}</div><div style={{fontSize:10,color:'#625650'}}>Total Molds</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#7C3AED'}}>~{moldTotals.panelsPerDay.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Max Panels/Day</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#B45309'}}>{n(plantCfg.max_lf_per_day)||2640} LF</div><div style={{fontSize:10,color:'#625650'}}>Max LF/Day</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#1D4ED8'}}>{(n(plantCfg.daily_cy_capacity)||52.8).toFixed(1)} CYD</div><div style={{fontSize:10,color:'#625650'}}>Batch Plant/Day</div></div>
       </div>
       <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',fontSize:10,color:'#9E9B96'}}>2× WIGGERT HPGM 500 mixers · 60 batches/shift × 0.44 CYD · 24hr cure · {Math.round(MOLD_UTIL_RATE*100)}% mold util · {Math.round(SCRAP_RATE*100)}% scrap rate</div>
     </div>}
@@ -4147,7 +4147,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     {moldUtilization.length>0&&<div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #7C3AED'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🔧 Mold Utilization — Today</div>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-        <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>
           {moldUtilization.map(r=>{
             if(!r.confirmed)return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:'#FAFAF8'}}>
@@ -4191,13 +4191,13 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
           </tr>
         </tbody>
       </table>
-      {moldUtilization.some(r=>!r.confirmed)&&<div style={{marginTop:10,padding:'8px 12px',background:'#F4F4F2',border:'1px solid #D1CEC9',borderRadius:6,fontSize:11,color:'#6B6056'}}>
+      {moldUtilization.some(r=>!r.confirmed)&&<div style={{marginTop:10,padding:'8px 12px',background:'#F4F4F2',border:'1px solid #D1CEC9',borderRadius:6,fontSize:11,color:'#625650'}}>
         <b>*</b> Excludes Vertical Wood — panels/mold unconfirmed. <b>⚙️ Vertical Wood panels/mold needs confirmation from Max.</b> Contact Max to verify how many panels each gang mold produces per pour for Vertical Wood styles.
       </div>}
     </div>}
     {/* Today's Plan section */}
-    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #8B2020'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #8A261D'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
         <span>📅 Today's Plan — {new Date(todayStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
         {!todayHasPlan&&<button onClick={()=>{const t=new Date();t.setDate(t.getDate()+1);const tISO=t.toISOString().split('T')[0];try{localStorage.setItem('fc_daily_goto',JSON.stringify({tab:'plan',date:tISO}));}catch(e){}if(onNav)onNav('daily_report');window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnS,padding:'4px 10px',fontSize:11}}>View Tomorrow's Plan →</button>}
       </div>
@@ -4209,15 +4209,15 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
             <div style={{fontWeight:700,fontSize:13}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{l.job_number}</span></div>
             <div style={{fontSize:11,color:col,fontWeight:700}}>{total.toLocaleString()} / {planned.toLocaleString()} panels ({pct}%)</div>
           </div>
-          <div style={{fontSize:10,color:'#6B6056',marginBottom:6}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')}</div>
+          <div style={{fontSize:10,color:'#625650',marginBottom:6}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')}</div>
           {/* Shift bars */}
           <div style={{display:'flex',gap:12,marginBottom:4}}>
             <div style={{flex:1}}>
-              <div style={{fontSize:10,color:'#6B6056',marginBottom:2}}>Shift 1: <b>{s1.toLocaleString()}</b></div>
+              <div style={{fontSize:10,color:'#625650',marginBottom:2}}>Shift 1: <b>{s1.toLocaleString()}</b></div>
               <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s1/planned*100:0,100)}%`,height:'100%',background:'#1D4ED8'}}/></div>
             </div>
             <div style={{flex:1}}>
-              <div style={{fontSize:10,color:'#6B6056',marginBottom:2}}>Shift 2: <b>{s2.toLocaleString()}</b></div>
+              <div style={{fontSize:10,color:'#625650',marginBottom:2}}>Shift 2: <b>{s2.toLocaleString()}</b></div>
               <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s2/planned*100:0,100)}%`,height:'100%',background:'#7C3AED'}}/></div>
             </div>
           </div>
@@ -4227,7 +4227,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
     </div>
     {/* Filter tabs */}
     <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-      {[['all','All',ordersJobs.length],['needs','Needs Production',needsProd.length],['in_prod','In Production',inProd.length],['complete','Complete',complete.length]].map(([k,l,c])=><button key={k} onClick={()=>setFilterTab(k)} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?'2px solid #8B2020':'1px solid #E5E3E0',background:filterTab===k?'#FDF4F4':'#FFF',color:filterTab===k?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
+      {[['all','All',ordersJobs.length],['needs','Needs Production',needsProd.length],['in_prod','In Production',inProd.length],['complete','Complete',complete.length]].map(([k,l,c])=><button key={k} onClick={()=>setFilterTab(k)} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?'2px solid #8A261D':'1px solid #E5E3E0',background:filterTab===k?'#FDF4F4':'#FFF',color:filterTab===k?'#8A261D':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
     </div>
     {/* Job list */}
     {filtered.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No production orders in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -4238,11 +4238,11 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
               <span style={{fontSize:16}}>📋</span>
               <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>{j.job_number||'—'}</span>
               <span style={{fontWeight:700,fontSize:14,flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
-              <span style={pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
+              <span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
               <select value={j.status} onClick={e=>e.stopPropagation()} onChange={e=>updateStatus(j,e.target.value)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status],cursor:'pointer'}}>{STS.filter(s=>s!=='closed').map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
               <span style={{fontSize:12,color:'#9E9B96'}}>{isExp?'▲':'▼'}</span>
             </div>
-            <div style={{display:'flex',gap:14,fontSize:11,color:'#6B6056',marginLeft:26,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:14,fontSize:11,color:'#625650',marginLeft:26,flexWrap:'wrap'}}>
               {j.est_start_date&&<span>Est Start: <b style={{color:'#1A1A1A'}}>{fD(j.est_start_date)}</b></span>}
               {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<span><LfBadges job={j}/></span>}
               {j.style&&<span>{j.style}</span>}
@@ -4250,8 +4250,8 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
               {j.height_precast&&<span>{j.height_precast}ft</span>}
               <span>Calculated: <b style={{color:'#1A1A1A'}}>{calcDate}</b></span>
             </div>
-            {!isExp&&<div style={{marginLeft:26,marginTop:8,fontSize:12,color:'#6B6056',display:'flex',gap:16,flexWrap:'wrap'}}>
-              <span><b style={{color:'#8B2020'}}>POSTS:</b> {lp}/{cp}/{sp}{j.material_post_height?` — ${j.material_post_height}ft`:''}</span>
+            {!isExp&&<div style={{marginLeft:26,marginTop:8,fontSize:12,color:'#625650',display:'flex',gap:16,flexWrap:'wrap'}}>
+              <span><b style={{color:'#8A261D'}}>POSTS:</b> {lp}/{cp}/{sp}{j.material_post_height?` — ${j.material_post_height}ft`:''}</span>
               <span><b style={{color:'#1D4ED8'}}>PANELS:</b> {totalPanels}</span>
               <span><b style={{color:'#B45309'}}>RAILS:</b> {totalRails}</span>
               <span><b style={{color:'#065F46'}}>CAPS:</b> {lc}/{sc}</span>
@@ -4259,31 +4259,31 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
           </div>
           {isExp&&<div style={{padding:'14px 16px',borderTop:'1px solid #E5E3E0',background:'#F9F8F6'}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12,marginBottom:12}}>
-              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #8B202020'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#8B2020',textTransform:'uppercase',marginBottom:6}}>Posts{j.material_post_height?` (${j.material_post_height}ft)`:''}</div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lp||'—'}</b></div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Corner: <b style={{color:'#1A1A1A',fontSize:16}}>{cp||'—'}</b></div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sp||'—'}</b></div>
+              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #8A261D20'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#8A261D',textTransform:'uppercase',marginBottom:6}}>Posts{j.material_post_height?` (${j.material_post_height}ft)`:''}</div>
+                <div style={{fontSize:12,color:'#625650'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lp||'—'}</b></div>
+                <div style={{fontSize:12,color:'#625650'}}>Corner: <b style={{color:'#1A1A1A',fontSize:16}}>{cp||'—'}</b></div>
+                <div style={{fontSize:12,color:'#625650'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sp||'—'}</b></div>
                 <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPosts}</div>
               </div>
               <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #1D4ED820'}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#1D4ED8',textTransform:'uppercase',marginBottom:6}}>Panels</div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{rp||'—'}</b></div>
-                {hp>0&&<div style={{fontSize:12,color:'#6B6056'}}>Half: <b style={{color:'#1A1A1A',fontSize:16}}>{hp}</b></div>}
+                <div style={{fontSize:12,color:'#625650'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{rp||'—'}</b></div>
+                {hp>0&&<div style={{fontSize:12,color:'#625650'}}>Half: <b style={{color:'#1A1A1A',fontSize:16}}>{hp}</b></div>}
                 <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPanels}</div>
               </div>
               <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #B4530920'}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>Rails</div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{cr||'—'}</b></div>
-                {tr2>0&&<div style={{fontSize:12,color:'#6B6056'}}>Top: <b style={{color:'#1A1A1A',fontSize:16}}>{tr2}</b></div>}
-                {br>0&&<div style={{fontSize:12,color:'#6B6056'}}>Bottom: <b style={{color:'#1A1A1A',fontSize:16}}>{br}</b></div>}
-                {mr>0&&<div style={{fontSize:12,color:'#6B6056'}}>Center: <b style={{color:'#1A1A1A',fontSize:16}}>{mr}</b></div>}
+                <div style={{fontSize:12,color:'#625650'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{cr||'—'}</b></div>
+                {tr2>0&&<div style={{fontSize:12,color:'#625650'}}>Top: <b style={{color:'#1A1A1A',fontSize:16}}>{tr2}</b></div>}
+                {br>0&&<div style={{fontSize:12,color:'#625650'}}>Bottom: <b style={{color:'#1A1A1A',fontSize:16}}>{br}</b></div>}
+                {mr>0&&<div style={{fontSize:12,color:'#625650'}}>Center: <b style={{color:'#1A1A1A',fontSize:16}}>{mr}</b></div>}
                 <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalRails}</div>
               </div>
               <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #065F4620'}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#065F46',textTransform:'uppercase',marginBottom:6}}>Post Caps</div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lc||'—'}</b></div>
-                <div style={{fontSize:12,color:'#6B6056'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sc||'—'}</b></div>
+                <div style={{fontSize:12,color:'#625650'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lc||'—'}</b></div>
+                <div style={{fontSize:12,color:'#625650'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sc||'—'}</b></div>
                 <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalCaps}</div>
               </div>
             </div>
@@ -4318,7 +4318,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
             </div>
           </div>
           {/* EST INSTALL START BANNER */}
-          {(()=>{const d2=j.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8B2020':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
+          {(()=>{const d2=j.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8A261D':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
@@ -4382,7 +4382,7 @@ function SchedulePage({jobs}){
   const fetchEvents=useCallback(async()=>{const d=await sbGet('schedule_events','order=scheduled_date.asc');setEvents(d||[]);},[]);
   useEffect(()=>{fetchEvents();},[fetchEvents]);
   const filteredEvents=useMemo(()=>events.filter(e=>(!mktF||e.market===mktF)&&(!pmF||jobsById[e.job_id]?.pm===pmF)),[events,mktF,pmF,jobsById]);
-  const saveEvent=async e=>{e.preventDefault();const job=jobs.find(j=>j.id===form.job_id);if(!job&&!editEvt)return;const body={...form,job_number:job?.job_number||editEvt?.job_number,job_name:job?.job_name||editEvt?.job_name,market:job?.market||editEvt?.market,color:MC[job?.market||editEvt?.market]||'#8B2020',lf_scheduled:n(form.lf_scheduled)};if(editEvt){await sbPatch('schedule_events',editEvt.id,body);}else{await sbPost('schedule_events',body);}setShowAdd(false);setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');fetchEvents();};
+  const saveEvent=async e=>{e.preventDefault();const job=jobs.find(j=>j.id===form.job_id);if(!job&&!editEvt)return;const body={...form,job_number:job?.job_number||editEvt?.job_number,job_name:job?.job_name||editEvt?.job_name,market:job?.market||editEvt?.market,color:MC[job?.market||editEvt?.market]||'#8A261D',lf_scheduled:n(form.lf_scheduled)};if(editEvt){await sbPatch('schedule_events',editEvt.id,body);}else{await sbPost('schedule_events',body);}setShowAdd(false);setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');fetchEvents();};
   const deleteEvent=async id=>{if(!window.confirm('Delete this event?'))return;await sbDel('schedule_events',id);setEditEvt(null);setShowAdd(false);fetchEvents();};
   const openEdit=ev=>{setForm({job_id:ev.job_id||'',event_type:ev.event_type||'production_start',scheduled_date:ev.scheduled_date||'',end_date:ev.end_date||'',assigned_to:ev.assigned_to||'',crew:ev.crew||'',lf_scheduled:ev.lf_scheduled||'',notes:ev.notes||''});setJobSearch(ev.job_name||'');setEditEvt(ev);setShowAdd(true);};
   const daysInMonth=new Date(month.getFullYear(),month.getMonth()+1,0).getDate();const firstDay=new Date(month.getFullYear(),month.getMonth(),1).getDay();const today=new Date().toISOString().split('T')[0];
@@ -4395,15 +4395,15 @@ function SchedulePage({jobs}){
     {view==='changeorders'&&<ChangeOrdersPage jobs={jobs}/>}
     {view!=='weather'&&view!=='changeorders'&&<><div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
       <div style={{display:'flex',gap:6}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
-      <div style={{display:'flex',gap:6,alignItems:'center'}}><label style={{fontSize:11,color:'#6B6056',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>PM</label><select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:180}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}{pmJobCounts[p.id]?` (${pmJobCounts[p.id]})`:''}</option>)}</select></div>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}><label style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>PM</label><select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:180}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}{pmJobCounts[p.id]?` (${pmJobCounts[p.id]})`:''}</option>)}</select></div>
     </div>
     <div style={{display:'flex',gap:20}}>
       <div style={{flex:1,minWidth:0}}>
         {view==='calendar'&&<><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))} style={btnS}>← Prev</button><span style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{month.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><div style={{display:'flex',gap:8}}><button onClick={()=>setMonth(new Date(new Date().getFullYear(),new Date().getMonth(),1))} style={btnS}>Today</button><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))} style={btnS}>Next →</button></div></div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1,background:'#E5E3E0',borderRadius:12,overflow:'hidden'}}>{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=><div key={d} style={{background:'#F9F8F6',padding:'6px 8px',fontSize:11,fontWeight:600,color:'#6B6056',textAlign:'center'}}>{d}</div>)}{Array.from({length:firstDay},(_,i)=><div key={`e${i}`} style={{background:'#FAFAF8',minHeight:80}}/>)}{Array.from({length:daysInMonth},(_,i)=>{const day=i+1;const ds=`${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;const dayEv=filteredEvents.filter(e=>e.scheduled_date&&e.scheduled_date.startsWith(ds));const isToday=ds===today;const dayLF=dayEv.reduce((s,e)=>s+n(e.lf_scheduled),0);return<div key={day} style={{background:'#FFF',minHeight:80,padding:4,borderTop:isToday?'2px solid #8B2020':'none',position:'relative'}}><div style={{fontSize:11,fontWeight:isToday?800:400,color:isToday?'#8B2020':'#6B6056',marginBottom:2}}>{day}</div>{dayEv.slice(0,3).map(e=><div key={e.id} onClick={()=>openEdit(e)} style={{fontSize:9,padding:'1px 4px',borderRadius:3,marginBottom:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',background:(e.color||'#8B2020')+'20',color:e.color||'#8B2020',fontWeight:600,cursor:'pointer'}}>{e.job_name}</div>)}{dayEv.length>3&&<div style={{fontSize:9,color:'#9E9B96'}}>+{dayEv.length-3}</div>}{dayLF>0&&<div style={{position:'absolute',bottom:2,right:4,fontSize:9,color:'#9E9B96'}}>{dayLF.toLocaleString()} LF</div>}</div>;})}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1,background:'#E5E3E0',borderRadius:12,overflow:'hidden'}}>{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=><div key={d} style={{background:'#F9F8F6',padding:'6px 8px',fontSize:11,fontWeight:600,color:'#625650',textAlign:'center'}}>{d}</div>)}{Array.from({length:firstDay},(_,i)=><div key={`e${i}`} style={{background:'#FAFAF8',minHeight:80}}/>)}{Array.from({length:daysInMonth},(_,i)=>{const day=i+1;const ds=`${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;const dayEv=filteredEvents.filter(e=>e.scheduled_date&&e.scheduled_date.startsWith(ds));const isToday=ds===today;const dayLF=dayEv.reduce((s,e)=>s+n(e.lf_scheduled),0);return<div key={day} style={{background:'#FFF',minHeight:80,padding:4,borderTop:isToday?'2px solid #8A261D':'none',position:'relative'}}><div style={{fontSize:11,fontWeight:isToday?800:400,color:isToday?'#8A261D':'#625650',marginBottom:2}}>{day}</div>{dayEv.slice(0,3).map(e=><div key={e.id} onClick={()=>openEdit(e)} style={{fontSize:9,padding:'1px 4px',borderRadius:3,marginBottom:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',background:(e.color||'#8A261D')+'20',color:e.color||'#8A261D',fontWeight:600,cursor:'pointer'}}>{e.job_name}</div>)}{dayEv.length>3&&<div style={{fontSize:9,color:'#9E9B96'}}>+{dayEv.length-3}</div>}{dayLF>0&&<div style={{position:'absolute',bottom:2,right:4,fontSize:9,color:'#9E9B96'}}>{dayLF.toLocaleString()} LF</div>}</div>;})}</div>
           <div style={{fontSize:11,color:'#9E9B96',marginTop:8,textAlign:'center'}}>Click any event to edit or reschedule</div>
         </>}
-        {view==='list'&&<div style={card}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Date','Project','Market','Type','LF','Assigned','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#6B6056',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{filteredEvents.map(e=><tr key={e.id} onClick={()=>openEdit(e)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}><td style={{padding:'6px 8px'}}>{fD(e.scheduled_date)}</td><td style={{padding:'6px 8px',fontWeight:500}}>{e.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{(e.event_type||'').replace(/_/g,' ')}</td><td style={{padding:'6px 8px'}}>{n(e.lf_scheduled).toLocaleString()}</td><td style={{padding:'6px 8px'}}>{e.assigned_to||'—'}</td><td style={{padding:'6px 8px',color:'#9E9B96',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes||'—'}</td></tr>)}</tbody></table></div>}
+        {view==='list'&&<div style={card}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Date','Project','Market','Type','LF','Assigned','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{filteredEvents.map(e=><tr key={e.id} onClick={()=>openEdit(e)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}><td style={{padding:'6px 8px'}}>{fD(e.scheduled_date)}</td><td style={{padding:'6px 8px',fontWeight:500}}>{e.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[e.market]||'#625650',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{(e.event_type||'').replace(/_/g,' ')}</td><td style={{padding:'6px 8px'}}>{n(e.lf_scheduled).toLocaleString()}</td><td style={{padding:'6px 8px'}}>{e.assigned_to||'—'}</td><td style={{padding:'6px 8px',color:'#9E9B96',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes||'—'}</td></tr>)}</tbody></table></div>}
         {view==='gantt'&&(()=>{
           const GANTT_MKT_C={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
           let ganttJobs=jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
@@ -4429,19 +4429,19 @@ function SchedulePage({jobs}){
             <div style={{overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
               <div style={{display:'flex',minWidth:chartW}}>
                 <div style={{width:200,flexShrink:0,borderRight:'1px solid #E5E3E0'}}>
-                  <div style={{height:30,borderBottom:'1px solid #E5E3E0',padding:'6px 8px',fontSize:10,fontWeight:600,color:'#6B6056'}}>PROJECT</div>
+                  <div style={{height:30,borderBottom:'1px solid #E5E3E0',padding:'6px 8px',fontSize:10,fontWeight:600,color:'#625650'}}>PROJECT</div>
                   {ganttJobs.map(j=><div key={j.id} style={{height:rowH,padding:'0 8px',display:'flex',alignItems:'center',borderBottom:'1px solid #F4F4F2',fontSize:11,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={j.job_name}>{(j.job_name||'').slice(0,25)}</div>)}
                 </div>
                 <div style={{flex:1,position:'relative',minWidth:0}}>
                   <div style={{height:30,borderBottom:'1px solid #E5E3E0',position:'relative'}}>
-                    {monthTicks.map(t=><div key={t.ms} style={{position:'absolute',left:`${((t.ms-minDate)/(maxDate-minDate))*100}%`,fontSize:9,fontWeight:600,color:'#6B6056',top:8,borderLeft:'1px solid #E5E3E0',paddingLeft:4}}>{t.label}</div>)}
+                    {monthTicks.map(t=><div key={t.ms} style={{position:'absolute',left:`${((t.ms-minDate)/(maxDate-minDate))*100}%`,fontSize:9,fontWeight:600,color:'#625650',top:8,borderLeft:'1px solid #E5E3E0',paddingLeft:4}}>{t.label}</div>)}
                   </div>
                   {ganttJobs.map((j,i)=>{
                     const s=parseD(j.est_start_date);
                     const e2=j.install_complete_date?parseD(j.install_complete_date):s+60*86400000;
                     const left=((s-minDate)/(maxDate-minDate))*100;
                     const width=((e2-s)/(maxDate-minDate))*100;
-                    const c=GANTT_MKT_C[j.market]||'#8B2020';
+                    const c=GANTT_MKT_C[j.market]||'#8A261D';
                     return<div key={j.id} style={{height:rowH,position:'relative',borderBottom:'1px solid #F4F4F2',display:'flex',alignItems:'center'}}>
                       <div title={`${j.job_name}\n${j.market}\nStart: ${fD(j.est_start_date)}\nEnd: ${j.install_complete_date?fD(j.install_complete_date):'Est. +60d'}\nStatus: ${SL[j.status]||j.status}\nLF: ${n(j.total_lf).toLocaleString()}`} style={{position:'absolute',left:`${left}%`,width:`${Math.max(width,0.5)}%`,height:18,background:c,borderRadius:4,opacity:0.85,cursor:'pointer'}}/>
                     </div>;
@@ -4453,14 +4453,14 @@ function SchedulePage({jobs}){
           </div>;
         })()}
       </div>
-      {view==='calendar'&&<div style={{width:220,flexShrink:0}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:10}}>Weekly Capacity</div>{weeks8.map(w=>{const wk=w.toISOString().split('T')[0];const wEnd=new Date(w);wEnd.setDate(wEnd.getDate()+6);const wEv=events.filter(e=>e.scheduled_date>=wk&&e.scheduled_date<=wEnd.toISOString().split('T')[0]);const wLF=wEv.reduce((s,e)=>s+n(e.lf_scheduled),0);const color=wLF>8000?'#991B1B':wLF>5000?'#B45309':'#065F46';return<div key={wk} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}><span style={{color:'#6B6056'}}>Wk {w.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span><span style={{fontWeight:700,color}}>{wLF.toLocaleString()} LF</span></div><PBar pct={wLF/8000*100} color={color} h={4}/></div>;})}</div>}
+      {view==='calendar'&&<div style={{width:220,flexShrink:0}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:10}}>Weekly Capacity</div>{weeks8.map(w=>{const wk=w.toISOString().split('T')[0];const wEnd=new Date(w);wEnd.setDate(wEnd.getDate()+6);const wEv=events.filter(e=>e.scheduled_date>=wk&&e.scheduled_date<=wEnd.toISOString().split('T')[0]);const wLF=wEv.reduce((s,e)=>s+n(e.lf_scheduled),0);const color=wLF>8000?'#991B1B':wLF>5000?'#B45309':'#065F46';return<div key={wk} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:2}}><span style={{color:'#625650'}}>Wk {w.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span><span style={{fontWeight:700,color}}>{wLF.toLocaleString()} LF</span></div><PBar pct={wLF/8000*100} color={color} h={4}/></div>;})}</div>}
     </div>
     {showAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setShowAdd(false);setEditEvt(null);}}><div style={{background:'#fff',borderRadius:16,padding:24,width:480,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
       <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:16}}>{editEvt?'Edit Event':'Add Event'}</div>
       <form onSubmit={saveEvent}>
-        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase'}}>Project</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>{[['Event Type','event_type','select'],['LF Scheduled','lf_scheduled','number'],['Start Date','scheduled_date','date'],['End Date','end_date','date'],['Assigned To','assigned_to','text'],['Crew','crew','text']].map(([l,k,t])=><div key={k}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase'}}>{l}</label>{t==='select'?<select value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={inputS}>{['production_start','production_end','install_start','install_end','delivery'].map(t2=><option key={t2} value={t2}>{t2.replace(/_/g,' ')}</option>)}</select>:<input type={t} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={inputS} required={k==='scheduled_date'}/> }</div>)}</div>
-        <div style={{marginTop:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase'}}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase'}}>Project</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>{[['Event Type','event_type','select'],['LF Scheduled','lf_scheduled','number'],['Start Date','scheduled_date','date'],['End Date','end_date','date'],['Assigned To','assigned_to','text'],['Crew','crew','text']].map(([l,k,t])=><div key={k}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase'}}>{l}</label>{t==='select'?<select value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={inputS}>{['production_start','production_end','install_start','install_end','delivery'].map(t2=><option key={t2} value={t2}>{t2.replace(/_/g,' ')}</option>)}</select>:<input type={t} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={inputS} required={k==='scheduled_date'}/> }</div>)}</div>
+        <div style={{marginTop:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase'}}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
         <div style={{display:'flex',gap:8,marginTop:16}}><button type="submit" style={btnP}>{editEvt?'Update':'Save'}</button>{editEvt&&<button type="button" onClick={()=>deleteEvent(editEvt.id)} style={{...btnP,background:'#991B1B'}}>Delete</button>}<button type="button" onClick={()=>{setShowAdd(false);setEditEvt(null);}} style={btnS}>Cancel</button></div>
       </form>
     </div></div>}
@@ -4770,7 +4770,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>All jobs in production queue — sorted by est. start date</div>
         </div>
         <div style={{display:'flex',gap:4,marginBottom:10}}>
-          {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #7C3AED':'1px solid #E5E3E0',background:queueFilter===k?'#EDE9FE':'#FFF',color:queueFilter===k?'#7C3AED':'#6B6056',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
+          {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #7C3AED':'1px solid #E5E3E0',background:queueFilter===k?'#EDE9FE':'#FFF',color:queueFilter===k?'#7C3AED':'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
         </div>
         <div style={{maxHeight:720,overflow:'auto',display:'flex',flexDirection:'column',gap:12}}>
           {queueGroups.total===0&&<div style={{textAlign:'center',padding:20,color:'#9E9B96',fontSize:12}}>No jobs in queue</div>}
@@ -4789,8 +4789,8 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                 const overdue=est&&est<todayIsoStart;const urgent=est&&!overdue&&est<=sevenOut;
                 return<div key={j.id} style={{border:'1px solid #E5E3E0',borderLeft:`3px solid ${overdue?'#DC2626':urgent?'#B45309':'#15803D'}`,borderRadius:8,padding:10,background:'#FAFAF8'}}>
                   <div style={{fontSize:13,fontWeight:700}}>{j.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{j.job_number}</span></div>
-                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
-                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{gt.panels.toLocaleString()}</b> panels</span>} {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<span style={{marginLeft:8}}><LfBadges job={j}/></span>}</div>
+                  <div style={{fontSize:11,color:'#625650',marginTop:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
+                  <div style={{fontSize:11,color:'#625650',marginTop:2}}>{pcs>0&&<span><b style={{color:'#1A1A1A'}}>{gt.panels.toLocaleString()}</b> panels</span>} {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<span style={{marginLeft:8}}><LfBadges job={j}/></span>}</div>
                   <div style={{fontSize:10,color:overdue?'#DC2626':urgent?'#B45309':'#9E9B96',fontWeight:600,marginTop:2}}>
                     {j.est_start_date?`Est start: ${fD(j.est_start_date)}`:'No est start'} {days>0&&<span>· ~{days} prod days</span>}
                     {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
@@ -4815,8 +4815,8 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                 const hasStyleColor=!!(j.style&&j.color);
                 return<div key={j.id} style={{border:'1px solid #FCD34D',borderLeft:`3px solid ${overdue?'#DC2626':'#B45309'}`,borderRadius:8,padding:10,background:'#FFFBEB'}}>
                   <div style={{fontSize:13,fontWeight:700}}>{j.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{j.job_number}</span></div>
-                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[j.style||<span key="s" style={{color:'#DC2626'}}>no style</span>,j.color||<span key="c" style={{color:'#DC2626'}}>no color</span>,j.height_precast?j.height_precast+'ft':null].filter(Boolean).reduce((acc,el,i)=>i===0?[el]:[...acc,' | ',el],[])}</div>
-                  {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<div style={{fontSize:11,color:'#6B6056',marginTop:2}}><LfBadges job={j}/></div>}
+                  <div style={{fontSize:11,color:'#625650',marginTop:2}}>{[j.style||<span key="s" style={{color:'#DC2626'}}>no style</span>,j.color||<span key="c" style={{color:'#DC2626'}}>no color</span>,j.height_precast?j.height_precast+'ft':null].filter(Boolean).reduce((acc,el,i)=>i===0?[el]:[...acc,' | ',el],[])}</div>
+                  {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<div style={{fontSize:11,color:'#625650',marginTop:2}}><LfBadges job={j}/></div>}
                   <div style={{fontSize:10,color:overdue?'#DC2626':urgent?'#B45309':'#9E9B96',fontWeight:600,marginTop:2}}>
                     {j.est_start_date?`Est start: ${fD(j.est_start_date)}`:'No est start'}
                     {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
@@ -4832,15 +4832,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       </div>
 
       {/* RIGHT — PLAN BUILDER */}
-      <div style={{...card,padding:14,borderTop:'3px solid #8B2020'}}>
+      <div style={{...card,padding:14,borderTop:'3px solid #8A261D'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:8}}>
-          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8B2020',textTransform:'uppercase'}}>{planDate===tomorrowISO?"Tomorrow's Plan":'Plan for '+fmtDateLabel(planDate)}</div>
+          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8A261D',textTransform:'uppercase'}}>{planDate===tomorrowISO?"Tomorrow's Plan":'Plan for '+fmtDateLabel(planDate)}</div>
           <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-            <button onClick={()=>setPlanDate(shiftDate(planDate,-1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#6B6056'}}>←</button>
+            <button onClick={()=>setPlanDate(shiftDate(planDate,-1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#625650'}}>←</button>
             <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} style={{...inputS,width:150}}/>
-            <button onClick={()=>setPlanDate(shiftDate(planDate,1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#6B6056'}}>→</button>
-            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'5px 9px',border:planDate===todayISO?'2px solid #8B2020':'1px solid #E5E3E0',background:planDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#8B2020':'#6B6056'}}>Today</button>
-            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'5px 9px',border:planDate===tomorrowISO?'2px solid #8B2020':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#8B2020':'#6B6056'}}>Tomorrow</button>
+            <button onClick={()=>setPlanDate(shiftDate(planDate,1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#625650'}}>→</button>
+            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'5px 9px',border:planDate===todayISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#8A261D':'#625650'}}>Today</button>
+            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'5px 9px',border:planDate===tomorrowISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#8A261D':'#625650'}}>Tomorrow</button>
           </div>
         </div>
 
@@ -4863,7 +4863,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           {planLines.map((l,idx)=>{
             const m=l.material||{};const gt=l.material_totals||{posts:0,panels:0,rails:0,caps:0};
             const partial=lineIsPartial(l);
-            const row=(label,val)=>val>0?<div style={{display:'flex',justifyContent:'space-between',fontSize:11,padding:'1px 0'}}><span style={{color:'#6B6056'}}>{label}:</span><b style={{color:'#1A1A1A'}}>{val.toLocaleString()}</b></div>:null;
+            const row=(label,val)=>val>0?<div style={{display:'flex',justifyContent:'space-between',fontSize:11,padding:'1px 0'}}><span style={{color:'#625650'}}>{label}:</span><b style={{color:'#1A1A1A'}}>{val.toLocaleString()}</b></div>:null;
             const phLabel=l.post_height?`${l.post_height}ft`:(l.height?`${l.height}ft`:'');
             return<div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:`4px solid ${partial?'#B45309':'#7C3AED'}`,borderRadius:8,padding:10,background:'#FFF'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
@@ -4877,7 +4877,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                     <span style={{color:'#9E9B96',fontSize:10}}>#{l.job_number}</span>
                     {partial&&<span style={{background:'#FEF3C7',color:'#B45309',fontSize:9,fontWeight:800,padding:'1px 5px',borderRadius:3}}>⚡ PARTIAL</span>}
                   </div>
-                  <div style={{fontSize:10,color:'#6B6056',marginTop:1}}>{[l.style,l.color,l.height?l.height+'ft':null,n(l.planned_lf)?`${n(l.planned_lf).toLocaleString()} LF`:null].filter(Boolean).join(' | ')}</div>
+                  <div style={{fontSize:10,color:'#625650',marginTop:1}}>{[l.style,l.color,l.height?l.height+'ft':null,n(l.planned_lf)?`${n(l.planned_lf).toLocaleString()} LF`:null].filter(Boolean).join(' | ')}</div>
                   {l.material_calc_date&&<div style={{fontSize:9,color:'#065F46',fontWeight:600}}>📋 Material order calculated {new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}
                 </div>
                 <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>
@@ -4888,11 +4888,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
               </div>}
               {/* Full Order vs Today's Run — per-piece table */}
               {(gt.posts+gt.panels+gt.rails+gt.caps)>0&&(()=>{
-                const thCell={padding:'6px 10px',fontSize:9,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'};
+                const thCell={padding:'6px 10px',fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'};
                 const tdLabel={padding:'5px 10px',fontSize:11,color:'#1A1A1A',fontWeight:600,borderBottom:'1px solid #F4F4F2'};
-                const tdFull={padding:'5px 10px',fontSize:12,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#6B6056',background:'#FAFAF8',borderBottom:'1px solid #F4F4F2'};
+                const tdFull={padding:'5px 10px',fontSize:12,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#625650',background:'#FAFAF8',borderBottom:'1px solid #F4F4F2'};
                 const tdInput={padding:'3px 6px',textAlign:'right',borderBottom:'1px solid #F4F4F2'};
-                const sectionHdr=(label)=><tr><td colSpan={3} style={{padding:'4px 10px',background:'#EFEEEB',fontSize:9,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
+                const sectionHdr=(label)=><tr><td colSpan={3} style={{padding:'4px 10px',background:'#EFEEEB',fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
                 const pieceRow=(pt)=>{
                   const full=n(l.material?.[pt.key]);
                   if(full===0)return null;
@@ -4929,8 +4929,8 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                 </div>;
               })()}
               <div style={{marginTop:8,display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
-                <label style={{fontSize:9,color:'#6B6056',fontWeight:600}}>Shift:</label>
-                {['1','2','both'].map(s=><button key={s} onClick={()=>updatePlanLine(idx,'shift_assignment',s)} style={{padding:'3px 8px',border:l.shift_assignment===s?'2px solid #7C3AED':'1px solid #E5E3E0',background:l.shift_assignment===s?'#EDE9FE':'#FFF',borderRadius:4,fontSize:10,fontWeight:700,color:l.shift_assignment===s?'#7C3AED':'#6B6056',cursor:'pointer'}}>{s==='both'?'Both':'Shift '+s}</button>)}
+                <label style={{fontSize:9,color:'#625650',fontWeight:600}}>Shift:</label>
+                {['1','2','both'].map(s=><button key={s} onClick={()=>updatePlanLine(idx,'shift_assignment',s)} style={{padding:'3px 8px',border:l.shift_assignment===s?'2px solid #7C3AED':'1px solid #E5E3E0',background:l.shift_assignment===s?'#EDE9FE':'#FFF',borderRadius:4,fontSize:10,fontWeight:700,color:l.shift_assignment===s?'#7C3AED':'#625650',cursor:'pointer'}}>{s==='both'?'Both':'Shift '+s}</button>)}
               </div>
               {partial&&<div style={{marginTop:8,padding:'8px 10px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:6}}>
                 <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:800,textTransform:'uppercase',marginBottom:3}}>⚡ Partial run reason (required)</label>
@@ -4943,13 +4943,13 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           })}
           {planLines.length===0&&<div style={{textAlign:'center',padding:32,color:'#9E9B96',fontSize:12}}>
             <div style={{fontSize:24,marginBottom:6}}>📋</div>
-            <div style={{fontWeight:700,color:'#6B6056',marginBottom:4}}>No plan yet — add jobs from the queue</div>
+            <div style={{fontWeight:700,color:'#625650',marginBottom:4}}>No plan yet — add jobs from the queue</div>
           </div>}
         </div>
 
         {/* Plan summary + save */}
         {planLines.length>0&&<>
-          <div style={{marginTop:12,padding:10,background:'#FDF4F4',borderRadius:8,display:'flex',gap:16,fontSize:11,fontWeight:600,color:'#8B2020',flexWrap:'wrap'}}>
+          <div style={{marginTop:12,padding:10,background:'#FDF4F4',borderRadius:8,display:'flex',gap:16,fontSize:11,fontWeight:600,color:'#8A261D',flexWrap:'wrap'}}>
             <span>Jobs: <b>{planTotals.count}</b></span>
             <span>Panels: <b>{planTotals.panels.toLocaleString()}</b></span>
             <span>Posts: <b>{planTotals.posts.toLocaleString()}</b></span>
@@ -4959,11 +4959,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
             <span>CYD: <b>{planTotals.cy.toFixed(1)}</b> / {dailyCyCap} ({cyPct}%)</span>
           </div>
           <div style={{marginTop:10}}>
-            <label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Plan Notes</label>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Plan Notes</label>
             <textarea value={planNotes} onChange={e=>setPlanNotes(e.target.value)} rows={2} placeholder="General notes for the day..." style={{...inputS,resize:'vertical'}}/>
           </div>
         </>}
-        <button onClick={savePlan} disabled={savingPlan||planLines.length===0} style={{...btnP,background:'#8B2020',width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:savingPlan||planLines.length===0?0.5:1}}>{savingPlan?'Saving...':planId?'Update Plan':'Save Plan'}</button>
+        <button onClick={savePlan} disabled={savingPlan||planLines.length===0} style={{...btnP,background:'#8A261D',width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:savingPlan||planLines.length===0?0.5:1}}>{savingPlan?'Saving...':planId?'Update Plan':'Save Plan'}</button>
       </div>
     </div>
 
@@ -4974,9 +4974,9 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         <span style={{color:'#9E9B96'}}>{leadershipOpen?'▲':'▼'}</span>
       </button>
       {leadershipOpen&&<div style={{padding:16,borderTop:'1px solid #E5E3E0'}}>
-        <div style={{fontSize:11,color:'#6B6056',marginBottom:10}}>Physical mold sets — {totalMoldsOwned} total molds across {physicalMolds.length} sets</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:10}}>Physical mold sets — {totalMoldsOwned} total molds across {physicalMolds.length} sets</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>
             {leadershipTable.map(r=>{
               if(!r.confirmed)return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:'#FAFAF8'}}>
@@ -5004,10 +5004,10 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
             })}
           </tbody>
         </table>
-        {leadershipTable.some(r=>!r.confirmed)&&<div style={{marginTop:8,padding:'6px 10px',background:'#F4F4F2',border:'1px solid #D1CEC9',borderRadius:6,fontSize:10,color:'#6B6056'}}>
+        {leadershipTable.some(r=>!r.confirmed)&&<div style={{marginTop:8,padding:'6px 10px',background:'#F4F4F2',border:'1px solid #D1CEC9',borderRadius:6,fontSize:10,color:'#625650'}}>
           ⚙️ Vertical Wood panels/mold needs confirmation from Max. Total capacity excludes Vertical Wood until verified.
         </div>}
-        <div style={{marginTop:10,padding:10,background:'#F9F8F6',borderRadius:6,fontSize:11,color:'#6B6056'}}>
+        <div style={{marginTop:10,padding:10,background:'#F9F8F6',borderRadius:6,fontSize:11,color:'#625650'}}>
           <b style={{color:'#1A1A1A'}}>Batch Plant:</b> {planTotals.cy.toFixed(1)} / {dailyCyCap} CYD ({cyPct}%) · 2× WIGGERT HPGM 500 · 60 batches/shift × 0.44 CYD
         </div>
       </div>}
@@ -5587,31 +5587,31 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Production Daily Report</h1>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
-      {[['actuals','✅ Log Actuals','#8B2020'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#6B6056',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
+      {[['actuals','✅ Log Actuals','#8A261D'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#625650',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
     </div>
 
 
     {/* ═══ TAB 1: LOG ACTUALS ═══ */}
     {tab==='actuals'&&<div>
-      <div style={{...card,marginBottom:16,borderTop:'3px solid #8B2020'}}>
+      <div style={{...card,marginBottom:16,borderTop:'3px solid #8A261D'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,flexWrap:'wrap',gap:10}}>
           <div>
-            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#8B2020'}}>Log Production Actuals</div>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#8A261D'}}>Log Production Actuals</div>
             <div style={{fontSize:11,color:'#9E9B96'}}>{actualsPlanId?`Plan loaded — ${actualsLines.length} ${actualsLines.length===1?'job':'jobs'} · fill in what was actually produced`:'No production plan for this date'}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            <button onClick={()=>setActualsDate(shiftDate(actualsDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>←</button>
+            <button onClick={()=>setActualsDate(shiftDate(actualsDate,-1))} title="Previous day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#625650'}}>←</button>
             <input type="date" value={actualsDate} onChange={e=>setActualsDate(e.target.value)} title={fmtDateLabel(actualsDate)} style={{...inputS,width:170}}/>
-            <button onClick={()=>setActualsDate(shiftDate(actualsDate,1))} title="Next day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#6B6056'}}>→</button>
-            <button onClick={()=>setActualsDate(todayISO)} style={{padding:'6px 10px',border:actualsDate===todayISO?'2px solid #8B2020':'1px solid #E5E3E0',background:actualsDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:actualsDate===todayISO?'#8B2020':'#6B6056'}}>Today</button>
+            <button onClick={()=>setActualsDate(shiftDate(actualsDate,1))} title="Next day" style={{padding:'6px 10px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700,color:'#625650'}}>→</button>
+            <button onClick={()=>setActualsDate(todayISO)} style={{padding:'6px 10px',border:actualsDate===todayISO?'2px solid #8A261D':'1px solid #E5E3E0',background:actualsDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:actualsDate===todayISO?'#8A261D':'#625650'}}>Today</button>
             <div style={{display:'flex',gap:4}}>
-              {[1,2].map(s=><button key={s} onClick={()=>setShift(s)} style={{padding:'8px 16px',borderRadius:6,border:shift===s?'2px solid #8B2020':'1px solid #E5E3E0',background:shift===s?'#FDF4F4':'#FFF',color:shift===s?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>Shift {s}</button>)}
+              {[1,2].map(s=><button key={s} onClick={()=>setShift(s)} style={{padding:'8px 16px',borderRadius:6,border:shift===s?'2px solid #8A261D':'1px solid #E5E3E0',background:shift===s?'#FDF4F4':'#FFF',color:shift===s?'#8A261D':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>Shift {s}</button>)}
             </div>
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={loggedBy} onChange={e=>setLoggedBy(e.target.value)} style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={crewSize} onChange={e=>setCrewSize(e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={loggedBy} onChange={e=>setLoggedBy(e.target.value)} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Crew Size</label><input type="number" value={crewSize} onChange={e=>setCrewSize(e.target.value)} placeholder="0" style={inputS}/></div>
         </div>
         {/* Shift status / handoff banners */}
         {shiftSubs[1]&&shiftSubs[2]&&<div style={{padding:'10px 14px',background:'#DCFCE7',border:'1px solid #15803D',borderRadius:8,marginBottom:12,fontSize:12}}>
@@ -5632,7 +5632,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         {!actualsPlanId&&<div style={{...card,textAlign:'center',padding:40,background:'#F9F8F6',border:'1px dashed #D1CEC9'}}>
           <div style={{fontSize:40,marginBottom:12}}>📋</div>
           <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A',marginBottom:6}}>No production plan found for {new Date(actualsDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
-          <div style={{fontSize:12,color:'#6B6056',marginBottom:16,maxWidth:440,margin:'0 auto 16px'}}>Max needs to save a plan for this date before actuals can be logged. You can create one now or switch to a date that already has a plan.</div>
+          <div style={{fontSize:12,color:'#625650',marginBottom:16,maxWidth:440,margin:'0 auto 16px'}}>Max needs to save a plan for this date before actuals can be logged. You can create one now or switch to a date that already has a plan.</div>
           <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
             <button onClick={()=>{if(onNav)onNav('production_planning');window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnP,padding:'10px 18px',fontSize:13}}>← Go to Production Planning</button>
             <button onClick={()=>setActualsDate(todayISO)} style={{...btnS,padding:'10px 18px',fontSize:13}}>Jump to Today</button>
@@ -5648,13 +5648,13 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
             const hasVar=lineHasVariance(l);
             const groups=['POSTS','PANELS','RAILS','POST CAPS'];
             const pieceIcon=(planned,act)=>{const p=n(planned),a=n(act);if(a===0&&p>0)return<span style={{color:'#991B1B',fontWeight:700}}>✗</span>;if(a===p)return<span style={{color:'#065F46',fontWeight:700}}>✓</span>;if(a<p)return<span style={{color:'#B45309',fontWeight:700}}>⚠</span>;return<span style={{color:'#1D4ED8',fontWeight:700}}>↑</span>;};
-            return<div key={idx} style={{...card,padding:0,overflow:'hidden',borderLeft:l.unplanned?'3px solid #1D4ED8':'3px solid #8B2020'}}>
+            return<div key={idx} style={{...card,padding:0,overflow:'hidden',borderLeft:l.unplanned?'3px solid #1D4ED8':'3px solid #8A261D'}}>
               {/* Header */}
               <div style={{padding:'12px 16px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
                 <div>
                   <div style={{fontWeight:800,fontSize:14}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500}}>— #{l.job_number}</span>{l.unplanned&&<span style={{marginLeft:6,fontSize:9,padding:'2px 6px',background:'#DBEAFE',color:'#1D4ED8',borderRadius:4,fontWeight:700,textTransform:'uppercase'}}>Unplanned</span>}</div>
-                  <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
-                  {(drLineItemsByJob[l.job_number]||[]).length>0&&<div style={{marginTop:4,display:'flex',flexDirection:'column',gap:2}}>{drLineItemsByJob[l.job_number].map(li=><div key={li.id} style={{fontSize:10,color:'#6B6056',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:4,padding:'2px 6px',display:'inline-block',width:'fit-content'}}><b style={{color:'#1A1A1A'}}>{n(li.lf).toLocaleString()} LF</b> {li.height&&`@ ${li.height}ft`} {li.style} {li.color&&`· ${li.color}`}</div>)}</div>}
+                  <div style={{fontSize:11,color:'#625650',marginTop:2}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')||'—'}</div>
+                  {(drLineItemsByJob[l.job_number]||[]).length>0&&<div style={{marginTop:4,display:'flex',flexDirection:'column',gap:2}}>{drLineItemsByJob[l.job_number].map(li=><div key={li.id} style={{fontSize:10,color:'#625650',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:4,padding:'2px 6px',display:'inline-block',width:'fit-content'}}><b style={{color:'#1A1A1A'}}>{n(li.lf).toLocaleString()} LF</b> {li.height&&`@ ${li.height}ft`} {li.style} {li.color&&`· ${li.color}`}</div>)}</div>}
                 </div>
                 {/* Remove job — two-step confirm w/ reason capture. PATCHes job status back to production_queue on success. */}
                 {removeConfirmIdx===idx?<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:10,minWidth:280,maxWidth:380}}>
@@ -5664,11 +5664,11 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
                     <option value="">— Select reason —</option>
                     {REMOVAL_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
                   </select>
-                  <label style={{display:'block',fontSize:10,color:'#6B6056',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>Notes (optional)</label>
+                  <label style={{display:'block',fontSize:10,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:3}}>Notes (optional)</label>
                   <textarea value={removeNotes} onChange={e=>setRemoveNotes(e.target.value)} disabled={removeBusyIdx===idx} rows={2} placeholder="Additional detail..." style={{...inputS,padding:'6px 8px',fontSize:12,resize:'vertical',marginBottom:8}}/>
                   <div style={{display:'flex',gap:6}}>
                     <button disabled={removeBusyIdx===idx||!removeReason} onClick={()=>confirmRemoveActualsLine(idx)} style={{background:!removeReason?'#E5E3E0':'#991B1B',border:'none',borderRadius:6,padding:'6px 12px',color:!removeReason?'#9E9B96':'#FFF',fontSize:11,fontWeight:700,cursor:(removeBusyIdx===idx||!removeReason)?'not-allowed':'pointer',opacity:removeBusyIdx===idx?0.6:1,flex:1}}>{removeBusyIdx===idx?'Removing...':'Yes, Remove'}</button>
-                    <button disabled={removeBusyIdx===idx} onClick={()=>{setRemoveConfirmIdx(null);setRemoveReason('');setRemoveNotes('');}} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 12px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>Cancel</button>
+                    <button disabled={removeBusyIdx===idx} onClick={()=>{setRemoveConfirmIdx(null);setRemoveReason('');setRemoveNotes('');}} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 12px',color:'#625650',fontSize:11,cursor:'pointer'}}>Cancel</button>
                   </div>
                 </div>:<button onClick={()=>{setRemoveConfirmIdx(idx);setRemoveReason('');setRemoveNotes('');}} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontSize:11,cursor:'pointer',fontWeight:600}}>× Remove Job</button>}
               </div>
@@ -5676,15 +5676,15 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
               {(()=>{
                 const s1=shift===2?shift1ByLine[l.plan_line_id]:null;
                 const showShift1=!!s1;
-                const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0'};
+                const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0'};
                 const cellThLeft={...cellTh,textAlign:'left'};
                 const cellTd={padding:'8px 12px',fontSize:14,textAlign:'center',borderBottom:'1px solid #F4F4F2'};
                 const cellLabel={...cellTd,textAlign:'left',color:'#1A1A1A',fontWeight:600,fontSize:13};
-                const cellPlanned={...cellTd,background:'#F9F8F6',color:'#6B6056',fontWeight:700,fontFamily:'Inter'};
+                const cellPlanned={...cellTd,background:'#F9F8F6',color:'#625650',fontWeight:700,fontFamily:'Inter'};
                 const cellActual={...cellTd,background:'#FFF'};
                 const cellVar=(plan,act)=>{const hasAct=act!==''&&act!=null;const p=n(plan),a=n(act);const v=a-p;const col=!hasAct?'#9E9B96':v===0?'#065F46':v>0?'#065F46':'#991B1B';const text=!hasAct?'—':v===0?'✓':(v>0?'+':'')+v;return{...cellTd,color:col,fontWeight:800,fontFamily:'Inter'};};
                 const varText=(plan,act)=>{const hasAct=act!==''&&act!=null;const p=n(plan),a=n(act);const v=a-p;if(!hasAct)return'—';if(v===0)return'✓';return(v>0?'+':'')+v;};
-                const sectionHeader=(label)=><tr><td colSpan={showShift1?5:4} style={{padding:'6px 12px',background:'#EFEEEB',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
+                const sectionHeader=(label)=><tr><td colSpan={showShift1?5:4} style={{padding:'6px 12px',background:'#EFEEEB',fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,borderTop:'1px solid #E5E3E0',borderBottom:'1px solid #E5E3E0'}}>{label}</td></tr>;
                 const pieceRow=(pt)=>{
                   if(n(l.planned[pt.key])===0)return null;
                   const plan=n(l.planned[pt.key]);
@@ -5704,7 +5704,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
                     <th style={cellThLeft}>Piece Type</th>
                     <th style={cellTh}>Planned</th>
                     {showShift1&&<th style={{...cellTh,color:'#1D4ED8'}}>Shift 1</th>}
-                    <th style={{...cellTh,color:'#8B2020'}}>Actual (Shift {shift})</th>
+                    <th style={{...cellTh,color:'#8A261D'}}>Actual (Shift {shift})</th>
                     <th style={cellTh}>Variance</th>
                   </tr></thead>
                   <tbody>
@@ -5800,29 +5800,29 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         {actualsLines.length>0&&(()=>{
           const g=shiftGroupTotals;
           const rows=[['Total Panels',g.PANELS],['Total Posts',g.POSTS],['Total Rails',g.RAILS],['Total Caps',g['POST CAPS']],['Total LF',g.LF]];
-          const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'};
+          const cellTh={padding:'10px 12px',fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center',borderBottom:'1px solid #E5E3E0',background:'#FDF4F4'};
           const cellThLeft={...cellTh,textAlign:'left'};
           const cellTd={padding:'10px 12px',fontSize:14,textAlign:'center',borderBottom:'1px solid #F4F4F2',fontFamily:'Inter',fontWeight:700};
           const cellLabel={...cellTd,textAlign:'left',color:'#1A1A1A'};
-          return<div style={{...card,padding:0,overflow:'hidden',marginBottom:12,borderTop:'3px solid #8B2020'}}>
-            <div style={{padding:'10px 14px',background:'#8B2020',color:'#FFF',fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>📊 Shift {shift} Summary — {actualsLines.length} job{actualsLines.length===1?'':'s'}</div>
+          return<div style={{...card,padding:0,overflow:'hidden',marginBottom:12,borderTop:'3px solid #8A261D'}}>
+            <div style={{padding:'10px 14px',background:'#8A261D',color:'#FFF',fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>📊 Shift {shift} Summary — {actualsLines.length} job{actualsLines.length===1?'':'s'}</div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead><tr>
                 <th style={cellThLeft}></th>
                 <th style={cellTh}>Planned</th>
-                <th style={{...cellTh,color:'#8B2020'}}>Actual</th>
+                <th style={{...cellTh,color:'#8A261D'}}>Actual</th>
                 <th style={cellTh}>Variance</th>
               </tr></thead>
               <tbody>{rows.map(([label,g2])=>{const v=g2.actual-g2.planned;const hasAct=g2.actual>0;const col=!hasAct?'#9E9B96':v===0?'#065F46':v>0?'#065F46':'#991B1B';const text=!hasAct?'—':v===0?'✓':(v>0?'+':'')+v.toLocaleString();return<tr key={label}>
                 <td style={cellLabel}>{label}</td>
-                <td style={{...cellTd,background:'#F9F8F6',color:'#6B6056'}}>{g2.planned.toLocaleString()}</td>
+                <td style={{...cellTd,background:'#F9F8F6',color:'#625650'}}>{g2.planned.toLocaleString()}</td>
                 <td style={cellTd}>{g2.actual.toLocaleString()}</td>
                 <td style={{...cellTd,color:col}}>{text}</td>
               </tr>;})}</tbody>
             </table>
           </div>;
         })()}
-        <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Shift Notes</label><textarea value={actualsNotes} onChange={e=>setActualsNotes(e.target.value)} rows={2} placeholder="General notes for this shift..." style={{...inputS,resize:'vertical'}}/></div>
+        <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Shift Notes</label><textarea value={actualsNotes} onChange={e=>setActualsNotes(e.target.value)} rows={2} placeholder="General notes for this shift..." style={{...inputS,resize:'vertical'}}/></div>
         <button onClick={submitActuals} disabled={submittingActuals||actualsLines.length===0} style={{...btnP,width:'100%',padding:'12px 0',marginTop:12,fontSize:14,opacity:submittingActuals||actualsLines.length===0?0.5:1}}>{submittingActuals?'Submitting...':`Submit Shift ${shift} Report`}</button>
         </>}
       </div>
@@ -5840,22 +5840,22 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         </div>
         {/* Summary stats */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #0F766E'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#0F766E'}}>{histStats.totalPcs.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Total Pieces Produced</div></div>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{histStats.totalLf.toLocaleString()}</div><div style={{fontSize:10,color:'#6B6056'}}>Total LF Produced</div></div>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:histStats.achievement>=100?'#065F46':histStats.achievement>=80?'#B45309':'#991B1B'}}>{histStats.achievement}%</div><div style={{fontSize:10,color:'#6B6056'}}>Plan Achievement</div></div>
-          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{histStats.daysReported}</div><div style={{fontSize:10,color:'#6B6056'}}>Days Reported</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #0F766E'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#0F766E'}}>{histStats.totalPcs.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Total Pieces Produced</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{histStats.totalLf.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Total LF Produced</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:histStats.achievement>=100?'#065F46':histStats.achievement>=80?'#B45309':'#991B1B'}}>{histStats.achievement}%</div><div style={{fontSize:10,color:'#625650'}}>Plan Achievement</div></div>
+          <div style={{...card,padding:'12px 14px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{histStats.daysReported}</div><div style={{fontSize:10,color:'#625650'}}>Days Reported</div></div>
         </div>
         {/* Daily breakdown */}
         {histLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:histStats.daily.length===0?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No actuals reported in this range</div>:<div>
-          <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>Daily Breakdown</div>
+          <div style={{fontSize:12,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Daily Breakdown</div>
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             {histStats.daily.map(d=>{const pct=d.totalPlanned>0?Math.round(d.totalPcs/d.totalPlanned*100):0;const isExp=expandedDate===d.date;return<div key={d.date} style={{...card,padding:0,overflow:'hidden'}}>
               <div onClick={()=>setExpandedDate(isExp?null:d.date)} style={{padding:'10px 14px',cursor:'pointer',display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
                 <div style={{flex:'1 1 150px',fontWeight:700}}>{new Date(d.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
-                <div style={{fontSize:11,color:'#6B6056'}}>S1: <b style={{color:'#1A1A1A'}}>{d.s1Pcs}</b></div>
-                <div style={{fontSize:11,color:'#6B6056'}}>S2: <b style={{color:'#1A1A1A'}}>{d.s2Pcs}</b></div>
+                <div style={{fontSize:11,color:'#625650'}}>S1: <b style={{color:'#1A1A1A'}}>{d.s1Pcs}</b></div>
+                <div style={{fontSize:11,color:'#625650'}}>S2: <b style={{color:'#1A1A1A'}}>{d.s2Pcs}</b></div>
                 <div style={{fontSize:12,fontWeight:800,color:'#0F766E'}}>{d.totalPcs} pcs</div>
-                <div style={{fontSize:11,color:'#6B6056'}}>{d.totalLf.toLocaleString()} LF</div>
+                <div style={{fontSize:11,color:'#625650'}}>{d.totalLf.toLocaleString()} LF</div>
                 <div style={{fontSize:11,fontWeight:700,color:pct>=100?'#065F46':pct>=80?'#B45309':'#991B1B'}}>{pct}% of plan</div>
                 <span style={{color:'#9E9B96',fontSize:11}}>{isExp?'▲':'▼'}</span>
               </div>
@@ -5864,14 +5864,14 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
                   <thead><tr>{['Job','Style','Color','Ht','Shift','Planned','Actual','LF','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'4px 6px',color:'#9E9B96',fontSize:10}}>{h}</th>)}</tr></thead>
                   <tbody>{d.lines.map((a,i)=><tr key={i} style={{borderBottom:'1px solid #E5E3E0',background:a.unplanned?'#EFF6FF':'transparent'}}>
                     <td style={{padding:'4px 6px',fontWeight:500}}>{a.job_name}{a.unplanned&&<span style={{color:'#1D4ED8',fontSize:9,marginLeft:4}}>[unplanned]</span>}</td>
-                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.style||'—'}</td>
-                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.color||'—'}</td>
-                    <td style={{padding:'4px 6px',color:'#6B6056'}}>{a.height||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#625650'}}>{a.style||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#625650'}}>{a.color||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#625650'}}>{a.height||'—'}</td>
                     <td style={{padding:'4px 6px'}}>{a.shift}</td>
                     <td style={{padding:'4px 6px',color:'#9E9B96'}}>{n(a.planned_pieces)||'—'}</td>
                     <td style={{padding:'4px 6px',fontWeight:700,color:n(a.actual_pieces)>=n(a.planned_pieces)?'#065F46':'#B45309'}}>{n(a.actual_pieces)||'—'}</td>
                     <td style={{padding:'4px 6px'}}>{n(a.actual_lf).toLocaleString()}</td>
-                    <td style={{padding:'4px 6px',color:'#6B6056',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.notes||'—'}</td>
+                    <td style={{padding:'4px 6px',color:'#625650',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.notes||'—'}</td>
                   </tr>)}</tbody>
                 </table>
               </div>}
@@ -5879,9 +5879,9 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
           </div>
           {/* Style summary */}
           {histStats.byStyle.length>0&&<div style={{marginTop:20}}>
-            <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:8}}>By Style</div>
+            <div style={{fontSize:12,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>By Style</div>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-              <thead><tr style={{background:'#F9F8F6'}}>{['Style','Pieces','LF'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#6B6056',fontWeight:700,borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{background:'#F9F8F6'}}>{['Style','Pieces','LF'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,color:'#625650',fontWeight:700,borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
               <tbody>{histStats.byStyle.map(s=><tr key={s.style} style={{borderBottom:'1px solid #F4F4F2'}}>
                 <td style={{padding:'8px 10px',fontWeight:500}}>{s.style}</td>
                 <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{s.pcs.toLocaleString()}</td>
@@ -5932,9 +5932,9 @@ function WeatherDaysPage({jobs}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700}}>{d.job_name||'—'}</div>
-            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{fD(d.weather_date)}{d.pm?` · ${d.pm}`:''}</div>
+            <div style={{fontSize:12,color:'#625650',marginTop:2}}>{fD(d.weather_date)}{d.pm?` · ${d.pm}`:''}</div>
           </div>
-          {d.market && <span style={pill(MC[d.market]||'#6B6056',MB[d.market]||'#F4F4F2',MC[d.market])}>{MS[d.market]||d.market}</span>}
+          {d.market && <span style={pill(MC[d.market]||'#625650',MB[d.market]||'#F4F4F2',MC[d.market])}>{MS[d.market]||d.market}</span>}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
           <div>
@@ -5946,14 +5946,14 @@ function WeatherDaysPage({jobs}){
             <div style={{fontSize:14,fontWeight:600,marginTop:2}}>{d.reason||'—'}</div>
           </div>
         </div>
-        {d.notes && <div style={{marginTop:8,fontSize:12,color:'#6B6056',fontStyle:'italic'}}>{d.notes}</div>}
+        {d.notes && <div style={{marginTop:8,fontSize:12,color:'#625650',fontStyle:'italic'}}>{d.notes}</div>}
       </div>}
     />:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 380px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Name','Market','PM','Hours Lost','Reason','Notes','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Name','Market','PM','Hours Lost','Reason','Notes','Actions'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>{filtered.map(d=><tr key={d.id} onClick={()=>openForm(d)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
           <td style={{padding:'8px 10px'}}>{fD(d.weather_date)}</td>
           <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.job_name||'—'}</td>
-          <td style={{padding:'8px 10px'}}><span style={pill(MC[d.market]||'#6B6056',MB[d.market]||'#F4F4F2')}>{MS[d.market]||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}><span style={pill(MC[d.market]||'#625650',MB[d.market]||'#F4F4F2')}>{MS[d.market]||'—'}</span></td>
           <td style={{padding:'8px 10px'}}>{d.pm||'—'}</td>
           <td style={{padding:'8px 10px',fontWeight:700,color:'#B45309'}}>{d.hours_lost||'—'}</td>
           <td style={{padding:'8px 10px'}}>{d.reason||'—'}</td>
@@ -5964,14 +5964,14 @@ function WeatherDaysPage({jobs}){
     {showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.3)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowForm(false)}>
       <div style={{background:'#fff',borderRadius:16,padding:28,width:480,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:16}}>{editDay?'Edit Weather Day':'Log Weather Day'}</div>
-        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search jobs..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
+        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job</label><input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);setForm(f=>({...f,job_id:''}));}} placeholder="Search jobs..." style={inputS}/>{jobSearch&&!form.job_id&&<div style={{border:'1px solid #E5E3E0',borderRadius:8,marginTop:4,maxHeight:150,overflow:'auto'}}>{searchedJobs.map(j=><div key={j.id} onClick={()=>{setForm(f=>({...f,job_id:j.id}));setJobSearch(`${j.job_number} - ${j.job_name}`);}} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{j.job_number} - {j.job_name}</div>)}</div>}</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Date</label><input type="date" value={form.weather_date} onChange={e=>setForm(f=>({...f,weather_date:e.target.value}))} style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Hours Lost</label><select value={form.hours_lost} onChange={e=>setForm(f=>({...f,hours_lost:e.target.value}))} style={inputS}><option value="">— Select —</option>{[0.5,1,2,3,4,5,6,7,8,'8+'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Reason</label><select value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} style={inputS}>{['Rain','Wind','Lightning','Extreme Heat','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={form.logged_by} onChange={e=>setForm(f=>({...f,logged_by:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Date</label><input type="date" value={form.weather_date} onChange={e=>setForm(f=>({...f,weather_date:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Hours Lost</label><select value={form.hours_lost} onChange={e=>setForm(f=>({...f,hours_lost:e.target.value}))} style={inputS}><option value="">— Select —</option>{[0.5,1,2,3,4,5,6,7,8,'8+'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Reason</label><select value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} style={inputS}>{['Rain','Wind','Lightning','Extreme Heat','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Logged By</label><input value={form.logged_by} onChange={e=>setForm(f=>({...f,logged_by:e.target.value}))} style={inputS}/></div>
         </div>
-        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
         <div style={{display:'flex',gap:8}}><button onClick={saveDay} style={{...btnP,flex:1}}>{editDay?'Update':'Save'}</button><button onClick={()=>setShowForm(false)} style={btnS}>Cancel</button></div>
       </div>
     </div>}
@@ -6006,13 +6006,13 @@ function ChangeOrdersPage({jobs}){
       <button onClick={openNew} style={btnP}>+ Add Change Order</button>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
-      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{enriched.length}</div><div style={{fontSize:10,color:'#6B6056'}}>Total COs</div></div>
-      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$(totalApproved)}</div><div style={{fontSize:10,color:'#6B6056'}}>Approved</div></div>
-      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#B45309'}}>{$(totalPending)}</div><div style={{fontSize:10,color:'#6B6056'}}>Pending</div></div>
+      <div style={{...card,padding:'10px 14px'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{enriched.length}</div><div style={{fontSize:10,color:'#625650'}}>Total COs</div></div>
+      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#065F46'}}>{$(totalApproved)}</div><div style={{fontSize:10,color:'#625650'}}>Approved</div></div>
+      <div style={{...card,padding:'10px 14px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#B45309'}}>{$(totalPending)}</div><div style={{fontSize:10,color:'#625650'}}>Pending</div></div>
     </div>
     <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
       <select value={statusF||''} onChange={e=>setStatusF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Statuses</option>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select>
-      <span style={{fontSize:12,color:'#6B6056'}}>{filtered.length} change orders</span>
+      <span style={{fontSize:12,color:'#625650'}}>{filtered.length} change orders</span>
     </div>
     {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:isMobile?<MobileCards
       items={filtered}
@@ -6021,7 +6021,7 @@ function ChangeOrdersPage({jobs}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</div>
-            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{o.co_number||'—'}{o.date_submitted?` · ${fD(o.date_submitted)}`:''}</div>
+            <div style={{fontSize:12,color:'#625650',marginTop:2}}>{o.co_number||'—'}{o.date_submitted?` · ${fD(o.date_submitted)}`:''}</div>
           </div>
           <span style={pill(sc2,sb2,sc2)}>{o.status||'—'}</span>
         </div>
@@ -6035,20 +6035,20 @@ function ChangeOrdersPage({jobs}){
             <div style={{fontSize:13,fontWeight:600,marginTop:2}}>{o.approved_by||'—'}</div>
           </div>
         </div>
-        {o.description && <div style={{marginTop:8,fontSize:12,color:'#6B6056'}}>{o.description}</div>}
+        {o.description && <div style={{marginTop:8,fontSize:12,color:'#625650'}}>{o.description}</div>}
       </div>;}}
     />:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 340px)'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-        <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#6B6056','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2',opacity:o.status==='Rejected'?0.5:1}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job','CO#','Date Submitted','Amount','Description','Status','Approved By','Date Approved',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <tbody>{filtered.map(o=>{const[sc2,sb2]=coStatusC[o.status]||['#625650','#F4F4F2'];return<tr key={o.id} style={{borderBottom:'1px solid #F4F4F2',opacity:o.status==='Rejected'?0.5:1}}>
           <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</td>
           <td style={{padding:'8px 10px'}}>{o.co_number||'—'}</td>
           <td style={{padding:'8px 10px'}}>{fD(o.date_submitted)}</td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,color:o.status==='Rejected'?'#991B1B':n(o.amount)>0?'#065F46':'#1A1A1A'}}>{o.status==='Rejected'?<s>{$(o.amount)}</s>:$(o.amount)}</td>
-          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#6B6056'}}>{o.description||'—'}</td>
+          <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#625650'}}>{o.description||'—'}</td>
           <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{o.status||'—'}</span></td>
           <td style={{padding:'8px 10px'}}>{o.approved_by||'—'}</td>
           <td style={{padding:'8px 10px'}}>{fD(o.date_approved)}</td>
-          <td style={{padding:'8px 10px'}}><button onClick={()=>openEditCO(o)} style={{background:'#FDF4F4',border:'1px solid #8B202030',borderRadius:6,color:'#8B2020',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Edit</button></td>
+          <td style={{padding:'8px 10px'}}><button onClick={()=>openEditCO(o)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Edit</button></td>
         </tr>;})}
         {filtered.length===0&&<tr><td colSpan={9} style={{padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>±</div><div style={{color:'#9E9B96',fontSize:14}}>No change orders found</div></td></tr>}</tbody></table>
     </div>}
@@ -6057,22 +6057,22 @@ function ChangeOrdersPage({jobs}){
       <div style={{background:'#FFF',borderRadius:16,padding:24,width:520,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:16}}>{editCO?'Edit Change Order':'Add Change Order'}</div>
         <div style={{marginBottom:12,position:'relative'}}>
-          <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Job *</label>
+          <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Job *</label>
           <input value={jobSearch} onChange={e=>{setJobSearch(e.target.value);if(coForm.job_id)setCOForm(p=>({...p,job_id:''}));}} placeholder="Search by name or number..." style={inputS} disabled={!!editCO}/>
           {searchResults.length>0&&!coForm.job_id&&!editCO&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.1)',zIndex:10,maxHeight:200,overflow:'auto'}}>
             {searchResults.map(j=><button key={j.id} onClick={()=>{setCOForm(p=>({...p,job_id:j.id}));setJobSearch(j.job_name);}} style={{display:'block',width:'100%',padding:'8px 12px',border:'none',background:'transparent',textAlign:'left',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><span style={{fontWeight:600}}>{j.job_name}</span> <span style={{color:'#9E9B96'}}>#{j.job_number}</span></button>)}
           </div>}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(p=>({...p,co_number:e.target.value}))} placeholder="CO-001" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(p=>({...p,date_submitted:e.target.value}))} style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(p=>({...p,amount:e.target.value}))} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(p=>({...p,status:e.target.value}))} style={inputS}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(p=>({...p,approved_by:e.target.value}))} style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(p=>({...p,date_approved:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(p=>({...p,co_number:e.target.value}))} placeholder="CO-001" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(p=>({...p,date_submitted:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(p=>({...p,amount:e.target.value}))} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(p=>({...p,status:e.target.value}))} style={inputS}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(p=>({...p,approved_by:e.target.value}))} style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(p=>({...p,date_approved:e.target.value}))} style={inputS}/></div>
         </div>
-        <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(p=>({...p,description:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
-        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(p=>({...p,notes:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(p=>({...p,description:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(p=>({...p,notes:e.target.value}))} rows={2} style={{...inputS,resize:'vertical'}}/></div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowForm(false)} style={btnS}>Cancel</button><button onClick={saveCO} style={btnP}>{editCO?'Update':'Save'}</button></div>
       </div>
     </div>}
@@ -6086,8 +6086,8 @@ function ChangeOrdersPage({jobs}){
 function PMReportSection({sk,title,filled,isOpen,onToggle,children}){
   return <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,marginBottom:12,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
     <button onClick={onToggle} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',background:'#FDF4F4',border:'none',borderBottom:isOpen?'1px solid #F0E0E0':'none',cursor:'pointer',minHeight:52}}>
-      <span style={{fontSize:14,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>✓</span>}</span>
-      <span style={{fontSize:18,color:'#8B2020',fontWeight:700}}>{isOpen?'▾':'▸'}</span>
+      <span style={{fontSize:14,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',gap:8}}>{title}{filled&&<span style={{fontSize:12,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:10}}>✓</span>}</span>
+      <span style={{fontSize:18,color:'#8A261D',fontWeight:700}}>{isOpen?'▾':'▸'}</span>
     </button>
     {isOpen&&<div style={{padding:18}}>{children}</div>}
   </div>;
@@ -6181,13 +6181,13 @@ function PMDailyReportPage({jobs}){
     }
   };
   const mInp={...inputS,minHeight:44,fontSize:16};const mSel={...mInp};const mTxt={...mInp,resize:'vertical'};
-  const secStyle={fontSize:11,fontWeight:700,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
-  const lblStyle={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
+  const secStyle={fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
+  const lblStyle={display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600};
   const gridR='repeat(auto-fit,minmax(240px,1fr))';
   // Detail view
   if(detailRpt)return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
+    <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
     <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
     <div style={{...card,marginBottom:16}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,fontSize:13}}>
@@ -6200,17 +6200,17 @@ function PMDailyReportPage({jobs}){
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Daily Report</h1>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#8B2020',borderColor:'#E5C4C4'}}>Clear Form</button>}</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#8A261D',borderColor:'#E5C4C4'}}>Clear Form</button>}</div>
     </div>
     {/* PM Selector - always visible */}
     <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'12px 28px',borderRadius:12,border:selPM===pm.id?'2px solid #8B2020':'2px solid #E5E3E0',background:selPM===pm.id?'#8B2020':'#FFF',color:selPM===pm.id?'#fff':'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',minHeight:44,transition:'all .15s'}}>{pm.short}</button>)}
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'12px 28px',borderRadius:12,border:selPM===pm.id?'2px solid #8A261D':'2px solid #E5E3E0',background:selPM===pm.id?'#8A261D':'#FFF',color:selPM===pm.id?'#fff':'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',minHeight:44,transition:'all .15s'}}>{pm.short}</button>)}
     </div>
-    {!selPM&&<div style={{...card,textAlign:'center',padding:40,color:'#6B6056'}}>Select your name above to get started</div>}
+    {!selPM&&<div style={{...card,textAlign:'center',padding:40,color:'#625650'}}>Select your name above to get started</div>}
     {selPM&&tab==='history'&&<div>
-      <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}><button onClick={()=>setShowAllPMs(false)} style={fpill(!showAllPMs)}>My Reports</button><button onClick={()=>setShowAllPMs(true)} style={fpill(showAllPMs)}>All PMs</button><span style={{fontSize:12,color:'#6B6056'}}>{filteredReports.length} reports</span></div>
+      <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}><button onClick={()=>setShowAllPMs(false)} style={fpill(!showAllPMs)}>My Reports</button><button onClick={()=>setShowAllPMs(true)} style={fpill(showAllPMs)}>All PMs</button><span style={{fontSize:12,color:'#625650'}}>{filteredReports.length} reports</span></div>
       {loading?<div style={{color:'#9E9B96',padding:40,textAlign:'center'}}>Loading...</div>:filteredReports.length===0?<div style={{textAlign:'center',padding:40}}><div style={{fontSize:28,marginBottom:8}}>📋</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No reports submitted yet</div><button onClick={()=>setTab('new')} style={{...btnP,fontSize:12}}>+ New Report</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'12px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'12px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{filteredReports.map(r=><tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',minHeight:48}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <td style={{padding:'14px 10px'}}>{fD(r.report_date||r.created_at)}</td>
             <td style={{padding:'14px 10px',fontWeight:500}}>{r.job_number||'—'}</td>
@@ -6218,7 +6218,7 @@ function PMDailyReportPage({jobs}){
             <td style={{padding:'14px 10px'}}>{r.crew||'—'}</td>
             <td style={{padding:'14px 10px',fontWeight:700}}>{n(r.lf_panels_installed).toLocaleString()}</td>
             <td style={{padding:'14px 10px'}}>{r.submitted_by||'—'}</td>
-            <td style={{padding:'14px 10px',textAlign:'right',color:'#8B2020',fontSize:20,fontWeight:700,width:32}}>›</td>
+            <td style={{padding:'14px 10px',textAlign:'right',color:'#8A261D',fontSize:20,fontWeight:700,width:32}}>›</td>
           </tr>)}</tbody></table>
       </div>}
     </div>}
@@ -6228,8 +6228,8 @@ function PMDailyReportPage({jobs}){
       {/* Progress indicator */}
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
         <div style={{flex:1}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}><span>Progress</span><span>{sectionsFilledCount} of {SECTIONS.length} sections complete</span></div>
-          <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}><div style={{width:`${(sectionsFilledCount/SECTIONS.length)*100}%`,height:'100%',background:'#8B2020',transition:'width .2s'}}/></div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}><span>Progress</span><span>{sectionsFilledCount} of {SECTIONS.length} sections complete</span></div>
+          <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}><div style={{width:`${(sectionsFilledCount/SECTIONS.length)*100}%`,height:'100%',background:'#8A261D',transition:'width .2s'}}/></div>
         </div>
       </div>
       <PMReportSection {...secProps('job')} title="Job Info">
@@ -6242,7 +6242,7 @@ function PMDailyReportPage({jobs}){
           <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Posts to Date</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.posts}</div></div>
           <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Reports Filed</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.count}</div></div>
         </div>}
-        {selJobId&&(()=>{const sj=jobs.find(j=>j.id===selJobId);return sj?<div style={{display:'flex',gap:12,marginBottom:12,fontSize:12,color:'#6B6056',flexWrap:'wrap'}}><span>Market: <span style={pill(MC[sj.market]||'#6B6056',MB[sj.market]||'#F4F4F2')}>{MS[sj.market]||sj.market||'—'}</span></span><span>Fence Type: <strong>{sj.fence_type||'—'}</strong></span></div>:null;})()}
+        {selJobId&&(()=>{const sj=jobs.find(j=>j.id===selJobId);return sj?<div style={{display:'flex',gap:12,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}><span>Market: <span style={pill(MC[sj.market]||'#625650',MB[sj.market]||'#F4F4F2')}>{MS[sj.market]||sj.market||'—'}</span></span><span>Fence Type: <strong>{sj.fence_type||'—'}</strong></span></div>:null;})()}
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
@@ -6317,16 +6317,16 @@ function PMDailyReportPage({jobs}){
         <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
       </PMReportSection>
       {/* Sticky submit bar — fixed to viewport bottom */}
-      <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8B2020',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
+      <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8A261D',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
         <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
-        <button onClick={submitReport} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:'#8B2020',color:'#fff'}}>Submit Report</button>
+        <button onClick={submitReport} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:'#8A261D',color:'#fff'}}>Submit Report</button>
       </div>
     </div>;})()}
   </div>);
 }
 
 /* ═══ ESTIMATING PAGE ═══ */
-const EST_SC={draft:['#6B6056','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2']};
+const EST_SC={draft:['#625650','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2']};
 const RATE_PCTILES={pc:{Houston:{p25:89,med:92,p75:136,min:83,max:195},Austin:{p25:92,med:106,p75:146,min:88,max:455},'Dallas-Fort Worth':{p25:105,med:120,p75:148,min:93,max:192},'San Antonio':{p25:95,med:108,p75:160,min:85,max:180}},sw:{Houston:{p25:123,med:126,p75:192,min:118,max:192},Austin:{p25:138,med:148,p75:158,min:138,max:158},'Dallas-Fort Worth':{p25:192,med:192,p75:192,min:192,max:192}}};
 function RateBar({rate,market,type}){
   if(!rate||!market)return null;const d=RATE_PCTILES[type]?.[market];if(!d)return<div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>Limited data for {market}</div>;
@@ -6368,11 +6368,11 @@ function EstimatingPage(){
     </div>
     {view==='list'&&<div>
       {loading?<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>Loading...</div>:estimates.length===0?<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontSize:28,marginBottom:8}}>📊</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No estimates yet</div><button onClick={()=>{setF({...emptyForm,estimate_number:nextNum});setView('form');}} style={{...btnP,fontSize:12}}>+ Create First Estimate</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Estimate #','Customer','Market','Sales Rep','Total','Status','Date'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{estimates.map(e=>{const[sc2,sb2]=EST_SC[e.status]||['#6B6056','#F4F4F2'];return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Estimate #','Customer','Market','Sales Rep','Total','Status','Date'].map(h=><th key={h} style={{textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{estimates.map(e=>{const[sc2,sb2]=EST_SC[e.status]||['#625650','#F4F4F2'];return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
             <td style={{padding:'8px 10px',fontWeight:600}}>{e.estimate_number||'—'}</td>
             <td style={{padding:'8px 10px'}}>{e.customer_name||'—'}</td>
-            <td style={{padding:'8px 10px'}}>{e.market?<span style={pill(MC[e.market]||'#6B6056',MB[e.market]||'#F4F4F2')}>{MS[e.market]||e.market}</span>:'—'}</td>
+            <td style={{padding:'8px 10px'}}>{e.market?<span style={pill(MC[e.market]||'#625650',MB[e.market]||'#F4F4F2')}>{MS[e.market]||e.market}</span>:'—'}</td>
             <td style={{padding:'8px 10px'}}>{e.sales_rep||'—'}</td>
             <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{$(e.total_estimate||e.net_estimate)}</td>
             <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{e.status||'draft'}</span></td>
@@ -6381,37 +6381,37 @@ function EstimatingPage(){
       </div>}
     </div>}
     {view==='form'&&<div style={{maxWidth:600}}>
-      <button onClick={()=>setView('list')} style={{background:'none',border:'none',color:'#8B2020',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← All Estimates</button>
+      <button onClick={()=>setView('list')} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← All Estimates</button>
       <div style={card}>
-        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Customer Name</label><input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
+        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Customer Name</label><input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Market</label><select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Sales Rep</label><select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job Type</label><select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Market</label><select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Sales Rep</label><select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job Type</label><select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         </div>
-        <div style={{fontSize:12,fontWeight:700,color:'#8B2020',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div>
+        <div style={{fontSize:12,fontWeight:700,color:'#8A261D',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#FDF4F4',borderRadius:6}}>PRECAST</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>LF</label><input type="number" value={f.lf_precast||''} onChange={e=>set('lf_precast',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_precast||''} onChange={e=>set('rate_precast',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(pcSub)}</div></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>LF</label><input type="number" value={f.lf_precast||''} onChange={e=>set('lf_precast',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_precast||''} onChange={e=>set('rate_precast',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(pcSub)}</div></div>
         </div>
         <div style={{fontSize:12,fontWeight:700,color:'#1D4ED8',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#DBEAFE',borderRadius:6}}>SINGLE WYTHE</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>LF</label><input type="number" value={f.lf_sw||''} onChange={e=>set('lf_sw',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_sw||''} onChange={e=>set('rate_sw',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(swSub)}</div></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>LF</label><input type="number" value={f.lf_sw||''} onChange={e=>set('lf_sw',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Rate ($/LF)</label><input type="number" value={f.rate_sw||''} onChange={e=>set('rate_sw',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(swSub)}</div></div>
         </div>
-        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>GATES</div>
+        <div style={{fontSize:12,fontWeight:700,color:'#625650',marginTop:16,marginBottom:8,padding:'6px 10px',background:'#F4F4F2',borderRadius:6}}>GATES</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:4}}>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}># of Gates</label><input type="number" value={f.gate_qty||''} onChange={e=>set('gate_qty',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Rate per Gate ($)</label><input type="number" value={f.rate_gate||''} onChange={e=>set('rate_gate',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(gtSub)}</div></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}># of Gates</label><input type="number" value={f.gate_qty||''} onChange={e=>set('gate_qty',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Rate per Gate ($)</label><input type="number" value={f.rate_gate||''} onChange={e=>set('rate_gate',e.target.value)} placeholder="0" style={inputS}/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4}}>Subtotal</label><div style={{...inputS,background:'#F9F8F6',fontWeight:700}}>{$(gtSub)}</div></div>
         </div>
         <div style={{background:'#1A1A1A',borderRadius:10,padding:16,marginTop:20,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style={{color:'#9E9B96',fontSize:14,fontWeight:600}}>NET ESTIMATE</span>
-          <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:'#8B2020'}}>{$(netEst)}</span>
+          <span style={{fontFamily:'Inter',fontWeight:900,fontSize:28,color:'#8A261D'}}>{$(netEst)}</span>
         </div>
-        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={f.notes||''} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{marginBottom:16}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={f.notes||''} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>saveEst('draft')} disabled={saving} style={btnS}>{saving?'Saving...':'Save Draft'}</button>
           <button onClick={()=>saveEst('sent')} disabled={saving} style={{...btnP,background:'#1D4ED8'}}>Mark as Sent</button>
@@ -6717,7 +6717,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const reset=()=>{setStep(1);setFileName('');setWorkbook(null);setSheetNames([]);setSelectedSheet('');setRawRows([]);setHeaders([]);setMapping({});setPreview(null);setSkipUpdates(new Set());setResults(null);setError('');};
   const toggleSkipUpdate=(rowNum)=>setSkipUpdates(prev=>{const s=new Set(prev);if(s.has(rowNum))s.delete(rowNum);else s.add(rowNum);return s;});
 
-  const stepIndicator=<div style={{display:'flex',gap:4,marginBottom:24}}>{[1,2,3,4].map(n=>{const labels={1:'Upload',2:'Mapping',3:'Preview',4:'Results'};return<div key={n} style={{flex:1,padding:'10px 14px',background:step===n?'#8B2020':step>n?'#D1FAE5':'#F4F4F2',color:step===n?'#FFF':step>n?'#065F46':'#9E9B96',borderRadius:8,fontSize:12,fontWeight:700,textAlign:'center'}}>Step {n}: {labels[n]}</div>;})}</div>;
+  const stepIndicator=<div style={{display:'flex',gap:4,marginBottom:24}}>{[1,2,3,4].map(n=>{const labels={1:'Upload',2:'Mapping',3:'Preview',4:'Results'};return<div key={n} style={{flex:1,padding:'10px 14px',background:step===n?'#8A261D':step>n?'#D1FAE5':'#F4F4F2',color:step===n?'#FFF':step>n?'#065F46':'#9E9B96',borderRadius:8,fontSize:12,fontWeight:700,textAlign:'center'}}>Step {n}: {labels[n]}</div>;})}</div>;
 
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
@@ -6735,7 +6735,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 
     {/* STEP 1: UPLOAD */}
     {step===1&&<div style={{...card,padding:40,textAlign:'center'}}>
-      <div onDragOver={e=>e.preventDefault()} onDrop={handleDrop} style={{border:'3px dashed #D1CEC9',borderRadius:16,padding:60,cursor:'pointer',transition:'all .2s'}} onClick={()=>fileInputRef.current?.click()} onMouseEnter={e=>{e.currentTarget.style.borderColor='#8B2020';e.currentTarget.style.background='#FDF4F4';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#D1CEC9';e.currentTarget.style.background='transparent';}}>
+      <div onDragOver={e=>e.preventDefault()} onDrop={handleDrop} style={{border:'3px dashed #D1CEC9',borderRadius:16,padding:60,cursor:'pointer',transition:'all .2s'}} onClick={()=>fileInputRef.current?.click()} onMouseEnter={e=>{e.currentTarget.style.borderColor='#8A261D';e.currentTarget.style.background='#FDF4F4';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#D1CEC9';e.currentTarget.style.background='transparent';}}>
         <div style={{fontSize:48,marginBottom:12}}>📤</div>
         <div style={{fontSize:16,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>Drop Excel file here or click to upload</div>
         <div style={{fontSize:12,color:'#9E9B96'}}>.xlsx — pick the sheet to import (headers expected on row 1)</div>
@@ -6743,7 +6743,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       </div>
       {fileName&&<div style={{marginTop:16,fontSize:13,color:'#065F46',fontWeight:600}}>✓ {fileName} — {sheetNames.length} sheet{sheetNames.length===1?'':'s'} found</div>}
       {sheetNames.length>0&&<div style={{marginTop:20,padding:20,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:12,display:'inline-block',textAlign:'left'}}>
-        <div style={{fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:6}}>Select Sheet</div>
+        <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:6}}>Select Sheet</div>
         <select value={selectedSheet} onChange={e=>setSelectedSheet(e.target.value)} style={{...inputS,fontSize:13,minWidth:260,padding:'8px 10px'}}>
           {sheetNames.map(n=><option key={n} value={n}>{n}</option>)}
         </select>
@@ -6759,7 +6759,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>Column Mapping — {headers.length} columns found</div>
       <div style={{maxHeight:480,overflow:'auto',border:'1px solid #E5E3E0',borderRadius:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6'}}><tr><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Excel Column</th><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>→ App Field</th></tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6'}}><tr><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Excel Column</th><th style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>→ App Field</th></tr></thead>
           <tbody>{headers.map(h=><tr key={h} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'8px 10px',fontWeight:500}}>{h}</td>
             <td style={{padding:'8px 10px'}}>
@@ -6780,27 +6780,27 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
     {/* STEP 3: PREVIEW */}
     {step===3&&preview&&<div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{preview.newJobs.length}</div><div style={{fontSize:11,color:'#6B6056'}}>✅ New jobs to INSERT</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{preview.updates.length-skipUpdates.size}</div><div style={{fontSize:11,color:'#6B6056'}}>🔄 Existing to UPDATE</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #F59E0B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#F59E0B'}}>{preview.warnings.length}</div><div style={{fontSize:11,color:'#6B6056'}}>⚠️ Warnings</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B7280'}}>{PROTECTED_FIELDS.size}</div><div style={{fontSize:11,color:'#6B6056'}}>🔒 Protected fields</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#065F46'}}>{preview.newJobs.length}</div><div style={{fontSize:11,color:'#625650'}}>✅ New jobs to INSERT</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{preview.updates.length-skipUpdates.size}</div><div style={{fontSize:11,color:'#625650'}}>🔄 Existing to UPDATE</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #F59E0B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#F59E0B'}}>{preview.warnings.length}</div><div style={{fontSize:11,color:'#625650'}}>⚠️ Warnings</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #6B7280'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#6B7280'}}>{PROTECTED_FIELDS.size}</div><div style={{fontSize:11,color:'#625650'}}>🔒 Protected fields</div></div>
       </div>
-      <div style={{fontSize:11,color:'#6B6056',background:'#F9F8F6',padding:'8px 12px',borderRadius:8,marginBottom:12}}>
+      <div style={{fontSize:11,color:'#625650',background:'#F9F8F6',padding:'8px 12px',borderRadius:8,marginBottom:12}}>
         <b>Protected on update (never overwritten for existing jobs):</b> status, ytd_invoiced, pct_billed, left_to_bill, material_calc_*, stage dates. The kanban, AR review, and material calculator own these fields. <b>Status IS set on insert</b> for new jobs (mapped from Excel above).
       </div>
       {/* Tabs */}
       <div style={{display:'flex',gap:4,marginBottom:12,borderBottom:'2px solid #E5E3E0'}}>
-        {[['new',`NEW JOBS (${preview.newJobs.length})`,'#065F46'],['updates',`UPDATES (${preview.updates.length})`,'#B45309'],['warnings',`WARNINGS (${preview.warnings.length})`,'#F59E0B']].map(([k,l,c])=><button key={k} onClick={()=>setPreviewTab(k)} style={{padding:'10px 18px',border:'none',background:'transparent',color:previewTab===k?c:'#6B6056',fontWeight:previewTab===k?800:400,fontSize:13,cursor:'pointer',borderBottom:previewTab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
+        {[['new',`NEW JOBS (${preview.newJobs.length})`,'#065F46'],['updates',`UPDATES (${preview.updates.length})`,'#B45309'],['warnings',`WARNINGS (${preview.warnings.length})`,'#F59E0B']].map(([k,l,c])=><button key={k} onClick={()=>setPreviewTab(k)} style={{padding:'10px 18px',border:'none',background:'transparent',color:previewTab===k?c:'#625650',fontWeight:previewTab===k?800:400,fontSize:13,cursor:'pointer',borderBottom:previewTab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
       </div>
       {/* Tab content */}
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 460px)'}}>
         {previewTab==='new'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Status (Excel → App)','Market','PM','Contract Value','Style'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Job #','Job Name','Status (Excel → App)','Market','PM','Contract Value','Style'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{preview.newJobs.map(nj=><tr key={nj.rowNum} style={{borderBottom:'1px solid #F4F4F2',background:'#F0FDF4'}}>
             <td style={{padding:'8px 10px',fontWeight:600}}>{nj.mapped.job_number||'—'}</td>
             <td style={{padding:'8px 10px'}}>{nj.mapped.job_name||'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11}}>
-              {nj.statusRaw?<span style={{color:'#6B6056'}}>{nj.statusRaw}</span>:<span style={{color:'#9E9B96',fontStyle:'italic'}}>(blank)</span>}
+              {nj.statusRaw?<span style={{color:'#625650'}}>{nj.statusRaw}</span>:<span style={{color:'#9E9B96',fontStyle:'italic'}}>(blank)</span>}
               <span style={{color:'#9E9B96'}}> → </span>
               <span style={{color:nj.statusMatched===false?'#B45309':'#065F46',fontWeight:700}}>{SL[nj.mapped.status]||nj.mapped.status}</span>
               {nj.statusMatched===false&&nj.statusRaw&&<span style={{marginLeft:4,fontSize:10,color:'#B45309'}}>(default)</span>}
@@ -6808,24 +6808,24 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
             <td style={{padding:'8px 10px'}}>{nj.mapped.market||'—'}</td>
             <td style={{padding:'8px 10px'}}>{nj.mapped.pm||'—'}</td>
             <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700}}>{nj.mapped.contract_value?$(nj.mapped.contract_value):'—'}</td>
-            <td style={{padding:'8px 10px',color:'#6B6056'}}>{nj.mapped.style||'—'}</td>
+            <td style={{padding:'8px 10px',color:'#625650'}}>{nj.mapped.style||'—'}</td>
           </tr>)}
           {preview.newJobs.length===0&&<tr><td colSpan={7} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No new jobs to insert</td></tr>}</tbody>
         </table>}
         {previewTab==='updates'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Skip','Job #','Job Name','Field','Current','New'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Skip','Job #','Job Name','Field','Current','New'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{preview.updates.flatMap(u=>u.changes.map((c,ci)=><tr key={u.rowNum+'-'+ci} style={{borderBottom:'1px solid #F4F4F2',opacity:skipUpdates.has(u.rowNum)?0.4:1}}>
-            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top'}}><input type="checkbox" checked={!skipUpdates.has(u.rowNum)} onChange={()=>toggleSkipUpdate(u.rowNum)} style={{width:16,height:16,accentColor:'#8B2020'}}/></td>}
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top'}}><input type="checkbox" checked={!skipUpdates.has(u.rowNum)} onChange={()=>toggleSkipUpdate(u.rowNum)} style={{width:16,height:16,accentColor:'#8A261D'}}/></td>}
             {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',fontWeight:600,verticalAlign:'top'}}>{u.existing.job_number}</td>}
-            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top',maxWidth:220}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.existing.job_name}</div><div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>Keeping: <b style={{color:'#6B6056'}}>{SL[u.existing.status]||u.existing.status||'—'}</b></div></td>}
-            <td style={{padding:'8px 10px',fontSize:11,color:'#6B6056'}}>{c.field}</td>
+            {ci===0&&<td rowSpan={u.changes.length} style={{padding:'8px 10px',verticalAlign:'top',maxWidth:220}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.existing.job_name}</div><div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>Keeping: <b style={{color:'#625650'}}>{SL[u.existing.status]||u.existing.status||'—'}</b></div></td>}
+            <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{c.field}</td>
             <td style={{padding:'8px 10px',fontSize:11,color:'#991B1B',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.cur!=null?String(c.cur):'—'}</td>
             <td style={{padding:'8px 10px',fontSize:11,fontWeight:700,background:'#FEF3C7',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{String(c.newVal)}</td>
           </tr>))}
           {preview.updates.length===0&&<tr><td colSpan={6} style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No updates — all existing jobs match Excel values</td></tr>}</tbody>
         </table>}
         {previewTab==='warnings'&&<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Row #','Issue','Data'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Row #','Issue','Data'].map(h=><th key={h} style={{textAlign:'left',padding:10,borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{preview.warnings.map((w,i)=><tr key={i} style={{borderBottom:'1px solid #F4F4F2',background:'#FFFBEB'}}>
             <td style={{padding:'8px 10px'}}>{w.row}</td>
             <td style={{padding:'8px 10px',color:'#B45309',fontWeight:600}}>{w.issue}</td>
@@ -6845,20 +6845,20 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       {importing?<div style={{...card,padding:40,textAlign:'center'}}>
         <div style={{fontSize:48,marginBottom:12}}>⚙️</div>
         <div style={{fontSize:16,fontWeight:700,marginBottom:12}}>Importing... {progress.done} / {progress.total}</div>
-        <div style={{height:12,background:'#E5E3E0',borderRadius:12,overflow:'hidden',maxWidth:400,margin:'0 auto'}}><div style={{height:'100%',width:`${progress.total>0?progress.done/progress.total*100:0}%`,background:'#8B2020',transition:'width .3s'}}/></div>
+        <div style={{height:12,background:'#E5E3E0',borderRadius:12,overflow:'hidden',maxWidth:400,margin:'0 auto'}}><div style={{height:'100%',width:`${progress.total>0?progress.done/progress.total*100:0}%`,background:'#8A261D',transition:'width .3s'}}/></div>
       </div>:results&&<div>
         <div style={{...card,padding:24,marginBottom:16}}>
           <div style={{fontSize:18,fontWeight:800,marginBottom:16,color:results.errors.length>0?'#B45309':'#065F46'}}>{results.errors.length>0?'⚠️ Import complete with errors':'✅ Import complete!'}</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#065F46'}}>{results.inserted}</div><div style={{fontSize:11,color:'#6B6056'}}>Inserted</div></div>
-            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#B45309'}}>{results.updated}</div><div style={{fontSize:11,color:'#6B6056'}}>Updated</div></div>
-            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#6B7280'}}>{results.skipped}</div><div style={{fontSize:11,color:'#6B6056'}}>Skipped</div></div>
-            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#991B1B'}}>{results.errors.length}</div><div style={{fontSize:11,color:'#6B6056'}}>Errors</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#065F46'}}>{results.inserted}</div><div style={{fontSize:11,color:'#625650'}}>Inserted</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#B45309'}}>{results.updated}</div><div style={{fontSize:11,color:'#625650'}}>Updated</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#6B7280'}}>{results.skipped}</div><div style={{fontSize:11,color:'#625650'}}>Skipped</div></div>
+            <div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:24,color:'#991B1B'}}>{results.errors.length}</div><div style={{fontSize:11,color:'#625650'}}>Errors</div></div>
           </div>
         </div>
         {results.errors.length>0&&<div style={{...card,padding:16,marginBottom:16}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:8,color:'#991B1B'}}>Errors ({results.errors.length})</div>
-          <div style={{maxHeight:200,overflow:'auto'}}>{results.errors.slice(0,20).map((e,i)=><div key={i} style={{fontSize:11,color:'#6B6056',padding:'4px 0',borderBottom:'1px solid #F4F4F2'}}><b style={{color:'#991B1B'}}>{e.type}</b> {e.job?`— ${e.job}`:''} — {e.error}</div>)}</div>
+          <div style={{maxHeight:200,overflow:'auto'}}>{results.errors.slice(0,20).map((e,i)=><div key={i} style={{fontSize:11,color:'#625650',padding:'4px 0',borderBottom:'1px solid #F4F4F2'}}><b style={{color:'#991B1B'}}>{e.type}</b> {e.job?`— ${e.job}`:''} — {e.error}</div>)}</div>
           {results.errors.length>20&&<div style={{fontSize:11,color:'#9E9B96',marginTop:6}}>+{results.errors.length-20} more</div>}
         </div>}
         <div style={{display:'flex',gap:8}}>
@@ -6916,27 +6916,27 @@ function MapPage({jobs,onNav}){
       <span style={{color:'#E5E3E0'}}>|</span>
       <button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All Statuses</button>
       {STS.filter(s=>!CLOSED_SET.has(s)).map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}
-      <span style={{fontSize:12,color:'#6B6056',marginLeft:8}}>{filtered.length} jobs | {$k(fTC)} contract | {$k(fLTB)} LTB</span>
+      <span style={{fontSize:12,color:'#625650',marginLeft:8}}>{filtered.length} jobs | {$k(fTC)} contract | {$k(fLTB)} LTB</span>
     </div>
-    {geocoding&&<div style={{padding:'8px 0',fontSize:12,color:'#6B6056'}}>{geoProgress}</div>}
+    {geocoding&&<div style={{padding:'8px 0',fontSize:12,color:'#625650'}}>{geoProgress}</div>}
     <div style={{flex:1,borderRadius:12,overflow:'hidden',border:'1px solid #E5E3E0',position:'relative'}}>
       <MapContainer center={[31.0,-99.0]} zoom={6} style={{height:'100%',width:'100%'}} scrollWheelZoom={true}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap'/>
         {positions.length>1&&<FitBounds positions={positions}/>}
         <MarkerClusterGroup chunkedLoading maxClusterRadius={40}>
-          {filtered.filter(j=>j.lat&&j.lng).map(j=><CircleMarker key={j.id} center={[j.lat,j.lng]} radius={10} pathOptions={{fillColor:MKT_PIN[j.market]||'#8B2020',color:'#1A1A1A',weight:2,fillOpacity:0.85}}>
+          {filtered.filter(j=>j.lat&&j.lng).map(j=><CircleMarker key={j.id} center={[j.lat,j.lng]} radius={10} pathOptions={{fillColor:MKT_PIN[j.market]||'#8A261D',color:'#1A1A1A',weight:2,fillOpacity:0.85}}>
             <Popup maxWidth={280}><div style={{fontFamily:'Inter,sans-serif',fontSize:13}}>
               <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>{j.job_name}</div>
               <div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,color:'#6B6056'}}>#{j.job_number}</span>
-                <span style={{...pill(MC[j.market]||'#6B6056',MB[j.market]||'#F4F4F2'),display:'inline-block'}}>{MS[j.market]||'—'}</span>
+                <span style={{fontSize:11,color:'#625650'}}>#{j.job_number}</span>
+                <span style={{...pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2'),display:'inline-block'}}>{MS[j.market]||'—'}</span>
                 <span style={{...statusPill(j.status),display:'inline-block'}}>{SS[j.status]||j.status}</span>
               </div>
-              {j.pm&&<div style={{fontSize:11,color:'#6B6056',marginBottom:2}}>PM: {j.pm}</div>}
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#6B6056'}}>Contract</span><span style={{fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</span></div>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#6B6056'}}>Left to Bill</span><span style={{fontWeight:700,color:'#8B2020'}}>{$(j.left_to_bill)}</span></div>
-              {j.est_start_date&&<div style={{fontSize:11,color:'#6B6056'}}>Est. Start: {fD(j.est_start_date)}</div>}
-              <button onClick={()=>{if(onNav)onNav('projects',j);}} style={{marginTop:8,padding:'6px 14px',background:'#8B2020',color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',width:'100%'}}>View Job</button>
+              {j.pm&&<div style={{fontSize:11,color:'#625650',marginBottom:2}}>PM: {j.pm}</div>}
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#625650'}}>Contract</span><span style={{fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#625650'}}>Left to Bill</span><span style={{fontWeight:700,color:'#8A261D'}}>{$(j.left_to_bill)}</span></div>
+              {j.est_start_date&&<div style={{fontSize:11,color:'#625650'}}>Est. Start: {fD(j.est_start_date)}</div>}
+              <button onClick={()=>{if(onNav)onNav('projects',j);}} style={{marginTop:8,padding:'6px 14px',background:'#8A261D',color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',width:'100%'}}>View Job</button>
             </div></Popup>
           </CircleMarker>)}
         </MarkerClusterGroup>
@@ -6981,7 +6981,7 @@ const MR_STATUS_STYLE={
   pending:{bg:'#FEF3C7',color:'#B45309',label:'Pending'},
   confirmed:{bg:'#DBEAFE',color:'#1D4ED8',label:'Confirmed'},
   fulfilled:{bg:'#D1FAE5',color:'#065F46',label:'Fulfilled'},
-  cancelled:{bg:'#F4F4F2',color:'#6B6056',label:'Cancelled'},
+  cancelled:{bg:'#F4F4F2',color:'#625650',label:'Cancelled'},
 };
 function MaterialRequestsPage({jobs,refreshKey=0}){
   const todayISO=new Date().toISOString().split('T')[0];
@@ -7147,8 +7147,8 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
     }catch(e){console.error('[MR cancel] failed:',e);setToast({msg:e.message||'Cancel failed',ok:false});}
   };
   // ─── Render helpers ───
-  const lbl={display:'block',fontSize:11,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600};
-  const sectionHdr={fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingBottom:6,borderBottom:'1px solid #E5E3E0'};
+  const lbl={display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600};
+  const sectionHdr={fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingBottom:6,borderBottom:'1px solid #E5E3E0'};
   const grd2={display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:16};
   const countCounts=useMemo(()=>({
     all:requests.length,
@@ -7162,12 +7162,12 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
     <div style={{fontSize:12,color:'#9E9B96',marginBottom:16}}>Digital PMR form — request materials from the production plant</div>
     {/* Tabs */}
     <div style={{display:'flex',gap:6,marginBottom:16}}>
-      <button onClick={()=>setTab('new')} style={{padding:'8px 18px',borderRadius:8,border:tab==='new'?'2px solid #8B2020':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8B2020':'#6B6056',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
-      <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8B2020':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8B2020':'#6B6056',fontWeight:700,fontSize:13,cursor:'pointer'}}>Request Queue ({requests.length})</button>
+      <button onClick={()=>setTab('new')} style={{padding:'8px 18px',borderRadius:8,border:tab==='new'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
+      <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>Request Queue ({requests.length})</button>
     </div>
     {/* NEW REQUEST FORM */}
     {tab==='new'&&<div>
-      <div style={{background:'#8B2020',color:'#FFF',padding:'14px 20px',borderRadius:'10px 10px 0 0',fontFamily:'Syne',fontSize:16,fontWeight:800}}>Project Material Request</div>
+      <div style={{background:'#8A261D',color:'#FFF',padding:'14px 20px',borderRadius:'10px 10px 0 0',fontFamily:'Syne',fontSize:16,fontWeight:800}}>Project Material Request</div>
       <div style={{...card,borderRadius:'0 0 10px 10px',borderTop:'none',padding:20}}>
         {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'10px 14px',marginBottom:14,color:'#991B1B',fontSize:12,fontWeight:600}}>⚠ {saveErr}</div>}
         {/* Request Info */}
@@ -7186,7 +7186,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
             {showJobDD&&jobMatches.length>0&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',zIndex:50,marginTop:2,maxHeight:240,overflow:'auto'}}>
               {jobMatches.map(j=><div key={j.id} onMouseDown={()=>pickJob(j)} style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid #F4F4F2',fontSize:12}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                 <div style={{fontWeight:700,color:'#1A1A1A'}}>{j.job_number}</div>
-                <div style={{color:'#6B6056'}}>{j.job_name}</div>
+                <div style={{color:'#625650'}}>{j.job_name}</div>
               </div>)}
             </div>}
           </div>
@@ -7211,7 +7211,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
         <div style={{border:'1px solid #E5E3E0',borderRadius:8,overflow:'auto',marginBottom:14}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
             <thead><tr style={{background:'#F9F8F6'}}>
-              {['Size / Design','Type','Mat. Qty Each','Ship Date','Backorder','Notes',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid #E5E3E0',color:'#6B6056',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>{h}</th>)}
+              {['Size / Design','Type','Mat. Qty Each','Ship Date','Backorder','Notes',''].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>{h}</th>)}
             </tr></thead>
             <tbody>
               {(()=>{
@@ -7220,7 +7220,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
                 items.forEach((row,idx)=>{
                   if(row.group!==lastGroup){
                     out.push(<tr key={`hdr-${row.group}-${idx}`} style={{background:'#FDF4F4'}}>
-                      <td colSpan={7} style={{padding:'6px 10px',fontSize:10,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5}}>{row.group}</td>
+                      <td colSpan={7} style={{padding:'6px 10px',fontSize:10,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>{row.group}</td>
                     </tr>);
                     lastGroup=row.group;
                   }
@@ -7232,7 +7232,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
                     <td style={td}>{row.group==='CUSTOM'?<select value={row.item_type} onChange={e=>updateItem(idx,'item_type',e.target.value)} style={{...inp,width:120}}>{MR_ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>:row.item_type}</td>
                     <td style={td}><input type="number" value={row.mat_qty_each} onChange={e=>updateItem(idx,'mat_qty_each',e.target.value)} style={{...inp,width:70,fontWeight:700}}/></td>
                     <td style={td}><input type="date" value={row.ship_date} onChange={e=>updateItem(idx,'ship_date',e.target.value)} style={{...inp,width:135}}/></td>
-                    <td style={{...td,textAlign:'center'}}><input type="checkbox" checked={!!row.backorder} onChange={e=>updateItem(idx,'backorder',e.target.checked)} style={{accentColor:'#8B2020',width:16,height:16}}/></td>
+                    <td style={{...td,textAlign:'center'}}><input type="checkbox" checked={!!row.backorder} onChange={e=>updateItem(idx,'backorder',e.target.checked)} style={{accentColor:'#8A261D',width:16,height:16}}/></td>
                     <td style={td}><input value={row.notes} onChange={e=>updateItem(idx,'notes',e.target.value)} style={{...inp,width:'100%',minWidth:100}}/></td>
                     <td style={td}>{row.group==='CUSTOM'?<button onClick={()=>removeItem(idx)} style={{background:'none',border:'none',color:'#DC2626',fontSize:14,cursor:'pointer'}} title="Remove">×</button>:null}</td>
                   </tr>);
@@ -7257,7 +7257,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
     {tab==='queue'&&<div>
       {/* Filter pills */}
       <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-        {[['all','All'],['pending','Pending'],['confirmed','Confirmed'],['fulfilled','Fulfilled'],['cancelled','Cancelled']].map(([k,l])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'6px 14px',borderRadius:20,border:queueFilter===k?'2px solid #8B2020':'1px solid #E5E3E0',background:queueFilter===k?'#FDF4F4':'#FFF',color:queueFilter===k?'#8B2020':'#6B6056',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({countCounts[k]??requests.filter(r=>r.status===k).length})</button>)}
+        {[['all','All'],['pending','Pending'],['confirmed','Confirmed'],['fulfilled','Fulfilled'],['cancelled','Cancelled']].map(([k,l])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'6px 14px',borderRadius:20,border:queueFilter===k?'2px solid #8A261D':'1px solid #E5E3E0',background:queueFilter===k?'#FDF4F4':'#FFF',color:queueFilter===k?'#8A261D':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({countCounts[k]??requests.filter(r=>r.status===k).length})</button>)}
       </div>
       {filteredRequests.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No material requests{queueFilter!=='all'?` with status "${queueFilter}"`:''}</div>:<div style={{display:'flex',flexDirection:'column',gap:8}}>
         {filteredRequests.map(r=>{
@@ -7273,7 +7273,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
                     <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>#{r.job_number||'—'}</span>
                     <span style={{fontWeight:700,fontSize:14,color:'#1A1A1A'}}>{r.job_name||'—'}</span>
                   </div>
-                  <div style={{fontSize:11,color:'#6B6056',display:'flex',gap:14,flexWrap:'wrap'}}>
+                  <div style={{fontSize:11,color:'#625650',display:'flex',gap:14,flexWrap:'wrap'}}>
                     <span>Requested by <b style={{color:'#1A1A1A'}}>{r.requested_by||'—'}</b></span>
                     <span>{fD(r.request_date)}</span>
                     {r.height_of_fence&&<span>Height: <b style={{color:'#1A1A1A'}}>{r.height_of_fence}</b></span>}
@@ -7293,22 +7293,22 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
               </div>
               {/* Items table */}
               <div style={{marginTop:14}}>
-                <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Line Items</div>
+                <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Line Items</div>
                 {!reqItems[r.id]?<div style={{padding:12,color:'#9E9B96',fontSize:12}}>Loading...</div>:reqItems[r.id].length===0?<div style={{padding:12,color:'#9E9B96',fontSize:12}}>No items</div>:<div style={{border:'1px solid #E5E3E0',borderRadius:6,overflow:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                    <thead><tr style={{background:'#F9F8F6'}}>{['Size','Type','Qty','Ship Date','Backorder','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
+                    <thead><tr style={{background:'#F9F8F6'}}>{['Size','Type','Qty','Ship Date','Backorder','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',borderBottom:'1px solid #E5E3E0'}}>{h}</th>)}</tr></thead>
                     <tbody>{reqItems[r.id].map((it,i)=><tr key={it.id||i} style={{borderBottom:'1px solid #F4F4F2'}}>
                       <td style={{padding:'6px 10px'}}>{it.size_design||'—'}</td>
                       <td style={{padding:'6px 10px'}}>{it.item_type||'—'}</td>
                       <td style={{padding:'6px 10px',fontWeight:700}}>{it.mat_qty_each||'—'}</td>
                       <td style={{padding:'6px 10px'}}>{fD(it.ship_date)}</td>
                       <td style={{padding:'6px 10px'}}>{it.backorder?'✓':''}</td>
-                      <td style={{padding:'6px 10px',color:'#6B6056'}}>{it.notes||''}</td>
+                      <td style={{padding:'6px 10px',color:'#625650'}}>{it.notes||''}</td>
                     </tr>)}</tbody>
                   </table>
                 </div>}
               </div>
-              {r.notes&&<div style={{marginTop:10,padding:'8px 12px',background:'#F9F8F6',borderRadius:6,fontSize:12,color:'#6B6056'}}><b>Notes:</b> {r.notes}</div>}
+              {r.notes&&<div style={{marginTop:10,padding:'8px 12px',background:'#F9F8F6',borderRadius:6,fontSize:12,color:'#625650'}}><b>Notes:</b> {r.notes}</div>}
               {/* Action buttons */}
               <div style={{marginTop:14,display:'flex',gap:8,flexWrap:'wrap'}}>
                 {r.status==='pending'&&<div style={{flex:1,minWidth:280,padding:12,background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8}}>
@@ -7324,7 +7324,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
                 {(r.status==='pending'||r.status==='confirmed')&&(isCancelConfirm?<div style={{display:'flex',gap:4,alignItems:'center',padding:'6px 10px',background:'#FEF2F2',borderRadius:6,border:'1px solid #FECACA'}}>
                   <span style={{fontSize:11,color:'#991B1B',fontWeight:700}}>Cancel this request?</span>
                   <button onClick={()=>cancelRequest(r)} style={{background:'#991B1B',border:'none',borderRadius:4,padding:'4px 10px',color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>Yes</button>
-                  <button onClick={()=>setCancelConfirmId(null)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:4,padding:'4px 10px',color:'#6B6056',fontSize:11,cursor:'pointer'}}>No</button>
+                  <button onClick={()=>setCancelConfirmId(null)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:4,padding:'4px 10px',color:'#625650',fontSize:11,cursor:'pointer'}}>No</button>
                 </div>:<button onClick={()=>setCancelConfirmId(r.id)} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'6px 12px',color:'#EF4444',fontSize:11,fontWeight:600,cursor:'pointer'}}>Cancel Request</button>)}
               </div>
             </div>}
@@ -7409,7 +7409,7 @@ function ChatWidget({currentPage}){
   const onInputKey=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input);}};
   // Chat button (closed state)
   if(!open){
-    return<button onClick={()=>setOpen(true)} title="Ask the FCA Assistant" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8B2020',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
+    return<button onClick={()=>setOpen(true)} title="Ask the FCA Assistant" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8A261D',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
   }
   // Typing indicator (3 animated dots)
   const typingDots=<div style={{display:'inline-flex',gap:4,padding:'10px 14px',background:'#E8E8E6',borderRadius:14,alignSelf:'flex-start',maxWidth:'80%'}}>
@@ -7420,7 +7420,7 @@ function ChatWidget({currentPage}){
   return<div style={{position:'fixed',bottom:24,right:24,width:380,maxWidth:'calc(100vw - 32px)',height:520,maxHeight:'calc(100vh - 48px)',background:'#F4F4F2',borderRadius:14,boxShadow:'0 8px 40px rgba(0,0,0,0.22)',display:'flex',flexDirection:'column',overflow:'hidden',zIndex:800,border:'1px solid #E5E3E0'}}>
     <style>{`@keyframes fcDot{0%,80%,100%{opacity:0.3;transform:scale(0.8);}40%{opacity:1;transform:scale(1);}}`}</style>
     {/* Header */}
-    <div style={{padding:'12px 16px',background:'#8B2020',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+    <div style={{padding:'12px 16px',background:'#8A261D',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <span style={{fontSize:18}}>💬</span>
         <span style={{fontFamily:'Inter',fontWeight:800,fontSize:14}}>FCA Assistant</span>
@@ -7430,18 +7430,18 @@ function ChatWidget({currentPage}){
     {/* Messages area */}
     <div ref={scrollRef} style={{flex:1,overflow:'auto',padding:'14px',display:'flex',flexDirection:'column',gap:10,background:'#F4F4F2'}}>
       {messages.length===0&&<div style={{alignSelf:'flex-start',background:'#E8E8E6',color:'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5}}>{CHAT_WELCOME}</div>}
-      {messages.map((m,i)=><div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'#8B2020':'#E8E8E6',color:m.role==='user'?'#FFF':'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{m.content}</div>)}
+      {messages.map((m,i)=><div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'#8A261D':'#E8E8E6',color:m.role==='user'?'#FFF':'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{m.content}</div>)}
       {sending&&typingDots}
       {err&&<div style={{alignSelf:'center',background:'#FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:10,fontSize:11,fontWeight:600,textAlign:'center',maxWidth:'85%'}}>{err}</div>}
     </div>
     {/* Quick prompts */}
     {messages.length<2&&<div style={{padding:'0 14px 8px',display:'flex',gap:6,flexWrap:'wrap',flexShrink:0}}>
-      {quickPrompts.map((q,i)=><button key={i} onClick={()=>sendMessage(q)} disabled={sending} style={{padding:'6px 10px',border:'1px solid #8B202040',background:'#FFF',color:'#8B2020',borderRadius:14,fontSize:11,fontWeight:600,cursor:sending?'not-allowed':'pointer',opacity:sending?0.5:1,lineHeight:1.3,textAlign:'left'}}>{q}</button>)}
+      {quickPrompts.map((q,i)=><button key={i} onClick={()=>sendMessage(q)} disabled={sending} style={{padding:'6px 10px',border:'1px solid #8A261D40',background:'#FFF',color:'#8A261D',borderRadius:14,fontSize:11,fontWeight:600,cursor:sending?'not-allowed':'pointer',opacity:sending?0.5:1,lineHeight:1.3,textAlign:'left'}}>{q}</button>)}
     </div>}
     {/* Input area */}
     <div style={{padding:'10px 12px',background:'#FFF',borderTop:'1px solid #E5E3E0',display:'flex',gap:8,flexShrink:0}}>
       <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={onInputKey} disabled={sending} placeholder="Ask me anything about the app..." style={{flex:1,padding:'10px 12px',border:'1px solid #D1CEC9',borderRadius:10,fontSize:13,background:'#FFF',color:'#1A1A1A',outline:'none'}}/>
-      <button onClick={()=>sendMessage(input)} disabled={sending||!input.trim()} style={{padding:'10px 16px',background:'#8B2020',border:'none',borderRadius:10,color:'#FFF',fontSize:13,fontWeight:700,cursor:(sending||!input.trim())?'not-allowed':'pointer',opacity:(sending||!input.trim())?0.5:1}}>{sending?'…':'Send'}</button>
+      <button onClick={()=>sendMessage(input)} disabled={sending||!input.trim()} style={{padding:'10px 16px',background:'#8A261D',border:'none',borderRadius:10,color:'#FFF',fontSize:13,fontWeight:700,cursor:(sending||!input.trim())?'not-allowed':'pointer',opacity:(sending||!input.trim())?0.5:1}}>{sending?'…':'Send'}</button>
     </div>
   </div>;
 }
@@ -7462,17 +7462,17 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile}){
   };
   return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}}>
     <style>{`@keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-    {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#6B6056',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
+    {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
     <div style={{flex:1}}/>
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
-      <button onClick={handleRefresh} title="Refresh data" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#6B6056',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
+      <button onClick={handleRefresh} title="Refresh data" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
         <span style={{display:'inline-block',animation:refreshState==='spinning'?'fcSpin 0.8s linear infinite':'none'}}>{refreshState==='done'?'✓':'↻'}</span>
       </button>
       <div style={{width:8,height:8,borderRadius:4,background:live?'#10B981':'#9E9B96'}} title={live?'Live':'Disconnected'}/>
-      <span style={{fontSize:12,color:'#6B6056'}}>{today}</span>
+      <span style={{fontSize:12,color:'#625650'}}>{today}</span>
       <div style={{position:'relative'}}><button onClick={()=>setShowBell(!showBell)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',position:'relative'}}>🔔{alerts.length>0&&<span style={{position:'absolute',top:-4,right:-6,background:'#991B1B',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 4px',minWidth:14,textAlign:'center'}}>{alerts.length}</span>}</button>{showBell&&<div style={{position:'absolute',right:0,top:32,width:300,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:8}}>Billing Alerts</div>{alerts.slice(0,5).map(j=><div key={j.id} style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>{j.job_name} <span style={{color:'#B45309'}}>{j.contract_age}d</span></div>)}{alerts.length===0&&<div style={{color:'#9E9B96',fontSize:12}}>No alerts</div>}</div>}</div>
-      <div style={{position:'relative'}}><button onClick={()=>setShowHelp(!showHelp)} style={{background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#9E9B96'}}>?</button>{showHelp&&<div style={{position:'absolute',right:0,top:32,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12,fontSize:12,color:'#6B6056'}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:6}}>Shortcuts</div><div>⌘K — Global search</div><div>Esc — Close panel</div></div>}</div>
+      <div style={{position:'relative'}}><button onClick={()=>setShowHelp(!showHelp)} style={{background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#9E9B96'}}>?</button>{showHelp&&<div style={{position:'absolute',right:0,top:32,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12,fontSize:12,color:'#625650'}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:6}}>Shortcuts</div><div>⌘K — Global search</div><div>Esc — Close panel</div></div>}</div>
       {onOpenProfile&&<UserMenu onOpenProfile={onOpenProfile}/>}
     </div>
   </div>);
@@ -7487,7 +7487,7 @@ function InstallSchedulePage({jobs}){
     <div style={{...card,textAlign:'center',padding:60}}>
       <div style={{fontSize:48,marginBottom:12}}>📅</div>
       <div style={{fontSize:16,fontWeight:700,color:'#1A1A1A',marginBottom:6}}>Install Schedule</div>
-      <div style={{fontSize:13,color:'#6B6056'}}>Coming soon — this page will show field install schedules, crew assignments, and upcoming installs.</div>
+      <div style={{fontSize:13,color:'#625650'}}>Coming soon — this page will show field install schedules, crew assignments, and upcoming installs.</div>
     </div>
   </div>);
 }
@@ -7506,7 +7506,7 @@ const FENCE_TYPES_LEAD=['PC','SW','WI','Mixed','Other'];
 const COMPANY_TYPES=['GC','Developer','MUD','Homeowner','Municipality','Other'];
 
 function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted}){
-  const mc=MC[lead.market]||'#6B6056';
+  const mc=MC[lead.market]||'#625650';
   const mb=MB[lead.market]||'#F4F4F2';
   const stageDate=lead.stage_entered_at||lead.updated_at||lead.created_at;
   const days=stageDate?Math.floor((Date.now()-new Date(stageDate).getTime())/86400000):0;
@@ -7515,17 +7515,17 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
   const acv=linkedJob?n(linkedJob.adj_contract_value||linkedJob.contract_value):0;
   const billed=linkedJob?n(linkedJob.ytd_invoiced):0;
   const pct=acv>0?Math.round(billed/acv*100):0;
-  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8B2020':'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8B202022,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
+  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
     <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
-    {lead.project_description&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
+    {lead.project_description&&<div style={{fontSize:11,color:'#625650',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6,alignItems:'center'}}>
-      {n(lead.estimated_value)>0&&<span style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#8B2020'}}>{$k(lead.estimated_value)}</span>}
-      {n(lead.estimated_lf)>0&&<span style={{fontSize:11,color:'#6B6056'}}>{n(lead.estimated_lf).toLocaleString()} LF</span>}
+      {n(lead.estimated_value)>0&&<span style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#8A261D'}}>{$k(lead.estimated_value)}</span>}
+      {n(lead.estimated_lf)>0&&<span style={{fontSize:11,color:'#625650'}}>{n(lead.estimated_lf).toLocaleString()} LF</span>}
       {capacity&&n(lead.estimated_lf)>0&&<span title={`Plant backlog: ${capacity.backlog.toLocaleString()} PC LF`} style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:capacity.bg,color:capacity.c,border:`1px solid ${capacity.c}33`}}>{capacity.label}</span>}
     </div>
     <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
       {lead.market&&<span style={pill(mc,mb)}>{MS[lead.market]||lead.market}</span>}
-      {lead.sales_rep&&<span style={{fontSize:11,color:'#6B6056'}}>{lead.sales_rep}</span>}
+      {lead.sales_rep&&<span style={{fontSize:11,color:'#625650'}}>{lead.sales_rep}</span>}
     </div>
     {lead.stage==='won'&&linkedJob&&<div onClick={e=>{e.stopPropagation();onOpenProject&&onOpenProject(linkedJob);}} style={{marginTop:8,padding:'8px 10px',background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,cursor:'pointer'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -7533,7 +7533,7 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
         <span style={statusPill(linkedJob.status)}>{SS[linkedJob.status]||linkedJob.status}</span>
       </div>
       {acv>0&&<>
-        <div style={{fontSize:10,color:'#6B6056',marginBottom:3}}>Billed: <b>{pct}%</b> ({$k(billed)} of {$k(acv)})</div>
+        <div style={{fontSize:10,color:'#625650',marginBottom:3}}>Billed: <b>{pct}%</b> ({$k(billed)} of {$k(acv)})</div>
         <div style={{height:4,background:'#D1FAE5',borderRadius:2,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(pct,100)}%`,background:'#10B981'}}/></div>
       </>}
     </div>}
@@ -7565,7 +7565,7 @@ function NewLeadForm({onClose,onSaved,contacts}){
     setSaving(false);
   };
   const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
-    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
     {opts?<select value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
     :type==='textarea'?<textarea value={f[k]} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
     :<input type={type} value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}/>}
@@ -7578,7 +7578,7 @@ function NewLeadForm({onClose,onSaved,contacts}){
       </div>
       <div style={{...card}}>
         <div style={{marginBottom:10,position:'relative'}}>
-          <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Company Name *</div>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Company Name *</div>
           <input value={f.company_name} onChange={e=>set('company_name',e.target.value)} style={inputS}/>
           {companySuggest.length>0&&<div style={{position:'absolute',top:'100%',left:0,right:0,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,zIndex:2,maxHeight:150,overflow:'auto'}}>{companySuggest.map(c=><div key={c.id} onClick={()=>pickCompany(c)} style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #F4F4F2'}}>{c.company} — {c.name}</div>)}</div>}
         </div>
@@ -7611,10 +7611,10 @@ function ProposalSentModal({lead,onClose,onSave}){
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:400,maxWidth:'94vw'}}>
       <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Proposal Sent</div>
-      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{lead.company_name}</div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Proposal Value ($)</div><input type="number" value={v} onChange={e=>setV(e.target.value)} style={inputS}/></div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Date Sent</div><input type="date" value={d} onChange={e=>setD(e.target.value)} style={inputS}/></div>
-      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Win Probability ({p}%)</div><input type="range" min={0} max={100} value={p} onChange={e=>setP(+e.target.value)} style={{width:'100%'}}/></div>
+      <div style={{fontSize:13,color:'#625650',marginBottom:16}}>{lead.company_name}</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Proposal Value ($)</div><input type="number" value={v} onChange={e=>setV(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Date Sent</div><input type="date" value={d} onChange={e=>setD(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Win Probability ({p}%)</div><input type="range" min={0} max={100} value={p} onChange={e=>setP(+e.target.value)} style={{width:'100%'}}/></div>
       <div style={{display:'flex',gap:8}}>
         <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
         <button onClick={()=>onSave({proposal_value:n(v),proposal_sent_date:d,win_probability:p})} style={{...btnP,flex:2}}>Save</button>
@@ -7629,9 +7629,9 @@ function LostModal({lead,onClose,onSave}){
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:420,maxWidth:'94vw'}}>
       <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Mark as Lost</div>
-      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>{lead.company_name}</div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Loss Reason</div><select value={r} onChange={e=>setR(e.target.value)} style={inputS}>{LOSS_REASONS.map(o=><option key={o} value={o}>{o}</option>)}</select></div>
-      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Loss Notes</div><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...inputS,minHeight:80}}/></div>
+      <div style={{fontSize:13,color:'#625650',marginBottom:16}}>{lead.company_name}</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Loss Reason</div><select value={r} onChange={e=>setR(e.target.value)} style={inputS}>{LOSS_REASONS.map(o=><option key={o} value={o}>{o}</option>)}</select></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Loss Notes</div><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...inputS,minHeight:80}}/></div>
       <div style={{display:'flex',gap:8}}>
         <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
         <button onClick={()=>onSave({loss_reason:r,loss_notes:notes})} style={{...btnP,flex:2}}>Save</button>
@@ -7690,24 +7690,24 @@ function WonModal({lead,onClose,onCreate}){
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto'}}>
       <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🎉 Create Project from Lead</div>
-      <div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>Confirm project details — Amiee will pick up from here.</div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Customer Name</div><input value={customer} onChange={e=>setCustomer(e.target.value)} style={inputS}/></div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Job Name</div><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputS}/></div>
+      <div style={{fontSize:13,color:'#625650',marginBottom:16}}>Confirm project details — Amiee will pick up from here.</div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Customer Name</div><input value={customer} onChange={e=>setCustomer(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Job Name</div><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputS}/></div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Market</div><select value={market} onChange={e=>setMarket(e.target.value)} style={inputS}><option value="">—</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Sales Rep</div><select value={rep} onChange={e=>setRep(e.target.value)} style={inputS}><option value="">—</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Market</div><select value={market} onChange={e=>setMarket(e.target.value)} style={inputS}><option value="">—</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Sales Rep</div><select value={rep} onChange={e=>setRep(e.target.value)} style={inputS}><option value="">—</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Contract Value</div><input type="number" value={cv} onChange={e=>setCv(e.target.value)} style={inputS}/></div>
-        <div><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Total LF</div><input type="number" value={lf} onChange={e=>setLf(e.target.value)} style={inputS}/></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Contract Value</div><input type="number" value={cv} onChange={e=>setCv(e.target.value)} style={inputS}/></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Total LF</div><input type="number" value={lf} onChange={e=>setLf(e.target.value)} style={inputS}/></div>
       </div>
-      <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#6B6056',marginBottom:10,cursor:'pointer'}}>
+      <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#625650',marginBottom:10,cursor:'pointer'}}>
         <input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)}/>
         Residential (uses R-prefix job code)
       </label>
       <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
         <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Job Number</div>
-        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#8B2020'}}>{jobNumber||'—'}</div>
+        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#8A261D'}}>{jobNumber||'—'}</div>
       </div>
       <div style={{display:'flex',gap:8}}>
         <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
@@ -7934,7 +7934,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
         return <div key={col.key} onDragOver={e=>e.preventDefault()} onDrop={()=>onDrop(col.key)} style={{background:col.bg,borderRadius:12,padding:8,border:`1px solid ${col.accent}`,display:'flex',flexDirection:'column',maxHeight:'calc(100vh - 260px)',minHeight:200}}>
           <div onClick={toggle} style={{padding:'10px 12px',background:col.accent,borderRadius:8,marginBottom:8,cursor:toggle?'pointer':'default',flexShrink:0}}>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:12,color:col.color,letterSpacing:0.5}}>{col.label}{toggle&&<span style={{float:'right'}}>{collapsed?'▸':'▾'}</span>}</div>
-            <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>
+            <div style={{fontSize:11,color:'#625650',marginTop:2}}>
               <span style={{background:'#FFF',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{items.length}</span>
               {$k(total)}
             </div>
@@ -7950,15 +7950,15 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     {importPreview&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!importing&&setImportPreview(null)}>
       <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:460,maxWidth:'94vw'}}>
         <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>Import Preview</div>
-        <div style={{fontSize:12,color:'#6B6056',marginBottom:16}}>{importPreview.fileName}</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:16}}>{importPreview.fileName}</div>
         <div style={{fontSize:14,marginBottom:8}}>Found <b>{importPreview.rows.length}</b> leads</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12}}>
-          <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#1D4ED8'}}>{importPreview.open}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Open</div></div>
-          <div style={{background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#065F46'}}>{importPreview.won}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Won</div></div>
-          <div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#991B1B'}}>{importPreview.lost}</div><div style={{fontSize:10,color:'#6B6056',textTransform:'uppercase',fontWeight:700}}>Lost</div></div>
+          <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#1D4ED8'}}>{importPreview.open}</div><div style={{fontSize:10,color:'#625650',textTransform:'uppercase',fontWeight:700}}>Open</div></div>
+          <div style={{background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#065F46'}}>{importPreview.won}</div><div style={{fontSize:10,color:'#625650',textTransform:'uppercase',fontWeight:700}}>Won</div></div>
+          <div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderRadius:8,padding:10,textAlign:'center'}}><div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#991B1B'}}>{importPreview.lost}</div><div style={{fontSize:10,color:'#625650',textTransform:'uppercase',fontWeight:700}}>Lost</div></div>
         </div>
         {importPreview.skipped>0&&<div style={{fontSize:12,color:'#B45309',background:'#FEF3C7',border:'1px solid #FDE68A',padding:'8px 12px',borderRadius:8,marginBottom:12}}>⚠ {importPreview.skipped} duplicate row(s) skipped (matched on company + project + value)</div>}
-        {importPreview.rows.length===0?<div style={{fontSize:13,color:'#9E9B96',marginBottom:16}}>Nothing new to import.</div>:<div style={{fontSize:13,color:'#6B6056',marginBottom:16}}>Import these leads into the pipeline?</div>}
+        {importPreview.rows.length===0?<div style={{fontSize:13,color:'#9E9B96',marginBottom:16}}>Nothing new to import.</div>:<div style={{fontSize:13,color:'#625650',marginBottom:16}}>Import these leads into the pipeline?</div>}
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>setImportPreview(null)} disabled={importing} style={{...btnS,flex:1}}>Cancel</button>
           {importPreview.rows.length>0&&<button onClick={confirmImport} disabled={importing} style={{...btnP,flex:2}}>{importing?'Importing...':`Import ${importPreview.rows.length} Leads`}</button>}
@@ -8024,19 +8024,19 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
     isMobile?<MobileCards
       items={filtered}
       emptyMessage="No contacts found"
-      renderCard={c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <div style={mobileCardStyle('#8B2020')} onClick={()=>setDetail(c)}>
+      renderCard={c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <div style={mobileCardStyle('#8A261D')} onClick={()=>setDetail(c)}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.company||'—'}</div>
-            <div style={{fontSize:12,color:'#6B6056',marginTop:2}}>{c.type||c.company_type||c.contact_type||'—'}{jc>0?` · ${jc} job${jc===1?'':'s'}`:''}</div>
+            <div style={{fontSize:12,color:'#625650',marginTop:2}}>{c.type||c.company_type||c.contact_type||'—'}{jc>0?` · ${jc} job${jc===1?'':'s'}`:''}</div>
           </div>
-          {c.market && <span style={pill(MC[c.market]||'#6B6056',MB[c.market]||'#F4F4F2',MC[c.market])}>{MS[c.market]||c.market}</span>}
+          {c.market && <span style={pill(MC[c.market]||'#625650',MB[c.market]||'#F4F4F2',MC[c.market])}>{MS[c.market]||c.market}</span>}
         </div>
         {(c.name||c.title) && <div style={{fontSize:13,marginTop:8}}>
           {c.name && <span style={{fontWeight:600}}>{c.name}</span>}
-          {c.title && <span style={{color:'#6B6056'}}>{c.name?' · ':''}{c.title}</span>}
+          {c.title && <span style={{color:'#625650'}}>{c.name?' · ':''}{c.title}</span>}
         </div>}
-        {(c.phone||c.email) && <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC',fontSize:12,color:'#6B6056',display:'flex',flexDirection:'column',gap:3}}>
+        {(c.phone||c.email) && <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC',fontSize:12,color:'#625650',display:'flex',flexDirection:'column',gap:3}}>
           {c.phone && <span>📞 {c.phone}</span>}
           {c.email && <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>✉ {c.email}</span>}
         </div>}
@@ -8045,7 +8045,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
     <div style={{...card,padding:0,overflow:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
-          {['Company','Type','Contact Name','Title','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}
+          {['Company','Type','Contact Name','Title','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
         </tr></thead>
         <tbody>
           {
@@ -8053,11 +8053,11 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
             <td style={{padding:'10px 12px',fontWeight:600}}>{c.company||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.type||c.company_type||c.contact_type||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.name||'—'}</td>
-            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.title||'—'}</td>
-            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.phone||'—'}</td>
-            <td style={{padding:'10px 12px',color:'#6B6056'}}>{c.email||'—'}</td>
-            <td style={{padding:'10px 12px'}}>{c.market?<span style={pill(MC[c.market]||'#6B6056',MB[c.market]||'#F4F4F2')}>{MS[c.market]||c.market}</span>:'—'}</td>
-            <td style={{padding:'10px 12px',fontWeight:700,color:jc>0?'#8B2020':'#9E9B96'}}>{jc}</td>
+            <td style={{padding:'10px 12px',color:'#625650'}}>{c.title||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#625650'}}>{c.phone||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#625650'}}>{c.email||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{c.market?<span style={pill(MC[c.market]||'#625650',MB[c.market]||'#F4F4F2')}>{MS[c.market]||c.market}</span>:'—'}</td>
+            <td style={{padding:'10px 12px',fontWeight:700,color:jc>0?'#8A261D':'#9E9B96'}}>{jc}</td>
           </tr>;})}
         </tbody>
       </table>
@@ -8083,7 +8083,7 @@ function ContactForm({onClose,onSaved,initial}){
     setSaving(false);
   };
   const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
-    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
     {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
     :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
     :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
@@ -8133,7 +8133,7 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
     setSaving(false);
   };
   const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
-    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
     {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
     :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
     :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
@@ -8144,18 +8144,18 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
         <div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900}}>{contact.company||'Unnamed'}</div>
-            {summary.returning&&<span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FDF4F4',color:'#8B2020',border:'1px solid #8B202033',textTransform:'uppercase',letterSpacing:0.5}}>Returning Customer</span>}
+            {summary.returning&&<span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FDF4F4',color:'#8A261D',border:'1px solid #8A261D33',textTransform:'uppercase',letterSpacing:0.5}}>Returning Customer</span>}
           </div>
-          <div style={{fontSize:12,color:'#6B6056'}}>{contact.type||contact.company_type||'—'} · {contact.market?(MS[contact.market]||contact.market):'—'}</div>
+          <div style={{fontSize:12,color:'#625650'}}>{contact.type||contact.company_type||'—'} · {contact.market?(MS[contact.market]||contact.market):'—'}</div>
         </div>
         <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
       </div>
       <div style={{...card,marginBottom:12,background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',borderColor:'#E5D3D3'}}>
-        <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Customer Summary</div>
+        <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Customer Summary</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12}}>
           <div>
             <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Lifetime Value</div>
-            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:'#8B2020'}}>{$k(summary.ltv)}</div>
+            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:'#8A261D'}}>{$k(summary.ltv)}</div>
           </div>
           <div>
             <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Active Pipeline</div>
@@ -8186,25 +8186,25 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
         </div>
       </div>
       <div style={{...card,marginTop:12}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Active Leads ({activeLeads.length})</div>
+        <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',marginBottom:8}}>Active Leads ({activeLeads.length})</div>
         {activeLeads.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No active leads</div>:
         <div style={{maxHeight:260,overflow:'auto'}}>{activeLeads.map(l=>{const days=l.created_at?Math.floor((Date.now()-new Date(l.created_at).getTime())/86400000):0;const stageMeta=LEAD_STAGES.find(s=>s.key===l.stage);return <div key={l.id} onClick={()=>onOpenLead&&onOpenLead(l)} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',cursor:onOpenLead?'pointer':'default'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:2}}>
             <div style={{fontSize:12,fontWeight:600,color:'#1A1A1A',flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{l.project_description||'Untitled lead'}</div>
             {stageMeta&&<span style={pill(stageMeta.color,stageMeta.accent)}>{stageMeta.label}</span>}
           </div>
-          <div style={{fontSize:11,color:'#6B6056'}}>{$k(l.estimated_value||l.proposal_value)} · {l.sales_rep||'—'} · {days}d open</div>
+          <div style={{fontSize:11,color:'#625650'}}>{$k(l.estimated_value||l.proposal_value)} · {l.sales_rep||'—'} · {days}d open</div>
         </div>;})}</div>}
       </div>
       <div style={{...card,marginTop:12}}>
-        <div style={{fontSize:12,fontWeight:800,color:'#8B2020',textTransform:'uppercase',marginBottom:8}}>Projects ({linkedJobs.length})</div>
+        <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',marginBottom:8}}>Projects ({linkedJobs.length})</div>
         {linkedJobs.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No projects yet</div>:
         <div style={{maxHeight:280,overflow:'auto'}}>{linkedJobs.map(j=>{const acv=n(j.adj_contract_value||j.contract_value);const billed=n(j.ytd_invoiced);const pct=acv>0?Math.round(billed/acv*100):0;const left=acv-billed;return <div key={j.id} onClick={()=>onOpenProject&&onOpenProject(j)} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',cursor:onOpenProject?'pointer':'default'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:3}}>
-            <div style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}><span style={{color:'#8B2020'}}>#{j.job_number}</span> {j.job_name}</div>
+            <div style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}><span style={{color:'#8A261D'}}>#{j.job_number}</span> {j.job_name}</div>
             <span style={statusPill(j.status)}>{SS[j.status]||j.status}</span>
           </div>
-          <div style={{fontSize:11,color:'#6B6056',display:'flex',gap:10,flexWrap:'wrap'}}>
+          <div style={{fontSize:11,color:'#625650',display:'flex',gap:10,flexWrap:'wrap'}}>
             <span>{$k(acv)}</span>
             <span>Billed {pct}%</span>
             <span>Left {$k(left)}</span>
@@ -8241,7 +8241,7 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
     setSaving(false);
   };
   const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
-    <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>{lbl}</div>
+    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
     {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
     :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
     :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
@@ -8251,7 +8251,7 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div>
           <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{lead.company_name||'Lead'}</div>
-          <div style={{fontSize:12,color:'#6B6056'}}>Proposal Sent</div>
+          <div style={{fontSize:12,color:'#625650'}}>Proposal Sent</div>
         </div>
         <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
       </div>
@@ -8269,7 +8269,7 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
         {fld('Proposal Value ($)','proposal_value','number')}
         {fld('Proposal Sent Date','proposal_sent_date','date')}
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Win Probability ({f.win_probability}%)</div>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Win Probability ({f.win_probability}%)</div>
           <input type="range" min={0} max={100} value={f.win_probability} onChange={e=>set('win_probability',+e.target.value)} style={{width:'100%'}}/>
         </div>
         {fld('Expected Close Date','expected_close_date','date')}
@@ -8336,7 +8336,7 @@ function ProposalsPage({jobs}){
     try{await sbPatch('leads',id,{...patch,updated_at:new Date().toISOString()});setLeads(prev=>prev.map(l=>l.id===id?{...l,...patch}:l));toast.success('Saved');}
     catch(e){toast.error('Save failed');}
   };
-  const hdr=(key,label,align='left')=>{const active=sortKey===key;return <th onClick={()=>{if(active)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc');}}} style={{textAlign:align,padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>{label}{active&&<span style={{marginLeft:4,color:'#8B2020'}}>{sortDir==='asc'?'▲':'▼'}</span>}</th>;};
+  const hdr=(key,label,align='left')=>{const active=sortKey===key;return <th onClick={()=>{if(active)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc');}}} style={{textAlign:align,padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>{label}{active&&<span style={{marginLeft:4,color:'#8A261D'}}>{sortDir==='asc'?'▲':'▼'}</span>}</th>;};
   const fuCell=(l)=>{
     if(!l.follow_up_date)return <span style={{color:'#9E9B96',fontStyle:'italic',fontSize:12}}>Not set</span>;
     const d=l.follow_up_date;
@@ -8348,17 +8348,17 @@ function ProposalsPage({jobs}){
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Proposals</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
       <div style={{...card}}>
-        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Weighted Forecast</div>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#8B2020',marginTop:4}}>{$k(kpis.weighted)}</div>
+        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Weighted Forecast</div>
+        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#8A261D',marginTop:4}}>{$k(kpis.weighted)}</div>
         <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>value × win probability</div>
       </div>
       <div style={{...card}}>
-        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Total Open Proposals</div>
+        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Total Open Proposals</div>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#1A1A1A',marginTop:4}}>{kpis.openCount}</div>
-        <div style={{fontSize:11,color:'#6B6056',marginTop:2}}>{$k(kpis.openTotal)} total value</div>
+        <div style={{fontSize:11,color:'#625650',marginTop:2}}>{$k(kpis.openTotal)} total value</div>
       </div>
       <div style={{...card}}>
-        <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>Avg Days Outstanding</div>
+        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Avg Days Outstanding</div>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:kpis.avgDays>30?'#B45309':'#065F46',marginTop:4}}>{kpis.avgDays}d</div>
         <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>since proposal sent</div>
       </div>
@@ -8381,18 +8381,18 @@ function ProposalsPage({jobs}){
         const overdue=l.follow_up_date&&l.follow_up_date<today;
         const weighted=n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100);
         const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
-        return <div style={{...mobileCardStyle(overdue?'#B45309':'#8B2020'),background:overdue?'#FFFBEB':'#FFF'}} onClick={()=>setDetail(l)}>
+        return <div style={{...mobileCardStyle(overdue?'#B45309':'#8A261D'),background:overdue?'#FFFBEB':'#FFF'}} onClick={()=>setDetail(l)}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.company_name||'—'}</div>
-              <div style={{fontSize:12,color:'#6B6056',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</div>
+              <div style={{fontSize:12,color:'#625650',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</div>
             </div>
-            {l.market && <span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2',MC[l.market])}>{MS[l.market]||l.market}</span>}
+            {l.market && <span style={pill(MC[l.market]||'#625650',MB[l.market]||'#F4F4F2',MC[l.market])}>{MS[l.market]||l.market}</span>}
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
             <div>
               <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Est. Value</div>
-              <div style={{fontSize:13,fontWeight:800,color:'#8B2020',marginTop:2}}>{$k(l.estimated_value||l.proposal_value)}</div>
+              <div style={{fontSize:13,fontWeight:800,color:'#8A261D',marginTop:2}}>{$k(l.estimated_value||l.proposal_value)}</div>
             </div>
             <div>
               <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Win %</div>
@@ -8403,9 +8403,9 @@ function ProposalsPage({jobs}){
               <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{$k(weighted)}</div>
             </div>
           </div>
-          <div style={{marginTop:8,fontSize:11,color:'#6B6056',display:'flex',justifyContent:'space-between'}}>
+          <div style={{marginTop:8,fontSize:11,color:'#625650',display:'flex',justifyContent:'space-between'}}>
             <span>{l.sales_rep||'—'}{l.proposal_sent_date?` · Sent ${fD(l.proposal_sent_date)}`:''}</span>
-            <span style={{fontWeight:700,color:days>30?'#B45309':'#6B6056'}}>{days}d out</span>
+            <span style={{fontWeight:700,color:days>30?'#B45309':'#625650'}}>{days}d out</span>
           </div>
         </div>;
       }}
@@ -8421,7 +8421,7 @@ function ProposalsPage({jobs}){
           {hdr('estimated_lf','LF','right')}
           {hdr('proposal_sent_date','Date Sent')}
           {hdr('follow_up_date','Follow-up')}
-          <th style={{textAlign:'right',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>Days Out</th>
+          <th style={{textAlign:'right',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>Days Out</th>
           {hdr('win_probability','Win %','right')}
           {hdr('weighted','Weighted','right')}
         </tr></thead>
@@ -8432,17 +8432,17 @@ function ProposalsPage({jobs}){
             const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
             return <tr key={l.id} onClick={()=>setDetail(l)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:overdue?'#FEF3C7':'transparent'}} onMouseEnter={e=>e.currentTarget.style.background=overdue?'#FDE68A':'#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=overdue?'#FEF3C7':'transparent'}>
               <td style={{padding:'10px 12px',fontWeight:600}}>{l.company_name||'—'}</td>
-              <td style={{padding:'10px 12px',color:'#6B6056',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
-              <td style={{padding:'10px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
+              <td style={{padding:'10px 12px',color:'#625650',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
+              <td style={{padding:'10px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#625650',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
               <td style={{padding:'10px 12px'}}>{l.sales_rep||'—'}</td>
-              <td style={{padding:'10px 12px',fontWeight:700,textAlign:'right',color:'#8B2020'}}>{$k(l.estimated_value||l.proposal_value)}</td>
-              <td style={{padding:'10px 12px',textAlign:'right',color:'#6B6056'}}>{n(l.estimated_lf)?n(l.estimated_lf).toLocaleString():'—'}</td>
-              <td style={{padding:'10px 12px',color:'#6B6056'}}>{fD(l.proposal_sent_date)}</td>
+              <td style={{padding:'10px 12px',fontWeight:700,textAlign:'right',color:'#8A261D'}}>{$k(l.estimated_value||l.proposal_value)}</td>
+              <td style={{padding:'10px 12px',textAlign:'right',color:'#625650'}}>{n(l.estimated_lf)?n(l.estimated_lf).toLocaleString():'—'}</td>
+              <td style={{padding:'10px 12px',color:'#625650'}}>{fD(l.proposal_sent_date)}</td>
               <td style={{padding:'10px 12px'}} onClick={e=>e.stopPropagation()}>
                 <input type="date" defaultValue={l.follow_up_date||''} onBlur={e=>{const v=e.target.value||null;if(v!==l.follow_up_date)saveInline(l.id,{follow_up_date:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:140,background:overdue?'#FEF3C7':'#FFF'}}/>
                 <div style={{marginTop:2}}>{fuCell(l)}</div>
               </td>
-              <td style={{padding:'10px 12px',textAlign:'right',color:days>30?'#B45309':'#6B6056',fontWeight:days>30?700:400}}>{days}d</td>
+              <td style={{padding:'10px 12px',textAlign:'right',color:days>30?'#B45309':'#625650',fontWeight:days>30?700:400}}>{days}d</td>
               <td style={{padding:'10px 12px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
                 <input type="number" min={0} max={100} defaultValue={l.win_probability==null?50:l.win_probability} onBlur={e=>{const v=Math.max(0,Math.min(100,parseInt(e.target.value)||0));if(v!==l.win_probability)saveInline(l.id,{win_probability:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:60,textAlign:'right'}}/>
               </td>
@@ -8544,10 +8544,10 @@ function SalesDashboardPage({jobs,onNav}){
     const pct=forecastPool>0?Math.round((actualClosed/forecastPool)*100):0;
     return{pct,forecastPool,actualClosed};
   },[leads]);// eslint-disable-line
-  const PIE_COLORS=['#8B2020','#B45309','#1D4ED8','#065F46','#9D174D','#6D28D9','#374151'];
+  const PIE_COLORS=['#8A261D','#B45309','#1D4ED8','#065F46','#9D174D','#6D28D9','#374151'];
   const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
   const kpi=(label,value,sub,color='#1A1A1A')=>(<div style={{...card}}>
-    <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+    <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
     <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color,marginTop:4}}>{value}</div>
     {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
   </div>);
@@ -8555,8 +8555,8 @@ function SalesDashboardPage({jobs,onNav}){
   return <div>
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Sales Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
-      {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8B2020')}
-      {kpi('Weighted Forecast',$k(weightedForecast),'value × win probability','#8B2020')}
+      {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8A261D')}
+      {kpi('Weighted Forecast',$k(weightedForecast),'value × win probability','#8A261D')}
       {kpi('Win Rate (90d)',`${winRate.toFixed(0)}%`,`${recentWon.length}W · ${recentLost.length}L`,winRate>=50?'#065F46':winRate>=25?'#B45309':'#991B1B')}
       {kpi('Avg Days to Close',`${avgDaysToClose}d`,`${wonLeads.length} won leads`,'#1A1A1A')}
     </div>
@@ -8574,9 +8574,9 @@ function SalesDashboardPage({jobs,onNav}){
           <BarChart data={pipelineByRep} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="rep" stroke="#6B6056" fontSize={12} width={70}/>
+            <YAxis type="category" dataKey="rep" stroke="#625650" fontSize={12} width={70}/>
             <Tooltip formatter={(v,nm,p)=>[$k(v)+` · ${p.payload.count} deal${p.payload.count===1?'':'s'}`,'Pipeline']}/>
-            <Bar dataKey="value" fill="#8B2020" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#6B6056',fontSize:11}}/>
+            <Bar dataKey="value" fill="#8A261D" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#625650',fontSize:11}}/>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -8586,9 +8586,9 @@ function SalesDashboardPage({jobs,onNav}){
           <BarChart data={pipelineByMarket} layout="vertical" margin={{top:4,right:40,bottom:4,left:20}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
             <XAxis type="number" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
-            <YAxis type="category" dataKey="label" stroke="#6B6056" fontSize={12} width={70}/>
+            <YAxis type="category" dataKey="label" stroke="#625650" fontSize={12} width={70}/>
             <Tooltip formatter={v=>$k(v)}/>
-            <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#6B6056',fontSize:11}}>
+            <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',formatter:(v)=>$k(v),fill:'#625650',fontSize:11}}>
               {pipelineByMarket.map((entry,i)=><Cell key={i} fill={entry.color}/>)}
             </Bar>
           </BarChart>
@@ -8601,14 +8601,14 @@ function SalesDashboardPage({jobs,onNav}){
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={monthlyTrend} margin={{top:4,right:16,bottom:4,left:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
-            <XAxis dataKey="label" stroke="#6B6056" fontSize={11}/>
+            <XAxis dataKey="label" stroke="#625650" fontSize={11}/>
             <YAxis yAxisId="left" tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
             <YAxis yAxisId="right" orientation="right" tickFormatter={v=>v+'%'} stroke="#9E9B96" fontSize={11} domain={[0,100]}/>
             <Tooltip formatter={(v,nm)=>nm==='Win Rate'?v+'%':$k(v)}/>
             <Legend wrapperStyle={{fontSize:11}}/>
             <Bar yAxisId="left" dataKey="won" fill="#10B981" name="Won" radius={[4,4,0,0]}/>
             <Bar yAxisId="left" dataKey="lost" fill="#DC2626" name="Lost" radius={[4,4,0,0]}/>
-            <Line yAxisId="right" type="monotone" dataKey="winRate" stroke="#8B2020" strokeWidth={2} name="Win Rate" dot={{fill:'#8B2020',r:3}}/>
+            <Line yAxisId="right" type="monotone" dataKey="winRate" stroke="#8A261D" strokeWidth={2} name="Win Rate" dot={{fill:'#8A261D',r:3}}/>
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -8618,7 +8618,7 @@ function SalesDashboardPage({jobs,onNav}){
         lossReasons.length===0?<EmptyState compact icon="📊" title="No reasons recorded"/>:
         <ResponsiveContainer width="100%" height={240}>
           <PieChart>
-            <Pie data={lossReasons} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={{fontSize:11,fill:'#6B6056'}}>
+            <Pie data={lossReasons} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={{fontSize:11,fill:'#625650'}}>
               {lossReasons.map((e,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
             </Pie>
             <Tooltip/>
@@ -8633,7 +8633,7 @@ function SalesDashboardPage({jobs,onNav}){
       <ResponsiveContainer width="100%" height={260}>
         <BarChart data={forecastActual} margin={{top:4,right:16,bottom:4,left:0}}>
           <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
-          <XAxis dataKey="label" stroke="#6B6056" fontSize={11}/>
+          <XAxis dataKey="label" stroke="#625650" fontSize={11}/>
           <YAxis tickFormatter={v=>$k(v)} stroke="#9E9B96" fontSize={11}/>
           <Tooltip formatter={v=>$k(v)}/>
           <Legend wrapperStyle={{fontSize:11}}/>
@@ -8651,16 +8651,16 @@ function SalesDashboardPage({jobs,onNav}){
       <div style={{overflow:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
-            {['Customer','Project','Market','Rep','Value','Days Out'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:700,color:'#6B6056',textTransform:'uppercase'}}>{h}</th>)}
+            {['Customer','Project','Market','Rep','Value','Days Out'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
           </tr></thead>
           <tbody>
             {topOpen.map(l=>{const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);return <tr key={l.id} onClick={()=>onNav&&onNav('proposals')} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'8px 12px',fontWeight:600}}>{l.company_name||'—'}</td>
-              <td style={{padding:'8px 12px',color:'#6B6056',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
-              <td style={{padding:'8px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#6B6056',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
+              <td style={{padding:'8px 12px',color:'#625650',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
+              <td style={{padding:'8px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#625650',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
               <td style={{padding:'8px 12px'}}>{l.sales_rep||'—'}</td>
-              <td style={{padding:'8px 12px',fontWeight:700,color:'#8B2020'}}>{$k(l.estimated_value||l.proposal_value)}</td>
-              <td style={{padding:'8px 12px',color:days>30?'#B45309':'#6B6056'}}>{days}d</td>
+              <td style={{padding:'8px 12px',fontWeight:700,color:'#8A261D'}}>{$k(l.estimated_value||l.proposal_value)}</td>
+              <td style={{padding:'8px 12px',color:days>30?'#B45309':'#625650'}}>{days}d</td>
             </tr>;})}
           </tbody>
         </table>
@@ -8703,14 +8703,14 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
   return <>
     <div style={{padding:'14px 12px',background:'#FFF',borderBottom:'1px solid #2A2A2A',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:6}}>
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:160,width:'100%',height:'auto',display:'block'}}/>
-      :<div style={{width:6,height:28,background:'#8B2020',borderRadius:2}}/>}
+      :<div style={{width:6,height:28,background:'#8A261D',borderRadius:2}}/>}
     </div>
-    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'8px 12px 6px',marginTop:gi===0?4:16}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'12px 0':'12px 12px',marginBottom:2,borderRadius:8,border:'none',background:active?'#8B202018':'transparent',color:active?'#FFFFFF':'#E5E5E3',fontSize:14,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'8px 12px 6px',marginTop:gi===0?4:16}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'12px 0':'12px 12px',marginBottom:2,borderRadius:8,border:'none',background:active?'#8A261D18':'transparent',color:active?'#FFFFFF':'#E5E5E3',fontSize:14,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?'3px solid #8A261D':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'8px':'12px 16px',borderTop:'1px solid #2A2A2A'}}>
-      {!collapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>{jobs.length} projects</div>}
+      {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
         <button onClick={()=>setUserMenuOpen(v=>!v)} title={collapsed?displayName:'Account menu'} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:userMenuOpen?'#3A2020':'#2A2A2A',border:'1px solid #3A2020',borderRadius:8,color:'#D1CEC9',fontSize:12,cursor:'pointer',padding:collapsed?'8px 4px':'8px 10px',fontWeight:600,justifyContent:collapsed?'center':'flex-start',textAlign:'left'}}>
-          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:'#8B2020',color:'#FFF',fontSize:11,fontWeight:800,flexShrink:0}}>{(displayName[0]||'U').toUpperCase()}</span>
+          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:'#8A261D',color:'#FFF',fontSize:11,fontWeight:800,flexShrink:0}}>{(displayName[0]||'U').toUpperCase()}</span>
           {!collapsed&&<>
             <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{displayName}</span>
             <span style={{fontSize:10,color:'#9E9B96',transform:userMenuOpen?'rotate(180deg)':'none',transition:'transform .15s'}}>▾</span>
@@ -8730,12 +8730,12 @@ function MoreMenuSheet({page,setPage,onClose,jobs}){
   return <div style={{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.5)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#1A1A1A',borderTopLeftRadius:16,borderTopRightRadius:16,maxHeight:'82vh',overflow:'auto',paddingBottom:80}}>
       <div style={{padding:'16px 20px',borderBottom:'1px solid #2A2A2A',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8B2020'}}>All Sections</div>
+        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#8A261D'}}>All Sections</div>
         <button onClick={onClose} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:14,width:32,height:32,cursor:'pointer'}}>✕</button>
       </div>
       <div style={{padding:'8px 8px 24px'}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>
         {g.label&&<div style={{fontSize:10,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'16px 12px 4px'}}>{g.label}</div>}
-        {g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onClose();}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'14px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8B202018':'transparent',color:page===ni.key?'#8B2020':'#D1CEC9',fontSize:15,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',borderLeft:page===ni.key?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:18,width:24,textAlign:'center'}}>{ni.icon}</span>{ni.label}</button>)}
+        {g.items.map(ni=><button key={ni.key} onClick={()=>{setPage(ni.key);onClose();}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'14px 12px',marginBottom:2,borderRadius:8,border:'none',background:page===ni.key?'#8A261D18':'transparent',color:page===ni.key?'#8A261D':'#D1CEC9',fontSize:15,fontWeight:page===ni.key?600:400,cursor:'pointer',textAlign:'left',borderLeft:page===ni.key?'3px solid #8A261D':'3px solid transparent'}}><span style={{fontSize:18,width:24,textAlign:'center'}}>{ni.icon}</span>{ni.label}</button>)}
       </div>)}</div>
     </div>
   </div>;
@@ -8746,7 +8746,7 @@ function MobileBottomNav({page,setPage,onMore}){
     {MOBILE_NAV.map(item=>{
       const isMore=item.key==='__more';
       const active=!isMore&&page===item.key;
-      return <button key={item.key} onClick={()=>{if(isMore)onMore();else setPage(item.key);}} style={{flex:1,background:'transparent',border:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,color:active?'#8B2020':'#9E9B96',cursor:'pointer',borderTop:active?'3px solid #8B2020':'3px solid transparent',padding:0}}>
+      return <button key={item.key} onClick={()=>{if(isMore)onMore();else setPage(item.key);}} style={{flex:1,background:'transparent',border:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,color:active?'#8A261D':'#9E9B96',cursor:'pointer',borderTop:active?'3px solid #8A261D':'3px solid transparent',padding:0}}>
         <span style={{fontSize:18}}>{item.icon}</span>
         <span style={{fontSize:10,fontWeight:600}}>{item.label}</span>
       </button>;
@@ -8756,13 +8756,13 @@ function MobileBottomNav({page,setPage,onMore}){
 
 /* ═══ AUTH UI ═══ */
 const ROLE_META = {
-  admin:           { label:'Admin',           c:'#8B2020', bg:'#FDF4F4' },
+  admin:           { label:'Admin',           c:'#8A261D', bg:'#FDF4F4' },
   sales_director:  { label:'Sales Director',  c:'#1D4ED8', bg:'#DBEAFE' },
   sales_rep:       { label:'Sales Rep',       c:'#1D4ED8', bg:'#DBEAFE' },
   pm:              { label:'PM',              c:'#6D28D9', bg:'#EDE9FE' },
   production:      { label:'Production',      c:'#B45309', bg:'#FEF3C7' },
   billing:         { label:'Billing',         c:'#065F46', bg:'#D1FAE5' },
-  viewer:          { label:'Viewer',          c:'#6B6056', bg:'#F4F4F2' },
+  viewer:          { label:'Viewer',          c:'#625650', bg:'#F4F4F2' },
 };
 // Which sidebar group labels are visible to each role. Groups not listed are hidden.
 const ROLE_NAV_GROUPS = {
@@ -8778,7 +8778,7 @@ const initialsOf = (name, email) => {
   if (name) { const parts = name.trim().split(/\s+/); return ((parts[0]?.[0]||'') + (parts[1]?.[0]||'')).toUpperCase() || (name[0]||'?').toUpperCase(); }
   return (email || '?').slice(0,2).toUpperCase();
 };
-const roleColorFor = (role) => ROLE_META[role] || { label: role || 'User', c:'#6B6056', bg:'#F4F4F2' };
+const roleColorFor = (role) => ROLE_META[role] || { label: role || 'User', c:'#625650', bg:'#F4F4F2' };
 
 function LoginPage(){
   const { signIn } = useAuth();
@@ -8809,14 +8809,14 @@ function LoginPage(){
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
         {mode==='login'?<>
           <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Sign In</div>
-          <div style={{fontSize:12,color:'#6B6056',marginBottom:18}}>Use your Fencecrete email to continue.</div>
+          <div style={{fontSize:12,color:'#625650',marginBottom:18}}>Use your Fencecrete email to continue.</div>
           <form onSubmit={submit}>
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
+              <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
               <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputS}/>
             </div>
             <div style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Password</div>
+              <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Password</div>
               <input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputS}/>
             </div>
             {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
@@ -8826,21 +8826,21 @@ function LoginPage(){
             </button>
           </form>
           <div style={{textAlign:'center',marginTop:14}}>
-            <button onClick={()=>{setMode('forgot');setError('');setForgotSent(false);}} style={{background:'none',border:'none',color:'#8B2020',fontSize:12,fontWeight:600,cursor:'pointer'}}>Forgot password?</button>
+            <button onClick={()=>{setMode('forgot');setError('');setForgotSent(false);}} style={{background:'none',border:'none',color:'#8A261D',fontSize:12,fontWeight:600,cursor:'pointer'}}>Forgot password?</button>
           </div>
         </>:<>
           <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Reset Password</div>
-          <div style={{fontSize:12,color:'#6B6056',marginBottom:18}}>Enter your email and we'll send a reset link.</div>
+          <div style={{fontSize:12,color:'#625650',marginBottom:18}}>Enter your email and we'll send a reset link.</div>
           {forgotSent?<div style={{background:'#ECFDF5',border:'1px solid #D1FAE5',color:'#065F46',padding:'12px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:12}}>✓ Check your email for a reset link.</div>:<form onSubmit={forgot}>
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
+              <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Email</div>
               <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required style={inputS}/>
             </div>
             {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
             <button type="submit" disabled={loading} style={{...btnP,width:'100%',padding:'12px 16px',fontSize:14}}>{loading?'Sending...':'Send Reset Link'}</button>
           </form>}
           <div style={{textAlign:'center',marginTop:14}}>
-            <button onClick={()=>{setMode('login');setError('');}} style={{background:'none',border:'none',color:'#6B6056',fontSize:12,fontWeight:600,cursor:'pointer'}}>← Back to sign in</button>
+            <button onClick={()=>{setMode('login');setError('');}} style={{background:'none',border:'none',color:'#625650',fontSize:12,fontWeight:600,cursor:'pointer'}}>← Back to sign in</button>
           </div>
         </>}
       </div>
@@ -8867,16 +8867,16 @@ function RecoveryPage({ accessToken, onDone }){
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:28}}>
         <img src="/logo.png" alt="Fencecrete" style={{maxWidth:280,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
-        <div style={{fontSize:13,color:'#6B6056',marginTop:10}}>Set a new password</div>
+        <div style={{fontSize:13,color:'#625650',marginTop:10}}>Set a new password</div>
       </div>
       <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:28}}>
         <form onSubmit={submit}>
           <div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>New Password</div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>New Password</div>
             <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required style={inputS}/>
           </div>
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Confirm Password</div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Confirm Password</div>
             <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} required style={inputS}/>
           </div>
           {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{error}</div>}
@@ -8906,7 +8906,7 @@ function UserMenu({ onOpenProfile }){
     {open&&<div style={{position:'absolute',right:0,top:42,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,boxShadow:'0 8px 30px rgba(0,0,0,0.12)',zIndex:200,overflow:'hidden'}}>
       <div style={{padding:'12px 14px',borderBottom:'1px solid #F4F4F2'}}>
         <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A'}}>{displayName}</div>
-        <div style={{fontSize:11,color:'#6B6056',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{user?.email}</div>
+        <div style={{fontSize:11,color:'#625650',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{user?.email}</div>
       </div>
       <button onClick={()=>{setOpen(false);onOpenProfile();}} style={{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'transparent',textAlign:'left',fontSize:13,color:'#1A1A1A',cursor:'pointer'}}>My Profile</button>
       <button onClick={()=>{setOpen(false);signOut();}} style={{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'transparent',textAlign:'left',fontSize:13,color:'#991B1B',cursor:'pointer',borderTop:'1px solid #F4F4F2'}}>Sign Out</button>
@@ -8941,7 +8941,7 @@ function ProfileModal({ onClose }){
         <div style={{width:52,height:52,borderRadius:26,background:role.bg,color:role.c,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,border:`1px solid ${role.c}33`}}>{initialsOf(profile?.full_name, user?.email)}</div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A'}}>{profile?.full_name || user?.email}</div>
-          <div style={{fontSize:12,color:'#6B6056'}}>{profile?.title || '—'}</div>
+          <div style={{fontSize:12,color:'#625650'}}>{profile?.title || '—'}</div>
           <div style={{marginTop:4}}><span style={pill(role.c,role.bg)}>{role.label}</span></div>
         </div>
       </div>
@@ -8955,9 +8955,9 @@ function ProfileModal({ onClose }){
         <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
         <button onClick={()=>setMode('password')} style={{...btnP,flex:1}}>Change Password</button>
       </div>:<div>
-        <div style={{fontSize:12,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Change Password</div>
-        <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>New Password</div><input type="password" value={password} onChange={e=>setPassword(e.target.value)} style={inputS}/></div>
-        <div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:600,color:'#6B6056',marginBottom:4}}>Confirm</div><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} style={inputS}/></div>
+        <div style={{fontSize:12,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Change Password</div>
+        <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>New Password</div><input type="password" value={password} onChange={e=>setPassword(e.target.value)} style={inputS}/></div>
+        <div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Confirm</div><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} style={inputS}/></div>
         {error&&<div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}}>{error}</div>}
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>{setMode('view');setError('');}} style={{...btnS,flex:1}}>Cancel</button>
@@ -9037,7 +9037,7 @@ function AppShell(){
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
             {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
-            {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8B2020'}}>🔐 User Management</div><div style={{fontSize:13,color:'#6B6056',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
+            {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
         </div>
       </div>
@@ -9119,7 +9119,7 @@ export default function App(){
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:14}}>
         <img src="/logo.png" alt="Fencecrete" style={{maxWidth:220,width:'100%',height:'auto'}}/>
-        <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8B2020 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
+        <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8A261D 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
       </div>
     </div>;
   }
