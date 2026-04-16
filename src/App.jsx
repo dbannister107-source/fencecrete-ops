@@ -4850,7 +4850,7 @@ Generate the optimal 4-week production schedule following all rules.`;
       // 2. Create new schedule record
       const schedRes = await fetch(`${SB}/rest/v1/ai_production_schedules`, {
         method: 'POST',
-        headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
         body: JSON.stringify({
           week_start: weekStart.toISOString().split('T')[0],
           plan_horizon_weeks: 2,
@@ -4859,8 +4859,11 @@ Generate the optimal 4-week production schedule following all rules.`;
           generated_by: 'Claude AI Agent'
         })
       });
-      if (!schedRes.ok) throw new Error('Failed to save schedule');
-      const [schedRecord] = await schedRes.json();
+      const schedTxt = await schedRes.text();
+      if (!schedRes.ok) throw new Error(`Failed to save schedule: ${schedRes.status} ${schedTxt}`);
+      const schedData = schedTxt ? JSON.parse(schedTxt) : [];
+      const schedRecord = Array.isArray(schedData) ? schedData[0] : schedData;
+      if (!schedRecord?.id) throw new Error(`Schedule record missing id: ${schedTxt}`);
 
       // 3. Save schedule entries
       const entries = schedule.map(e => ({
@@ -4890,13 +4893,14 @@ Generate the optimal 4-week production schedule following all rules.`;
           headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
           body: JSON.stringify(entries)
         });
-        if (!entRes.ok) throw new Error('Failed to save schedule entries');
-        const savedEntries = await entRes.json();
+        const entTxt = await entRes.text();
+        if (!entRes.ok) throw new Error(`Failed to save entries: ${entRes.status} ${entTxt}`);
+        const savedEntries = entTxt ? JSON.parse(entTxt) : [];
         setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
       }
 
       setAiScheduleView(true);
-      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 4-week schedule`, ok: true });
+      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 2-week schedule`, ok: true });
     } catch(e) {
       console.error('[AI Schedule]', e);
       setAiError(e.message || 'Schedule generation failed');
