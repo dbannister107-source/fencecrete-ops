@@ -2918,6 +2918,11 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
                 }
               </div>;
             })}
+          {/* Contract LF read-only box — Precast only */}
+          {sec.title==='Precast'&&n(job.lf_precast)>0&&<div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,padding:'6px 8px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
+            <label style={{display:'block',fontSize:9,color:'#1D4ED8',marginBottom:2,fontWeight:700,textTransform:'uppercase'}}>Contract LF</label>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1D4ED8'}}>{n(job.lf_precast).toLocaleString()}</div>
+          </div>}
           </div>
           {!isReadOnly&&!sec.nonLF&&sub!==null&&(
             <div style={{marginTop:8,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#625650'}}>
