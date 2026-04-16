@@ -8244,6 +8244,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
           </div>;
         })}
       </div>}
+    </div>}
 
     {/* MY REQUESTS TAB */}
     {tab==='my_requests'&&<div>
@@ -8287,8 +8288,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
         });
       })()}
     </div>}
-
-    </div>);
+</div>);
 }
 
 /* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
