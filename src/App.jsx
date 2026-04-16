@@ -2021,11 +2021,11 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     }
     return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});
   },[augmentedJobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
-  const exportCSV=rows=>{const cols=ALL_COLS.filter(c=>visCols.includes(c.key));const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
+  const exportCSV=rows=>{const cols=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
   const saveInline=async()=>{if(!inlE)return;const u={[inlE.key]:inlE.value};if(inlE.key==='ytd_invoiced'){const adj=n(inlE.job.adj_contract_value||inlE.job.contract_value);const ytd=n(inlE.value);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',inlE.id,u);const j=jobs.find(x=>x.id===inlE.id);if(['ytd_invoiced','last_billed'].includes(inlE.key)){fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',inlE.key,j[inlE.key],inlE.value);}else{fireAlert('job_updated',{...j,...u});logAct(j,'field_update',inlE.key,j[inlE.key],inlE.value);}setInlE(null);setToast('Saved');onRefresh();};
   const bulkStatus=async s=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();};
   const bulkRep=async r=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{sales_rep:r});logAct(j,'field_update','sales_rep',j.sales_rep,r);}}setSel(new Set());setToast(`Assigned to ${r}`);onRefresh();};
-  const visCD=ALL_COLS.filter(c=>visCols.includes(c.key));
+  const visCD=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);
   const inlineField=(j,k)=>{
     // For the color column, compose standard palette + the row's current legacy value (if any)
     // so editing an existing job never silently drops the legacy color.
@@ -2054,11 +2054,30 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <div style={{display:'flex',gap:8}}>
           {projTab==='active'&&<button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8A261D':'#625650',border:editMode?'1px solid #8A261D':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>}
           <div style={{position:'relative'}} ref={colRef}><button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns ({visCols.length})</button>
-            {showCols&&<div style={{position:'absolute',right:0,top:36,width:'min(360px,96vw)',maxWidth:'96vw',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:480,overflow:'auto'}}>
+            {showCols&&<div style={{position:'absolute',right:0,top:36,width:'min(400px,96vw)',maxWidth:'96vw',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:560,overflow:'auto'}}>
+              {/* Column picker header */}
+              <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Show & Arrange Columns</span>
+                <button onClick={()=>setVisCols(DEF_VIS)} style={{background:'none',border:'none',color:'#8A261D',fontSize:10,fontWeight:600,cursor:'pointer'}}>Reset</button>
+              </div>
+              {/* Group toggles */}
               {COL_GROUPS.map(g=>{const gk=g.keys.filter(k=>ALL_COLS.some(c=>c.key===k));const allOn=gk.every(k=>visCols.includes(k));return<div key={g.label} style={{marginBottom:12}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>{g.label}</span><button onClick={()=>{if(allOn)setVisCols(v=>v.filter(k=>!gk.includes(k)));else setVisCols(v=>[...new Set([...v,...gk])]);}} style={{background:'none',border:'none',color:'#8A261D',fontSize:10,fontWeight:600,cursor:'pointer'}}>{allOn?'Deselect All':'Select All'}</button></div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...v,k])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8A261D':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8A261D':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...new Set([...v,k])])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8A261D':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8A261D':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
               </div>;})}
+              {/* Column order — only visible cols */}
+              {visCols.length>1&&<div style={{borderTop:'1px solid #F4F4F2',paddingTop:12,marginTop:4}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Column Order</div>
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {visCols.map((k,i)=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;return<div key={k} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',background:'#F9F8F6',borderRadius:6,border:'1px solid #E5E3E0'}}>
+                    <span style={{flex:1,fontSize:11,fontWeight:600,color:'#1A1A1A'}}>{c.label}</span>
+                    <div style={{display:'flex',gap:2}}>
+                      <button disabled={i===0} onClick={()=>setVisCols(v=>{const a=[...v];[a[i-1],a[i]]=[a[i],a[i-1]];return a;})} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:3,width:22,height:22,cursor:i===0?'default':'pointer',opacity:i===0?0.3:1,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center'}}>↑</button>
+                      <button disabled={i===visCols.length-1} onClick={()=>setVisCols(v=>{const a=[...v];[a[i+1],a[i]]=[a[i],a[i+1]];return a;})} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:3,width:22,height:22,cursor:i===visCols.length-1?'default':'pointer',opacity:i===visCols.length-1?0.3:1,fontSize:12,display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
+                    </div>
+                  </div>;})}
+                </div>
+              </div>}
             </div>}
           </div>
           {projTab==='active'&&<button onClick={()=>setShowNewForm(true)} style={{...btnP,background:'#065F46'}}>+ New Project</button>}
