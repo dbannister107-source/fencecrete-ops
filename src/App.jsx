@@ -347,7 +347,7 @@ class ErrorBoundary extends React.Component {
 
 /* ═══ VIEWPORT / RESPONSIVE ═══ */
 function useViewport(){
-  const get=()=>{const w=typeof window!=='undefined'?window.innerWidth:1200;return{w,mobile:w<768,tablet:w>=768&&w<1024,desktop:w>=1024};};
+  const get=()=>{const w=typeof window!=='undefined'?window.innerWidth:1200;const h=typeof window!=='undefined'?window.innerHeight:800;const isLandscape=w>h;return{w,mobile:w<768,tablet:w>=768&&w<1200,desktop:w>=1200,ipad:w>=768&&w<1200,ipadLandscape:w>=768&&w<1200&&isLandscape,ipadPortrait:w>=768&&w<1200&&!isLandscape};};
   const[v,setV]=useState(get);
   useEffect(()=>{let r;const fn=()=>{cancelAnimationFrame(r);r=requestAnimationFrame(()=>setV(get()));};window.addEventListener('resize',fn);return()=>{window.removeEventListener('resize',fn);cancelAnimationFrame(r);};},[]);
   return v;
@@ -2574,6 +2574,7 @@ function BillingPage({jobs,onRefresh,onNav}){
 const ACTIVE_BILL_STATUSES=['in_production','material_ready','active_install','fence_complete','fully_complete'];
 
 function PMBillingPage({jobs,onRefresh,refreshKey=0}){
+  const v=useViewport();
   // Line items are fetched lazily — only when a job row is expanded — keyed by job_number.
   // This replaces the prior bulk fetch to keep the initial page load fast.
   const[pmLineItemsByJob,setPmLineItemsByJob]=useState({});
@@ -2893,14 +2894,14 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
                   ? <div style={{padding:'6px 8px',background:'#F9F8F6',borderRadius:6,fontSize:13,fontWeight:700,color:'#1A1A1A',border:'1px solid #E5E3E0',minHeight:36,display:'flex',alignItems:'center'}}>
                       {kind==='dollars'?`$${n(raw).toLocaleString()}`:n(raw)>0?n(raw).toLocaleString():'—'}
                     </div>
-                  : <input type="number" value={raw} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/>
+                  : <input type="number" value={raw} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:v?.ipad?'10px 12px':'6px 8px',fontSize:v?.ipad?17:13,minHeight:v?.ipad?56:36}}/>
                 }
               </div>;
             })}
           </div>
           {!isReadOnly&&!sec.nonLF&&sub!==null&&(
             <div style={{marginTop:8,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#625650'}}>
-              <span>{sec.title} LF This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{(sub||0).toLocaleString()}</b></span>
+              <span>{sec.title} LF This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:v?.ipad?16:13}}>{(sub||0).toLocaleString()}</b></span>
             </div>
           )}
         </div>
@@ -2933,7 +2934,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
 
       <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8A261D',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
         <span style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total LF This Period</span>
-        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8A261D'}}>{totals.grand.toLocaleString()} LF</span>
+        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:v?.ipad?24:18,color:'#8A261D'}}>{totals.grand.toLocaleString()} LF</span>
       </div>
       {n(form[DEMO_FIELD])>0&&<div style={{fontSize:10,color:'#9E9B96',textAlign:'right',marginTop:2,fontStyle:'italic'}}>Demo not included in LF total ({n(form[DEMO_FIELD]).toLocaleString()} LF tracked separately)</div>}
     </>;
@@ -2941,17 +2942,17 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
 
   const filterTabs=[['all','All',activeJobs.length,'#625650','#F4F4F2'],['missing','Missing',missingCount,'#991B1B','#FEE2E2'],['submitted','Submitted',submittedNotReviewed,'#065F46','#D1FAE5'],['reviewed','Reviewed',reviewedCount,'#1D4ED8','#DBEAFE']];
 
-  return(<div>
+  return(<div style={{paddingBottom:v?.ipad?80:0}}>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Bill Sheet</h1>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:v?.ipad?16:12}}>
+      <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:900}}>PM Bill Sheet</h1>
     </div>
-    {/* PM Selector + Month */}
-    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8A261D':'#F4F4F2',color:selPM===pm.id?'#fff':'#625650',fontSize:14,fontWeight:700,cursor:'pointer'}}>{pm.short}</button>)}
+    {/* PM Selector + Month — iPad: larger buttons */}
+    <div style={{display:'flex',gap:v?.ipad?12:8,marginBottom:v?.ipad?16:12,flexWrap:'wrap',alignItems:'center'}}>
+      {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:v?.ipad?'12px 24px':'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8A261D':'#F4F4F2',color:selPM===pm.id?'#fff':'#625650',fontSize:v?.ipad?16:14,fontWeight:700,cursor:'pointer',minHeight:v?.ipad?52:36}}>{pm.short}</button>)}
       <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
-      <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:170}}/>
-      <span style={{fontSize:14,fontWeight:800,color:'#8A261D'}}>{selMonthLabel}</span>
+      <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:v?.ipad?200:170,minHeight:v?.ipad?52:36,fontSize:v?.ipad?16:13}}/>
+      <span style={{fontSize:v?.ipad?16:14,fontWeight:800,color:'#8A261D'}}>{selMonthLabel}</span>
     </div>
     {/* Progress bar */}
     <div style={{...card,marginBottom:12,padding:14}}>
@@ -2985,11 +2986,11 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const rowBg=status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const borderColor=status==='reviewed'?'#3B82F6':status==='submitted'?'#10B981':'#EF4444';const icon=status==='reviewed'?'✅':status==='submitted'?'✓':'✗';const iconColor=status==='reviewed'?'#1D4ED8':status==='submitted'?'#10B981':'#EF4444';
         return<div key={j.id} style={{background:rowBg,borderLeft:`3px solid ${borderColor}`,borderRadius:6,border:'1px solid #E5E3E0',overflow:'hidden'}}>
           {/* Compact row */}
-          <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:48}}>
-            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,accentColor:'#8A261D'}}/>}
-            <span style={{fontSize:16,color:iconColor,fontWeight:700,width:18,textAlign:'center'}}>{icon}</span>
-            <span style={{fontSize:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:60}}>{j.job_number||'—'}</span>
-            <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
+          <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:v?.ipad?14:10,padding:v?.ipad?'14px 16px':'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:v?.ipad?64:48}}>
+            {filterTab==='missing'&&status==='missing'&&<input type="checkbox" checked={selected.has(j.id)} onChange={e=>{e.stopPropagation();toggleSelect(j.id);}} onClick={e=>e.stopPropagation()} style={{width:v?.ipad?22:16,height:v?.ipad?22:16,accentColor:'#8A261D'}}/>}
+            <span style={{fontSize:v?.ipad?20:16,color:iconColor,fontWeight:700,width:v?.ipad?24:18,textAlign:'center'}}>{icon}</span>
+            <span style={{fontSize:v?.ipad?13:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:v?.ipad?72:60}}>{j.job_number||'—'}</span>
+            <span style={{fontSize:v?.ipad?16:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
             {(j.third_party_billing===true||j.ocip_ccip===true)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
             {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#6D28D9',background:'#EDE9FE',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
@@ -3026,7 +3027,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
               </div>;})()}
               {renderLFForm(j.id,j)}
               <div style={{marginBottom:10,marginTop:12}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
-              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:'8px 0',fontSize:13,opacity:saving===j.id?0.5:1}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
+              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:v?.ipad?'14px 0':'8px 0',fontSize:v?.ipad?17:13,opacity:saving===j.id?0.5:1,minHeight:v?.ipad?60:44}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
             </>}
           </div>}
           {status==='reviewed'&&<div style={{padding:'8px 14px',borderTop:'1px solid #BFDBFE',background:'#EFF6FF',fontSize:11,color:'#1D4ED8',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -5357,7 +5358,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:6}}>
                     {dayEntries.map(e => (
-                      <div key={e.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:typeBg[e.production_type]||'#F9F8F6',borderRadius:6,border:`1px solid ${typeColor[e.production_type]||'#E5E3E0'}33`}}>
+                      <div key={e.id} style={{display:'flex',alignItems:'center',gap:v?.ipad?12:8,padding:v?.ipad?'10px 14px':'6px 10px',background:typeBg[e.production_type]||'#F9F8F6',borderRadius:6,border:`1px solid ${typeColor[e.production_type]||'#E5E3E0'}33`}}>
                         <span style={{fontSize:10,fontWeight:700,color:typeColor[e.production_type]||'#625650',textTransform:'uppercase',minWidth:40}}>{e.production_type}</span>
                         <span style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name||e.job_number}</span>
                         <span style={{fontSize:11,color:'#625650',whiteSpace:'nowrap'}}>{e.style} · {e.color}</span>
@@ -7836,6 +7837,7 @@ const MR_STATUS_STYLE={
   cancelled:{bg:'#FEE2E2',color:'#991B1B',label:'❌ Cancelled'},
 };
 function MaterialRequestsPage({jobs,refreshKey=0}){
+  const v=useViewport();
   const todayISO=new Date().toISOString().split('T')[0];
   const[tab,setTab]=useState('new');
   const[toast,setToast]=useState(null);
@@ -8041,7 +8043,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
     }catch(e){console.error('[MR cancel] failed:',e);setToast({msg:e.message||'Cancel failed',ok:false});}
   };
   // ─── Render helpers ───
-  const lbl={display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600};
+  const lbl={display:'block',fontSize:v?.ipad?13:11,color:'#625650',marginBottom:v?.ipad?6:4,textTransform:'uppercase',fontWeight:600};
   const sectionHdr={fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingBottom:6,borderBottom:'1px solid #E5E3E0'};
   const grd2={display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:16};
   const countCounts=useMemo(()=>({
@@ -8052,11 +8054,11 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
   }),[requests]);
   return(<div>
     {toast&&<Toast message={toast.msg} isError={toast.ok===false} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Material Requests</h1>
-    <div style={{fontSize:12,color:'#9E9B96',marginBottom:16}}>Digital PMR form — request materials from the production plant</div>
+    <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:900,marginBottom:8}}>Material Requests</h1>
+    <div style={{fontSize:v?.ipad?14:12,color:'#9E9B96',marginBottom:16}}>Digital PMR form — request materials from the production plant</div>
     {/* Tabs */}
-    <div style={{display:'flex',gap:6,marginBottom:16}}>
-      <button onClick={()=>setTab('new')} style={{padding:'8px 18px',borderRadius:8,border:tab==='new'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
+    <div style={{display:'flex',gap:v?.ipad?10:6,marginBottom:v?.ipad?20:16,flexWrap:'wrap'}}>
+      <button onClick={()=>setTab('new')} style={{padding:v?.ipad?'12px 24px':'8px 18px',borderRadius:8,minHeight:v?.ipad?52:36,fontSize:v?.ipad?15:13,border:tab==='new'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
       <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>
         Max's Queue <span style={{background:requests.filter(r=>r.status==='pending').length>0?'#DC2626':'#E5E3E0',color:'#FFF',borderRadius:10,padding:'1px 7px',fontSize:11,marginLeft:4}}>{requests.filter(r=>r.status==='pending').length}</span>
       </button>
@@ -9958,6 +9960,10 @@ function AppShell(){
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         @media(max-width:768px){
           input,select,textarea{min-height:48px!important;font-size:16px!important}
+          button{min-height:44px!important;}}
+        @media(min-width:768px) and (max-width:1200px){
+          input,select,textarea{min-height:52px!important;font-size:16px!important;}
+          button:not(.fc-small-btn){min-height:52px!important;}
           .fc-kanban{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;}
           .fc-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
           .fc-no-hscroll{overflow-x:hidden!important;}
