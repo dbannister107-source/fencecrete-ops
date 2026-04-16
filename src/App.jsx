@@ -1399,7 +1399,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i<NP_SECS.length-1)setSec(NP_SECS[i+1]);}} style={btnP}>Next →</button>
     </div>}
     {leadMatch&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <div style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw'}}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(480px,96vw)',maxWidth:'96vw'}}>
         <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🔗 Matching Proposal Found</div>
         <div style={{fontSize:13,color:'#625650',marginBottom:14}}>This project may match an open proposal in the sales pipeline.</div>
         <div style={{background:'#FDF4F4',border:'1px solid #8A261D33',borderRadius:10,padding:14,marginBottom:14}}>
@@ -1478,7 +1478,7 @@ function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
   if(!open)return null;
   let idx=-1;
   return <div style={{position:'fixed',inset:0,zIndex:800,background:'rgba(0,0,0,0.35)',backdropFilter:'blur(2px)'}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'12vh',left:'50%',transform:'translateX(-50%)',width:560,maxWidth:'94vw',background:'#FFF',borderRadius:14,border:'1px solid #E5E3E0',boxShadow:'0 16px 48px rgba(0,0,0,0.22)',overflow:'hidden'}}>
+    <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'12vh',left:'50%',transform:'translateX(-50%)',width:'min(560px,96vw)',maxWidth:'96vw',background:'#FFF',borderRadius:14,border:'1px solid #E5E3E0',boxShadow:'0 16px 48px rgba(0,0,0,0.22)',overflow:'hidden'}}>
       <div style={{display:'flex',alignItems:'center',padding:'14px 18px',borderBottom:'1px solid #E5E3E0'}}>
         <span style={{color:'#9E9B96',marginRight:10,fontSize:16}}>⌕</span>
         <input ref={ref} value={q} onChange={e=>{setQ(e.target.value);setCursor(0);}} placeholder="Search projects, pages, actions..." style={{flex:1,border:'none',outline:'none',fontSize:15,color:'#1A1A1A',background:'transparent'}}/>
@@ -1757,7 +1757,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       </div>
     </div>
     {showRemindConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowRemindConfirm(false)}>
-      <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:'min(440px,96vw)',maxWidth:'96vw',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Send Bill Sheet Reminders?</div>
         <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>This will email all PMs with missing bill sheets for <b style={{color:'#1A1A1A'}}>{monthLabel(curBillingMonth())}</b> and send you an AR summary. Continue?</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowRemindConfirm(false)} style={btnS}>Cancel</button><button onClick={sendReminders} style={btnP}>Send Reminders</button></div>
@@ -1980,7 +1980,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <div style={{display:'flex',gap:8}}>
           {projTab==='active'&&<button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8A261D':'#625650',border:editMode?'1px solid #8A261D':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>}
           <div style={{position:'relative'}} ref={colRef}><button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns ({visCols.length})</button>
-            {showCols&&<div style={{position:'absolute',right:0,top:36,width:360,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:480,overflow:'auto'}}>
+            {showCols&&<div style={{position:'absolute',right:0,top:36,width:'min(360px,96vw)',maxWidth:'96vw',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:480,overflow:'auto'}}>
               {COL_GROUPS.map(g=>{const gk=g.keys.filter(k=>ALL_COLS.some(c=>c.key===k));const allOn=gk.every(k=>visCols.includes(k));return<div key={g.label} style={{marginBottom:12}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>{g.label}</span><button onClick={()=>{if(allOn)setVisCols(v=>v.filter(k=>!gk.includes(k)));else setVisCols(v=>[...new Set([...v,...gk])]);}} style={{background:'none',border:'none',color:'#8A261D',fontSize:10,fontWeight:600,cursor:'pointer'}}>{allOn?'Deselect All':'Select All'}</button></div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{gk.map(k=>{const c=ALL_COLS.find(x=>x.key===k);if(!c)return null;const on=visCols.includes(k);return<button key={k} onClick={()=>setVisCols(v=>on?v.filter(x=>x!==k):[...v,k])} style={{padding:'3px 8px',borderRadius:4,fontSize:10,fontWeight:on?600:400,border:on?'1px solid #8A261D':'1px solid #E5E3E0',background:on?'#FDF4F4':'#FFF',color:on?'#8A261D':'#9E9B96',cursor:'pointer'}}>{c.label}</button>;})}</div>
@@ -1992,7 +1992,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         </div>
       </div>
       {projTab==='active'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:240}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Statuses" width={160} selected={statusF} onChange={setStatusF} options={STS.map(s=>({v:s,l:SL[s]}))}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
@@ -2001,7 +2001,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:240}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
         <select value={closedYearF} onChange={e=>setClosedYearF(e.target.value)} style={{...inputS,width:140}}><option value="">All Years</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="older">2023 & Earlier</option></select>
@@ -2363,7 +2363,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
     {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
-      <div style={{background:'#fff',borderRadius:16,padding:24,width:600,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:'min(600px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
           <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{s.job_name}</div>
           {s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
@@ -2463,7 +2463,7 @@ function BillingPage({jobs,onRefresh,onNav}){
     </div>;})()}
     {/* Confirm Mark Full Modal */}
     {confirmFullJob&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setConfirmFullJob(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#fff',borderRadius:16,padding:28,width:'min(440px,96vw)',maxWidth:'96vw',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:17,fontWeight:800,marginBottom:16,color:'#1A1A1A'}}>Mark as 100% Billed?</div>
         <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:8}}>
           This will set YTD Invoiced to <span style={{fontWeight:700,color:'#1A1A1A'}}>{$(n(confirmFullJob.adj_contract_value||confirmFullJob.contract_value))}</span> for <span style={{fontWeight:700,color:'#1A1A1A'}}>{confirmFullJob.job_name}</span>.
@@ -2868,7 +2868,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     </div>}
     {/* Batch confirm modal */}
     {showBatchConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!batchSubmitting&&setShowBatchConfirm(false)}>
-      <div style={{background:'#FFF',borderRadius:16,padding:28,width:440,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#FFF',borderRadius:16,padding:28,width:'min(440px,96vw)',maxWidth:'96vw',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:12,color:'#1A1A1A'}}>Submit {selected.size} jobs with no activity?</div>
         <div style={{fontSize:13,color:'#625650',lineHeight:1.7,marginBottom:20}}>This will submit <b>{selected.size}</b> bill sheets for <b>{selMonthLabel}</b> with all LF fields set to 0 and notes "No activity this month". This cannot be undone individually but can be reset per-job.</div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setShowBatchConfirm(false)} disabled={batchSubmitting} style={btnS}>Cancel</button><button onClick={batchSubmitNoActivity} disabled={batchSubmitting} style={{...btnP,background:'#B45309'}}>{batchSubmitting?'Submitting...':'Yes, Submit'}</button></div>
@@ -2981,7 +2981,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
-      <div style={{background:'#fff',borderRadius:16,padding:24,width:560,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#fff',borderRadius:16,padding:24,width:'min(560px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4}}>{s.job_name} \u2014 Bill Sheet {monthLabel(s.billing_month)}</div>
         <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
           {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
@@ -7688,7 +7688,7 @@ function WonModal({lead,onClose,onCreate}){
     }catch(e){alert('Create failed: '+e.message);setCreating(false);}
   };
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:480,maxWidth:'94vw',maxHeight:'92vh',overflow:'auto'}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:'min(480px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflow:'auto'}}>
       <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🎉 Create Project from Lead</div>
       <div style={{fontSize:13,color:'#625650',marginBottom:16}}>Confirm project details — Amiee will pick up from here.</div>
       <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Customer Name</div><input value={customer} onChange={e=>setCustomer(e.target.value)} style={inputS}/></div>
@@ -8247,7 +8247,7 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
     :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
   </div>);
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{width:480,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:'min(480px,96vw)',maxWidth:'96vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div>
           <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{lead.company_name||'Lead'}</div>
@@ -8997,8 +8997,21 @@ function AppShell(){
   const inlineW=v.desktop?desktopSideW:64;
   const contentBottomPad=v.mobile?72:0;
   return(
-    <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
-      <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}@media(max-width:768px){input,select,textarea{min-height:48px!important;font-size:16px!important}}`}</style>
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%',maxWidth:'100vw'}}>
+      <style>{`
+        *{box-sizing:border-box;}
+        html,body{overflow-x:hidden;max-width:100vw;}
+        @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        @media(max-width:768px){
+          input,select,textarea{min-height:48px!important;font-size:16px!important}
+          table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+          .fc-no-scroll{overflow-x:hidden!important;}
+        }
+        @media(max-width:430px){
+          .fc-hide-mobile{display:none!important;}
+          .fc-stack-mobile{flex-direction:column!important;}
+        }
+      `}</style>
       {showInlineSidebar&&<div style={{width:inlineW,minWidth:inlineW,maxWidth:inlineW,flexShrink:0,background:'#1A1A1A',borderRight:'1px solid #2A2A2A',display:'flex',flexDirection:'column',overflow:'hidden',transition:'width .2s'}}>
         <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={v.tablet?true:sideCollapsed} setCollapsed={v.tablet?(()=>setTabletOverlay(true)):setSideCollapsed} navGroups={filteredNav}/>
       </div>}
@@ -9007,9 +9020,9 @@ function AppShell(){
           <Sidebar page={page} setPage={setPage} jobs={jobs} collapsed={false} setCollapsed={()=>setTabletOverlay(false)} onNavClick={()=>setTabletOverlay(false)} navGroups={filteredNav}/>
         </div>
       </div>}
-      <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
         <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)}/>
-        <div style={{flex:1,overflow:'auto',padding:v.mobile?'16px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
+        <div style={{flex:1,overflow:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
