@@ -2396,7 +2396,7 @@ function BillingPage({jobs,onRefresh,onNav}){
           </div>;})()}
         </div>
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
-        {/* AR Review Section */}
+        {/* Invoice History */}
         <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
           {invLoading?<div style={{color:'#9E9B96',fontSize:12,padding:'8px 0'}}>Loading...</div>:invEntries.length===0?<div style={{color:'#9E9B96',fontSize:12,fontStyle:'italic',padding:'8px 0',textAlign:'center'}}>No invoices entered yet.</div>:<div style={{marginBottom:12}}>
@@ -2436,13 +2436,11 @@ function BillingPage({jobs,onRefresh,onNav}){
           <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
           <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8B2020'}}>Add Invoice</button></div>
-          <div style={{marginTop:10,padding:'6px 10px',background:'#F9F8F6',borderRadius:6,fontSize:10,color:'#9E9B96',textAlign:'center'}}>🔒 Reviewer approval step coming soon (Carlos)</div>
         </div>
+        {/* Billing Summary */}
         {renderBillDetail(s)}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
-          {s.ar_reviewed&&<button onClick={()=>{setBilAdminPin(s);setBilPin('');setBilPinErr(false);}} style={{background:'none',border:'none',padding:0,fontSize:10,color:'#9E9B96',cursor:'pointer',textDecoration:'underline',marginRight:'auto'}}>Admin Reset</button>}
           <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}} style={btnS}>Close</button>
-          {!s.ar_reviewed&&<button onClick={markArReviewed} style={{...btnP,background:'#1D4ED8'}}>Mark as Reviewed</button>}
         </div>
       </div>
     </div>;})()}
