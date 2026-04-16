@@ -3223,13 +3223,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
         <div style={{display:'flex',justifyContent:'flex-end'}}><button onClick={()=>setProdBillModal(null)} style={btnS}>Close</button></div>
       </div>
     </div>;})()}
-    
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>setShowPinModal(false)} style={{...btnS,flex:1}}>Cancel</button>
-          <button onClick={submitPin} style={{...btnP,flex:2}}>Submit</button>
-        </div>
-      </div>
-    </div>}
+
   </div>);
 }
 
