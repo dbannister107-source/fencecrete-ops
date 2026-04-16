@@ -3155,7 +3155,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
   const[groupBy,setGroupBy]=useState('status');const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);const[search,setSearch]=useState('');const[addonsF,setAddonsF]=useState(new Set());
   // Edit lock — defaults to locked on every page load (intentionally not persisted).
-  const[editUnlocked,setEditUnlocked]=useState(false);const[showPinModal,setShowPinModal]=useState(false);const[pinInput,setPinInput]=useState('');const[pinError,setPinError]=useState(false);
+  const[editUnlocked,setEditUnlocked]=useState(true);const[showPinModal,setShowPinModal]=useState(false);const[pinInput,setPinInput]=useState('');const[pinError,setPinError]=useState(false);
   const submitPin=()=>{if(pinInput==='2020'){setEditUnlocked(true);setShowPinModal(false);setPinInput('');setPinError(false);}else{setPinError(true);setPinInput('');}};
   useEffect(()=>{if(!showPinModal)return;const onKey=(e)=>{if(e.key==='Escape'){setShowPinModal(false);setPinInput('');setPinError(false);}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[showPinModal]);
   const[moveToast,setMoveToast]=useState(null);
@@ -3175,9 +3175,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
         {editUnlocked
           ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FDF4F4',border:'1px solid #8A261D40',color:'#8A261D',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
           :<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#F4F4F2',border:'1px solid #E5E3E0',color:'#625650',fontSize:12,fontWeight:700}}>🔒 View Only</span>}
-        {editUnlocked
-          ?<button onClick={()=>setEditUnlocked(false)} style={btnS}>Lock</button>
-          :<button onClick={()=>{setPinError(false);setPinInput('');setShowPinModal(true);}} style={btnP}>Unlock Editing</button>}
+        
       </div>
     </div>
     <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</span><span style={{fontSize:12,color:'#625650'}}>in production pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
@@ -3225,12 +3223,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
         <div style={{display:'flex',justifyContent:'flex-end'}}><button onClick={()=>setProdBillModal(null)} style={btnS}>Close</button></div>
       </div>
     </div>;})()}
-    {showPinModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPinModal(false)}>
-      <div style={{background:'#FFF',borderRadius:16,padding:28,width:320,boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:6,textAlign:'center'}}>Unlock Editing</div>
-        <div style={{fontSize:12,color:'#625650',marginBottom:16,textAlign:'center'}}>Enter the 4-digit PIN to enable edits</div>
-        <input autoFocus type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={4} value={pinInput} onChange={e=>{setPinInput(e.target.value.replace(/\D/g,'').slice(0,4));setPinError(false);}} onKeyDown={e=>{if(e.key==='Enter')submitPin();}} placeholder="••••" style={{width:'100%',padding:'14px 16px',fontSize:24,textAlign:'center',letterSpacing:8,border:`2px solid ${pinError?'#DC2626':'#E5E3E0'}`,borderRadius:10,outline:'none',marginBottom:10,fontFamily:'Inter',fontWeight:700}}/>
-        {pinError&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:10}}>Incorrect PIN</div>}
+    
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>setShowPinModal(false)} style={{...btnS,flex:1}}>Cancel</button>
           <button onClick={submitPin} style={{...btnP,flex:2}}>Submit</button>
