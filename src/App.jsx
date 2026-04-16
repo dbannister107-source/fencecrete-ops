@@ -4239,6 +4239,208 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
   const[todayActuals,setTodayActuals]=useState([]);
   const[todayHasPlan,setTodayHasPlan]=useState(false);
   const todayStr=new Date().toISOString().split('T')[0];
+  // Generate 4-week production schedule using Claude AI
+  const generateAISchedule = async () => {
+    setAiGenerating(true);
+    setAiError(null);
+    
+    try {
+      // Get today's date and build 4-week window
+      const today = new Date();
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
+      const horizonEnd = new Date(weekStart);
+      horizonEnd.setDate(weekStart.getDate() + 28);
+      
+      // Collect jobs eligible for scheduling
+      // Only precast jobs in production queue, in_production, or material_ready
+      const eligibleStatuses = new Set(['production_queue','in_production','material_ready','active_install']);
+      const eligibleJobs = jobs.filter(j => 
+        eligibleStatuses.has(j.status) && 
+        (n(j.lf_precast) > 0 || n(j.material_calc_lf) > 0)
+      ).map(j => ({
+        id: j.id,
+        job_number: j.job_number,
+        job_name: j.job_name,
+        style: j.material_calc_style || j.style || '',
+        color: j.color || '',
+        height: j.material_calc_height || j.height_precast || '',
+        lf: n(j.material_calc_lf) || n(j.lf_precast) || 0,
+        posts_line: n(j.material_posts_line) || 0,
+        posts_corner: n(j.material_posts_corner) || 0,
+        posts_stop: n(j.material_posts_stop) || 0,
+        panels_regular: n(j.material_panels_regular) || 0,
+        panels_half: n(j.material_panels_half) || 0,
+        caps_line: n(j.material_caps_line) || 0,
+        caps_stop: n(j.material_caps_stop) || 0,
+        install_date: j.est_start_date || null,
+        status: j.status,
+        customer: j.customer_name || '',
+        market: j.market || '',
+        produced_lf: n(j.produced_lf) || 0,
+        produced_panels: n(j.produced_panels) || 0,
+        produced_posts: n(j.produced_posts) || 0,
+      }));
+
+      // Build the AI prompt
+      const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer in Texas.
+
+PLANT CAPACITY:
+- Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
+- Shift 2: Monday-Friday, 6pm-2am — 2,500 LF per shift  
+- Weekday max: 5,000 LF/day (both shifts)
+- Saturday max: 2,500 LF/day (Shift 1 only)
+- Sunday: no production
+
+SCHEDULING RULES (in priority order):
+1. MATERIAL READINESS: Posts can be produced before panels. If a job's posts can be ready before install date, schedule posts first, then panels. This shows the customer work has started.
+2. INSTALL DATE: Schedule to meet install deadlines. Jobs with earlier install dates get priority.
+3. JOB SIZE: Among jobs with similar install dates, schedule larger LF jobs first.
+4. STYLE/COLOR GROUPING: Batch jobs with the same style and color back-to-back to minimize mold changeovers. You may delay a job's PANELS (not posts) by up to 3 days to batch with a similar style/color job, AS LONG AS posts have already been scheduled for that job first.
+5. Never schedule more than daily capacity per day.
+
+PLANNING HORIZON: 4 weeks from ${weekStart.toISOString().split('T')[0]} to ${horizonEnd.toISOString().split('T')[0]}
+
+OUTPUT FORMAT: Respond ONLY with a valid JSON object, no markdown, no explanation:
+{
+  "reasoning": "brief explanation of key scheduling decisions",
+  "schedule": [
+    {
+      "job_number": "25H001",
+      "job_name": "Job Name",
+      "date": "2026-04-21",
+      "production_type": "posts",
+      "planned_lf": 200,
+      "planned_posts": 45,
+      "planned_panels": 0,
+      "planned_caps": 0,
+      "style": "Rock Style",
+      "color": "Tan",
+      "height": "8",
+      "install_date": "2026-05-01",
+      "total_job_lf": 1200,
+      "day_sequence": 1,
+      "notes": "Posts first — panels to follow"
+    }
+  ]
+}
+
+production_type must be one of: "posts", "panels", "caps", "full"
+Include one entry per job per day. A job may span multiple days if LF exceeds daily capacity.
+Do not schedule on Sundays.
+Saturday only gets Shift 1 (2,500 LF max).`;
+
+      const userPrompt = `Schedule these ${eligibleJobs.length} precast jobs for the next 4 weeks:
+
+${JSON.stringify(eligibleJobs, null, 2)}
+
+Today is ${today.toISOString().split('T')[0]}.
+Generate the optimal 4-week production schedule following all rules.`;
+
+      // Call Claude API
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      const rawText = data.content?.[0]?.text || '';
+      
+      // Parse JSON response
+      let parsed;
+      try {
+        const clean = rawText.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(clean);
+      } catch(e) {
+        throw new Error('AI returned invalid schedule format');
+      }
+
+      const { reasoning, schedule } = parsed;
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+
+      // Save to Supabase
+      // 1. Archive any existing active schedule
+      const existing = await sbGet('ai_production_schedules', 'status=eq.active&select=id');
+      for (const ex of (existing||[])) {
+        await sbPatch('ai_production_schedules', ex.id, { status: 'archived' });
+      }
+
+      // 2. Create new schedule record
+      const schedRes = await fetch(`${SB}/rest/v1/ai_production_schedules`, {
+        method: 'POST',
+        headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          week_start: weekStart.toISOString().split('T')[0],
+          plan_horizon_weeks: 4,
+          status: 'active',
+          agent_reasoning: reasoning,
+          generated_by: 'Claude AI Agent'
+        })
+      });
+      if (!schedRes.ok) throw new Error('Failed to save schedule');
+      const [schedRecord] = await schedRes.json();
+
+      // 3. Save schedule entries
+      const entries = schedule.map(e => ({
+        schedule_id: schedRecord.id,
+        job_id: eligibleJobs.find(j => j.job_number === e.job_number)?.id || null,
+        job_number: e.job_number,
+        job_name: e.job_name,
+        scheduled_date: e.date,
+        production_type: e.production_type || 'full',
+        planned_lf: n(e.planned_lf),
+        planned_posts: n(e.planned_posts),
+        planned_panels: n(e.planned_panels),
+        planned_caps: n(e.planned_caps),
+        style: e.style || '',
+        color: e.color || '',
+        height: String(e.height || ''),
+        install_date: e.install_date || null,
+        total_job_lf: n(e.total_job_lf),
+        day_sequence: n(e.day_sequence) || 1,
+        notes: e.notes || null,
+        is_confirmed: false
+      }));
+
+      if (entries.length > 0) {
+        const entRes = await fetch(`${SB}/rest/v1/ai_schedule_entries`, {
+          method: 'POST',
+          headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify(entries)
+        });
+        if (!entRes.ok) throw new Error('Failed to save schedule entries');
+        const savedEntries = await entRes.json();
+        setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
+      }
+
+      setAiScheduleView(true);
+      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 4-week schedule`, ok: true });
+    } catch(e) {
+      console.error('[AI Schedule]', e);
+      setAiError(e.message || 'Schedule generation failed');
+      setToast({ msg: `AI schedule failed: ${e.message}`, ok: false });
+    }
+    setAiGenerating(false);
+  };
+
+  // Load existing active AI schedule on mount
+  useEffect(() => {
+    (async () => {
+      const scheds = await sbGet('ai_production_schedules', 'status=eq.active&order=created_at.desc&limit=1');
+      if (scheds && scheds[0]) {
+        const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
+        setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: new Date(scheds[0].created_at) });
+      }
+    })();
+  }, [refreshKey]);
+
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds&order=style_name').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
@@ -4656,10 +4858,219 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   const[leadershipOpen,setLeadershipOpen]=useState(false);
   const[carryForward,setCarryForward]=useState([]);
 
+  // AI Schedule Agent state
+  const[aiSchedule,setAiSchedule]=useState(null); // {scheduleId, entries, reasoning, generatedAt}
+  const[aiGenerating,setAiGenerating]=useState(false);
+  const[aiError,setAiError]=useState(null);
+  const[aiScheduleView,setAiScheduleView]=useState(false); // show AI schedule panel
+  const[aiEditingEntry,setAiEditingEntry]=useState(null); // entry being edited by Max
+
   // Capacity data (molds + plant config + styles)
   const[moldInventory,setMoldInventory]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
   const[calcStyles,setCalcStyles]=useState([]);
+  // Generate 4-week production schedule using Claude AI
+  const generateAISchedule = async () => {
+    setAiGenerating(true);
+    setAiError(null);
+    
+    try {
+      // Get today's date and build 4-week window
+      const today = new Date();
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
+      const horizonEnd = new Date(weekStart);
+      horizonEnd.setDate(weekStart.getDate() + 28);
+      
+      // Collect jobs eligible for scheduling
+      // Only precast jobs in production queue, in_production, or material_ready
+      const eligibleStatuses = new Set(['production_queue','in_production','material_ready','active_install']);
+      const eligibleJobs = jobs.filter(j => 
+        eligibleStatuses.has(j.status) && 
+        (n(j.lf_precast) > 0 || n(j.material_calc_lf) > 0)
+      ).map(j => ({
+        id: j.id,
+        job_number: j.job_number,
+        job_name: j.job_name,
+        style: j.material_calc_style || j.style || '',
+        color: j.color || '',
+        height: j.material_calc_height || j.height_precast || '',
+        lf: n(j.material_calc_lf) || n(j.lf_precast) || 0,
+        posts_line: n(j.material_posts_line) || 0,
+        posts_corner: n(j.material_posts_corner) || 0,
+        posts_stop: n(j.material_posts_stop) || 0,
+        panels_regular: n(j.material_panels_regular) || 0,
+        panels_half: n(j.material_panels_half) || 0,
+        caps_line: n(j.material_caps_line) || 0,
+        caps_stop: n(j.material_caps_stop) || 0,
+        install_date: j.est_start_date || null,
+        status: j.status,
+        customer: j.customer_name || '',
+        market: j.market || '',
+        produced_lf: n(j.produced_lf) || 0,
+        produced_panels: n(j.produced_panels) || 0,
+        produced_posts: n(j.produced_posts) || 0,
+      }));
+
+      // Build the AI prompt
+      const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer in Texas.
+
+PLANT CAPACITY:
+- Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
+- Shift 2: Monday-Friday, 6pm-2am — 2,500 LF per shift  
+- Weekday max: 5,000 LF/day (both shifts)
+- Saturday max: 2,500 LF/day (Shift 1 only)
+- Sunday: no production
+
+SCHEDULING RULES (in priority order):
+1. MATERIAL READINESS: Posts can be produced before panels. If a job's posts can be ready before install date, schedule posts first, then panels. This shows the customer work has started.
+2. INSTALL DATE: Schedule to meet install deadlines. Jobs with earlier install dates get priority.
+3. JOB SIZE: Among jobs with similar install dates, schedule larger LF jobs first.
+4. STYLE/COLOR GROUPING: Batch jobs with the same style and color back-to-back to minimize mold changeovers. You may delay a job's PANELS (not posts) by up to 3 days to batch with a similar style/color job, AS LONG AS posts have already been scheduled for that job first.
+5. Never schedule more than daily capacity per day.
+
+PLANNING HORIZON: 4 weeks from ${weekStart.toISOString().split('T')[0]} to ${horizonEnd.toISOString().split('T')[0]}
+
+OUTPUT FORMAT: Respond ONLY with a valid JSON object, no markdown, no explanation:
+{
+  "reasoning": "brief explanation of key scheduling decisions",
+  "schedule": [
+    {
+      "job_number": "25H001",
+      "job_name": "Job Name",
+      "date": "2026-04-21",
+      "production_type": "posts",
+      "planned_lf": 200,
+      "planned_posts": 45,
+      "planned_panels": 0,
+      "planned_caps": 0,
+      "style": "Rock Style",
+      "color": "Tan",
+      "height": "8",
+      "install_date": "2026-05-01",
+      "total_job_lf": 1200,
+      "day_sequence": 1,
+      "notes": "Posts first — panels to follow"
+    }
+  ]
+}
+
+production_type must be one of: "posts", "panels", "caps", "full"
+Include one entry per job per day. A job may span multiple days if LF exceeds daily capacity.
+Do not schedule on Sundays.
+Saturday only gets Shift 1 (2,500 LF max).`;
+
+      const userPrompt = `Schedule these ${eligibleJobs.length} precast jobs for the next 4 weeks:
+
+${JSON.stringify(eligibleJobs, null, 2)}
+
+Today is ${today.toISOString().split('T')[0]}.
+Generate the optimal 4-week production schedule following all rules.`;
+
+      // Call Claude API
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      const rawText = data.content?.[0]?.text || '';
+      
+      // Parse JSON response
+      let parsed;
+      try {
+        const clean = rawText.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(clean);
+      } catch(e) {
+        throw new Error('AI returned invalid schedule format');
+      }
+
+      const { reasoning, schedule } = parsed;
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+
+      // Save to Supabase
+      // 1. Archive any existing active schedule
+      const existing = await sbGet('ai_production_schedules', 'status=eq.active&select=id');
+      for (const ex of (existing||[])) {
+        await sbPatch('ai_production_schedules', ex.id, { status: 'archived' });
+      }
+
+      // 2. Create new schedule record
+      const schedRes = await fetch(`${SB}/rest/v1/ai_production_schedules`, {
+        method: 'POST',
+        headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          week_start: weekStart.toISOString().split('T')[0],
+          plan_horizon_weeks: 4,
+          status: 'active',
+          agent_reasoning: reasoning,
+          generated_by: 'Claude AI Agent'
+        })
+      });
+      if (!schedRes.ok) throw new Error('Failed to save schedule');
+      const [schedRecord] = await schedRes.json();
+
+      // 3. Save schedule entries
+      const entries = schedule.map(e => ({
+        schedule_id: schedRecord.id,
+        job_id: eligibleJobs.find(j => j.job_number === e.job_number)?.id || null,
+        job_number: e.job_number,
+        job_name: e.job_name,
+        scheduled_date: e.date,
+        production_type: e.production_type || 'full',
+        planned_lf: n(e.planned_lf),
+        planned_posts: n(e.planned_posts),
+        planned_panels: n(e.planned_panels),
+        planned_caps: n(e.planned_caps),
+        style: e.style || '',
+        color: e.color || '',
+        height: String(e.height || ''),
+        install_date: e.install_date || null,
+        total_job_lf: n(e.total_job_lf),
+        day_sequence: n(e.day_sequence) || 1,
+        notes: e.notes || null,
+        is_confirmed: false
+      }));
+
+      if (entries.length > 0) {
+        const entRes = await fetch(`${SB}/rest/v1/ai_schedule_entries`, {
+          method: 'POST',
+          headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify(entries)
+        });
+        if (!entRes.ok) throw new Error('Failed to save schedule entries');
+        const savedEntries = await entRes.json();
+        setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
+      }
+
+      setAiScheduleView(true);
+      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 4-week schedule`, ok: true });
+    } catch(e) {
+      console.error('[AI Schedule]', e);
+      setAiError(e.message || 'Schedule generation failed');
+      setToast({ msg: `AI schedule failed: ${e.message}`, ok: false });
+    }
+    setAiGenerating(false);
+  };
+
+  // Load existing active AI schedule on mount
+  useEffect(() => {
+    (async () => {
+      const scheds = await sbGet('ai_production_schedules', 'status=eq.active&order=created_at.desc&limit=1');
+      if (scheds && scheds[0]) {
+        const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
+        setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: new Date(scheds[0].created_at) });
+      }
+    })();
+  }, [refreshKey]);
+
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds,mold_type').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
@@ -4904,6 +5315,138 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
     <div style={{marginBottom:16}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:2}}>Production Planning</h1>
       <div style={{fontSize:12,color:'#9E9B96'}}>Build tomorrow's plan from the production queue</div>
+    </div>
+
+    {/* AI SCHEDULE GENERATOR */}
+    <div style={{...card,marginBottom:16,padding:16,borderLeft:'4px solid #8A261D',background:aiScheduleView?'#FDF4F4':'#FFF'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:800,color:'#8A261D',display:'flex',alignItems:'center',gap:6}}>
+            🤖 AI Production Scheduler
+          </div>
+          <div style={{fontSize:11,color:'#625650',marginTop:2}}>
+            {aiSchedule ? `Last generated: ${aiSchedule.generatedAt?.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '4-week schedule based on install dates, capacity, style grouping'}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          {aiSchedule&&<button onClick={()=>setAiScheduleView(v=>!v)} style={{...btnS,fontSize:12}}>
+            {aiScheduleView?'Hide Schedule':'View Schedule'}
+          </button>}
+          <button onClick={generateAISchedule} disabled={aiGenerating} style={{...btnP,background:'#8A261D',fontSize:12,display:'flex',alignItems:'center',gap:6,opacity:aiGenerating?0.7:1}}>
+            {aiGenerating?<>⏳ Generating...</>:<>🤖 Generate AI Schedule</>}
+          </button>
+        </div>
+      </div>
+      {aiError&&<div style={{marginTop:8,padding:'6px 10px',background:'#FEF2F2',borderRadius:6,fontSize:11,color:'#991B1B'}}>{aiError}</div>}
+      {aiGenerating&&<div style={{marginTop:10,padding:12,background:'#F9F8F6',borderRadius:8,fontSize:12,color:'#625650',textAlign:'center'}}>
+        🤖 Analyzing {jobs.filter(j=>['production_queue','in_production','material_ready','active_install'].includes(j.status)&&n(j.lf_precast)>0).length} jobs, calculating capacity, grouping by style/color...
+      </div>}
+
+      {/* 4-Week Schedule View */}
+      {aiScheduleView&&aiSchedule&&(()=>{
+        // Group entries by week then by day
+        const entries = aiSchedule.entries || [];
+        const byDate = {};
+        entries.forEach(e => {
+          if (!byDate[e.scheduled_date]) byDate[e.scheduled_date] = [];
+          byDate[e.scheduled_date].push(e);
+        });
+        const dates = Object.keys(byDate).sort();
+        
+        // Group into weeks
+        const weeks = [];
+        let currentWeek = [];
+        let currentWeekNum = null;
+        dates.forEach(d => {
+          const dt = new Date(d + 'T12:00:00');
+          const weekNum = Math.floor(dt.getTime() / (7*24*3600*1000));
+          if (currentWeekNum !== weekNum) {
+            if (currentWeek.length) weeks.push(currentWeek);
+            currentWeek = [];
+            currentWeekNum = weekNum;
+          }
+          currentWeek.push(d);
+        });
+        if (currentWeek.length) weeks.push(currentWeek);
+
+        const typeColor = {posts:'#7C3AED',panels:'#1D4ED8',caps:'#065F46',full:'#8A261D'};
+        const typeBg = {posts:'#EDE9FE',panels:'#DBEAFE',caps:'#D1FAE5',full:'#FEF2F2'};
+
+        const updateEntry = async (entryId, field, value) => {
+          await sbPatch('ai_schedule_entries', entryId, {[field]: value});
+          setAiSchedule(prev => ({
+            ...prev,
+            entries: prev.entries.map(e => e.id === entryId ? {...e, [field]: value} : e)
+          }));
+        };
+
+        const deleteEntry = async (entryId) => {
+          await fetch(`${SB}/rest/v1/ai_schedule_entries?id=eq.${entryId}`, {method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+          setAiSchedule(prev => ({...prev, entries: prev.entries.filter(e => e.id !== entryId)}));
+        };
+
+        return <div style={{marginTop:14}}>
+          {/* Reasoning */}
+          {aiSchedule.reasoning&&<div style={{padding:'8px 12px',background:'#EFF6FF',borderRadius:8,fontSize:11,color:'#1D4ED8',marginBottom:12,border:'1px solid #BFDBFE'}}>
+            💡 <b>Agent reasoning:</b> {aiSchedule.reasoning}
+          </div>}
+
+          {/* Week-by-week view */}
+          {weeks.map((weekDates, wi) => {
+            const weekLF = weekDates.reduce((s,d) => s + byDate[d].reduce((ss,e) => ss + n(e.planned_lf), 0), 0);
+            const weekLabel = new Date(weekDates[0]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+            const weekEndLabel = new Date(weekDates[weekDates.length-1]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+            return <div key={wi} style={{marginBottom:16,border:'1px solid #E5E3E0',borderRadius:10,overflow:'hidden'}}>
+              {/* Week header */}
+              <div style={{background:'#1A1A1A',padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{color:'#FFF',fontWeight:800,fontSize:12}}>Week {wi+1} — {weekLabel} to {weekEndLabel}</span>
+                <span style={{color:'#9E9B96',fontSize:11}}>{weekLF.toLocaleString()} LF planned</span>
+              </div>
+              {/* Days */}
+              {weekDates.map(d => {
+                const dayEntries = byDate[d].sort((a,b) => n(a.day_sequence)-n(b.day_sequence));
+                const dayLF = dayEntries.reduce((s,e) => s + n(e.planned_lf), 0);
+                const dt = new Date(d+'T12:00:00');
+                const isSat = dt.getDay() === 6;
+                const maxLF = isSat ? 2500 : 5000;
+                const pct = Math.min(100, Math.round(dayLF/maxLF*100));
+                const dayLabel = dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+                return <div key={d} style={{borderBottom:'1px solid #F4F4F2',padding:'10px 14px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <span style={{fontWeight:700,fontSize:12,color:isSat?'#7C3AED':'#1A1A1A'}}>{dayLabel}{isSat?' 🔧':''}</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:80,height:6,background:'#F4F4F2',borderRadius:3,overflow:'hidden'}}>
+                        <div style={{width:`${pct}%`,height:'100%',background:pct>90?'#DC2626':pct>70?'#B45309':'#065F46',borderRadius:3}}/>
+                      </div>
+                      <span style={{fontSize:10,color:'#625650'}}>{dayLF.toLocaleString()}/{maxLF.toLocaleString()} LF</span>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {dayEntries.map(e => (
+                      <div key={e.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:typeBg[e.production_type]||'#F9F8F6',borderRadius:6,border:`1px solid ${typeColor[e.production_type]||'#E5E3E0'}33`}}>
+                        <span style={{fontSize:10,fontWeight:700,color:typeColor[e.production_type]||'#625650',textTransform:'uppercase',minWidth:40}}>{e.production_type}</span>
+                        <span style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name||e.job_number}</span>
+                        <span style={{fontSize:11,color:'#625650',whiteSpace:'nowrap'}}>{e.style} · {e.color}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:'#8A261D',whiteSpace:'nowrap'}}>{n(e.planned_lf).toLocaleString()} LF</span>
+                        {e.install_date&&<span style={{fontSize:10,color:'#625650',whiteSpace:'nowrap'}}>Install: {new Date(e.install_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>}
+                        {e.is_confirmed&&<span style={{fontSize:10,color:'#065F46',fontWeight:700}}>✓</span>}
+                        <div style={{display:'flex',gap:4,flexShrink:0}}>
+                          <button onClick={()=>updateEntry(e.id,'is_confirmed',!e.is_confirmed)} title={e.is_confirmed?'Unconfirm':'Confirm'} style={{background:e.is_confirmed?'#065F46':'none',border:'1px solid #065F46',borderRadius:4,padding:'2px 6px',color:e.is_confirmed?'#FFF':'#065F46',fontSize:10,cursor:'pointer'}}>
+                            {e.is_confirmed?'✓':'Confirm'}
+                          </button>
+                          <button onClick={()=>deleteEntry(e.id)} title="Remove" style={{background:'none',border:'1px solid #DC2626',borderRadius:4,padding:'2px 6px',color:'#DC2626',fontSize:10,cursor:'pointer'}}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>;
+              })}
+            </div>;
+          })}
+
+          {entries.length===0&&<div style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:12}}>No schedule entries. Click Generate AI Schedule to create a new plan.</div>}
+        </div>;
+      })()}
     </div>
 
     {/* CAPACITY BAR */}
@@ -5230,6 +5773,13 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const[removeNotes,setRemoveNotes]=useState(''); // optional notes for the pending removal
   // ─── CARRY FORWARD STATE ───
   const[carryForward,setCarryForward]=useState([]);
+
+  // AI Schedule Agent state
+  const[aiSchedule,setAiSchedule]=useState(null); // {scheduleId, entries, reasoning, generatedAt}
+  const[aiGenerating,setAiGenerating]=useState(false);
+  const[aiError,setAiError]=useState(null);
+  const[aiScheduleView,setAiScheduleView]=useState(false); // show AI schedule panel
+  const[aiEditingEntry,setAiEditingEntry]=useState(null); // entry being edited by Max
   // Pick up cross-page handoff (e.g. "View Tomorrow's Plan" from Production Orders)
   useEffect(()=>{try{const raw=localStorage.getItem('fc_daily_goto');if(raw){const g=JSON.parse(raw);if(g.tab==='actuals'||g.tab==='history')setTab(g.tab);if(g.date&&g.tab==='actuals')setActualsDate(g.date);localStorage.removeItem('fc_daily_goto');}}catch(e){}},[]);
 
@@ -5245,6 +5795,208 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const[moldInventory,setMoldInventory]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
   const[calcStyles,setCalcStyles]=useState([]);
+  // Generate 4-week production schedule using Claude AI
+  const generateAISchedule = async () => {
+    setAiGenerating(true);
+    setAiError(null);
+    
+    try {
+      // Get today's date and build 4-week window
+      const today = new Date();
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
+      const horizonEnd = new Date(weekStart);
+      horizonEnd.setDate(weekStart.getDate() + 28);
+      
+      // Collect jobs eligible for scheduling
+      // Only precast jobs in production queue, in_production, or material_ready
+      const eligibleStatuses = new Set(['production_queue','in_production','material_ready','active_install']);
+      const eligibleJobs = jobs.filter(j => 
+        eligibleStatuses.has(j.status) && 
+        (n(j.lf_precast) > 0 || n(j.material_calc_lf) > 0)
+      ).map(j => ({
+        id: j.id,
+        job_number: j.job_number,
+        job_name: j.job_name,
+        style: j.material_calc_style || j.style || '',
+        color: j.color || '',
+        height: j.material_calc_height || j.height_precast || '',
+        lf: n(j.material_calc_lf) || n(j.lf_precast) || 0,
+        posts_line: n(j.material_posts_line) || 0,
+        posts_corner: n(j.material_posts_corner) || 0,
+        posts_stop: n(j.material_posts_stop) || 0,
+        panels_regular: n(j.material_panels_regular) || 0,
+        panels_half: n(j.material_panels_half) || 0,
+        caps_line: n(j.material_caps_line) || 0,
+        caps_stop: n(j.material_caps_stop) || 0,
+        install_date: j.est_start_date || null,
+        status: j.status,
+        customer: j.customer_name || '',
+        market: j.market || '',
+        produced_lf: n(j.produced_lf) || 0,
+        produced_panels: n(j.produced_panels) || 0,
+        produced_posts: n(j.produced_posts) || 0,
+      }));
+
+      // Build the AI prompt
+      const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer in Texas.
+
+PLANT CAPACITY:
+- Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
+- Shift 2: Monday-Friday, 6pm-2am — 2,500 LF per shift  
+- Weekday max: 5,000 LF/day (both shifts)
+- Saturday max: 2,500 LF/day (Shift 1 only)
+- Sunday: no production
+
+SCHEDULING RULES (in priority order):
+1. MATERIAL READINESS: Posts can be produced before panels. If a job's posts can be ready before install date, schedule posts first, then panels. This shows the customer work has started.
+2. INSTALL DATE: Schedule to meet install deadlines. Jobs with earlier install dates get priority.
+3. JOB SIZE: Among jobs with similar install dates, schedule larger LF jobs first.
+4. STYLE/COLOR GROUPING: Batch jobs with the same style and color back-to-back to minimize mold changeovers. You may delay a job's PANELS (not posts) by up to 3 days to batch with a similar style/color job, AS LONG AS posts have already been scheduled for that job first.
+5. Never schedule more than daily capacity per day.
+
+PLANNING HORIZON: 4 weeks from ${weekStart.toISOString().split('T')[0]} to ${horizonEnd.toISOString().split('T')[0]}
+
+OUTPUT FORMAT: Respond ONLY with a valid JSON object, no markdown, no explanation:
+{
+  "reasoning": "brief explanation of key scheduling decisions",
+  "schedule": [
+    {
+      "job_number": "25H001",
+      "job_name": "Job Name",
+      "date": "2026-04-21",
+      "production_type": "posts",
+      "planned_lf": 200,
+      "planned_posts": 45,
+      "planned_panels": 0,
+      "planned_caps": 0,
+      "style": "Rock Style",
+      "color": "Tan",
+      "height": "8",
+      "install_date": "2026-05-01",
+      "total_job_lf": 1200,
+      "day_sequence": 1,
+      "notes": "Posts first — panels to follow"
+    }
+  ]
+}
+
+production_type must be one of: "posts", "panels", "caps", "full"
+Include one entry per job per day. A job may span multiple days if LF exceeds daily capacity.
+Do not schedule on Sundays.
+Saturday only gets Shift 1 (2,500 LF max).`;
+
+      const userPrompt = `Schedule these ${eligibleJobs.length} precast jobs for the next 4 weeks:
+
+${JSON.stringify(eligibleJobs, null, 2)}
+
+Today is ${today.toISOString().split('T')[0]}.
+Generate the optimal 4-week production schedule following all rules.`;
+
+      // Call Claude API
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      const rawText = data.content?.[0]?.text || '';
+      
+      // Parse JSON response
+      let parsed;
+      try {
+        const clean = rawText.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(clean);
+      } catch(e) {
+        throw new Error('AI returned invalid schedule format');
+      }
+
+      const { reasoning, schedule } = parsed;
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+
+      // Save to Supabase
+      // 1. Archive any existing active schedule
+      const existing = await sbGet('ai_production_schedules', 'status=eq.active&select=id');
+      for (const ex of (existing||[])) {
+        await sbPatch('ai_production_schedules', ex.id, { status: 'archived' });
+      }
+
+      // 2. Create new schedule record
+      const schedRes = await fetch(`${SB}/rest/v1/ai_production_schedules`, {
+        method: 'POST',
+        headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          week_start: weekStart.toISOString().split('T')[0],
+          plan_horizon_weeks: 4,
+          status: 'active',
+          agent_reasoning: reasoning,
+          generated_by: 'Claude AI Agent'
+        })
+      });
+      if (!schedRes.ok) throw new Error('Failed to save schedule');
+      const [schedRecord] = await schedRes.json();
+
+      // 3. Save schedule entries
+      const entries = schedule.map(e => ({
+        schedule_id: schedRecord.id,
+        job_id: eligibleJobs.find(j => j.job_number === e.job_number)?.id || null,
+        job_number: e.job_number,
+        job_name: e.job_name,
+        scheduled_date: e.date,
+        production_type: e.production_type || 'full',
+        planned_lf: n(e.planned_lf),
+        planned_posts: n(e.planned_posts),
+        planned_panels: n(e.planned_panels),
+        planned_caps: n(e.planned_caps),
+        style: e.style || '',
+        color: e.color || '',
+        height: String(e.height || ''),
+        install_date: e.install_date || null,
+        total_job_lf: n(e.total_job_lf),
+        day_sequence: n(e.day_sequence) || 1,
+        notes: e.notes || null,
+        is_confirmed: false
+      }));
+
+      if (entries.length > 0) {
+        const entRes = await fetch(`${SB}/rest/v1/ai_schedule_entries`, {
+          method: 'POST',
+          headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify(entries)
+        });
+        if (!entRes.ok) throw new Error('Failed to save schedule entries');
+        const savedEntries = await entRes.json();
+        setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
+      }
+
+      setAiScheduleView(true);
+      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 4-week schedule`, ok: true });
+    } catch(e) {
+      console.error('[AI Schedule]', e);
+      setAiError(e.message || 'Schedule generation failed');
+      setToast({ msg: `AI schedule failed: ${e.message}`, ok: false });
+    }
+    setAiGenerating(false);
+  };
+
+  // Load existing active AI schedule on mount
+  useEffect(() => {
+    (async () => {
+      const scheds = await sbGet('ai_production_schedules', 'status=eq.active&order=created_at.desc&limit=1');
+      if (scheds && scheds[0]) {
+        const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
+        setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: new Date(scheds[0].created_at) });
+      }
+    })();
+  }, [refreshKey]);
+
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds,mold_type').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
