@@ -7477,7 +7477,7 @@ function MapPage({jobs,onNav}){
       <MapContainer center={[31.0,-99.0]} zoom={6} style={{height:'100%',width:'100%'}} scrollWheelZoom={true}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap'/>
         {positions.length>1&&<FitBounds positions={positions}/>}
-        <MarkerClusterGroup chunkedLoading maxClusterRadius={40}>
+        <>
           {filtered.filter(j=>j.lat&&j.lng).map(j=><CircleMarker key={j.id} center={[j.lat,j.lng]} radius={10} pathOptions={{fillColor:MKT_PIN[j.market]||'#8A261D',color:'#1A1A1A',weight:2,fillOpacity:0.85}}>
             <Popup maxWidth={280}><div style={{fontFamily:'Inter,sans-serif',fontSize:13}}>
               <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>{j.job_name}</div>
@@ -7493,7 +7493,7 @@ function MapPage({jobs,onNav}){
               <button onClick={()=>{if(onNav)onNav('projects',j);}} style={{marginTop:8,padding:'6px 14px',background:'#8A261D',color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',width:'100%'}}>View Job</button>
             </div></Popup>
           </CircleMarker>)}
-        </MarkerClusterGroup>
+        </>
       </MapContainer>
       {/* Legend */}
       <div style={{position:'absolute',bottom:24,right:12,background:'rgba(255,255,255,0.92)',borderRadius:8,padding:'8px 12px',zIndex:1000,border:'1px solid #E5E3E0',display:'flex',gap:10,fontSize:11}}>
