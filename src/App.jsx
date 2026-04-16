@@ -2856,11 +2856,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     const setExtraSections=(val)=>setExtraSectionsByJob(prev=>({...prev,[jobId]:typeof val==='function'?val(prev[jobId]||[]):val}));
 
     // Determine which sections to show based on job contract
-    const visibleSections=LF_SECTIONS.filter(sec=>{
-      if(sec.alwaysShow)return true;
-      if(!sec.contractKey)return true;
-      return n(job[sec.contractKey])>0;
-    });
+    const visibleSections=LF_SECTIONS.filter(sec=>true);  // Show all sections always
 
     // All sections available to add (not already shown)
     const addableSections=LF_SECTIONS.filter(sec=>
