@@ -4250,7 +4250,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
       const horizonEnd = new Date(weekStart);
-      horizonEnd.setDate(weekStart.getDate() + 28);
+      horizonEnd.setDate(weekStart.getDate() + 14);
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
@@ -4318,7 +4318,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
         headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
         body: JSON.stringify({
           week_start: weekStart.toISOString().split('T')[0],
-          plan_horizon_weeks: 4,
+          plan_horizon_weeks: 2,
           status: 'active',
           agent_reasoning: reasoning,
           generated_by: 'Claude AI Agent'
@@ -4820,7 +4820,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
       const horizonEnd = new Date(weekStart);
-      horizonEnd.setDate(weekStart.getDate() + 28);
+      horizonEnd.setDate(weekStart.getDate() + 14);
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
@@ -4942,7 +4942,7 @@ Generate the optimal 4-week production schedule following all rules.`;
         headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
         body: JSON.stringify({
           week_start: weekStart.toISOString().split('T')[0],
-          plan_horizon_weeks: 4,
+          plan_horizon_weeks: 2,
           status: 'active',
           agent_reasoning: reasoning,
           generated_by: 'Claude AI Agent'
@@ -5259,7 +5259,7 @@ Generate the optimal 4-week production schedule following all rules.`;
             🤖 AI Production Scheduler
           </div>
           <div style={{fontSize:11,color:'#625650',marginTop:2}}>
-            {aiSchedule ? `Last generated: ${aiSchedule.generatedAt?.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '4-week schedule based on install dates, capacity, style grouping'}
+            {aiSchedule ? `Last generated: ${aiSchedule.generatedAt?.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '2-week schedule based on install dates, capacity, style grouping'}
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
@@ -5740,7 +5740,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
       const horizonEnd = new Date(weekStart);
-      horizonEnd.setDate(weekStart.getDate() + 28);
+      horizonEnd.setDate(weekStart.getDate() + 14);
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
@@ -5862,7 +5862,7 @@ Generate the optimal 4-week production schedule following all rules.`;
         headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
         body: JSON.stringify({
           week_start: weekStart.toISOString().split('T')[0],
-          plan_horizon_weeks: 4,
+          plan_horizon_weeks: 2,
           status: 'active',
           agent_reasoning: reasoning,
           generated_by: 'Claude AI Agent'
