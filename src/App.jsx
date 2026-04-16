@@ -3147,7 +3147,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
           emptyMessage="No jobs in this stage"
           renderCard={j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>}
         />
-      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},1fr)`,gap:12,alignItems:'flex-start'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+lfPC(j),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#625650',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} PC LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>)}</div></div>;})}</div>}
+      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{const cv=col.jobs.reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);const lf=col.jobs.reduce((x,j)=>x+lfPC(j),0);return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'12px 14px',marginBottom:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><div style={{fontSize:11,color:'#625650',marginTop:2}}><span style={{background:'#E5E3E0',padding:'1px 6px',borderRadius:4,fontWeight:700,marginRight:6}}>{col.jobs.length}</span>{lf.toLocaleString()} PC LF · {$k(cv)}</div></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]}/>)}</div></div>;})}</div>}
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
@@ -9167,15 +9167,16 @@ function AppShell(){
   const inlineW=v.desktop?desktopSideW:64;
   const contentBottomPad=v.mobile?72:0;
   return(
-    <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%',maxWidth:'100vw'}}>
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
       <style>{`
         *{box-sizing:border-box;}
-        html,body{overflow-x:hidden;max-width:100vw;}
+        html,body{max-width:100%;position:relative;}
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         @media(max-width:768px){
           input,select,textarea{min-height:48px!important;font-size:16px!important}
-          table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
-          .fc-no-scroll{overflow-x:hidden!important;}
+          .fc-kanban{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;}
+          .fc-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+          .fc-no-hscroll{overflow-x:hidden!important;}
         }
         @media(max-width:430px){
           .fc-hide-mobile{display:none!important;}
@@ -9192,7 +9193,7 @@ function AppShell(){
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
         <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)}/>
-        <div style={{flex:1,overflow:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
+        <div style={{flex:1,overflow:'auto',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
