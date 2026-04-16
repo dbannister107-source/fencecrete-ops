@@ -829,6 +829,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
   const[reopening,setReopening]=useState(false);
   const[showReopenPicker,setShowReopenPicker]=useState(false);
+  const[showStatusPicker,setShowStatusPicker]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
   const reopenJob=async(newStatus)=>{
@@ -930,6 +931,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
               {['active_install','material_ready','in_production','production_queue','contract_review'].map(s=>(
                 <button key={s} onClick={()=>reopenJob(s)} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',background:'none',cursor:'pointer',fontSize:13,borderRadius:6,marginBottom:2}} onMouseEnter={e=>e.currentTarget.style.background='#F4F4F2'} onMouseLeave={e=>e.currentTarget.style.background='none'}>
                   {{'active_install':'Active Install','material_ready':'Material Ready','in_production':'In Production','production_queue':'Production Queue','contract_review':'Contract Review'}[s]}
+                </button>
+              ))}
+            </div>}
+          </div>}
+          {!isNew&&job.status!=='closed'&&!canEdit&&canChangeStatus&&<div style={{position:'relative'}}>
+            <button onClick={()=>setShowStatusPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#1D4ED8',borderColor:'#1D4ED8',fontWeight:700}}>
+              {reopening?'Saving...':'⚡ Update Status'}
+            </button>
+            {showStatusPicker&&<div style={{position:'absolute',right:0,top:36,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,.12)',zIndex:200,padding:12,minWidth:210}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Change Status</div>
+              {['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete','closed'].map(s=>(
+                <button key={s} onClick={async()=>{setReopening(true);const u={status:s};const t=new Date().toISOString().split('T')[0];if(s==='material_ready')u.inventory_ready_date=t;if(s==='active_install')u.active_install_date=t;if(s==='fence_complete')u.fence_complete_date=t;if(s==='fully_complete')u.fully_complete_date=t;if(s==='closed')u.closed_date=t;try{await sbPatch('jobs',job.id,u);logAct(job,'status_change',job.status,s,'Updated by '+currentUserEmail);if(onChange)onChange();setShowStatusPicker(false);}catch(e){setSaveErr('Status update failed: '+e.message);}setReopening(false);}} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',background:s===job.status?'#EFF6FF':'none',cursor:'pointer',fontSize:13,borderRadius:6,marginBottom:2,fontWeight:s===job.status?700:400}} onMouseEnter={e=>e.currentTarget.style.background='#F4F4F2'} onMouseLeave={e=>e.currentTarget.style.background=s===job.status?'#EFF6FF':'none'}>
+                  {{'contract_review':'Contract Review','production_queue':'Production Queue','in_production':'In Production','material_ready':'Material Ready','active_install':'Active Install','fence_complete':'Fence Complete','fully_complete':'Fully Complete','closed':'Closed'}[s]}
+                  {s===job.status&&<span style={{marginLeft:6,fontSize:10,color:'#1D4ED8'}}>✓ current</span>}
                 </button>
               ))}
             </div>}
