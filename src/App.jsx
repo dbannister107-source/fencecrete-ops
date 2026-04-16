@@ -2005,7 +2005,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
   useEffect(()=>setSel(new Set()),[search,statusF,mktF,pmF]);
   const toggleSort=k=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('desc');}};
-  const closedJobs=useMemo(()=>{let f=augmentedJobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[augmentedJobs,search,mktF,pmF,closedYearF]);
+  const closedJobs=useMemo(()=>{let f=augmentedJobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm)||(pmF.has('__blank__')&&!j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[augmentedJobs,search,mktF,pmF,closedYearF]);
   const closedCount=augmentedJobs.filter(j=>j.status==='closed').length;
   const closedStats=useMemo(()=>{const cj=augmentedJobs.filter(j=>j.status==='closed');return{count:cj.length,cv:cj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0),lfPC:cj.reduce((s,j)=>s+lfPC(j),0),lf:cj.reduce((s,j)=>s+lfTotal(j),0),avgPct:cj.length>0?Math.round(cj.reduce((s,j)=>s+n(j.pct_billed),0)/cj.length*100):0};},[augmentedJobs]);
   const filtered=useMemo(()=>{
@@ -2013,7 +2013,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}
     if(statusF.size>0)f=f.filter(j=>statusF.has(j.status));
     if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));
-    if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm));
+    if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm)||(pmF.has('__blank__')&&!j.pm));
     if(primaryTypeF.size>0)f=f.filter(j=>primaryTypeF.has(j.primary_fence_type));
     if(addonsF.size>0){
       if(addonsF.has('has_any'))f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.length>0);
@@ -2088,7 +2088,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Statuses" width={160} selected={statusF} onChange={setStatusF} options={STS.map(s=>({v:s,l:SL[s]}))}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
-        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
+        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={[...PM_LIST.map(p=>({v:p.id,l:p.label})),{v:'__blank__',l:'No PM assigned'}]}/>
         <MultiSelect label="All Types" width={140} selected={primaryTypeF} onChange={setPrimaryTypeF} options={[{v:'Precast',l:'Precast'},{v:'Masonry',l:'Masonry'},{v:'Wrought Iron',l:'Wrought Iron'}]}/>
         <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'},{v:'SW',l:'Single Wythe (SW)'},{v:'R',l:'Removal (R)'},{v:'LS',l:'Lump Sum (LS)'}]}/>
         {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
@@ -2096,7 +2096,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
-        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={PM_LIST.map(p=>({v:p.id,l:p.label}))}/>
+        <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={[...PM_LIST.map(p=>({v:p.id,l:p.label})),{v:'__blank__',l:'No PM assigned'}]}/>
         <select value={closedYearF} onChange={e=>setClosedYearF(e.target.value)} style={{...inputS,width:140}}><option value="">All Years</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="older">2023 & Earlier</option></select>
         {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
