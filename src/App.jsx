@@ -2436,6 +2436,23 @@ function BillingPage({jobs,onRefresh,onNav}){
           <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
           <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8B2020'}}>Add Invoice</button></div>
+          {invEntries.filter(e=>!e.notes?.includes('Opening Balance')).length>0&&!s.ar_reviewed&&(
+            <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #E5E3E0'}}>
+              <button onClick={markArReviewed} style={{...btnP,background:'#065F46',width:'100%',justifyContent:'center',display:'flex',alignItems:'center',gap:6}}>
+                ✓ Mark Submission Complete
+              </button>
+              <div style={{fontSize:10,color:'#9E9B96',textAlign:'center',marginTop:4}}>Stamps this PM submission as processed for {arMonth}</div>
+            </div>
+          )}
+          {s.ar_reviewed&&(
+            <div style={{marginTop:12,padding:'8px 12px',background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:8,display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:16}}>✅</span>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:'#065F46'}}>Submission Complete</div>
+                <div style={{fontSize:10,color:'#6B6056'}}>Processed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div>
+              </div>
+            </div>
+          )}
         </div>
         {/* Billing Summary */}
         {renderBillDetail(s)}
