@@ -8649,17 +8649,39 @@ const MOBILE_NAV=[
 function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}){
   const groups=navGroups||NAV_GROUPS;
   const auth=useAuth();
+  const[userMenuOpen,setUserMenuOpen]=useState(false);
+  const menuRef=useRef(null);
+  useEffect(()=>{
+    if(!userMenuOpen)return;
+    const onDocClick=(e)=>{if(menuRef.current&&!menuRef.current.contains(e.target))setUserMenuOpen(false);};
+    const onKey=(e)=>{if(e.key==='Escape')setUserMenuOpen(false);};
+    document.addEventListener('mousedown',onDocClick);
+    document.addEventListener('keydown',onKey);
+    return()=>{document.removeEventListener('mousedown',onDocClick);document.removeEventListener('keydown',onKey);};
+  },[userMenuOpen]);
+  const displayName=auth?.profile?.full_name||auth?.user?.email||'Account';
   return <>
     <div style={{padding:'14px 12px',background:'#FFF',borderBottom:'1px solid #2A2A2A',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:6}}>
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:160,width:'100%',height:'auto',display:'block'}}/>
       :<div style={{width:6,height:28,background:'#8B2020',borderRadius:2}}/>}
     </div>
     <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'8px 12px 6px',marginTop:gi===0?4:16}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'12px 0':'12px 12px',marginBottom:2,borderRadius:8,border:'none',background:active?'#8B202018':'transparent',color:active?'#FFFFFF':'#E5E5E3',fontSize:14,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?'3px solid #8B2020':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>;})}</div>)}</nav>
-    <div style={{padding:collapsed?'8px':'16px 20px',borderTop:'1px solid #2A2A2A'}}>
-      {!collapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:6}}>{jobs.length} projects</div>}
-      {auth&&auth.profile&&!collapsed&&<div style={{fontSize:11,color:'#D1CEC9',marginBottom:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={auth.user?.email}>{auth.profile.full_name||auth.user?.email}</div>}
-      {auth&&<button onClick={()=>auth.signOut()} title="Sign out" style={{background:'#2A2A2A',border:'1px solid #3A2020',borderRadius:6,color:'#D1CEC9',fontSize:11,cursor:'pointer',padding:collapsed?'6px 4px':'6px 10px',width:'100%',marginBottom:6,fontWeight:600}}>{collapsed?'⇤':'Sign Out'}</button>}
-      <button onClick={()=>setCollapsed(!collapsed)} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'4px 10px',width:'100%'}}>{collapsed?'→':'←'}</button>
+    <div style={{padding:collapsed?'8px':'12px 16px',borderTop:'1px solid #2A2A2A'}}>
+      {!collapsed&&<div style={{fontSize:11,color:'#6B6056',marginBottom:8}}>{jobs.length} projects</div>}
+      {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
+        <button onClick={()=>setUserMenuOpen(v=>!v)} title={collapsed?displayName:'Account menu'} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:userMenuOpen?'#3A2020':'#2A2A2A',border:'1px solid #3A2020',borderRadius:8,color:'#D1CEC9',fontSize:12,cursor:'pointer',padding:collapsed?'8px 4px':'8px 10px',fontWeight:600,justifyContent:collapsed?'center':'flex-start',textAlign:'left'}}>
+          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:'#8B2020',color:'#FFF',fontSize:11,fontWeight:800,flexShrink:0}}>{(displayName[0]||'U').toUpperCase()}</span>
+          {!collapsed&&<>
+            <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{displayName}</span>
+            <span style={{fontSize:10,color:'#9E9B96',transform:userMenuOpen?'rotate(180deg)':'none',transition:'transform .15s'}}>▾</span>
+          </>}
+        </button>
+        {userMenuOpen&&<div role="menu" style={{position:'absolute',left:0,right:collapsed?'auto':0,bottom:'calc(100% + 6px)',minWidth:collapsed?160:'100%',background:'#1A1A1A',border:'1px solid #3A2020',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.4)',overflow:'hidden',zIndex:50}}>
+          {auth.user?.email&&<div style={{padding:'10px 12px',fontSize:11,color:'#9E9B96',borderBottom:'1px solid #2A2A2A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={auth.user.email}>{auth.user.email}</div>}
+          <button onClick={()=>{setUserMenuOpen(false);auth.signOut();}} style={{display:'block',width:'100%',padding:'10px 12px',border:'none',background:'transparent',textAlign:'left',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}>Sign Out</button>
+        </div>}
+      </div>}
+      <button onClick={()=>setCollapsed(!collapsed)} title={collapsed?'Expand sidebar':'Collapse sidebar'} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'6px 10px',width:'100%'}}>{collapsed?'→':'←'}</button>
     </div>
   </>;
 }
