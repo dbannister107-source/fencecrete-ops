@@ -2734,32 +2734,66 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   //   excludeFromTotal: true marks Demo as never-in-total
   // nonLF: true on a section marks it as excluded from the LF grand total.
   const LF_SECTIONS=[
-    {title:'Precast',bg:'#FEF3C7',fields:[
-      ['Labor Post Only','labor_post_only','# Posts','posts'],
-      ['Labor Post & Panels','labor_post_panels','# Posts','posts'],
-      ['Labor Complete','labor_complete','# Posts','posts'],
-    ]},
-    {title:'Single Wythe',bg:'#EFF6FF',fields:[
-      ['Foundation','sw_foundation','LF','lf'],
-      ['SW Columns','sw_columns','LF','lf'],
-      ['Accent Columns','sw_accent_columns','LF','lf'],
-      ['Large Columns','sw_large_columns','LF','lf'],
-      ['Panels','sw_panels','LF','lf'],
-      ['Complete','sw_complete','LF','lf'],
-      ['Other','sw_other_lf','LF','lf'],
-    ]},
-    {title:'One Line Items',bg:'#EDE9FE',fields:[
-      ['WI Fencing','wi_fencing','LF','lf'],
-      ['WI Posts','wi_columns','LF','lf'],
-      ['Demo','remove_existing','LF','lf',{excludeFromTotal:true}],
-    ]},
-    {title:'Pieces & $',bg:'#ECFDF5',nonLF:true,fields:[
-      ['WI Gates','wi_gates','pieces','pieces'],
-      ['Gate Controls','gate_controls','pieces','pieces'],
-      ['Bonds','line_bonds','$','dollars'],
-      ['Permits','line_permits','$','dollars'],
-    ]},
+    {
+      title:'Precast',bg:'#FEF3C7',
+      contractKey:'lf_precast', // show if job has precast LF
+      contractLabel:'PC LF',
+      billedField:'lf_installed_to_date', // approximate - use precast portion
+      fields:[
+        ['Labor Post Only','labor_post_only','LF','lf'],
+        ['Labor Post & Panels','labor_post_panels','LF','lf'],
+        ['Labor Complete','labor_complete','LF','lf'],
+        ['Other','precast_other_lf','LF','lf'],
+      ]
+    },
+    {
+      title:'Single Wythe',bg:'#EFF6FF',
+      contractKey:'lf_single_wythe',
+      contractLabel:'SW LF',
+      fields:[
+        ['Foundation','sw_foundation','LF','lf'],
+        ['SW Columns','sw_columns','LF','lf'],
+        ['Accent Columns','sw_accent_columns','LF','lf'],
+        ['Large Columns','sw_large_columns','LF','lf'],
+        ['Panels','sw_panels','LF','lf'],
+        ['Complete','sw_complete','LF','lf'],
+        ['Other','sw_other_lf','LF','lf'],
+      ]
+    },
+    {
+      title:'Wrought Iron',bg:'#EDE9FE',
+      contractKey:'lf_wrought_iron',
+      contractLabel:'WI LF',
+      fields:[
+        ['WI Fencing','wi_fencing','LF','lf'],
+        ['WI Posts','wi_columns','LF','lf'],
+        ['Other','one_line_other_lf','LF','lf'],
+      ]
+    },
+    {
+      title:'Gates & Controls',bg:'#ECFDF5',nonLF:true,
+      contractKey:'number_of_gates',
+      contractLabel:'Gates',
+      fields:[
+        ['WI Gates','wi_gates','pieces','pieces'],
+        ['Gate Controls','gate_controls_qty','pieces','pieces'],
+      ]
+    },
+    {
+      title:'Bonds & Permits',bg:'#F0FDF4',nonLF:true,alwaysShow:true,readOnly:true,
+      fields:[
+        ['Bonds','bonds_amount','$','dollars'],
+        ['Permits','permits_amount','$','dollars'],
+      ]
+    },
+    {
+      title:'Demo',bg:'#FEF2F2',alwaysShow:true,
+      fields:[
+        ['Demo','remove_existing','LF','lf',{excludeFromTotal:true}],
+      ]
+    },
   ];
+
   // Read-only grid for already-submitted rows. Precast fields are stored
   // as converted LF. Other fields display with their own unit label.
   const fmtVal=(v,kind)=>{
@@ -2791,44 +2825,106 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const renderLFForm=(jobId,job)=>{
     const form=getForm(jobId);
     const totals=calcSectionLFs(form,job);
+    const[extraSections,setExtraSections]=useState([]);
+
+    // Determine which sections to show based on job contract
+    const visibleSections=LF_SECTIONS.filter(sec=>{
+      if(sec.alwaysShow)return true;
+      if(!sec.contractKey)return true;
+      return n(job[sec.contractKey])>0;
+    });
+
+    // All sections available to add (not already shown)
+    const addableSections=LF_SECTIONS.filter(sec=>
+      !sec.alwaysShow && sec.contractKey && n(job[sec.contractKey])===0 && !extraSections.includes(sec.title)
+    );
+
     const sectionSub=(sec)=>{
       if(sec.title==='Precast')return totals.precast;
       if(sec.title==='Single Wythe')return totals.sw;
-      if(sec.title==='One Line Items')return totals.oneLine;
+      if(sec.title==='Wrought Iron')return totals.oneLine;
       return null;
     };
-    return<>
-      {LF_SECTIONS.map(sec=>{
-        const sub=sectionSub(sec);
-        return<div key={sec.title} style={{marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,padding:'3px 8px',background:sec.bg,borderRadius:4,display:'inline-block'}}>{sec.title}</div>
+
+    const renderSection=(sec,isExtra=false)=>{
+      const contracted=sec.contractKey?n(job[sec.contractKey]):0;
+      const billedToDate=n(job.lf_installed_to_date||0);
+      const remaining=Math.max(0,contracted-billedToDate);
+      const sub=sectionSub(sec);
+      const isReadOnly=sec.readOnly||false;
+
+      return<div key={sec.title} style={{marginBottom:14,border:'1px solid #E5E3E0',borderRadius:10,overflow:'hidden'}}>
+        {/* Section header with contract context */}
+        <div style={{background:sec.bg,padding:'8px 12px',borderBottom:'1px solid #E5E3E0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:4}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>{sec.title}</span>
+              {isExtra&&<span style={{fontSize:9,fontWeight:700,color:'#92400E',background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:4,padding:'1px 6px'}}>⚠️ NOT ON ORIGINAL CONTRACT — VERIFY CO WITH AMIEE</span>}
+              {isReadOnly&&<span style={{fontSize:9,color:'#625650',fontStyle:'italic'}}>read-only from project</span>}
+            </div>
+            {contracted>0&&sec.contractLabel&&(
+              <div style={{fontSize:10,color:'#625650',display:'flex',gap:10,flexWrap:'wrap'}}>
+                <span>Contracted: <b style={{color:'#1A1A1A'}}>{contracted.toLocaleString()} {sec.contractLabel}</b></span>
+                <span>·</span>
+                <span>Billed to date: <b style={{color:'#1D4ED8'}}>{billedToDate.toLocaleString()} LF</b></span>
+                <span>·</span>
+                <span>Remaining: <b style={{color:remaining<=0?'#065F46':'#8A261D'}}>{remaining.toLocaleString()} LF</b></span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{padding:'10px 12px'}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8}}>
             {sec.fields.map(([label,field,unit,kind,meta])=>{
               const isDemo=meta&&meta.excludeFromTotal;
-              const raw=form[field];
-              const hint=kind==='posts'&&n(raw)>0
-                ? `→ ${calcPrecastLF(raw,job).toLocaleString()} LF`
-                : null;
+              const raw=isReadOnly?n(job[field]):form[field];
               return<div key={field} style={isDemo?{background:'#FEF2F2',border:'1px dashed #FCA5A5',borderRadius:6,padding:'6px 8px'}:undefined}>
                 <label style={{display:'block',fontSize:9,color:isDemo?'#B45309':'#9E9B96',marginBottom:2,fontWeight:isDemo?700:500}}>
                   {label} <span style={{opacity:0.8}}>({unit})</span>
                   {isDemo&&<span style={{marginLeft:4,fontSize:8,textTransform:'uppercase',color:'#B45309'}}>Excluded from total</span>}
                 </label>
-                <input type="number" value={raw} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/>
-                {hint&&<div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{hint}</div>}
+                {isReadOnly
+                  ? <div style={{padding:'6px 8px',background:'#F9F8F6',borderRadius:6,fontSize:13,fontWeight:700,color:'#1A1A1A',border:'1px solid #E5E3E0',minHeight:36,display:'flex',alignItems:'center'}}>
+                      {kind==='dollars'?`$${n(raw).toLocaleString()}`:n(raw)>0?n(raw).toLocaleString():'—'}
+                    </div>
+                  : <input type="number" value={raw} onChange={e=>updateForm(jobId,field,e.target.value)} placeholder="0" style={{...inputS,padding:'6px 8px',fontSize:13,minHeight:36}}/>
+                }
               </div>;
             })}
           </div>
-          {sec.nonLF
-            ? <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',gap:16,fontSize:11,color:'#625650'}}>
-                <span>Pieces This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{totals.pieces.toLocaleString()}</b></span>
-                <span>$ This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>${totals.dollars.toLocaleString()}</b></span>
-              </div>
-            : <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#625650'}}>
-                <span>{sec.title} LF This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{(sub||0).toLocaleString()}</b></span>
-              </div>}
-        </div>;
+          {!isReadOnly&&!sec.nonLF&&sub!==null&&(
+            <div style={{marginTop:8,display:'flex',justifyContent:'flex-end',fontSize:11,color:'#625650'}}>
+              <span>{sec.title} LF This Period: <b style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{(sub||0).toLocaleString()}</b></span>
+            </div>
+          )}
+        </div>
+      </div>;
+    };
+
+    return<>
+      {visibleSections.map(sec=>renderSection(sec,false))}
+      {extraSections.map(title=>{
+        const sec=LF_SECTIONS.find(s=>s.title===title);
+        return sec?renderSection(sec,true):null;
       })}
+
+      {/* Add Section */}
+      {addableSections.length>0&&(
+        <div style={{marginBottom:12}}>
+          <details>
+            <summary style={{fontSize:11,fontWeight:700,color:'#8A261D',cursor:'pointer',padding:'6px 0',userSelect:'none'}}>+ Add Section (not on original contract)</summary>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+              {addableSections.map(sec=>(
+                <button key={sec.title} onClick={()=>setExtraSections(p=>[...p,sec.title])}
+                  style={{padding:'4px 12px',borderRadius:6,border:'1px solid #8A261D',background:'#FFF',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                  + {sec.title}
+                </button>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
+
       <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8A261D',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
         <span style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total LF This Period</span>
         <span style={{fontFamily:'Inter',fontWeight:900,fontSize:18,color:'#8A261D'}}>{totals.grand.toLocaleString()} LF</span>
