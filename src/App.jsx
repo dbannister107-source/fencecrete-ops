@@ -8688,7 +8688,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
           <button onClick={()=>{setUserMenuOpen(false);auth.signOut();}} style={{display:'block',width:'100%',padding:'10px 12px',border:'none',background:'transparent',textAlign:'left',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}>Sign Out</button>
         </div>}
       </div>}
-      <button onClick={()=>setCollapsed(!collapsed)} title={collapsed?'Expand sidebar':'Collapse sidebar'} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'6px 10px',width:'100%'}}>{collapsed?'→':'←'}</button>
+      <button onClick={()=>setCollapsed(!collapsed)} title={collapsed?'Expand sidebar':'Collapse sidebar'} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'6px 10px',width:'100%',fontWeight:600}}>{collapsed?'→':'Go Back'}</button>
     </div>
   </>;
 }
