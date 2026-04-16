@@ -5552,6 +5552,15 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const drLineItemsByJob=useMemo(()=>{const m={};drLineItems.forEach(li=>{if(!li.job_number)return;if(!m[li.job_number])m[li.job_number]=[];m[li.job_number].push(li);});return m;},[drLineItems]);
   // Per-split actual LF state for multi-line-item jobs — key: `${idx}-${line_item_id}` → entered value
   const[lfSplitActuals,setLfSplitActuals]=useState({});
+  // History tab state
+  const[histLoading,setHistLoading]=useState(false);
+  const[histActuals,setHistActuals]=useState([]);
+  const[histPlans,setHistPlans]=useState([]);
+  const[histPlanLines,setHistPlanLines]=useState([]);
+  const[histShift,setHistShift]=useState('');
+  const[expandedDate,setExpandedDate]=useState(null);
+  // Capacity calc state
+  const[calcStyles,setCalcStyles]=useState([]);
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
   const todayISO=new Date().toISOString().split('T')[0];
