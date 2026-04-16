@@ -4282,88 +4282,28 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
         produced_posts: n(j.produced_posts) || 0,
       }));
 
-      // Build the AI prompt
-      const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer in Texas.
-
-PLANT CAPACITY:
-- Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
-- Shift 2: Monday-Friday, 6pm-2am — 2,500 LF per shift  
-- Weekday max: 5,000 LF/day (both shifts)
-- Saturday max: 2,500 LF/day (Shift 1 only)
-- Sunday: no production
-
-SCHEDULING RULES (in priority order):
-1. MATERIAL READINESS: Posts can be produced before panels. If a job's posts can be ready before install date, schedule posts first, then panels. This shows the customer work has started.
-2. INSTALL DATE: Schedule to meet install deadlines. Jobs with earlier install dates get priority.
-3. JOB SIZE: Among jobs with similar install dates, schedule larger LF jobs first.
-4. STYLE/COLOR GROUPING: Batch jobs with the same style and color back-to-back to minimize mold changeovers. You may delay a job's PANELS (not posts) by up to 3 days to batch with a similar style/color job, AS LONG AS posts have already been scheduled for that job first.
-5. Never schedule more than daily capacity per day.
-
-PLANNING HORIZON: 4 weeks from ${weekStart.toISOString().split('T')[0]} to ${horizonEnd.toISOString().split('T')[0]}
-
-OUTPUT FORMAT: Respond ONLY with a valid JSON object, no markdown, no explanation:
-{
-  "reasoning": "brief explanation of key scheduling decisions",
-  "schedule": [
-    {
-      "job_number": "25H001",
-      "job_name": "Job Name",
-      "date": "2026-04-21",
-      "production_type": "posts",
-      "planned_lf": 200,
-      "planned_posts": 45,
-      "planned_panels": 0,
-      "planned_caps": 0,
-      "style": "Rock Style",
-      "color": "Tan",
-      "height": "8",
-      "install_date": "2026-05-01",
-      "total_job_lf": 1200,
-      "day_sequence": 1,
-      "notes": "Posts first — panels to follow"
-    }
-  ]
-}
-
-production_type must be one of: "posts", "panels", "caps", "full"
-Include one entry per job per day. A job may span multiple days if LF exceeds daily capacity.
-Do not schedule on Sundays.
-Saturday only gets Shift 1 (2,500 LF max).`;
-
-      const userPrompt = `Schedule these ${eligibleJobs.length} precast jobs for the next 4 weeks:
-
-${JSON.stringify(eligibleJobs, null, 2)}
-
-Today is ${today.toISOString().split('T')[0]}.
-Generate the optimal 4-week production schedule following all rules.`;
-
-      // Call Claude API
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      // Edge function handles system prompt and AI call
+      // Call production-scheduler edge function (holds API key securely)
+      const response = await fetch(`${SB}/functions/v1/production-scheduler`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${KEY}`
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }]
+          jobs: eligibleJobs,
+          weekStart: weekStart.toISOString().split('T')[0],
+          horizonEnd: horizonEnd.toISOString().split('T')[0]
         })
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
-      const data = await response.json();
-      const rawText = data.content?.[0]?.text || '';
+      if (!response.ok) throw new Error(`Edge function error: ${response.status}`);
+      const parsed = await response.json();
       
-      // Parse JSON response
-      let parsed;
-      try {
-        const clean = rawText.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(clean);
-      } catch(e) {
-        throw new Error('AI returned invalid schedule format');
-      }
+      if (parsed.error) throw new Error(parsed.error + (parsed.details ? ': ' + parsed.details : ''));
 
       const { reasoning, schedule } = parsed;
-      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned from AI');
 
       // Save to Supabase
       // 1. Archive any existing active schedule
@@ -4967,33 +4907,27 @@ ${JSON.stringify(eligibleJobs, null, 2)}
 Today is ${today.toISOString().split('T')[0]}.
 Generate the optimal 4-week production schedule following all rules.`;
 
-      // Call Claude API
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      // Call production-scheduler edge function (holds API key securely)
+      const response = await fetch(`${SB}/functions/v1/production-scheduler`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${KEY}`
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }]
+          jobs: eligibleJobs,
+          weekStart: weekStart.toISOString().split('T')[0],
+          horizonEnd: horizonEnd.toISOString().split('T')[0]
         })
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
-      const data = await response.json();
-      const rawText = data.content?.[0]?.text || '';
+      if (!response.ok) throw new Error(`Edge function error: ${response.status}`);
+      const parsed = await response.json();
       
-      // Parse JSON response
-      let parsed;
-      try {
-        const clean = rawText.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(clean);
-      } catch(e) {
-        throw new Error('AI returned invalid schedule format');
-      }
+      if (parsed.error) throw new Error(parsed.error + (parsed.details ? ': ' + parsed.details : ''));
 
       const { reasoning, schedule } = parsed;
-      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned from AI');
 
       // Save to Supabase
       // 1. Archive any existing active schedule
@@ -5893,33 +5827,27 @@ ${JSON.stringify(eligibleJobs, null, 2)}
 Today is ${today.toISOString().split('T')[0]}.
 Generate the optimal 4-week production schedule following all rules.`;
 
-      // Call Claude API
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      // Call production-scheduler edge function (holds API key securely)
+      const response = await fetch(`${SB}/functions/v1/production-scheduler`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${KEY}`
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }]
+          jobs: eligibleJobs,
+          weekStart: weekStart.toISOString().split('T')[0],
+          horizonEnd: horizonEnd.toISOString().split('T')[0]
         })
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
-      const data = await response.json();
-      const rawText = data.content?.[0]?.text || '';
+      if (!response.ok) throw new Error(`Edge function error: ${response.status}`);
+      const parsed = await response.json();
       
-      // Parse JSON response
-      let parsed;
-      try {
-        const clean = rawText.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(clean);
-      } catch(e) {
-        throw new Error('AI returned invalid schedule format');
-      }
+      if (parsed.error) throw new Error(parsed.error + (parsed.details ? ': ' + parsed.details : ''));
 
       const { reasoning, schedule } = parsed;
-      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned');
+      if (!schedule || !Array.isArray(schedule)) throw new Error('No schedule returned from AI');
 
       // Save to Supabase
       // 1. Archive any existing active schedule
