@@ -2093,6 +2093,12 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[arViewF,setArViewF]=useState('all');
   const[arDetail,setArDetail]=useState(null);
   const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});
+  const[invEntries,setInvEntries]=useState([]);
+  const[invLoading,setInvLoading]=useState(false);
+  const[invDelConfirm,setInvDelConfirm]=useState(null);
+  const fetchInvEntries=useCallback(async(jobId)=>{if(!jobId)return;setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);setInvEntries(d||[]);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
+  const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});await fetchInvEntries(jobId);onRefresh();setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
+  const deleteInvEntry=async(entryId,jobId)=>{try{await fetch(`${SB}/rest/v1/invoice_entries?id=eq.${entryId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});await fetchInvEntries(jobId);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
@@ -2103,7 +2109,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arFilteredJobs,arSubByJob]);
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
-  const openArDetail=(sub)=>{setArDetail({sub});setArForm({ar_notes:sub.ar_notes||'',ar_reviewed_by:sub.ar_reviewed_by||'',invoiced_amount:sub.invoiced_amount||'',invoice_number:sub.invoice_number||'',invoice_date:sub.invoice_date||new Date().toISOString().split('T')[0]});};
+  const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);fetchInvEntries(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
   // render as "—". Fields `precast_other_lf` and `one_line_other_lf`
@@ -2392,33 +2398,45 @@ function BillingPage({jobs,onRefresh,onNav}){
         {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
         {/* AR Review Section */}
         <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>AR Review & Invoice</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
-            <div>
-              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label>
-              <input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS} disabled={s.ar_reviewed}/>
-            </div>
-            <div>
-              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label>
-              <input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS} disabled={s.ar_reviewed}/>
-            </div>
-            <div>
-              <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label>
-              <input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS} disabled={s.ar_reviewed}/>
-            </div>
-          </div>
-          <div style={{marginBottom:10}}>
-            <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>AR Notes</label>
-            <textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Review notes, adjustments, flags..." style={{...inputS,resize:'vertical'}} disabled={s.ar_reviewed}/>
-          </div>
-          <div>
-            <label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Reviewer Name</label>
-            <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Your name" style={inputS} disabled={s.ar_reviewed}/>
-          </div>
-          {s.ar_reviewed&&<div style={{marginTop:10,padding:10,background:'#EFF6FF',borderRadius:8}}>
-            <div style={{fontSize:12,color:'#1D4ED8',fontWeight:600}}>Reviewed by {s.ar_reviewed_by||'AR'} on {s.ar_reviewed_at?new Date(s.ar_reviewed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
-            {n(s.invoiced_amount)>0&&<div style={{fontSize:12,color:'#065F46',fontWeight:600,marginTop:4}}>Invoice: {$(s.invoiced_amount)}{s.invoice_number?' — #'+s.invoice_number:''}{s.invoice_date?' — '+fD(s.invoice_date):''}</div>}
+          <div style={{fontSize:11,fontWeight:800,color:'#8B2020',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
+          {invLoading?<div style={{color:'#9E9B96',fontSize:12,padding:'8px 0'}}>Loading...</div>:invEntries.length===0?<div style={{color:'#9E9B96',fontSize:12,fontStyle:'italic',padding:'8px 0',textAlign:'center'}}>No invoices entered yet.</div>:<div style={{marginBottom:12}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Date</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Month</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Invoice #</th>
+                <th style={{textAlign:'right',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Amount</th>
+                <th style={{textAlign:'left',padding:'4px 6px',color:'#6B6056',fontWeight:600,fontSize:10,textTransform:'uppercase'}}>Notes</th>
+                <th style={{width:32}}></th>
+              </tr></thead>
+              <tbody>{invEntries.map((e,i)=>{const isOB=e.notes&&e.notes.includes('Opening Balance');return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAFA'}}>
+                <td style={{padding:'5px 6px'}}>{e.invoice_date?new Date(e.invoice_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</td>
+                <td style={{padding:'5px 6px',color:'#6B6056'}}>{e.billing_month||'—'}</td>
+                <td style={{padding:'5px 6px',color:'#6B6056'}}>{e.invoice_number||'—'}</td>
+                <td style={{padding:'5px 6px',textAlign:'right',fontWeight:700,color:'#065F46'}}>{$(e.invoice_amount)}</td>
+                <td style={{padding:'5px 6px',color:'#6B6056',fontSize:11}}>{isOB?<span style={{background:'#E5E3E0',color:'#6B6056',borderRadius:4,padding:'1px 6px',fontSize:10,fontWeight:600}}>Opening Balance</span>:e.notes||'—'}</td>
+                <td style={{padding:'5px 6px',textAlign:'center'}}>{isOB?<span title="Opening balance — contact admin to adjust" style={{cursor:'not-allowed',color:'#9E9B96',fontSize:14}}>🔒</span>:<button onClick={()=>setInvDelConfirm({id:e.id,jobId:s.job_id,amount:e.invoice_amount})} style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626',fontSize:14,padding:2}} title="Remove entry">×</button>}</td>
+              </tr>;})}
+              </tbody>
+            </table>
           </div>}
+          <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:8,padding:'8px 12px',marginBottom:14,display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Adj Contract</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.adj_contract_value)}</div></div>
+            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>YTD Invoiced</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.ytd_invoiced)}</div></div>
+            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Left to Bill</div><div style={{fontWeight:800,fontSize:13,color:'#8B2020'}}>{$(arJob.left_to_bill)}</div></div>
+            <div><div style={{fontSize:9,color:'#6B6056',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>% Billed</div><div style={{fontWeight:800,fontSize:13,color:'#8B2020'}}>{fmtPct1(arJob.pct_billed)}</div></div>
+          </div>
+          <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingTop:10,borderTop:'1px solid #E5E3E0'}}>Add Invoice Entry</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label><input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label><input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS}/></div>
+            <div><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label><input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS}/></div>
+          </div>
+          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Invoice notes..." style={{...inputS,resize:'vertical'}}/></div>
+          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#6B6056',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
+          {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
+          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8B2020'}}>Add Invoice</button></div>
+          <div style={{marginTop:10,padding:'6px 10px',background:'#F9F8F6',borderRadius:6,fontSize:10,color:'#9E9B96',textAlign:'center'}}>🔒 Reviewer approval step coming soon (Carlos)</div>
         </div>
         {renderBillDetail(s)}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
