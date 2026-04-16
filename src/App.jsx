@@ -7828,10 +7828,12 @@ const buildDefaultMRItems=(h1,h2)=>{
   return rows;
 };
 const MR_STATUS_STYLE={
-  pending:{bg:'#FEF3C7',color:'#B45309',label:'Pending'},
-  confirmed:{bg:'#DBEAFE',color:'#1D4ED8',label:'Confirmed'},
-  fulfilled:{bg:'#D1FAE5',color:'#065F46',label:'Fulfilled'},
-  cancelled:{bg:'#F4F4F2',color:'#625650',label:'Cancelled'},
+  pending:{bg:'#FEF3C7',color:'#B45309',label:'⏳ Pending'},
+  acknowledged:{bg:'#DBEAFE',color:'#1D4ED8',label:'👀 Acknowledged'},
+  ready:{bg:'#D1FAE5',color:'#065F46',label:'✅ Ready'},
+  confirmed:{bg:'#D1FAE5',color:'#065F46',label:'✅ Confirmed'},
+  fulfilled:{bg:'#F4F4F2',color:'#625650',label:'📦 Fulfilled'},
+  cancelled:{bg:'#FEE2E2',color:'#991B1B',label:'❌ Cancelled'},
 };
 function MaterialRequestsPage({jobs,refreshKey=0}){
   const todayISO=new Date().toISOString().split('T')[0];
@@ -7913,6 +7915,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
       const body={
         request_date:form.request_date||null,
         requested_by:form.requested_by||null,
+        job_id:jobs.find(j=>j.job_number===form.job_number)?.id||null,
         job_number:form.job_number||null,
         job_name:form.job_name||null,
         address:form.address||null,
@@ -7955,6 +7958,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
   const[expandedId,setExpandedId]=useState(null);
   const[confirmForm,setConfirmForm]=useState({confirmed_by:'',estimated_ship_date:'',notes:''});
   const[cancelConfirmId,setCancelConfirmId]=useState(null);
+  const[myRequestsPM,setMyRequestsPM]=useState('');
   const fetchRequests=useCallback(async()=>{
     try{const d=await sbGet('material_requests','select=*&order=created_at.desc&limit=200');setRequests(d||[]);}
     catch(e){console.error('[MR fetch] failed:',e);}
@@ -7987,6 +7991,46 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
       setToast({msg:'Request marked fulfilled — PM notified',ok:true});
     }catch(e){console.error('[MR fulfill] failed:',e);setToast({msg:e.message||'Update failed',ok:false});}
   };
+  const acknowledgeRequest=async(req)=>{
+    try{
+      const patch={status:'acknowledged',acknowledged_at:new Date().toISOString(),max_notes:confirmForm.notes||null,updated_at:new Date().toISOString()};
+      await sbPatch('material_requests',req.id,patch);
+      setRequests(prev=>prev.map(r=>r.id===req.id?{...r,...patch}:r));
+      setExpandedId(null);
+      // Email PM that request was acknowledged
+      const pmEmailMap={'Ray Garcia':'ray@fencecrete.com','Manuel Salazar':'manuel@fencecrete.com','Rafael Anaya Jr.':'rafael@fencecrete.com','Doug Monroe':'doug@fencecrete.com'};
+      const pmEmail=pmEmailMap[req.requested_by]||null;
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({
+        type:'material_request_acknowledged',
+        jobName:req.job_name,jobNumber:req.job_number,
+        requestedBy:req.requested_by,
+        style:req.material_style,color:req.color_name,
+        linearFeet:req.linear_feet,
+        recipients:[pmEmail,'david@fencecrete.com'].filter(Boolean),
+        subject:`Material Request Acknowledged — ${req.job_name} (${req.job_number})`
+      })}).catch(()=>{});
+      setToast({msg:`Request acknowledged — ${req.requested_by} will be notified`,ok:true});
+    }catch(e){setToast({msg:e.message||'Acknowledge failed',ok:false});}
+  };
+  const markReady=async(req)=>{
+    try{
+      const patch={status:'ready',ready_at:new Date().toISOString(),estimated_ship_date:confirmForm.estimated_ship_date||req.estimated_ship_date,updated_at:new Date().toISOString()};
+      await sbPatch('material_requests',req.id,patch);
+      setRequests(prev=>prev.map(r=>r.id===req.id?{...r,...patch}:r));
+      setExpandedId(null);
+      const pmEmailMap={'Ray Garcia':'ray@fencecrete.com','Manuel Salazar':'manuel@fencecrete.com','Rafael Anaya Jr.':'rafael@fencecrete.com','Doug Monroe':'doug@fencecrete.com'};
+      const pmEmail=pmEmailMap[req.requested_by]||null;
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({
+        type:'material_ready',
+        jobName:req.job_name,jobNumber:req.job_number,
+        requestedBy:req.requested_by,
+        shipDate:patch.estimated_ship_date,
+        recipients:[pmEmail,'david@fencecrete.com'].filter(Boolean),
+        subject:`Materials Ready — ${req.job_name} (${req.job_number})`
+      })}).catch(()=>{});
+      setToast({msg:`Materials marked ready — ${req.requested_by} will be notified`,ok:true});
+    }catch(e){setToast({msg:e.message||'Update failed',ok:false});}
+  };
   const cancelRequest=async(req)=>{
     try{
       const patch={status:'cancelled',updated_at:new Date().toISOString()};
@@ -8013,7 +8057,10 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
     {/* Tabs */}
     <div style={{display:'flex',gap:6,marginBottom:16}}>
       <button onClick={()=>setTab('new')} style={{padding:'8px 18px',borderRadius:8,border:tab==='new'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='new'?'#FDF4F4':'#FFF',color:tab==='new'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>+ New Request</button>
-      <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>Request Queue ({requests.length})</button>
+      <button onClick={()=>setTab('queue')} style={{padding:'8px 18px',borderRadius:8,border:tab==='queue'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='queue'?'#FDF4F4':'#FFF',color:tab==='queue'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+        Max's Queue <span style={{background:requests.filter(r=>r.status==='pending').length>0?'#DC2626':'#E5E3E0',color:'#FFF',borderRadius:10,padding:'1px 7px',fontSize:11,marginLeft:4}}>{requests.filter(r=>r.status==='pending').length}</span>
+      </button>
+      <button onClick={()=>setTab('my_requests')} style={{padding:'8px 18px',borderRadius:8,border:tab==='my_requests'?'2px solid #8A261D':'1px solid #E5E3E0',background:tab==='my_requests'?'#FDF4F4':'#FFF',color:tab==='my_requests'?'#8A261D':'#625650',fontWeight:700,fontSize:13,cursor:'pointer'}}>My Requests</button>
     </div>
     {/* NEW REQUEST FORM */}
     {tab==='new'&&<div>
@@ -8162,7 +8209,12 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
               {/* Action buttons */}
               <div style={{marginTop:14,display:'flex',gap:8,flexWrap:'wrap'}}>
                 {r.status==='pending'&&<div style={{flex:1,minWidth:280,padding:12,background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8}}>
-                  <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:8}}>Confirm Receipt</div>
+                  <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',marginBottom:8}}>⏳ Pending — Action Required</div>
+                  <div style={{display:'flex',gap:8,marginBottom:10}}>
+                    <button onClick={()=>acknowledgeRequest(r)} style={{...btnP,background:'#1D4ED8',fontSize:12,flex:1}}>👀 Acknowledge</button>
+                  </div>
+                  <div style={{fontSize:10,color:'#92400E',marginBottom:8}}>Acknowledging notifies the PM you've seen the request. Then confirm receipt when materials are ready.</div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>Or Confirm Receipt Now</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
                     <div><label style={{...lbl,fontSize:10}}>Confirmed By</label><input value={confirmForm.confirmed_by} onChange={e=>setConfirmForm(p=>({...p,confirmed_by:e.target.value}))} placeholder="Max / Carlos" style={{...inputS,padding:'6px 10px',fontSize:12}}/></div>
                     <div><label style={{...lbl,fontSize:10}}>Est. Ship Date</label><input type="date" value={confirmForm.estimated_ship_date} onChange={e=>setConfirmForm(p=>({...p,estimated_ship_date:e.target.value}))} style={{...inputS,padding:'6px 10px',fontSize:12}}/></div>
@@ -8170,7 +8222,16 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
                   <input value={confirmForm.notes} onChange={e=>setConfirmForm(p=>({...p,notes:e.target.value}))} placeholder="Notes (optional)" style={{...inputS,padding:'6px 10px',fontSize:12,marginBottom:8}}/>
                   <button onClick={()=>confirmReceipt(r)} style={{...btnP,padding:'6px 16px',fontSize:12,background:'#065F46'}}>Confirm</button>
                 </div>}
-                {r.status==='confirmed'&&<button onClick={()=>markFulfilled(r)} style={{...btnP,padding:'8px 18px',fontSize:12,background:'#065F46'}}>Mark Fulfilled</button>}
+                {(r.status==='acknowledged')&&<div style={{display:'flex',gap:8,padding:'8px 0'}}>
+                <div style={{flex:1,padding:10,background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#1D4ED8',marginBottom:6}}>👀 Acknowledged — Mark Ready when materials are prepared</div>
+                  <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    <input type="date" value={confirmForm.estimated_ship_date} onChange={e=>setConfirmForm(p=>({...p,estimated_ship_date:e.target.value}))} placeholder="Est. ship date" style={{...inputS,padding:'6px 10px',fontSize:12,flex:1}}/>
+                    <button onClick={()=>markReady(r)} style={{...btnP,background:'#065F46',fontSize:12}}>✅ Mark Ready</button>
+                  </div>
+                </div>
+              </div>}
+              {r.status==='confirmed'&&<button onClick={()=>markFulfilled(r)} style={{...btnP,padding:'8px 18px',fontSize:12,background:'#065F46'}}>Mark Fulfilled</button>}
                 {(r.status==='pending'||r.status==='confirmed')&&(isCancelConfirm?<div style={{display:'flex',gap:4,alignItems:'center',padding:'6px 10px',background:'#FEF2F2',borderRadius:6,border:'1px solid #FECACA'}}>
                   <span style={{fontSize:11,color:'#991B1B',fontWeight:700}}>Cancel this request?</span>
                   <button onClick={()=>cancelRequest(r)} style={{background:'#991B1B',border:'none',borderRadius:4,padding:'4px 10px',color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>Yes</button>
@@ -8181,8 +8242,51 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
           </div>;
         })}
       </div>}
+
+    {/* MY REQUESTS TAB */}
+    {tab==='my_requests'&&<div>
+      <div style={{marginBottom:12,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <span style={{fontSize:13,fontWeight:700,color:'#1A1A1A'}}>My Material Requests</span>
+        <select value={myRequestsPM} onChange={e=>setMyRequestsPM(e.target.value)} style={{...inputS,width:'auto',fontSize:12,padding:'6px 10px'}}>
+          <option value="">All PMs</option>
+          {['Ray Garcia','Manuel Salazar','Rafael Anaya Jr.','Doug Monroe'].map(pm=><option key={pm} value={pm}>{pm}</option>)}
+        </select>
+      </div>
+      {(()=>{
+        const myReqs = requests.filter(r=>!myRequestsPM||r.requested_by===myRequestsPM).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+        if(myReqs.length===0) return <div style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:13}}>No requests found.</div>;
+        const statusMeta={
+          pending:{label:'Pending',bg:'#FEF3C7',c:'#92400E',icon:'⏳'},
+          acknowledged:{label:'Acknowledged',bg:'#DBEAFE',c:'#1D4ED8',icon:'👀'},
+          ready:{label:'Ready',bg:'#D1FAE5',c:'#065F46',icon:'✅'},
+          confirmed:{label:'Confirmed',bg:'#D1FAE5',c:'#065F46',icon:'✅'},
+          fulfilled:{label:'Fulfilled',bg:'#F4F4F2',c:'#625650',icon:'📦'},
+          cancelled:{label:'Cancelled',bg:'#FEE2E2',c:'#991B1B',icon:'❌'},
+        };
+        return myReqs.map(r=>{
+          const sm=statusMeta[r.status]||statusMeta.pending;
+          return<div key={r.id} style={{border:'1px solid #E5E3E0',borderRadius:10,marginBottom:10,overflow:'hidden',borderLeft:`4px solid ${sm.c}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'#FAFAFA'}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:13}}>{r.job_name} <span style={{color:'#9E9B96',fontSize:11}}>#{r.job_number}</span></div>
+                <div style={{fontSize:11,color:'#625650',marginTop:2}}>Requested by {r.requested_by} · {r.request_date?new Date(r.request_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):''}</div>
+              </div>
+              <span style={{background:sm.bg,color:sm.c,borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700}}>{sm.icon} {sm.label}</span>
+            </div>
+            <div style={{padding:'10px 14px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,fontSize:11}}>
+              <div><div style={{color:'#9E9B96',fontSize:9,textTransform:'uppercase',fontWeight:600}}>Style</div><div style={{fontWeight:700}}>{r.material_style||'—'}</div></div>
+              <div><div style={{color:'#9E9B96',fontSize:9,textTransform:'uppercase',fontWeight:600}}>Color</div><div style={{fontWeight:700}}>{r.color_name||'—'}</div></div>
+              <div><div style={{color:'#9E9B96',fontSize:9,textTransform:'uppercase',fontWeight:600}}>LF</div><div style={{fontWeight:700}}>{r.linear_feet?n(r.linear_feet).toLocaleString()+' LF':'—'}</div></div>
+              <div><div style={{color:'#9E9B96',fontSize:9,textTransform:'uppercase',fontWeight:600}}>Proj. Start</div><div style={{fontWeight:700}}>{r.projected_start_date?new Date(r.projected_start_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</div></div>
+              {r.status==='acknowledged'&&<div style={{gridColumn:'1/-1',padding:'6px 10px',background:'#EFF6FF',borderRadius:6,color:'#1D4ED8',fontSize:11}}>👀 Max has seen your request and is processing it{r.max_notes?` — Note: "${r.max_notes}"`:''}</div>}
+              {(r.status==='ready'||r.status==='confirmed')&&<div style={{gridColumn:'1/-1',padding:'6px 10px',background:'#D1FAE5',borderRadius:6,color:'#065F46',fontSize:11,fontWeight:600}}>✅ Materials are ready{r.estimated_ship_date?` — Est. ship: ${new Date(r.estimated_ship_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`:''}</div>}
+            </div>
+          </div>;
+        });
+      })()}
     </div>}
-  </div>);
+
+    </div>);
 }
 
 /* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
