@@ -827,8 +827,21 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     return ()=>window.removeEventListener('keydown',onKey);
   },[onClose]);
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
+  const[reopening,setReopening]=useState(false);
+  const[showReopenPicker,setShowReopenPicker]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
+  const reopenJob=async(newStatus)=>{
+    setReopening(true);
+    try{
+      await sbPatch('jobs',job.id,{status:newStatus,updated_at:new Date().toISOString()});
+      logAct(job,'status_change','closed',newStatus,'Reopened by '+currentUserEmail);
+      if(onChange)onChange();
+      setShowReopenPicker(false);
+      setToast&&setToast('Job reopened → '+newStatus);
+    }catch(e){setSaveErr('Reopen failed: '+e.message);}
+    setReopening(false);
+  };
   const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:H,body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);fireNewProjectEmail(saved[0]);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
@@ -908,6 +921,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
             : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
           }
+          {!isNew&&job.status==='closed'&&canEdit&&<div style={{position:'relative'}}>
+            <button onClick={()=>setShowReopenPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#065F46',borderColor:'#065F46',fontWeight:700}}>
+              {reopening?'Reopening...':'🔓 Reopen Job'}
+            </button>
+            {showReopenPicker&&<div style={{position:'absolute',right:0,top:36,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,.12)',zIndex:200,padding:12,minWidth:200}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Reopen as...</div>
+              {['active_install','material_ready','in_production','production_queue','contract_review'].map(s=>(
+                <button key={s} onClick={()=>reopenJob(s)} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',background:'none',cursor:'pointer',fontSize:13,borderRadius:6,marginBottom:2}} onMouseEnter={e=>e.currentTarget.style.background='#F4F4F2'} onMouseLeave={e=>e.currentTarget.style.background='none'}>
+                  {{'active_install':'Active Install','material_ready':'Material Ready','in_production':'In Production','production_queue':'Production Queue','contract_review':'Contract Review'}[s]}
+                </button>
+              ))}
+            </div>}
+          </div>}
           {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
