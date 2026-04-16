@@ -30,7 +30,7 @@ const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim(
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H })).json();
-const sbPatch = async (t, id, b) => (await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: H, body: JSON.stringify(b) })).json();
+const sbPatch = async (t, id, b) => { const r = await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: {...H, Prefer: 'return=minimal'}, body: JSON.stringify(b) }); if (!r.ok && r.status !== 204) { const txt = await r.text(); throw new Error(`PATCH ${t} failed (${r.status}): ${txt}`); } return {}; };
 const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) })).json();
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
 // Auth — GoTrue REST helpers (Supabase Auth). Sessions are stored in localStorage
