@@ -7607,7 +7607,7 @@ function MaterialRequestsPage({jobs,refreshKey=0,onNav}){
       const dbItems=filled.map(r=>({request_id:req.id,size_design:r.size_design||null,item_type:r.item_type||null,mat_qty_each:n(r.mat_qty_each)||0,ship_date:r.ship_date||null,backorder:!!r.backorder,notes:r.notes||null}));
       await sbPost('material_request_items',dbItems);
       // Fire email alert (non-blocking)
-      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'material_request',jobNumber:form.job_number,jobName:form.job_name,requestedBy:form.requested_by,linearFeet:n(form.linear_feet),height:form.height_of_fence,style:form.material_style,color:form.color_name,projectedStartDate:form.projected_start_date,itemCount:filled.length,recipients:['max@fencecrete.com','carlos@fencecrete.com'],subject:`New Material Request — ${form.job_name} (${form.job_number})`})}).catch(e=>console.error('[MR email] failed:',e));
+      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'material_request',jobNumber:form.job_number,jobName:form.job_name,requestedBy:form.requested_by,linearFeet:n(form.linear_feet),height:form.height_of_fence,style:form.material_style,color:form.color_name,projectedStartDate:form.projected_start_date,itemCount:filled.length,recipients:['max@fencecrete.com','ccontreras@fencecrete.com'],subject:`New Material Request — ${form.job_name} (${form.job_number})`})}).catch(e=>console.error('[MR email] failed:',e));
       setToast({msg:`Material request submitted for ${form.job_name}`,ok:true});
       setForm(emptyForm());
       setItems(buildDefaultMRItems('',''));
