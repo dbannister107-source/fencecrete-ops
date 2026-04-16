@@ -693,6 +693,7 @@ function LineItemsEditor({job,onChange}){
       const pcLines=all.filter(x=>x.fence_type==='PC');
       // Also count gates (line items with description starting with "GATE:")
       const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
+      const firstPCLine=pcLines.find(x=>x.style)||pcLines[0];
       const summary={
         lf_precast:pcLines.filter(x=>n(x.line_number)===1).reduce((s,x)=>s+n(x.lf),0),
         lf_other:pcLines.filter(x=>n(x.line_number)>1).reduce((s,x)=>s+n(x.lf),0),
@@ -702,6 +703,8 @@ function LineItemsEditor({job,onChange}){
         total_lf_precast:all.filter(x=>x.is_produced).reduce((s,x)=>s+n(x.lf),0),
         total_lf_masonry:all.filter(x=>x.fence_type==='SW').reduce((s,x)=>s+n(x.lf),0),
         total_lf:all.reduce((s,x)=>s+n(x.lf),0),
+        ...(firstPCLine?.style?{style:firstPCLine.style}:{}),
+        ...(firstPCLine?.color?{color:firstPCLine.color}:{}),
       };
       // Auto-sync fence_addons (G/WI/C) to reflect the new summary data
       summary.fence_addons=syncFenceAddons({...job,...summary});
