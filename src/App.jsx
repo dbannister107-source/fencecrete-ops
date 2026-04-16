@@ -4731,7 +4731,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
       const horizonEnd = new Date(weekStart);
-      horizonEnd.setDate(weekStart.getDate() + 14);
+      horizonEnd.setDate(weekStart.getDate() + 5);
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
@@ -4853,7 +4853,7 @@ Generate the optimal 4-week production schedule following all rules.`;
         headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
         body: JSON.stringify({
           week_start: weekStart.toISOString().split('T')[0],
-          plan_horizon_weeks: 2,
+          plan_horizon_weeks: 1,
           status: 'active',
           agent_reasoning: reasoning,
           generated_by: 'Claude AI Agent'
@@ -4900,7 +4900,7 @@ Generate the optimal 4-week production schedule following all rules.`;
       }
 
       setAiScheduleView(true);
-      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 2-week schedule`, ok: true });
+      setToast({ msg: `✅ AI generated a ${schedule.length}-entry 5-day schedule`, ok: true });
     } catch(e) {
       console.error('[AI Schedule]', e);
       setAiError(e.message || 'Schedule generation failed');
@@ -5177,7 +5177,7 @@ Generate the optimal 4-week production schedule following all rules.`;
             🤖 AI Production Scheduler
           </div>
           <div style={{fontSize:11,color:'#625650',marginTop:2}}>
-            {aiSchedule ? `Last generated: ${aiSchedule.generatedAt?.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '2-week schedule based on install dates, capacity, style grouping'}
+            {aiSchedule ? `Last generated: ${aiSchedule.generatedAt?.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '5-day schedule based on install dates, capacity, style grouping'}
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
