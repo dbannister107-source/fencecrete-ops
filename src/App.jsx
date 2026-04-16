@@ -824,29 +824,45 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));setCOToast({msg:'CO submitted — notification sent',kind:'success'});}catch(e){console.error('CO error:',e);setCOToast({msg:'CO save failed: '+e.message,kind:'error'});}};
   const approveCO=async(c)=>{
     const today=new Date().toISOString().split('T')[0];
+    // Only Amiee can approve COs
+    const currentUser=auth?.user?.email||'';
+    const isAmiee=currentUser.toLowerCase().includes('amiee')||currentUser.toLowerCase().includes('contracts');
+    if(!isAmiee){setCOToast({msg:'Only Amiee can approve change orders',kind:'error'});return;}
     try{
-      await sbPatch('change_orders',c.id,{status:'Approved',approved_by:'David Bannister',date_approved:today});
+      await sbPatch('change_orders',c.id,{status:'approved',approved_by:currentUser,date_approved:today});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
       setCOList(fresh||[]);
-      const approvedSum=(fresh||[]).filter(x=>x.status==='Approved').reduce((s,x)=>s+n(x.amount),0);
-      const newAdj=n(job.contract_value)+approvedSum;
-      await sbPatch('jobs',job.id,{adj_contract_value:newAdj,change_orders:approvedSum});
-      set('adj_contract_value',newAdj);set('change_orders',approvedSum);
-      logAct(job,'field_update','co_approved',c.co_number||'—',`Approved $${n(c.amount)}`);
+      onRefresh && onRefresh();
+      logAct(job,'field_update','co_approved',c.co_number||'—',`Approved ${$(n(c.amount))}`);
       setCOToast({msg:`CO #${c.co_number||'—'} approved — contract updated`,kind:'success'});
     }catch(e){console.error('[CO approve] failed:',e);setCOToast({msg:'Approve failed: '+e.message,kind:'error'});}
   };
   const rejectCO=async(c)=>{
+    const currentUser=auth?.user?.email||'';
+    const isAmiee=currentUser.toLowerCase().includes('amiee')||currentUser.toLowerCase().includes('contracts');
+    if(!isAmiee){setCOToast({msg:'Only Amiee can reject change orders',kind:'error'});return;}
     try{
-      await sbPatch('change_orders',c.id,{status:'Rejected'});
+      await sbPatch('change_orders',c.id,{status:'rejected'});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
       setCOList(fresh||[]);
+      onRefresh && onRefresh();
       logAct(job,'field_update','co_rejected',c.co_number||'—','Rejected');
       setCOToast({msg:`CO #${c.co_number||'—'} rejected`,kind:'gray'});
     }catch(e){console.error('[CO reject] failed:',e);setCOToast({msg:'Reject failed: '+e.message,kind:'error'});}
   };
-  const approvedTotal=coList.filter(c=>c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
-  const coStatusC2={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#625650','#F4F4F2']};
+  const deleteCO=async(c)=>{
+    if(!window.confirm(`Delete CO #${c.co_number||'—'}? This cannot be undone.`))return;
+    try{
+      await fetch(`${SB}/rest/v1/change_orders?id=eq.${c.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+      const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
+      setCOList(fresh||[]);
+      onRefresh && onRefresh();
+      setCOToast({msg:'CO deleted',kind:'gray'});
+    }catch(e){setCOToast({msg:'Delete failed: '+e.message,kind:'error'});}
+  };
+  const approvedTotal=coList.filter(c=>c.status==='approved'||c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
+  const pendingTotal=coList.filter(c=>c.status==='pending'||c.status==='Pending').reduce((s,c)=>s+n(c.amount),0);
+  const coStatusC2={pending:['#B45309','#FEF3C7'],Pending:['#B45309','#FEF3C7'],approved:['#065F46','#D1FAE5'],Approved:['#065F46','#D1FAE5'],rejected:['#625650','#F4F4F2'],Rejected:['#625650','#F4F4F2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
     <div style={isMobile
@@ -1005,41 +1021,67 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       </div>
       {!isNew&&<div style={{padding:'12px 20px',borderTop:'1px solid #E5E3E0',flexShrink:0}}>
         <div style={{marginBottom:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>Change Orders</span><button onClick={()=>setShowCOForm(!showCOForm)} style={{...btnP,padding:'4px 12px',fontSize:11}}>+ Add CO</button></div>
-          {showCOForm&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:8,border:'1px solid #E5E3E0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:13}}>Change Orders</span>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              {pendingTotal>0&&<span style={{fontSize:10,color:'#B45309',fontWeight:600}}>{coList.filter(c=>c.status==='pending'||c.status==='Pending').length} pending</span>}
+              <button onClick={()=>setShowCOForm(!showCOForm)} style={{...btnP,padding:'4px 12px',fontSize:11}}>+ Add CO</button>
+            </div></div>
+
+          {coToast&&<div style={{marginBottom:8,padding:'6px 10px',borderRadius:6,fontSize:11,fontWeight:600,background:coToast.kind==='success'?'#D1FAE5':coToast.kind==='error'?'#FEE2E2':'#F4F4F2',color:coToast.kind==='success'?'#065F46':coToast.kind==='error'?'#991B1B':'#625650',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{coToast.msg}</span><button onClick={()=>setCOToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
+
+          {showCOForm&&<div style={{background:'#F9F8F6',borderRadius:10,padding:14,marginBottom:10,border:'1px solid #E5E3E0'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>New Change Order</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>CO Number</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Amount ($)</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Status</label><select value={coForm.status} onChange={e=>setCOForm(f=>({...f,status:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}>{['Pending','Approved','Rejected'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Approved By</label><input value={coForm.approved_by} onChange={e=>setCOForm(f=>({...f,approved_by:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
-              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Date Approved</label><input type="date" value={coForm.date_approved} onChange={e=>setCOForm(f=>({...f,date_approved:e.target.value}))} style={{...inputS,padding:'4px 8px',fontSize:11}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>CO Number *</label><input value={coForm.co_number} onChange={e=>setCOForm(f=>({...f,co_number:e.target.value}))} placeholder="e.g. CO-001" style={{...inputS,fontSize:12}}/></div>
+              <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Date Submitted</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,fontSize:12}}/></div>
+              <div style={{gridColumn:'1/-1'}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Amount ($) *</label><input type="number" value={coForm.amount} onChange={e=>setCOForm(f=>({...f,amount:e.target.value}))} placeholder="0.00" style={{...inputS,fontSize:13,fontWeight:700}}/></div>
             </div>
-            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Description</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
-            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inputS,padding:'4px 8px',fontSize:11,resize:'vertical'}}/></div>
-            <div style={{display:'flex',gap:6}}><button onClick={saveCO} style={{...btnP,padding:'4px 12px',fontSize:11}}>Save</button><button onClick={()=>setShowCOForm(false)} style={{...btnS,padding:'4px 12px',fontSize:11}}>Cancel</button></div>
+            <div style={{marginBottom:8}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Description *</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} placeholder="Describe the scope of this change order..." style={{...inputS,fontSize:12,resize:'vertical'}}/></div>
+            <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} placeholder="Internal notes..." style={{...inputS,fontSize:12,resize:'vertical'}}/></div>
+            <div style={{padding:'8px 10px',background:'#FEF3C7',borderRadius:6,fontSize:10,color:'#92400E',marginBottom:10}}>⚠️ CO will be submitted as <b>Pending</b>. Only Amiee can approve or reject.</div>
+            <div style={{display:'flex',gap:6}}><button onClick={saveCO} style={{...btnP,fontSize:12}}>Submit CO</button><button onClick={()=>setShowCOForm(false)} style={{...btnS,fontSize:12}}>Cancel</button></div>
           </div>}
-          {coToast&&<div style={{marginBottom:6,padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:600,background:coToast.kind==='success'?'#D1FAE5':coToast.kind==='error'?'#FEE2E2':'#F4F4F2',color:coToast.kind==='success'?'#065F46':coToast.kind==='error'?'#991B1B':'#625650',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{coToast.msg}</span><button onClick={()=>setCOToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button></div>}
-          {coList.length>0&&<div style={{fontSize:12}}>
-            {coList.map(c=>{const[sc2,sb2]=coStatusC2[c.status]||['#625650','#F4F4F2'];return<div key={c.id} style={{display:'flex',flexDirection:'column',gap:3,padding:'6px 0',borderBottom:'1px solid #F4F4F2',fontSize:11}}>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <span style={{fontWeight:600}}>{c.co_number||'—'}</span>
-                <span style={{color:'#9E9B96'}}>{fD(c.date_submitted||c.date)}</span>
-                <span style={{fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</span>
-                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#625650'}}>{c.description||''}</span>
-                <span style={pill(sc2,sb2)}>{c.status}</span>
-                {c.status==='Pending'&&<span style={{display:'flex',gap:4}}>
-                  <button onClick={()=>approveCO(c)} style={{background:'#065F46',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Approve</button>
-                  <button onClick={()=>rejectCO(c)} style={{background:'#625650',border:'none',borderRadius:4,padding:'3px 8px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>Reject</button>
-                </span>}
+
+          {coList.length===0&&!showCOForm&&<div style={{fontSize:11,color:'#9E9B96',padding:'8px 0'}}>No change orders yet</div>}
+          {coList.length>0&&<div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:8}}>
+            {coList.map(c=>{
+              const isApproved=c.status==='approved'||c.status==='Approved';
+              const isPending=c.status==='pending'||c.status==='Pending';
+              const isRejected=c.status==='rejected'||c.status==='Rejected';
+              const[sc2,sb2]=coStatusC2[c.status]||['#625650','#F4F4F2'];
+              return<div key={c.id} style={{border:'1px solid #E5E3E0',borderRadius:8,padding:10,background:isApproved?'#F0FDF4':isRejected?'#FEF2F2':'#FFFBEB',borderLeft:`3px solid ${isApproved?'#065F46':isRejected?'#DC2626':'#B45309'}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4,gap:8}}>
+                  <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    <span style={{fontWeight:800,fontSize:12}}>CO #{c.co_number||'—'}</span>
+                    <span style={pill(sc2,sb2)}>{c.status}</span>
+                    <span style={{fontFamily:'Inter',fontWeight:800,fontSize:13,color:isApproved?'#065F46':isRejected?'#991B1B':'#1A1A1A'}}>{$(c.amount)}</span>
+                  </div>
+                  <div style={{display:'flex',gap:4,flexShrink:0}}>
+                    {isPending&&<>
+                      <button onClick={()=>approveCO(c)} style={{background:'#065F46',border:'none',borderRadius:4,padding:'4px 10px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>✓ Approve</button>
+                      <button onClick={()=>rejectCO(c)} style={{background:'#DC2626',border:'none',borderRadius:4,padding:'4px 10px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>✗ Reject</button>
+                    </>}
+                    <button onClick={()=>deleteCO(c)} style={{background:'none',border:'1px solid #E5E3E0',borderRadius:4,padding:'4px 8px',color:'#625650',fontSize:10,cursor:'pointer'}}>Delete</button>
+                  </div>
+                </div>
+                {c.description&&<div style={{fontSize:11,color:'#1A1A1A',marginBottom:4}}>{c.description}</div>}
+                <div style={{display:'flex',gap:12,fontSize:10,color:'#625650',flexWrap:'wrap'}}>
+                  {c.date_submitted&&<span>Submitted: {fD(c.date_submitted)}</span>}
+                  {isApproved&&c.date_approved&&<span style={{color:'#065F46',fontWeight:600}}>✓ Approved: {fD(c.date_approved)}{c.approved_by?` by ${c.approved_by}`:''}</span>}
+                  {isRejected&&<span style={{color:'#DC2626',fontWeight:600}}>✗ Rejected</span>}
+                  {c.notes&&<span>Note: {c.notes}</span>}
+                </div>
+              </div>;
+            })}
+            <div style={{background:'#F9F8F6',borderRadius:8,padding:10,border:'1px solid #E5E3E0'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,fontSize:11}}>
+                <div><div style={{fontSize:9,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:2}}>Approved</div><div style={{fontWeight:800,color:'#065F46',fontSize:13}}>{$(approvedTotal)}</div></div>
+                <div><div style={{fontSize:9,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:2}}>Pending</div><div style={{fontWeight:800,color:'#B45309',fontSize:13}}>{$(pendingTotal)}</div></div>
+                <div><div style={{fontSize:9,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:2}}>Total COs</div><div style={{fontWeight:800,color:'#1A1A1A',fontSize:13}}>{coList.length}</div></div>
               </div>
-              {c.status==='Approved'&&(c.approved_by||c.date_approved)&&<div style={{fontSize:10,color:'#065F46',paddingLeft:4}}>
-                ✓ Approved {c.date_approved?`on ${fD(c.date_approved)}`:''} {c.approved_by?`by ${c.approved_by}`:''}
-              </div>}
-            </div>;})}
-            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11,fontWeight:700}}><span>Approved Total:</span><span style={{color:'#065F46'}}>{$(approvedTotal)}</span></div>
+              <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',fontSize:10,color:'#625650'}}>Only approved COs flow into Adjusted Contract Value</div>
+            </div>
           </div>}
-          {coList.length===0&&!showCOForm&&<div style={{fontSize:11,color:'#9E9B96'}}>No change orders</div>}
         </div>
         <button onClick={handleDup} style={{...btnS,fontSize:12}}>Duplicate Project</button>
       </div>}
