@@ -615,6 +615,7 @@ function useRealtime(setJobs) {
 
 /* ═══ LINE ITEMS EDITOR ═══ */
 const LINE_FENCE_TYPES=['PC','SW','WI','Wood','Other'];
+const LINE_HEIGHT_OPTIONS=["4'","5'","6'","7'","8'","9'","10'","Ranch - 2 Rail","Ranch - 3 Rail","Ranch - 4 Rail"];
 function LineItemsEditor({job,onChange}){
   const[lines,setLines]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -623,6 +624,22 @@ function LineItemsEditor({job,onChange}){
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
   const[confirmDel,setConfirmDel]=useState(null);
+  const[styleOpts,setStyleOpts]=useState(_STYLE_LIST);
+  const[colorOpts,setColorOpts]=useState(STANDARD_COLORS);
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const[jStyles,liStyles]=await Promise.all([
+          sbGet('jobs','select=style,color&limit=5000'),
+          sbGet('job_line_items','select=style,color&limit=5000')
+        ]);
+        const ss=new Set(_STYLE_LIST);const cs=new Set(STANDARD_COLORS);
+        [...(jStyles||[]),...(liStyles||[])].forEach(r=>{if(r.style&&typeof r.style==='string')ss.add(r.style.trim());if(r.color&&typeof r.color==='string')cs.add(r.color.trim());});
+        setStyleOpts([...ss].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
+        setColorOpts([...cs].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
+      }catch(e){}
+    })();
+  },[]);
   const loadLines=useCallback(async()=>{
     if(!job?.job_number){setLines([]);setLoading(false);return;}
     setLoading(true);
@@ -680,75 +697,88 @@ function LineItemsEditor({job,onChange}){
     }catch(e){setErr('Save failed: '+e.message);}
     setSaving(false);
   };
-  const th={textAlign:'left',padding:'6px 6px',fontSize:10,fontWeight:700,color:'#6B6056',textTransform:'uppercase',letterSpacing:0.3,borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'};
-  const td={padding:'4px 6px',fontSize:11,borderBottom:'1px solid #F4F4F2'};
-  const inp={...inputS,padding:'3px 6px',fontSize:11};
+  const fieldLabel={display:'block',fontSize:10,color:'#6B6056',marginBottom:4,textTransform:'uppercase',fontWeight:600,letterSpacing:0.3};
+  const inp={...inputS,padding:'6px 10px',fontSize:12};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-      <div style={{fontSize:11,color:'#6B6056',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Fence Line Items ({lines.length})</div>
-      <div style={{display:'flex',gap:6}}>
-        <button onClick={addLine} style={{...btnS,padding:'4px 10px',fontSize:11}}>+ Add Line</button>
-        <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:'4px 10px',fontSize:11,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
-      </div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+      <div style={{fontSize:12,color:'#6B6056',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Fence Line Items ({lines.length})</div>
+      <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:'6px 14px',fontSize:12,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
     </div>
-    <div style={{overflow:'auto',border:'1px solid #E5E3E0',borderRadius:8}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-        <thead><tr>
-          <th style={{...th,width:30}}>#</th>
-          <th style={{...th,width:70}}>Type</th>
-          <th style={{...th,width:70}}>LF</th>
-          <th style={{...th,width:60}}>Height</th>
-          <th style={th}>Style</th>
-          <th style={th}>Color</th>
-          <th style={{...th,width:70}}>Rate</th>
-          <th style={{...th,width:90}}>Line Value</th>
-          <th style={{...th,width:60}}>Produced</th>
-          <th style={th}>Description</th>
-          <th style={{...th,width:30}}></th>
-        </tr></thead>
-        <tbody>
-          {lines.map((l,idx)=><tr key={l.id||'new'+idx}>
-            <td style={td}><input type="number" value={l.line_number||''} onChange={e=>updateLine(idx,'line_number',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}><select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>{LINE_FENCE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></td>
-            <td style={td}><input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}><input value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}><input value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}>
-              <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%'}} title={isLegacyColor(l.color)?'Legacy color — contact admin to change':''}>
-                <option value="">—</option>
-                {colorOptionsFor(l.color).map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-              </select>
-              {isLegacyColor(l.color)&&<div style={{fontSize:9,color:'#B45309',fontStyle:'italic',marginTop:2}}>Legacy color — contact admin to change</div>}
-            </td>
-            <td style={td}><input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={{...td,fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(l.line_value)}</td>
-            <td style={{...td,textAlign:'center'}}><input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{accentColor:'#8B2020'}}/></td>
-            <td style={td}><input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} style={{...inp,width:'100%'}}/></td>
-            <td style={td}>{confirmDel===idx?<span style={{display:'flex',gap:2}}><button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:4,padding:'2px 5px',fontSize:9,cursor:'pointer'}}>✓</button><button onClick={()=>setConfirmDel(null)} style={{background:'#F4F4F2',color:'#6B6056',border:'none',borderRadius:4,padding:'2px 5px',fontSize:9,cursor:'pointer'}}>×</button></span>:<button onClick={()=>setConfirmDel(idx)} style={{background:'none',border:'none',color:'#DC2626',fontSize:14,cursor:'pointer',padding:0}}>×</button>}</td>
-          </tr>)}
-          {lines.length===0&&<tr><td colSpan={11} style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:11}}>No line items — click "+ Add Line" to create one</td></tr>}
-        </tbody>
-        {lines.length>0&&<tfoot>
-          <tr style={{background:'#F9F8F6',borderTop:'2px solid #E5E3E0'}}>
-            <td colSpan={2} style={{padding:'8px 6px',fontSize:10,fontWeight:800,color:'#6B6056',textTransform:'uppercase'}}>Totals</td>
-            <td colSpan={9} style={{padding:'8px 6px',fontSize:11}}>
-              <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 8px',borderRadius:4,fontWeight:700}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>
-                {totals.sw>0&&<span style={{background:'#F4F4F2',padding:'2px 8px',borderRadius:4}}>SW LF: {totals.sw.toLocaleString()}</span>}
-                {totals.wi>0&&<span style={{background:'#F4F4F2',padding:'2px 8px',borderRadius:4}}>WI LF: {totals.wi.toLocaleString()}</span>}
-                {totals.wood>0&&<span style={{background:'#F4F4F2',padding:'2px 8px',borderRadius:4}}>Wood LF: {totals.wood.toLocaleString()}</span>}
-                {totals.other>0&&<span style={{background:'#F4F4F2',padding:'2px 8px',borderRadius:4}}>Other LF: {totals.other.toLocaleString()}</span>}
-                <span style={{marginLeft:'auto',fontWeight:800}}>Total LF: {totals.total.toLocaleString()}</span>
-                <span style={{fontFamily:'Inter',fontWeight:800,color:'#8B2020'}}>Total Value: {$(totals.value)}</span>
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {lines.map((l,idx)=>{
+        const isPC=l.fence_type==='PC';
+        return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 2px rgba(0,0,0,0.04)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F9F8F6',padding:'8px 14px',borderBottom:'1px solid #E5E3E0'}}>
+            <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{l.line_number||idx+1}</span>
+            {confirmDel===idx
+              ? <span style={{display:'flex',gap:4,alignItems:'center'}}>
+                  <span style={{fontSize:11,color:'#991B1B',fontWeight:600}}>Delete?</span>
+                  <button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:4,padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>Yes</button>
+                  <button onClick={()=>setConfirmDel(null)} style={{background:'#F4F4F2',color:'#6B6056',border:'none',borderRadius:4,padding:'3px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>No</button>
+                </span>
+              : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:6,width:26,height:26,fontSize:14,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
+          </div>
+          <div style={{padding:'12px 14px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1.1fr 0.9fr 1fr 1.4fr 1.4fr 1fr 1.1fr auto',gap:10,alignItems:'end'}}>
+              <div><label style={fieldLabel}>Type</label>
+                <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
+                  {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
+                </select>
               </div>
-            </td>
-          </tr>
-        </tfoot>}
-      </table>
+              <div><label style={fieldLabel}>LF</label>
+                <input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder="0" style={{...inp,width:'100%'}}/>
+              </div>
+              <div><label style={fieldLabel}>Height</label>
+                <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
+                  <option value="">—</option>
+                  {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
+                  {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
+                </select>
+              </div>
+              <div><label style={fieldLabel}>Style</label>
+                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%'}}>
+                  <option value="">—</option>
+                  {styleOpts.map(s=><option key={s} value={s}>{STYLE_LABEL(s)}</option>)}
+                  {l.style&&!styleOpts.includes(l.style)&&<option value={l.style}>{STYLE_LABEL(l.style)}</option>}
+                </select>
+              </div>
+              <div><label style={fieldLabel}>Color</label>
+                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%'}}>
+                  <option value="">—</option>
+                  {colorOpts.map(c=><option key={c} value={c}>{c}</option>)}
+                  {l.color&&!colorOpts.includes(l.color)&&<option value={l.color}>{l.color}</option>}
+                </select>
+              </div>
+              <div><label style={fieldLabel}>Rate ($/LF)</label>
+                <input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
+              </div>
+              <div><label style={fieldLabel}>Line Value</label>
+                <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right'}}>{$(l.line_value)}</div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:60}}>
+                <label style={{...fieldLabel,textAlign:'center'}}>Produced</label>
+                <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} disabled={!isPC} title={isPC?'':'Only applies to PC lines'} style={{width:18,height:18,accentColor:'#8B2020',opacity:isPC?1:0.4,marginTop:6}}/>
+              </div>
+            </div>
+            <div style={{marginTop:10}}>
+              <label style={fieldLabel}>Description</label>
+              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder="Optional notes for this line" style={{...inp,width:'100%'}}/>
+            </div>
+          </div>
+        </div>;
+      })}
+      {lines.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:12,border:'1px dashed #E5E3E0',borderRadius:10,background:'#F9F8F6'}}>No line items — click "+ Add Line" to create one</div>}
     </div>
+    <button onClick={addLine} style={{width:'100%',padding:'10px',marginTop:10,border:'1px dashed #8B2020',background:'#FDF4F4',color:'#8B2020',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
+    {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
+      <span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>
+      <span style={{marginLeft:'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Total LF: {totals.total.toLocaleString()}</span>
+      <span style={{fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8B2020'}}>Total Value: {$(totals.value)}</span>
+    </div>}
     {dirty&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontStyle:'italic'}}>⚠ Unsaved changes — click "Save Lines" to commit</div>}
   </div>;
 }
