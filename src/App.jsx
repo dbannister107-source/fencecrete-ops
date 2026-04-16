@@ -2186,8 +2186,8 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
 function BillingPage({jobs,onRefresh,onNav}){
   const isMobile = useIsMobile();
   const[bilQuickView,setBilQuickView]=useState(null);
-  const[bilAdminPin,setBilAdminPin]=useState(null);const[bilPin,setBilPin]=useState('');const[bilPinErr,setBilPinErr]=useState(false);
-  const bilAdminReset=async(sub)=>{try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});try{await sbPost('activity_log',{job_id:sub.job_id,job_number:sub.job_number,job_name:sub.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}setBilAdminPin(null);setBilPin('');setArDetail(null);fetchArSubs();setToast('Submission reset by admin');}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
+  
+  const 
   const[bilRemindSending,setBilRemindSending]=useState(false);
   const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
@@ -2606,15 +2606,7 @@ function BillingPage({jobs,onRefresh,onNav}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setUndoJob(null)} style={btnS}>Cancel</button><button onClick={confirmUndo} style={{...btnP,background:'#991B1B'}}>Confirm Undo</button></div>
       </div>
     </div>}
-    {bilAdminPin&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}}>
-      <div style={{background:'#FFF',borderRadius:16,padding:28,width:380,boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:6,color:'#1A1A1A'}}>Admin Override Required</div>
-        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:16}}>This submission for <b>{bilAdminPin.job_name}</b> has been reviewed by AR. Enter admin PIN to reset.</div>
-        <input autoFocus type="password" inputMode="numeric" maxLength={4} value={bilPin} onChange={e=>{setBilPin(e.target.value.replace(/\D/g,'').slice(0,4));setBilPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${bilPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
-        {bilPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setBilAdminPin(null);setBilPin('');setBilPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(bilPin==='2020')bilAdminReset(bilAdminPin);else setBilPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
-      </div>
-    </div>}
+
   </div>);
 }
 
