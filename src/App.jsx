@@ -7857,7 +7857,7 @@ const MR_STATUS_STYLE={
   fulfilled:{bg:'#F4F4F2',color:'#625650',label:'📦 Fulfilled'},
   cancelled:{bg:'#FEE2E2',color:'#991B1B',label:'❌ Cancelled'},
 };
-function MaterialRequestsPage({jobs,refreshKey=0}){
+function MaterialRequestsPage({jobs,refreshKey=0,onNav}){
   const v=useViewport();
   const todayISO=new Date().toISOString().split('T')[0];
   const[tab,setTab]=useState('new');
@@ -8169,6 +8169,7 @@ function MaterialRequestsPage({jobs,refreshKey=0}){
         {/* Submit */}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
           <button onClick={()=>{setForm(emptyForm());setItems(buildDefaultMRItems('',''));setJobSearch('');setSaveErr(null);}} style={btnS}>Clear Form</button>
+          <button onClick={()=>{setForm(emptyForm());setItems(buildDefaultMRItems('',''));setJobSearch('');setSaveErr(null);if(onNav)onNav('projects');}} style={{...btnS,color:'#991B1B',borderColor:'#FECACA',marginLeft:4}}>✕ Cancel</button>
           <button onClick={submit} disabled={saving} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:saving?0.5:1}}>{saving?'Submitting...':'Submit Request'}</button>
         </div>
       </div>
@@ -10021,7 +10022,7 @@ function AppShell(){
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
-            {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey}/>}
+            {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey} onNav={setPage}/>}
             {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
