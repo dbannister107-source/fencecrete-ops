@@ -8511,8 +8511,8 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   const[loading,setLoading]=useState(true);
   const[importing,setImporting]=useState(false);
   const importInputRef=useRef(null);
-  const[repF,setRepF]=useState(null);
-  const[mktF,setMktF]=useState(null);
+  const[repF,setRepF]=useState(new Set());
+  const[mktF,setMktF]=useState(new Set());
   const[search,setSearch]=useState('');
   const[showNewForm,setShowNewForm]=useState(false);
   const[dragLead,setDragLead]=useState(null);
@@ -8539,11 +8539,11 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   },[jobs]);
   const filtered=useMemo(()=>{
     let f=leads;
-    if(repF)f=f.filter(l=>l.sales_rep===repF);
-    if(mktF)f=f.filter(l=>l.market===mktF);
+    if(repF.size>0)f=f.filter(l=>repF.has(l.sales_rep));
+    if(mktF.size>0)f=f.filter(l=>mktF.has(l.market));
     if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
     return f;
-  },[leads,repF,mktF,search]);
+  },[leads,repF.size,mktF.size,search]);
   const byStage=useMemo(()=>{
     const m={};LEAD_STAGES.forEach(s=>m[s.key]=[]);
     filtered.forEach(l=>{if(m[l.stage])m[l.stage].push(l);});
@@ -8667,11 +8667,11 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
-      <button onClick={()=>setRepF(null)} style={fpill(!repF)}>All</button>
-      {REPS.map(r=><button key={r} onClick={()=>setRepF(r)} style={fpill(repF===r)}>{r}</button>)}
+      <button onClick={()=>setRepF(new Set())} style={fpill(repF.size===0)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setRepF(prev=>{const s=new Set(prev);s.has(r)?s.delete(r):s.add(r);return s;})} style={fpill(repF.has(r))}>{r}</button>)}
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
-      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+      <button onClick={()=>setMktF(new Set())} style={fpill(mktF.size===0)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
     </div>
     {loading?<SkeletonKanban cols={5} cards={3}/>:
     isMobile?<MobileKanban
@@ -9043,8 +9043,8 @@ function ProposalsPage({jobs}){
   const isMobile = useIsMobile();
   const[leads,setLeads]=useState([]);
   const[loading,setLoading]=useState(true);
-  const[repF,setRepF]=useState(null);
-  const[mktF,setMktF]=useState(null);
+  const[repF,setRepF]=useState(new Set());
+  const[mktF,setMktF]=useState(new Set());
   const[search,setSearch]=useState('');
   const[detail,setDetail]=useState(null);
   const[sortKey,setSortKey]=useState('follow_up_date');
@@ -9055,11 +9055,11 @@ function ProposalsPage({jobs}){
   const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
   const filtered=useMemo(()=>{
     let f=leads;
-    if(repF)f=f.filter(l=>l.sales_rep===repF);
-    if(mktF)f=f.filter(l=>l.market===mktF);
+    if(repF.size>0)f=f.filter(l=>repF.has(l.sales_rep));
+    if(mktF.size>0)f=f.filter(l=>mktF.has(l.market));
     if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
     return f;
-  },[leads,repF,mktF,search]);
+  },[leads,repF.size,mktF.size,search]);
   const sorted=useMemo(()=>{
     const arr=[...filtered];
     const dir=sortDir==='asc'?1:-1;
@@ -9121,11 +9121,11 @@ function ProposalsPage({jobs}){
     <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
-      <button onClick={()=>setRepF(null)} style={fpill(!repF)}>All</button>
-      {REPS.map(r=><button key={r} onClick={()=>setRepF(r)} style={fpill(repF===r)}>{r}</button>)}
+      <button onClick={()=>setRepF(new Set())} style={fpill(repF.size===0)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setRepF(prev=>{const s=new Set(prev);s.has(r)?s.delete(r):s.add(r);return s;})} style={fpill(repF.has(r))}>{r}</button>)}
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
-      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+      <button onClick={()=>setMktF(new Set())} style={fpill(mktF.size===0)}>All</button>
+      {MKTS.map(m=><button key={m} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
     </div>
     {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={12}/></div>:
     sorted.length===0?<div style={{...card}}><EmptyState icon="📋" title="No open proposals" subtitle="Proposals will appear here once leads move into the Proposal Sent stage in the Pipeline."/></div>:
