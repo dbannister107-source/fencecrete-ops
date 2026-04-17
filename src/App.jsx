@@ -10656,11 +10656,6 @@ function SalesDashboardPage({jobs,onNav}){
   const closedLeads=[...wonLeads,...lostLeads];
   const winRateAllTime=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
   const totalWonValue=wonLeads.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
-  const avgDaysToClose=wonLeads.length?Math.round(wonLeads.reduce((s,l)=>{
-    const created=new Date(l.created_at||l.stage_entered_at);
-    const won=new Date(l.won_date||l.updated_at);
-    return s+Math.max(0,Math.floor((won-created)/86400000));
-  },0)/wonLeads.length):0;
   const repStats=REPS.map(rep=>{
     const repWon=wonLeads.filter(l=>l.sales_rep===rep);
     const repLost=lostLeads.filter(l=>l.sales_rep===rep);
