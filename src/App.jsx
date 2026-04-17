@@ -9039,6 +9039,410 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
   </div>;
 }
 
+/* ═══ PROSPECTING PAGE ═══ */
+function ProspectingPage({jobs}){
+  const isMobile=useIsMobile();
+  const auth=useAuth();
+  const[companies,setCompanies]=useState([]);
+  const[contacts,setContacts]=useState([]);
+  const[activities,setActivities]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[toast,setToast]=useState(null);
+  const[tierF,setTierF]=useState(new Set());
+  const[repF,setRepF]=useState(new Set());
+  const[relF,setRelF]=useState(new Set());
+  const[statusF,setStatusF]=useState(new Set());
+  const[search,setSearch]=useState('');
+  const[detail,setDetail]=useState(null); // selected company
+  const[showForm,setShowForm]=useState(false);
+  const[editCo,setEditCo]=useState(null);
+  const[aiDrafting,setAiDrafting]=useState(false);
+  const[aiDraft,setAiDraft]=useState(null);
+  const[form,setForm]=useState({company_name:'',company_type:'homebuilder',tier:'A',website:'',hq_city:'',markets_active:[],active_communities:[],known_fence_spend:'unknown',fencecrete_relationship:'prospect',relationship_notes:'',assigned_rep:'Matt',status:'new',next_action:'',next_action_date:'',source:'research'});
+  const[newContact,setNewContact]=useState({name:'',title:'',email:'',phone:'',linkedin_url:'',is_primary:false,contact_notes:''});
+  const[showContactForm,setShowContactForm]=useState(false);
+  const[newActivity,setNewActivity]=useState({activity_type:'note',subject:'',body:'',outcome:''});
+  const[showActivityForm,setShowActivityForm]=useState(false);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const[cos,cons,acts]=await Promise.all([
+        sbGet('prospect_companies','select=*&order=tier.asc,next_action_date.asc'),
+        sbGet('prospect_contacts','select=*'),
+        sbGet('prospect_activities','select=*&order=activity_date.desc&limit=200'),
+      ]);
+      setCompanies(cos||[]);setContacts(cons||[]);setActivities(acts||[]);
+    }catch(e){setToast({msg:'Failed to load prospects',ok:false});}
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+
+  const filtered=useMemo(()=>{
+    let f=[...companies];
+    if(tierF.size>0)f=f.filter(c=>tierF.has(c.tier));
+    if(repF.size>0)f=f.filter(c=>repF.has(c.assigned_rep));
+    if(relF.size>0)f=f.filter(c=>relF.has(c.fencecrete_relationship));
+    if(statusF.size>0)f=f.filter(c=>statusF.has(c.status));
+    if(search){const q=search.toLowerCase();f=f.filter(c=>(c.company_name||'').toLowerCase().includes(q)||(c.relationship_notes||'').toLowerCase().includes(q)||(c.next_action||'').toLowerCase().includes(q));}
+    return f;
+  },[companies,tierF.size,repF.size,relF.size,statusF.size,search]);
+
+  // Stats
+  const stats=useMemo(()=>({
+    total:companies.length,
+    prospects:companies.filter(c=>c.fencecrete_relationship==='prospect').length,
+    active:companies.filter(c=>c.fencecrete_relationship==='active_customer').length,
+    tierA:companies.filter(c=>c.tier==='A').length,
+    overdue:companies.filter(c=>c.next_action_date&&new Date(c.next_action_date)<new Date()).length,
+  }),[companies]);
+
+  const TIERS=['A','B','C'];
+  const RELS=['prospect','past_customer','active_customer'];
+  const STATUSES=['new','researching','contacted','meeting_set','proposal','won','lost','nurture'];
+  const STATUS_COLOR={new:'#6B7280',researching:'#2563EB',contacted:'#D97706',meeting_set:'#7C3AED',proposal:'#059669',won:'#065F46',lost:'#DC2626',nurture:'#9333EA'};
+  const REL_COLOR={prospect:'#2563EB',past_customer:'#D97706',active_customer:'#065F46'};
+  const TIER_COLOR={'A':'#8A261D','B':'#1D4ED8','C':'#6B7280'};
+
+  const pill=(active,color='#8A261D')=>({padding:'5px 12px',borderRadius:20,border:`1px solid ${active?color:'#E5E3E0'}`,background:active?color:'transparent',color:active?'#FFF':'#625650',fontSize:12,fontWeight:active?700:400,cursor:'pointer',transition:'all .15s'});
+  const btnP={padding:'8px 16px',background:'#8A261D',color:'#FFF',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13};
+  const inputS={width:'100%',padding:'8px 10px',border:'1px solid #D1CEC9',borderRadius:6,fontSize:13,background:'#FFF',boxSizing:'border-box'};
+  const card={background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16};
+
+  const openForm=(co=null)=>{
+    setEditCo(co);
+    if(co){setForm({...co,markets_active:co.markets_active||[],active_communities:co.active_communities||[]});}
+    else{setForm({company_name:'',company_type:'homebuilder',tier:'A',website:'',hq_city:'',markets_active:[],active_communities:[],known_fence_spend:'unknown',fencecrete_relationship:'prospect',relationship_notes:'',assigned_rep:'Matt',status:'new',next_action:'',next_action_date:'',source:'research'});}
+    setShowForm(true);
+  };
+
+  const saveCo=async()=>{
+    try{
+      if(editCo){
+        await sbPatch('prospect_companies',editCo.id,{...form,updated_at:new Date().toISOString()});
+        setToast({msg:'Company updated',ok:true});
+      }else{
+        await fetch(`${SB}/rest/v1/prospect_companies`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify(form)});
+        setToast({msg:'Company added',ok:true});
+      }
+      setShowForm(false);load();
+    }catch(e){setToast({msg:'Save failed: '+e.message,ok:false});}
+  };
+
+  const saveContact=async()=>{
+    if(!detail)return;
+    try{
+      await fetch(`${SB}/rest/v1/prospect_contacts`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({...newContact,company_id:detail.id})});
+      setToast({msg:'Contact added',ok:true});setShowContactForm(false);
+      setNewContact({name:'',title:'',email:'',phone:'',linkedin_url:'',is_primary:false,contact_notes:''});
+      load();
+    }catch(e){setToast({msg:'Failed',ok:false});}
+  };
+
+  const logActivity=async()=>{
+    if(!detail)return;
+    try{
+      await fetch(`${SB}/rest/v1/prospect_activities`,{method:'POST',headers:{...H,Prefer:'return=minimal'},
+        body:JSON.stringify({...newActivity,company_id:detail.id,created_by:auth?.user?.email,activity_date:new Date().toISOString()})});
+      // Update last_activity_at on company
+      await sbPatch('prospect_companies',detail.id,{last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+      setToast({msg:'Activity logged',ok:true});setShowActivityForm(false);
+      setNewActivity({activity_type:'note',subject:'',body:'',outcome:''});
+      load();
+    }catch(e){setToast({msg:'Failed',ok:false});}
+  };
+
+  const generateAIOutreach=async(co)=>{
+    setAiDrafting(true);setAiDraft(null);
+    try{
+      const coContacts=contacts.filter(c=>c.company_id===co.id);
+      const coActivities=activities.filter(a=>a.company_id===co.id).slice(0,5);
+      const resp=await fetch(`${SB}/functions/v1/prospect-outreach`,{
+        method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({company:co,contacts:coContacts,recentActivities:coActivities,
+          existingCustomer:co.fencecrete_relationship==='active_customer'})
+      });
+      const data=await resp.json();
+      if(data.subject&&data.body){setAiDraft(data);}
+      else{setToast({msg:'AI draft failed: '+(data.error||'Unknown error'),ok:false});}
+    }catch(e){setToast({msg:'AI draft failed: '+e.message,ok:false});}
+    setAiDrafting(false);
+  };
+
+  const coContacts=(co)=>contacts.filter(c=>c.company_id===co?.id);
+  const coActivities=(co)=>activities.filter(a=>a.company_id===co?.id).slice(0,10);
+
+  if(loading)return <SkeletonRows rows={8} cols={5}/>;
+
+  return <div>
+    {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
+
+    {/* Header */}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:12}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>SA Prospecting</h1>
+        <div style={{fontSize:12,color:'#9E9B96',marginTop:4}}>Master-Plan Community Developers &amp; Homebuilders</div>
+      </div>
+      <button onClick={()=>openForm()} style={btnP}>+ Add Target</button>
+    </div>
+
+    {/* KPI Strip */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:20}}>
+      {[['Targets',stats.total,'#1A1A1A'],['Prospects',stats.prospects,'#2563EB'],['Active Customers',stats.active,'#065F46'],['Tier A',stats.tierA,'#8A261D'],['Action Overdue',stats.overdue,'#DC2626']].map(([l,v,c])=>
+        <div key={l} style={{...card,textAlign:'center',padding:'12px 8px'}}>
+          <div style={{fontSize:28,fontWeight:900,color:c}}>{v}</div>
+          <div style={{fontSize:11,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>{l}</div>
+        </div>
+      )}
+    </div>
+
+    {/* Filters */}
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16,alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search companies, notes..." style={{...inputS,width:220,marginRight:8}}/>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:700}}>TIER:</span>
+      <button onClick={()=>setTierF(new Set())} style={pill(tierF.size===0)}>All</button>
+      {TIERS.map(t=><button key={t} onClick={()=>setTierF(p=>{const s=new Set(p);s.has(t)?s.delete(t):s.add(t);return s;})} style={pill(tierF.has(t),TIER_COLOR[t])}>Tier {t}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:700,marginLeft:8}}>REP:</span>
+      <button onClick={()=>setRepF(new Set())} style={pill(repF.size===0)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setRepF(p=>{const s=new Set(p);s.has(r)?s.delete(r):s.add(r);return s;})} style={pill(repF.has(r))}>{r}</button>)}
+    </div>
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:20,alignItems:'center'}}>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:700}}>RELATIONSHIP:</span>
+      <button onClick={()=>setRelF(new Set())} style={pill(relF.size===0)}>All</button>
+      {RELS.map(r=><button key={r} onClick={()=>setRelF(p=>{const s=new Set(p);s.has(r)?s.delete(r):s.add(r);return s;})} style={pill(relF.has(r),REL_COLOR[r])}>{r.replace('_',' ')}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:700,marginLeft:8}}>STATUS:</span>
+      {['new','contacted','meeting_set','proposal'].map(s=><button key={s} onClick={()=>setStatusF(p=>{const ss=new Set(p);ss.has(s)?ss.delete(s):ss.add(s);return ss;})} style={pill(statusF.has(s),STATUS_COLOR[s])}>{s.replace('_',' ')}</button>)}
+    </div>
+
+    {/* Company List */}
+    <div style={{...card,padding:0,overflow:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead>
+          <tr style={{background:'#1A1A1A',color:'#FFF'}}>
+            {['','Company','Type','Relationship','Status','Rep','Next Action','Due'].map(h=>
+              <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'}}>{h}</th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((co,i)=>{
+            const isOverdue=co.next_action_date&&new Date(co.next_action_date)<new Date();
+            return <tr key={co.id} onClick={()=>setDetail(co)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:i%2===0?'#FFF':'#FAFAF8'}}
+              onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'}
+              onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
+              <td style={{padding:'10px 12px',width:32}}>
+                <span style={{display:'inline-block',background:TIER_COLOR[co.tier]||'#6B7280',color:'#FFF',borderRadius:4,padding:'2px 6px',fontSize:10,fontWeight:700}}>{co.tier}</span>
+              </td>
+              <td style={{padding:'10px 12px',fontWeight:700,maxWidth:200}}>
+                <div>{co.company_name}</div>
+                <div style={{fontSize:11,color:'#9E9B96',fontWeight:400}}>{co.hq_city}</div>
+              </td>
+              <td style={{padding:'10px 12px',color:'#625650'}}>{(co.company_type||'').replace('_',' ')}</td>
+              <td style={{padding:'10px 12px'}}>
+                <span style={{background:REL_COLOR[co.fencecrete_relationship]+'20',color:REL_COLOR[co.fencecrete_relationship]||'#6B7280',borderRadius:12,padding:'2px 8px',fontSize:11,fontWeight:600}}>
+                  {(co.fencecrete_relationship||'').replace(/_/g,' ')}
+                </span>
+              </td>
+              <td style={{padding:'10px 12px'}}>
+                <span style={{background:STATUS_COLOR[co.status]+'20',color:STATUS_COLOR[co.status]||'#6B7280',borderRadius:12,padding:'2px 8px',fontSize:11,fontWeight:600}}>
+                  {(co.status||'new').replace('_',' ')}
+                </span>
+              </td>
+              <td style={{padding:'10px 12px',color:'#625650'}}>{co.assigned_rep||'—'}</td>
+              <td style={{padding:'10px 12px',maxWidth:260,fontSize:12,color:'#625650'}}>{co.next_action||'—'}</td>
+              <td style={{padding:'10px 12px',fontSize:12,color:isOverdue?'#DC2626':'#625650',fontWeight:isOverdue?700:400,whiteSpace:'nowrap'}}>
+                {co.next_action_date?new Date(co.next_action_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}
+                {isOverdue&&<span style={{marginLeft:4}}>⚠</span>}
+              </td>
+            </tr>;
+          })}
+          {filtered.length===0&&<tr><td colSpan={8} style={{padding:'60px 20px',textAlign:'center',color:'#9E9B96'}}>
+            <div style={{fontSize:32,marginBottom:8}}>🎯</div>
+            <div style={{fontFamily:'Syne',fontWeight:700,fontSize:16}}>No targets found</div>
+            <div style={{fontSize:13,marginTop:4}}>Adjust filters or add a new target</div>
+          </td></tr>}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Detail Panel */}
+    {detail&&<div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(Math.max(window.innerWidth*0.55,600),window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
+      {/* Detail Header */}
+      <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',background:'#F9F8F6',display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexShrink:0}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+            <span style={{background:TIER_COLOR[detail.tier]||'#6B7280',color:'#FFF',borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700}}>TIER {detail.tier}</span>
+            <span style={{background:REL_COLOR[detail.fencecrete_relationship]+'20',color:REL_COLOR[detail.fencecrete_relationship],borderRadius:12,padding:'2px 8px',fontSize:11,fontWeight:600}}>{(detail.fencecrete_relationship||'').replace(/_/g,' ')}</span>
+            <span style={{background:STATUS_COLOR[detail.status]+'20',color:STATUS_COLOR[detail.status],borderRadius:12,padding:'2px 8px',fontSize:11,fontWeight:600}}>{(detail.status||'').replace('_',' ')}</span>
+          </div>
+          <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,margin:0}}>{detail.company_name}</h2>
+          <div style={{fontSize:12,color:'#9E9B96',marginTop:2}}>{detail.hq_city}{detail.website&&<> · <a href={'https://'+detail.website} target="_blank" rel="noreferrer" style={{color:'#8A261D'}}>{detail.website}</a></>}</div>
+        </div>
+        <div style={{display:'flex',gap:8,flexShrink:0}}>
+          <button onClick={()=>openForm(detail)} style={{...btnP,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #D1CEC9'}}>Edit</button>
+          <button onClick={()=>setDetail(null)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9'}}>✕</button>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflow:'auto',padding:20}}>
+        {/* Intel & Next Action */}
+        <div style={{...card,marginBottom:16,borderLeft:'4px solid #8A261D'}}>
+          <div style={{fontSize:11,color:'#8A261D',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Intelligence</div>
+          <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.6}}>{detail.relationship_notes||'No notes yet.'}</div>
+          {(detail.active_communities||[]).length>0&&<div style={{marginTop:10,display:'flex',gap:6,flexWrap:'wrap'}}>
+            {(detail.active_communities||[]).map((c,i)=><span key={i} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,padding:'2px 8px',fontSize:11,color:'#625650'}}>{c}</span>)}
+          </div>}
+        </div>
+
+        {/* Next Action */}
+        {detail.next_action&&<div style={{...card,marginBottom:16,background:'#FFF9F0',borderLeft:'4px solid #D97706'}}>
+          <div style={{fontSize:11,color:'#D97706',fontWeight:700,textTransform:'uppercase',marginBottom:4}}>Next Action</div>
+          <div style={{fontSize:13,fontWeight:600}}>{detail.next_action}</div>
+          {detail.next_action_date&&<div style={{fontSize:12,color:new Date(detail.next_action_date+'T12:00:00')<new Date()?'#DC2626':'#625650',marginTop:4}}>
+            Due: {new Date(detail.next_action_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}
+            {new Date(detail.next_action_date+'T12:00:00')<new Date()&&' ⚠ OVERDUE'}
+          </div>}
+        </div>}
+
+        {/* AI Outreach */}
+        <div style={{...card,marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700}}>🤖 AI Outreach Draft</div>
+            <button onClick={()=>generateAIOutreach(detail)} disabled={aiDrafting} style={{...btnP,fontSize:12,padding:'6px 14px',opacity:aiDrafting?0.6:1}}>
+              {aiDrafting?'Drafting…':'Generate Email'}
+            </button>
+          </div>
+          {aiDraft&&<div>
+            <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:4}}>SUBJECT</div>
+            <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,padding:'8px 12px',fontSize:13,marginBottom:10,fontWeight:600}}>{aiDraft.subject}</div>
+            <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:4}}>BODY</div>
+            <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,padding:'12px',fontSize:13,lineHeight:1.7,whiteSpace:'pre-wrap',marginBottom:10}}>{aiDraft.body}</div>
+            {aiDraft.reasoning&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic'}}>Why this angle: {aiDraft.reasoning}</div>}
+            <div style={{display:'flex',gap:8,marginTop:10}}>
+              <button onClick={()=>{navigator.clipboard.writeText(`Subject: ${aiDraft.subject}\n\n${aiDraft.body}`);setToast({msg:'Copied to clipboard',ok:true});}} style={{...btnP,fontSize:12,padding:'6px 14px'}}>Copy</button>
+              <button onClick={()=>{setNewActivity({activity_type:'email',subject:aiDraft.subject,body:aiDraft.body,outcome:''});setShowActivityForm(true);}} style={{...btnP,background:'#065F46',fontSize:12,padding:'6px 14px'}}>Log as Sent</button>
+              <button onClick={()=>setAiDraft(null)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9',fontSize:12,padding:'6px 14px'}}>Dismiss</button>
+            </div>
+          </div>}
+          {!aiDraft&&!aiDrafting&&<div style={{fontSize:12,color:'#9E9B96',textAlign:'center',padding:'8px 0'}}>Click Generate to create a personalized outreach email using company intelligence</div>}
+        </div>
+
+        {/* Contacts */}
+        <div style={{...card,marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:700}}>Contacts ({coContacts(detail).length})</div>
+            <button onClick={()=>setShowContactForm(true)} style={{...btnP,fontSize:11,padding:'4px 10px'}}>+ Add</button>
+          </div>
+          {coContacts(detail).map(c=><div key={c.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2'}}>
+            <div style={{fontWeight:600,fontSize:13}}>{c.name}{c.is_primary&&<span style={{marginLeft:6,background:'#8A261D20',color:'#8A261D',borderRadius:10,padding:'1px 6px',fontSize:10,fontWeight:700}}>PRIMARY</span>}</div>
+            <div style={{fontSize:12,color:'#625650'}}>{c.title}</div>
+            {c.email&&<div style={{fontSize:12}}><a href={`mailto:${c.email}`} style={{color:'#8A261D'}}>{c.email}</a></div>}
+            {c.phone&&<div style={{fontSize:12,color:'#625650'}}>{c.phone}</div>}
+            {c.contact_notes&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2,fontStyle:'italic'}}>{c.contact_notes}</div>}
+          </div>)}
+          {coContacts(detail).length===0&&<div style={{fontSize:12,color:'#9E9B96'}}>No contacts yet — add a key contact to enable AI outreach</div>}
+          {showContactForm&&<div style={{marginTop:12,padding:12,background:'#F9F8F6',borderRadius:8}}>
+            <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>New Contact</div>
+            {[['Name','name'],['Title','title'],['Email','email'],['Phone','phone'],['LinkedIn URL','linkedin_url']].map(([l,k])=>
+              <div key={k} style={{marginBottom:8}}>
+                <label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3}}>{l}</label>
+                <input value={newContact[k]} onChange={e=>setNewContact(p=>({...p,[k]:e.target.value}))} style={inputS}/>
+              </div>
+            )}
+            <textarea value={newContact.contact_notes} onChange={e=>setNewContact(p=>({...p,contact_notes:e.target.value}))} placeholder="Notes about this contact..." rows={2} style={{...inputS,marginBottom:8}}/>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={saveContact} style={{...btnP,fontSize:12}}>Save Contact</button>
+              <button onClick={()=>setShowContactForm(false)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9',fontSize:12}}>Cancel</button>
+            </div>
+          </div>}
+        </div>
+
+        {/* Activity Log */}
+        <div style={{...card,marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:700}}>Activity Log ({coActivities(detail).length})</div>
+            <button onClick={()=>setShowActivityForm(true)} style={{...btnP,fontSize:11,padding:'4px 10px'}}>+ Log</button>
+          </div>
+          {coActivities(detail).map(a=>{
+            const ACT_ICON={email:'📧',call:'📞',meeting:'🤝',proposal:'📄',note:'📝',ai_draft:'🤖'};
+            return <div key={a.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2'}}>
+              <div style={{display:'flex',gap:8,alignItems:'baseline'}}>
+                <span>{ACT_ICON[a.activity_type]||'📝'}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600}}>{a.subject||a.activity_type}</div>
+                  {a.body&&<div style={{fontSize:12,color:'#625650',marginTop:2,whiteSpace:'pre-wrap'}}>{a.body.slice(0,200)}{a.body.length>200?'…':''}</div>}
+                  {a.outcome&&<div style={{fontSize:11,color:'#065F46',marginTop:2,fontStyle:'italic'}}>Outcome: {a.outcome}</div>}
+                  <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{new Date(a.activity_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}{a.created_by?' · '+a.created_by:''}</div>
+                </div>
+              </div>
+            </div>;
+          })}
+          {coActivities(detail).length===0&&<div style={{fontSize:12,color:'#9E9B96'}}>No activity yet</div>}
+          {showActivityForm&&<div style={{marginTop:12,padding:12,background:'#F9F8F6',borderRadius:8}}>
+            <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Log Activity</div>
+            <select value={newActivity.activity_type} onChange={e=>setNewActivity(p=>({...p,activity_type:e.target.value}))} style={{...inputS,marginBottom:8}}>
+              {['email','call','meeting','proposal','note'].map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+            <input value={newActivity.subject} onChange={e=>setNewActivity(p=>({...p,subject:e.target.value}))} placeholder="Subject / summary" style={{...inputS,marginBottom:8}}/>
+            <textarea value={newActivity.body} onChange={e=>setNewActivity(p=>({...p,body:e.target.value}))} placeholder="Details..." rows={3} style={{...inputS,marginBottom:8}}/>
+            <input value={newActivity.outcome} onChange={e=>setNewActivity(p=>({...p,outcome:e.target.value}))} placeholder="Outcome (optional)" style={{...inputS,marginBottom:8}}/>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={logActivity} style={{...btnP,fontSize:12}}>Log</button>
+              <button onClick={()=>setShowActivityForm(false)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9',fontSize:12}}>Cancel</button>
+            </div>
+          </div>}
+        </div>
+      </div>
+    </div>}
+
+    {/* Add/Edit Company Form */}
+    {showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowForm(false)}>
+      <div style={{background:'#FFF',borderRadius:12,padding:24,width:'min(560px,96vw)',maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontFamily:'Syne',fontSize:18,fontWeight:900,marginBottom:16}}>{editCo?'Edit Company':'Add Prospect'}</h3>
+        {[['Company Name','company_name'],['Website (no https)','website'],['HQ City','hq_city'],['Next Action','next_action']].map(([l,k])=>
+          <div key={k} style={{marginBottom:12}}>
+            <label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>{l}</label>
+            <input value={form[k]||''} onChange={e=>setForm(p=>({...p,[k]:e.target.value}))} style={inputS}/>
+          </div>
+        )}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Type</label>
+            <select value={form.company_type} onChange={e=>setForm(p=>({...p,company_type:e.target.value}))} style={inputS}>
+              {['homebuilder','mpc_developer','gc','municipality'].map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}
+            </select></div>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Tier</label>
+            <select value={form.tier} onChange={e=>setForm(p=>({...p,tier:e.target.value}))} style={inputS}>
+              {['A','B','C'].map(t=><option key={t} value={t}>{t}</option>)}
+            </select></div>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Relationship</label>
+            <select value={form.fencecrete_relationship} onChange={e=>setForm(p=>({...p,fencecrete_relationship:e.target.value}))} style={inputS}>
+              {RELS.map(r=><option key={r} value={r}>{r.replace(/_/g,' ')}</option>)}
+            </select></div>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Status</label>
+            <select value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))} style={inputS}>
+              {STATUSES.map(s=><option key={s} value={s}>{s.replace('_',' ')}</option>)}
+            </select></div>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Assigned Rep</label>
+            <select value={form.assigned_rep} onChange={e=>setForm(p=>({...p,assigned_rep:e.target.value}))} style={inputS}>
+              {REPS.map(r=><option key={r} value={r}>{r}</option>)}
+            </select></div>
+          <div><label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Next Action Date</label>
+            <input type="date" value={form.next_action_date||''} onChange={e=>setForm(p=>({...p,next_action_date:e.target.value}))} style={inputS}/></div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:11,color:'#625650',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Intelligence / Relationship Notes</label>
+          <textarea value={form.relationship_notes||''} onChange={e=>setForm(p=>({...p,relationship_notes:e.target.value}))} rows={4} style={{...inputS}}/>
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowForm(false)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9'}}>Cancel</button>
+          <button onClick={saveCo} style={btnP}>Save</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function ProposalsPage({jobs}){
   const isMobile = useIsMobile();
   const[leads,setLeads]=useState([]);
@@ -9431,7 +9835,7 @@ const NAV_GROUPS=[
   {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'material_requests',label:'Material Requests',icon:'🚚'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
-  {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -9827,6 +10231,7 @@ function AppShell(){
             {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
+            {page==='prospecting'&&<ErrorBoundary label="Prospecting"><ProspectingPage jobs={jobs}/></ErrorBoundary>}
             {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
