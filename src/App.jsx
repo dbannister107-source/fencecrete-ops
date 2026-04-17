@@ -4751,6 +4751,7 @@ function SchedulePage({jobs}){
 
 /* ═══ PRODUCTION PLANNING PAGE — queue (left) + plan builder (right) ═══ */
 function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
+  const v=useViewport();
   const[toast,setToast]=useState(null);
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
   const todayISO=new Date().toISOString().split('T')[0];
