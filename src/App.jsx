@@ -10652,6 +10652,22 @@ function SalesDashboardPage({jobs,onNav}){
   const proposalsOpen=useMemo(()=>leads.filter(l=>l.stage==='proposal_sent'),[leads]);
   const wonLeads=useMemo(()=>leads.filter(l=>l.stage==='won'),[leads]);
   const lostLeads=useMemo(()=>leads.filter(l=>l.stage==='lost'),[leads]);
+  // Win rate calculations
+  const closedLeads=[...wonLeads,...lostLeads];
+  const winRate=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
+  const totalWonValue=wonLeads.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+  const avgDaysToClose=wonLeads.length?Math.round(wonLeads.reduce((s,l)=>{
+    const created=new Date(l.created_at||l.stage_entered_at);
+    const won=new Date(l.won_date||l.updated_at);
+    return s+Math.max(0,Math.floor((won-created)/86400000));
+  },0)/wonLeads.length):0;
+  const repStats=REPS.map(rep=>{
+    const repWon=wonLeads.filter(l=>l.sales_rep===rep);
+    const repLost=lostLeads.filter(l=>l.sales_rep===rep);
+    const repOpen=leads.filter(l=>l.sales_rep===rep&&l.stage==='proposal_sent');
+    const repClosed=repWon.length+repLost.length;
+    return{rep,won:repWon.length,lost:repLost.length,open:repOpen.length,rate:repClosed?Math.round(repWon.length/repClosed*100):null,value:repWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0)};
+  }).filter(r=>r.won>0||r.open>0);
   const pipelineValue=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),[proposalsOpen]);
   const weightedForecast=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0),[proposalsOpen]);
   const recentWon=useMemo(()=>wonLeads.filter(l=>(l.won_date||'')>=ninetyDaysAgo),[wonLeads,ninetyDaysAgo]);
