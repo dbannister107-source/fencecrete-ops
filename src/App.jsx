@@ -9460,7 +9460,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:160,width:'100%',height:'auto',display:'block'}}/>
       :<div style={{width:6,height:28,background:'#8A261D',borderRadius:2}}/>}
     </div>
-    <nav style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflow:'auto'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'8px 12px 6px',marginTop:gi===0?4:16}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'12px 0':'12px 12px',marginBottom:2,borderRadius:8,border:'none',background:active?'#8A261D18':'transparent',color:active?'#FFFFFF':'#E5E5E3',fontSize:14,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?'3px solid #8A261D':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'0 4px':'0 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:10,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:700,padding:'8px 12px 6px',marginTop:gi===0?4:16}}>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:collapsed?'12px 0':'12px 12px',marginBottom:2,borderRadius:8,border:'none',background:active?'#8A261D18':'transparent',color:active?'#FFFFFF':'#E5E5E3',fontSize:14,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?'3px solid #8A261D':'3px solid transparent'}}><span style={{fontSize:16,width:20,textAlign:'center'}}>{ni.icon}</span>{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'8px':'12px 16px',borderTop:'1px solid #2A2A2A'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
@@ -9757,6 +9757,18 @@ function AppShell(){
         *{box-sizing:border-box;}
         html,body{max-width:100%;position:relative;}
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        /* ── Sidebar nav scrollbar ── */
+        .fc-nav-scroll{scrollbar-width:thin;scrollbar-color:#4A4A4A #1A1A1A;}
+        .fc-nav-scroll::-webkit-scrollbar{width:6px;}
+        .fc-nav-scroll::-webkit-scrollbar-track{background:#1A1A1A;border-radius:3px;}
+        .fc-nav-scroll::-webkit-scrollbar-thumb{background:#4A4A4A;border-radius:3px;transition:background 0.2s;}
+        .fc-nav-scroll::-webkit-scrollbar-thumb:hover{background:#8A261D;}
+        /* ── General page scrollbar ── */
+        .fc-page-scroll{scrollbar-width:thin;scrollbar-color:#D1CEC9 transparent;}
+        .fc-page-scroll::-webkit-scrollbar{width:7px;}
+        .fc-page-scroll::-webkit-scrollbar-track{background:transparent;}
+        .fc-page-scroll::-webkit-scrollbar-thumb{background:#D1CEC9;border-radius:4px;}
+        .fc-page-scroll::-webkit-scrollbar-thumb:hover{background:#8A261D;}
         @media(max-width:768px){
           input,select,textarea{min-height:48px!important;font-size:16px!important}
           button{min-height:44px!important;}}
@@ -9782,7 +9794,7 @@ function AppShell(){
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
         <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)}/>
-        <div style={{flex:1,overflow:'auto',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
+        <div style={{flex:1,overflowY:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
