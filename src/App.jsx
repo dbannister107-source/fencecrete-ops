@@ -867,18 +867,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
     setPisSending(true);
     try{
-      const res=await sbPost('pis_tokens',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'});
-      const tok=Array.isArray(res)?res[0]:res;
-      if(!tok?.token){throw new Error('Token creation failed');}
-      const formUrl=`${SB}/functions/v1/pis-public?token=${tok.token}`;
-      const emailHtml=`<div style="font-family:Inter,sans-serif;padding:32px;background:#0A0C10;border-radius:12px"><div style="color:#8A261D;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">ACTION REQUIRED</div><div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">Project Information Sheet Request</div><div style="color:#9CA3AF;font-size:13px;margin-bottom:20px">Job #${job.job_number||''} — ${job.job_name||''}</div><div style="color:#E8EAF0;font-size:14px;line-height:1.7;margin-bottom:24px">Please complete the required Project Information Sheet for your upcoming project with Fencecrete America. This information is required pursuant to Section 53.159 of the Texas Property Code and must be returned before work can begin.</div><a href="${formUrl}" style="display:inline-block;background:#8A261D;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:800">Complete Project Info Sheet →</a><div style="color:#4B5563;font-size:12px;margin-top:24px">Questions? Contact Amiee Gonzales at contracts@fencecrete.com or (210) 492-7911.</div></div>`;
-      await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer re_3Gc69QAE_KAzWkFkGEf8oM1tVMr4Znda8','Content-Type':'application/json'},body:JSON.stringify({from:'Fencecrete OPS <onboarding@resend.dev>',to:[pisEmail.trim()],cc:['amiee@fencecrete.com'],subject:`[Fencecrete] Project Information Sheet Required — Job #${job.job_number||''} ${job.job_name||''}`,html:emailHtml})});
-      setPisEmail('');setPisName('');setPisToast('Sent to '+pisEmail.trim());
+      const res=await fetch(`${SB}/functions/v1/pis-send`,{
+        method:'POST',
+        headers:{...H,'Content-Type':'application/json'},
+        body:JSON.stringify({job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'}),
+      });
+      const data=await res.json();
+      if(!res.ok||!data.success){throw new Error(data.error||'Send failed');}
+      setPisEmail('');setPisName('');
+      setPisToast('Sent to '+pisEmail.trim()+'. Customer will receive email shortly.');
       sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
     }catch(e){alert('Send failed: '+e.message);}
     setPisSending(false);
   };
-  const reopenJob=async(newStatus)=>{
+    const reopenJob=async(newStatus)=>{
     setReopening(true);
     try{
       await sbPatch('jobs',job.id,{status:newStatus,updated_at:new Date().toISOString()});
