@@ -1205,8 +1205,8 @@ function NewProjectForm({jobs,onClose,onSaved}){
       const today=new Date().toISOString().slice(0,10);
       const nowIso=new Date().toISOString();
       await sbPatch('leads',leadMatch.lead.id,{stage:'won',won_date:today,job_number:leadMatch.jobRow.job_number||null,updated_at:nowIso,stage_entered_at:nowIso});
-      toast.success(`Linked to lead from ${leadMatch.lead.sales_rep||'sales'}`);
-    }catch(e){toast.error('Link failed: '+e.message);}
+      __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:`Linked to lead from ${leadMatch.lead.sales_rep||'sales'}`}));
+    }catch(e){__toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:'Link failed: '+e.message}));}
     const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);
   };
   const skipLeadMatch=()=>{const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);};
@@ -8757,7 +8757,8 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
     await sbPatch('leads',lead.id,{stage:'won',won_date:today,job_number:jobNumber,updated_at:nowIso,stage_entered_at:nowIso});
     setWonModal(null);await fetchLeads();onRefresh&&onRefresh();
-    setToast(`Project ${jobNumber} created — Amiee will take it from here.`);
+    try{fetch(SB+'/functions/v1/send-alert',{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({event:'lead_won',lead,job_number:jobNumber})});}catch(e){console.warn('Won notification failed',e);}
+    setToast('Won! Job '+jobNumber+' created. Amiee has been notified.');
   };
   return <div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
