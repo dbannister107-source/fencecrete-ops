@@ -44,6 +44,27 @@ const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { hea
 const sbPatch = async (t, id, b) => { const r = await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: {...H, Prefer: 'return=minimal'}, body: JSON.stringify(b) }); if (!r.ok && r.status !== 204) { const txt = await r.text(); throw new Error(`PATCH ${t} failed (${r.status}): ${txt}`); } return {}; };
 const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) })).json();
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
+// Auto-generate next job number for a given market and year
+const generateJobNumber = async (market) => {
+  const yr = new Date().getFullYear().toString().slice(2); // "26"
+  const MC_CODE = {
+    'Houston':'H','San Antonio':'S','Austin':'A',
+    'Dallas-Fort Worth':'D','College Station':'CS'
+  };
+  const code = MC_CODE[market] || 'X';
+  // Query max sequence for this year+market
+  const pattern = `${yr}${code}`;
+  const rows = await sbGet('jobs', `select=job_number&job_number=like.${pattern}*&order=job_number.desc&limit=50`);
+  let maxSeq = 0;
+  if (Array.isArray(rows)) {
+    rows.forEach(r => {
+      const num = parseInt((r.job_number || '').replace(pattern, ''), 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    });
+  }
+  const nextSeq = String(maxSeq + 1).padStart(3, '0');
+  return `${pattern}${nextSeq}`;
+};
 // Auth — GoTrue REST helpers (Supabase Auth). Sessions are stored in localStorage
 // under fc_auth. When a session is active, H.Authorization carries the user's JWT
 // (instead of the anon key); PostgREST accepts both so existing "public all" RLS
@@ -8735,12 +8756,38 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
     setImporting(false);
   };
-  const afterProjectCreated=async(jobNumber)=>{
-    const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
+  const afterProjectCreated=async(manualJobNumber)=>{
+    const lead=wonModal;
+    const today=new Date().toISOString().slice(0,10);
+    const nowIso=new Date().toISOString();
+    // Auto-generate job number if not manually provided
+    let jobNumber=manualJobNumber;
+    if(!jobNumber||jobNumber.trim()===''){
+      try{jobNumber=await generateJobNumber(lead.market);}catch(e){jobNumber='PENDING';}
+    }
+    // Create project stub in jobs table
+    try{
+      await sbPost('jobs',{
+        job_number:jobNumber,
+        job_name:lead.company_name+(lead.project_description?' - '+lead.project_description:''),
+        customer_name:lead.company_name,
+        market:lead.market,
+        sales_rep:lead.sales_rep,
+        fence_type:lead.fence_type||'',
+        contract_value:lead.proposal_value||lead.estimated_value||0,
+        total_lf:lead.estimated_lf||0,
+        status:'contract_review',
+        notes:'Created from pipeline. Contact: '+(lead.contact_name||'')+' '+(lead.contact_email||'')+' '+(lead.contact_phone||''),
+        created_at:nowIso,
+        updated_at:nowIso,
+      });
+    }catch(e){console.warn('Project stub creation failed',e);}
+    // Mark lead as won
     await sbPatch('leads',lead.id,{stage:'won',won_date:today,job_number:jobNumber,updated_at:nowIso,stage_entered_at:nowIso});
     setWonModal(null);await fetchLeads();onRefresh&&onRefresh();
-    try{fetch(`${SB}/functions/v1/send-alert`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({event:'lead_won',lead,job_number:jobNumber})});}catch(e){console.warn('Won notification failed',e);}
-    setToast('Won! Amiee has been notified to set up Job '+jobNumber+'.');
+    // Notify Amiee + David
+    try{fetch(SB+'/functions/v1/send-alert',{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({event:'lead_won',lead,job_number:jobNumber})});}catch(e){console.warn('Won notification failed',e);}
+    setToast('Won! Job '+jobNumber+' created. Amiee has been notified.');
   };
   return <div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
