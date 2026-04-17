@@ -162,7 +162,7 @@ const SC = { contract_review:'#625650', production_queue:'#854F0B', in_productio
 const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_production:'#E6F1FB', material_ready:'#E1F5EE', active_install:'#E1F5EE', fence_complete:'#E1F5EE', fully_complete:'#E1F5EE', closed:'#F4F4F2', canceled:'#FEF2F2' };
 const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
 const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
-const CLOSED_SET=new Set(['fully_complete','closed','canceled']);
+const CLOSED_SET=new Set(['fully_complete','closed','canceled','cancelled']);
 const MKTS = ['Austin','College Station','Dallas-Fort Worth','Houston','San Antonio'];
 const MC = { Austin:'#854F0B', 'College Station':'#5B21B6', 'Dallas-Fort Worth':'#185FA5', Houston:'#0F6E56', 'San Antonio':'#8A261D' };
 const MB = { Austin:'#FAEEDA', 'College Station':'#EDE9FE', 'Dallas-Fort Worth':'#E6F1FB', Houston:'#E1F5EE', 'San Antonio':'#FDF4F4' };
@@ -8734,7 +8734,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
         if(stage==='won')won++;else if(stage==='lost')lost++;else open++;
       }
       setImportPreview({rows:toInsert,open,won,lost,skipped,fileName:file.name});
-    }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
+    }catch(err){console.error(err);setToast({message:'Import failed: '+err.message,isError:true});}
     setImporting(false);
     if(importInputRef.current)importInputRef.current.value='';
   };
@@ -8749,8 +8749,8 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
       const total=importPreview.rows.length;
       setImportPreview(null);
       await fetchLeads();
-      toast.success(`Imported ${total} leads`);
-    }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
+      setToast(`Imported ${total} leads`);
+    }catch(err){console.error(err);setToast({message:'Import failed: '+err.message,isError:true});}
     setImporting(false);
   };
   const afterProjectCreated=async(jobNumber)=>{
@@ -9096,9 +9096,9 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
       Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
       body.updated_at=new Date().toISOString();
       await sbPatch('leads',lead.id,body);
-      toast.success('Lead saved');
+      __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Lead saved'}));
       onSaved&&onSaved();
-    }catch(e){toast.error('Save failed: '+e.message);}
+    }catch(e){__toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:'Save failed: '+e.message}));}
     setSaving(false);
   };
   const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
@@ -11130,7 +11130,7 @@ function ProfileModal({ onClose }){
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setSaving(true);
-    try { await authUpdatePassword(session.access_token, password); toast.success('Password updated'); setMode('view'); setPassword(''); setConfirm(''); }
+    try { await authUpdatePassword(session.access_token, password); __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Password updated'})); setMode('view'); setPassword(''); setConfirm(''); }
     catch (err) { setError(err.message || 'Could not update password'); }
     setSaving(false);
   };
@@ -11374,7 +11374,7 @@ export default function App(){
     return <AuthContext.Provider value={ctx}><RecoveryPage accessToken={recoveryToken} onDone={()=>{
       try { window.location.hash=''; } catch(e) {}
       setRecoveryToken(null);
-      toast.success('Password set — please sign in');
+      __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Password set — please sign in'}));
     }}/></AuthContext.Provider>;
   }
   return <AuthContext.Provider value={ctx}>
