@@ -4787,9 +4787,20 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       // Get today's date and build 4-week window
       const today = new Date();
       const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
+      // Start from today (or next Monday if weekend)
+      const todayDay = weekStart.getDay();
+      if (todayDay === 0) weekStart.setDate(weekStart.getDate() + 1); // Sunday → Monday
+      if (todayDay === 6) weekStart.setDate(weekStart.getDate() + 2); // Saturday → Monday
+      // Calculate horizonEnd as 5 business days from weekStart
       const horizonEnd = new Date(weekStart);
-      horizonEnd.setDate(weekStart.getDate() + 5);
+      let bizDaysAdded = 0;
+      let cursor = new Date(weekStart);
+      while (bizDaysAdded < 5) {
+        cursor.setDate(cursor.getDate() + 1);
+        const d = cursor.getDay();
+        if (d !== 0 && d !== 6) bizDaysAdded++;
+      }
+      horizonEnd.setTime(cursor.getTime());
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
