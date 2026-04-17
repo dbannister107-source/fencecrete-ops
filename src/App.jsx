@@ -8315,7 +8315,7 @@ function StageMover({currentStage,onMove,stages}){
   const ci=stages.findIndex(s=>s.key===currentStage);
   const prev=ci>0?stages[ci-1]:null;
   const next=ci<stages.length-1?stages[ci+1]:null;
-  const[open,setOpen]=useState(false);
+  const[open,setOpen]=React.useState(false);
   return <div style={{marginTop:8,borderTop:'1px solid #F0EFED',paddingTop:6}} onClick={e=>e.stopPropagation()}>
     <div style={{display:'flex',gap:4,alignItems:'center'}}>
       {prev&&<button onClick={e=>{e.stopPropagation();onMove(prev.key);}}
