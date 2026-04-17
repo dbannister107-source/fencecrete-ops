@@ -2242,7 +2242,9 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[invEntries,setInvEntries]=useState([]);
   const[invLoading,setInvLoading]=useState(false);
   const[invDelConfirm,setInvDelConfirm]=useState(null);
+  const[arCOs,setArCOs]=useState([]);
   const fetchInvEntries=useCallback(async(jobId)=>{if(!jobId)return;setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);setInvEntries(d||[]);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
+  const fetchArCOs=useCallback(async(jobId)=>{if(!jobId)return;try{const d=await sbGet('change_orders',`job_id=eq.${jobId}&order=created_at.asc`);setArCOs(d||[]);}catch(e){setArCOs([]);}},[]);
   const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});await fetchInvEntries(jobId);onRefresh();setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
   const deleteInvEntry=async(entryId,jobId)=>{try{await fetch(`${SB}/rest/v1/invoice_entries?id=eq.${entryId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});await fetchInvEntries(jobId);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
   const arMonthLabel=monthLabel(arMonth);
@@ -2255,7 +2257,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arFilteredJobs,arSubByJob]);
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
-  const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);fetchInvEntries(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
+  const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
   // render as "—". Fields `precast_other_lf` and `one_line_other_lf`
@@ -2520,6 +2522,23 @@ function BillingPage({jobs,onRefresh,onNav}){
           {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
           {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
+        </div>
+        {arCOs.length>0&&<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Breakdown</div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
+            <span style={{color:'#625650'}}>Original Contract</span>
+            <span style={{fontWeight:700}}>{$(arCOs.reduce((sum,co)=>sum,n(s.adj_contract_value)-arCOs.filter(c=>c.status==='approved').reduce((s2,c)=>s2+n(c.amount),0)))}</span>
+          </div>
+          {arCOs.filter(c=>c.status==='approved').map((co,i)=><div key={co.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}>
+            <span style={{color:'#625650'}}>CO #{i+1}{co.description?' — '+co.description.slice(0,40):''}</span>
+            <span style={{fontWeight:600,color:n(co.amount)>=0?'#065F46':'#DC2626'}}>{n(co.amount)>=0?'+':''}{$(Math.abs(n(co.amount)))}</span>
+          </div>)}
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,paddingTop:6,marginTop:4,borderTop:'1px solid #E5E3E0'}}>
+            <span style={{fontWeight:700}}>Adjusted Total</span>
+            <span style={{fontWeight:800,color:'#8A261D'}}>{$(s.adj_contract_value)}</span>
+          </div>
+        </div>}
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
         </div>
         <div style={{fontSize:11,color:'#9E9B96',marginBottom:14}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—'}{s.submitted_by?' by '+s.submitted_by:''}</div>
         {/* LF Sections */}
@@ -3224,6 +3243,23 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
           {s.color&&<span>Color: <b style={{color:'#1A1A1A'}}>{s.color}</b></span>}
           {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
+        </div>
+        {arCOs.length>0&&<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Breakdown</div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
+            <span style={{color:'#625650'}}>Original Contract</span>
+            <span style={{fontWeight:700}}>{$(arCOs.reduce((sum,co)=>sum,n(s.adj_contract_value)-arCOs.filter(c=>c.status==='approved').reduce((s2,c)=>s2+n(c.amount),0)))}</span>
+          </div>
+          {arCOs.filter(c=>c.status==='approved').map((co,i)=><div key={co.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}>
+            <span style={{color:'#625650'}}>CO #{i+1}{co.description?' — '+co.description.slice(0,40):''}</span>
+            <span style={{fontWeight:600,color:n(co.amount)>=0?'#065F46':'#DC2626'}}>{n(co.amount)>=0?'+':''}{$(Math.abs(n(co.amount)))}</span>
+          </div>)}
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,paddingTop:6,marginTop:4,borderTop:'1px solid #E5E3E0'}}>
+            <span style={{fontWeight:700}}>Adjusted Total</span>
+            <span style={{fontWeight:800,color:'#8A261D'}}>{$(s.adj_contract_value)}</span>
+          </div>
+        </div>}
+        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
         </div>
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
@@ -9348,7 +9384,7 @@ const NAV_GROUPS=[
   {label:'MAP',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
   {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'material_requests',label:'Material Requests',icon:'🚚'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
-  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
+  {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
