@@ -847,11 +847,37 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     return ()=>window.removeEventListener('keydown',onKey);
   },[onClose]);
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
+  const[pisTokens,setPisTokens]=useState([]);
+  const[pisSheets,setPisSheets]=useState([]);
+  const[pisSending,setPisSending]=useState(false);
+  const[pisEmail,setPisEmail]=useState('');
+  const[pisName,setPisName]=useState('');
+  const[pisToast,setPisToast]=useState('');
   const[reopening,setReopening]=useState(false);
   const[showReopenPicker,setShowReopenPicker]=useState(false);
   const[showStatusPicker,setShowStatusPicker]=useState(false);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
+  useEffect(()=>{
+    if(tab!=='pis'||!job?.id)return;
+    sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
+    sbGet('project_info_sheets',`job_id=eq.${job.id}&order=submitted_at.desc&limit=1`).then(d=>setPisSheets(Array.isArray(d)?d:[]));
+  },[tab,job?.id]);
+  const sendPisRequest=async()=>{
+    if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
+    setPisSending(true);
+    try{
+      const res=await sbPost('pis_tokens',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'});
+      const tok=Array.isArray(res)?res[0]:res;
+      if(!tok?.token){throw new Error('Token creation failed');}
+      const formUrl=`${SB}/functions/v1/pis-public?token=${tok.token}`;
+      const emailHtml=`<div style="font-family:Inter,sans-serif;padding:32px;background:#0A0C10;border-radius:12px"><div style="color:#8A261D;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">ACTION REQUIRED</div><div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">Project Information Sheet Request</div><div style="color:#9CA3AF;font-size:13px;margin-bottom:20px">Job #${job.job_number||''} — ${job.job_name||''}</div><div style="color:#E8EAF0;font-size:14px;line-height:1.7;margin-bottom:24px">Please complete the required Project Information Sheet for your upcoming project with Fencecrete America. This information is required pursuant to Section 53.159 of the Texas Property Code and must be returned before work can begin.</div><a href="${formUrl}" style="display:inline-block;background:#8A261D;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:800">Complete Project Info Sheet →</a><div style="color:#4B5563;font-size:12px;margin-top:24px">Questions? Contact Amiee Gonzales at contracts@fencecrete.com or (210) 492-7911.</div></div>`;
+      await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer re_3Gc69QAE_KAzWkFkGEf8oM1tVMr4Znda8','Content-Type':'application/json'},body:JSON.stringify({from:'Fencecrete OPS <onboarding@resend.dev>',to:[pisEmail.trim()],cc:['amiee@fencecrete.com'],subject:`[Fencecrete] Project Information Sheet Required — Job #${job.job_number||''} ${job.job_name||''}`,html:emailHtml})});
+      setPisEmail('');setPisName('');setPisToast('Sent to '+pisEmail.trim());
+      sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
+    }catch(e){alert('Send failed: '+e.message);}
+    setPisSending(false);
+  };
   const reopenJob=async(newStatus)=>{
     setReopening(true);
     try{
@@ -992,7 +1018,31 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
           </div>
         </div>;})()}
-        {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='requirements'?<div>
+        {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='pis'?<div style={{padding:'4px 0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+            <div><div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Information Sheet</div><div style={{fontSize:11,color:'#625650',marginTop:2}}>Pursuant to Section 53.159 of the Texas Property Code</div></div>
+            {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received</span>}
+          </div>
+          {pisToast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'10px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>{pisToast}</div>}
+          {pisSheets.length>0&&(()=>{const s=pisSheets[0];return<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:10}}>Submitted Info</div>
+            {[['Project Name',s.project_name],['Job Address',s.job_address],['City/State/Zip',s.city_state_zip],['County',s.county],['Job Type',s.job_type],['Owner',s.owner_company],['Owner Contact',s.owner_contact],['Owner Email',s.owner_email],['GC',s.gc_company],['GC Contact',s.gc_contact],['GC Email',s.gc_email],['Billing Contact',s.billing_contact],['Billing Email',s.billing_email],['PM / Super',s.pm_name],['PM Mobile',s.pm_mobile],['PM Email',s.pm_email],['Bonding Required',s.bonding_required?'YES':'No'],['Surety',s.surety_name],['Bond #',s.bond_number],['Bond Amount',s.bond_amount?'$'+Number(s.bond_amount).toLocaleString():null],['Bonding Agent',s.agent_name],['Tax Status',s.taxable?'Taxable':'Non-Taxable'],['Notes',s.notes]].filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:'1px solid #F1EFEC',fontSize:12}}><span style={{color:'#9E9B96',minWidth:120}}>{k}</span><span style={{color:'#1A1A1A',fontWeight:600,flex:1}}>{v}</span></div>)}
+            <div style={{fontSize:11,color:'#9E9B96',marginTop:10}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
+          </div>;})()}
+          <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:12}}>{pisSheets.length>0?'Re-send Request':'Send Request to Customer'}</div>
+            <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Recipient Email <span style={{color:'#991B1B'}}>*</span></div><input value={pisEmail} onChange={e=>setPisEmail(e.target.value)} placeholder="customer@example.com" style={{...inputS,pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}/></div>
+            <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Recipient Name <span style={{fontWeight:400,color:'#9E9B96'}}>(optional)</span></div><input value={pisName} onChange={e=>setPisName(e.target.value)} placeholder="Contact name" style={{...inputS,pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}/></div>
+            <button onClick={sendPisRequest} disabled={pisSending} style={{...btnP,width:'100%',pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}>{pisSending?'Sending...':'Send Project Info Request'}</button>
+          </div>
+          {pisTokens.length>0&&<div>
+            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Send History</div>
+            {pisTokens.map(t=><div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
+              <div><div style={{fontWeight:600,color:'#1A1A1A'}}>{t.sent_to_email}</div><div style={{color:'#9E9B96',fontSize:11}}>Sent {new Date(t.created_at).toLocaleDateString()} by {t.sent_by}</div></div>
+              <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:700,background:t.submitted_at?'#D1FAE5':new Date(t.expires_at)<new Date()?'#FEE2E2':'#FEF3C7',color:t.submitted_at?'#065F46':new Date(t.expires_at)<new Date()?'#991B1B':'#B45309'}}>{t.submitted_at?'Received':new Date(t.expires_at)<new Date()?'Expired':'Pending'}</span>
+            </div>)}
+          </div>}
+        </div>:tab==='requirements'?<div>
           <div style={{fontSize:11,color:'#625650',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[{label:'AIA (G702/703)',field:'aia_billing'},{label:'Bonds',field:'bonds'},{label:'Certified Payroll',field:'certified_payroll'},{label:'OCIP/CCIP',field:'ocip_ccip'},{label:'3rd Party Billing',field:'third_party_billing'}].map(cb=><label key={cb.field} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13,color:'#1A1A1A'}}>
