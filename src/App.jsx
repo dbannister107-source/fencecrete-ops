@@ -9757,18 +9757,23 @@ function AppShell(){
         *{box-sizing:border-box;}
         html,body{max-width:100%;position:relative;}
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-        /* ── Sidebar nav scrollbar ── */
+        /* ── Sidebar nav scrollbar (dark) ── */
         .fc-nav-scroll{scrollbar-width:thin;scrollbar-color:#4A4A4A #1A1A1A;}
         .fc-nav-scroll::-webkit-scrollbar{width:6px;}
         .fc-nav-scroll::-webkit-scrollbar-track{background:#1A1A1A;border-radius:3px;}
-        .fc-nav-scroll::-webkit-scrollbar-thumb{background:#4A4A4A;border-radius:3px;transition:background 0.2s;}
+        .fc-nav-scroll::-webkit-scrollbar-thumb{background:#4A4A4A;border-radius:3px;}
         .fc-nav-scroll::-webkit-scrollbar-thumb:hover{background:#8A261D;}
-        /* ── General page scrollbar ── */
-        .fc-page-scroll{scrollbar-width:thin;scrollbar-color:#D1CEC9 transparent;}
-        .fc-page-scroll::-webkit-scrollbar{width:7px;}
-        .fc-page-scroll::-webkit-scrollbar-track{background:transparent;}
-        .fc-page-scroll::-webkit-scrollbar-thumb{background:#D1CEC9;border-radius:4px;}
-        .fc-page-scroll::-webkit-scrollbar-thumb:hover{background:#8A261D;}
+        /* ── Global light scrollbar for all page content ── */
+        *{scrollbar-width:thin;scrollbar-color:#C8C4BF transparent;}
+        *::-webkit-scrollbar{width:7px;height:7px;}
+        *::-webkit-scrollbar-track{background:transparent;}
+        *::-webkit-scrollbar-corner{background:transparent;}
+        *::-webkit-scrollbar-thumb{background:#C8C4BF;border-radius:4px;border:1px solid transparent;background-clip:padding-box;}
+        *::-webkit-scrollbar-thumb:hover{background:#8A261D;border-color:transparent;}
+        /* ── Sidebar overrides dark theme ── */
+        .fc-nav-scroll::-webkit-scrollbar-thumb{background:#4A4A4A;}
+        .fc-nav-scroll::-webkit-scrollbar-thumb:hover{background:#8A261D;}
+        .fc-nav-scroll{scrollbar-color:#4A4A4A #1A1A1A;}
         @media(max-width:768px){
           input,select,textarea{min-height:48px!important;font-size:16px!important}
           button{min-height:44px!important;}}
