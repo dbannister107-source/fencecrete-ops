@@ -1708,7 +1708,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
-  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
+  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026count=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').length;const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
   // Backlog months + market breakdown (shown inside Backlog LF card)
   const blCurrentMo=new Date().getMonth()+1;
   const blRunRate=blCurrentMo>0?ty/blCurrentMo:0;
@@ -1762,7 +1762,8 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     </div>
     <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:16,marginBottom:16}}>
       <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
-      <KPI label="YTD Billed" value={$k(ty)} color="#065F46" sub="All jobs incl. closed"/>
+      <KPI label="2026 YTD Billed" value={$k(ty2026)} color="#065F46" sub={`${ty2026count} jobs billed in 2026`}/>
+      <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="All jobs incl. closed"/>
       <KPI label="Left to Bill" trendDir="neutral" trend="collect now" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
       <div style={card}>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#065F46'}}>{tlfPC.toLocaleString()}</div>
