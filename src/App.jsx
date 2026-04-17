@@ -2057,6 +2057,15 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   const[editMode,setEditMode]=useState(false);const[inlE,setInlE]=useState(null);
   const[sel,setSel]=useState(new Set());const[toast,setToast]=useState(null);
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
+  useEffect(()=>{
+    const handler=(e)=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
+      if(e.key==='n'&&!e.metaKey&&!e.ctrlKey){setIsNew(true);setEditJob({});setShowNewForm?.(true);}
+      if(e.key==='Escape'){setEditJob(null);setIsNew(false);}
+    };
+    window.addEventListener('keydown',handler);
+    return()=>window.removeEventListener('keydown',handler);
+  },[]);
   useEffect(()=>setSel(new Set()),[search,statusF,mktF,pmF]);
   const toggleSort=k=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('desc');}};
   const closedJobs=useMemo(()=>{let f=augmentedJobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm)||(pmF.has('__blank__')&&!j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[augmentedJobs,search,mktF,pmF,closedYearF]);
@@ -2139,7 +2148,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         </div>
       </div>
       {projTab==='active'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects... (N = new)" style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Statuses" width={160} selected={statusF} onChange={setStatusF} options={STS.map(s=>({v:s,l:SL[s]}))}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={[...PM_LIST.map(p=>({v:p.id,l:p.label})),{v:'__blank__',l:'No PM assigned'}]}/>
@@ -2171,7 +2180,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <tbody>{filtered.map((j,i)=><tr key={j.id} onClick={()=>{if(!editMode&&!sel.size){setEditJob(j);setIsNew(false);}}} style={{cursor:editMode?'default':'pointer',borderLeft:`3px solid ${SC[j.status]||'transparent'}`,background:i%2===0?'#FFF':'#FAFAF8'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
           <td style={{width:40,padding:'8px 8px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(j.id)} onChange={()=>{const s=new Set(sel);if(s.has(j.id))s.delete(j.id);else s.add(j.id);setSel(s);}}/></td>
           {visCD.map(c=><td key={c.key} onClick={e=>{if(editMode){e.stopPropagation();setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?'cell':'pointer',background:c.tint||'transparent'}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>)}
-        </tr>)}</tbody></table>
+        </tr>)}</tbody>{filtered.length===0&&<tr><td colSpan={20} style={{padding:'60px 20px',textAlign:'center'}}><div style={{fontSize:40,marginBottom:12}}>📋</div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:700,color:'#1A1A1A',marginBottom:6}}>No projects found</div><div style={{fontSize:13,color:'#9E9B96'}}>Try adjusting your filters or search</div></td></tr>}</table>
     </div>}
     {/* Phase 3: mobile card view. Inline-edit and bulk select are skipped on mobile —
         tap opens the EditPanel, same as desktop non-edit mode. */}
@@ -3037,7 +3046,9 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     <div style={{display:'flex',gap:v?.ipad?12:8,marginBottom:v?.ipad?16:12,flexWrap:'wrap',alignItems:'center'}}>
       {PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:v?.ipad?'12px 24px':'8px 18px',borderRadius:20,border:'none',background:selPM===pm.id?'#8A261D':'#F4F4F2',color:selPM===pm.id?'#fff':'#625650',fontSize:v?.ipad?16:14,fontWeight:700,cursor:'pointer',minHeight:v?.ipad?52:36}}>{pm.short}</button>)}
       <span style={{color:'#E5E3E0',margin:'0 4px'}}>|</span>
+      <button onClick={()=>{const [y,m]=selMonth.split('-').map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);}} style={{...btnS,padding:'4px 10px',minHeight:36,fontSize:18,lineHeight:1}}>‹</button>
       <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:v?.ipad?200:170,minHeight:v?.ipad?52:36,fontSize:v?.ipad?16:13}}/>
+      <button onClick={()=>{const [y,m]=selMonth.split('-').map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);}} style={{...btnS,padding:'4px 10px',minHeight:36,fontSize:18,lineHeight:1}}>›</button>
       <span style={{fontSize:v?.ipad?16:14,fontWeight:800,color:'#8A261D'}}>{selMonthLabel}</span>
     </div>
     {/* Progress bar */}
@@ -6189,7 +6200,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
     {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Production Daily Report</h1>
     {/* Tabs */}
-    <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
+    <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0',position:'sticky',top:0,background:'#F4F4F2',zIndex:10,paddingTop:8}}>
       {[['actuals','✅ Log Actuals','#8A261D'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#625650',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
     </div>
 
@@ -8679,6 +8690,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
 
 function ContactsPage({jobs,onOpenProject,onOpenLead}){
   const isMobile = useIsMobile();
+  const[contactPage,setContactPage]=useState(1);
   const[contacts,setContacts]=useState([]);
   const[leads,setLeads]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -8758,7 +8770,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
         </tr></thead>
         <tbody>
           {
-          filtered.map(c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <tr key={c.id} onClick={()=>setDetail(c)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+          filtered.slice(0,contactPage*50).map(c=>{const jc=(jobsByCustomer[(c.company||'').toLowerCase()]||[]).length;return <tr key={c.id} onClick={()=>setDetail(c)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <td style={{padding:'10px 12px',fontWeight:600}}>{c.company||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.type||c.company_type||c.contact_type||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.name||'—'}</td>
