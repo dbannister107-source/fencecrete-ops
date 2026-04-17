@@ -11236,13 +11236,13 @@ function AppShell(){
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
-            {page==='pipeline'&&<PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/>}
+            {page==='pipeline'&&<ErrorBoundary label="Pipeline"><PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/></ErrorBoundary>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
             {page==='fleet'&&<ErrorBoundary label="Fleet"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='fleet_wo'&&<ErrorBoundary label="Fleet Work Orders"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='prospecting'&&<ErrorBoundary label="Prospecting"><ProspectingPage jobs={jobs}/></ErrorBoundary>}
-            {page==='proposals'&&<ProposalsPage jobs={jobs}/>}
+            {page==='proposals'&&<ErrorBoundary label="Proposals"><ProposalsPage jobs={jobs}/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
         </div>
