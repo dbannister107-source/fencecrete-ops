@@ -1728,7 +1728,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const blMktTotal=blMktLTB.reduce((s,m)=>s+m.ltb,0);
   // 2026 Revenue Goal — includes closed jobs (money already earned)
   const GOAL_2026=36000000;
-  const ytd2026=ty;
+  const ytd2026=ty2026;
   const pct2026=Math.min(ytd2026/GOAL_2026,1);
   const achieved2026=ytd2026>=GOAL_2026;
   const remaining2026=Math.max(GOAL_2026-ytd2026,0);
