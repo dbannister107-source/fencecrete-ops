@@ -7307,7 +7307,8 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
         }
         // Auto-assign PM from market if not set
         if(!mapped.pm&&mapped.market){
-          if(mapped.market==='San Antonio'||mapped.market==='College Station')mapped.pm='Ray Garcia';
+          if(mapped.market==='San Antonio')mapped.pm='Ray Garcia';
+          else if(mapped.market==='College Station')mapped.pm='Doug Monroe';
           else if(mapped.market==='Austin'||mapped.market==='Dallas-Fort Worth')mapped.pm='Doug Monroe';
           else if(mapped.market==='Houston'){
             const ft=(mapped.fence_type||'').toUpperCase();
