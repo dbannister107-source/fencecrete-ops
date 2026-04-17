@@ -8320,6 +8320,7 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
     <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
       {lead.market&&<span style={pill(mc,mb)}>{MS[lead.market]||lead.market}</span>}
       {lead.sales_rep&&<span style={{fontSize:11,color:'#625650'}}>{lead.sales_rep}</span>}
+      {lead.stage==='proposal_sent'&&(()=>{const ageDays=Math.floor((Date.now()-new Date(lead.proposal_sent_date||lead.stage_entered_at||lead.updated_at).getTime())/86400000);if(ageDays<30)return null;const isOld=ageDays>=60;return<span title={`Proposal sent ${ageDays} days ago`} style={{fontSize:10,fontWeight:800,padding:'2px 6px',borderRadius:4,background:isOld?'#FEE2E2':'#FEF3C7',color:isOld?'#991B1B':'#B45309',border:`1px solid ${isOld?'#FCA5A5':'#FDE68A'}`}}>{ageDays}d</span>;})()}
     </div>
     {lead.stage==='won'&&linkedJob&&<div onClick={e=>{e.stopPropagation();onOpenProject&&onOpenProject(linkedJob);}} style={{marginTop:8,padding:'8px 10px',background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:8,cursor:'pointer'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -8442,16 +8443,31 @@ function ProposalSentModal({lead,onClose,onSave}){
   const[v,setV]=useState(lead.proposal_value||lead.estimated_value||'');
   const[d,setD]=useState(new Date().toISOString().slice(0,10));
   const[p,setP]=useState(lead.win_probability||50);
+  const[fu,setFu]=useState(lead.follow_up_date||'');
+  const[closeDate,setCloseDate]=useState(lead.expected_close_date||'');
+  const[err,setErr]=useState('');
+  const handleSave=()=>{
+    if(!fu){setErr('Follow-up date is required');return;}
+    if(!closeDate){setErr('Expected close date is required');return;}
+    if(!v){setErr('Proposal value is required');return;}
+    setErr('');
+    onSave({proposal_value:n(v),proposal_sent_date:d,win_probability:p,follow_up_date:fu,expected_close_date:closeDate});
+  };
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:400,maxWidth:'94vw'}}>
-      <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Proposal Sent</div>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:420,maxWidth:'94vw'}}>
+      <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>Proposal Sent</div>
       <div style={{fontSize:13,color:'#625650',marginBottom:16}}>{lead.company_name}</div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Proposal Value ($)</div><input type="number" value={v} onChange={e=>setV(e.target.value)} style={inputS}/></div>
-      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Date Sent</div><input type="date" value={d} onChange={e=>setD(e.target.value)} style={inputS}/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Proposal Value ($) <span style={{color:'#991B1B'}}>*</span></div><input type="number" value={v} onChange={e=>setV(e.target.value)} style={inputS} placeholder="Required"/></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Date Sent</div><input type="date" value={d} onChange={e=>setD(e.target.value)} style={inputS}/></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Expected Close <span style={{color:'#991B1B'}}>*</span></div><input type="date" value={closeDate} onChange={e=>setCloseDate(e.target.value)} style={inputS}/></div>
+      </div>
+      <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Follow-up Date <span style={{color:'#991B1B'}}>*</span></div><input type="date" value={fu} onChange={e=>setFu(e.target.value)} style={inputS}/><div style={{fontSize:10,color:'#9E9B96',marginTop:3}}>When should the rep follow up if no response?</div></div>
       <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Win Probability ({p}%)</div><input type="range" min={0} max={100} value={p} onChange={e=>setP(+e.target.value)} style={{width:'100%'}}/></div>
+      {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:8,fontSize:12,fontWeight:600,marginBottom:12}}>{err}</div>}
       <div style={{display:'flex',gap:8}}>
         <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
-        <button onClick={()=>onSave({proposal_value:n(v),proposal_sent_date:d,win_probability:p})} style={{...btnP,flex:2}}>Save</button>
+        <button onClick={handleSave} style={{...btnP,flex:2}}>Save</button>
       </div>
     </div>
   </div>;
@@ -8465,10 +8481,10 @@ function LostModal({lead,onClose,onSave}){
       <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:12}}>Mark as Lost</div>
       <div style={{fontSize:13,color:'#625650',marginBottom:16}}>{lead.company_name}</div>
       <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Loss Reason</div><select value={r} onChange={e=>setR(e.target.value)} style={inputS}>{LOSS_REASONS.map(o=><option key={o} value={o}>{o}</option>)}</select></div>
-      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Loss Notes</div><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...inputS,minHeight:80}}/></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Loss Notes <span style={{color:'#991B1B'}}>*</span></div><textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What happened? Who won it? Any pricing or timing context..." style={{...inputS,minHeight:80}}/></div>
       <div style={{display:'flex',gap:8}}>
         <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
-        <button onClick={()=>onSave({loss_reason:r,loss_notes:notes})} style={{...btnP,flex:2}}>Save</button>
+        <button onClick={()=>{if(!notes.trim()){alert('Please add a loss note — what happened?');return;}onSave({loss_reason:r,loss_notes:notes})}} style={{...btnP,flex:2}}>Save</button>
       </div>
     </div>
   </div>;
