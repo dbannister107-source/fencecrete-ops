@@ -4984,7 +4984,7 @@ Generate the optimal 4-week production schedule following all rules.`;
       const scheds = await sbGet('ai_production_schedules', 'status=eq.active&order=created_at.desc&limit=1');
       if (scheds && scheds[0]) {
         const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
-        setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: new Date(scheds[0].created_at) });
+        setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: scheds[0].created_at ? new Date(scheds[0].created_at) : new Date() });
         setAiScheduleView(true);
       }
     })();
@@ -9782,7 +9782,7 @@ function AppShell(){
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
-            {page==='production_planning'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='production_planning'&&<ErrorBoundary label="Production Planning"><ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/></ErrorBoundary>}
             {page==='reports'&&<ReportsPage jobs={jobs} onNav={setPage} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
