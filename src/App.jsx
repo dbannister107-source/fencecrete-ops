@@ -4945,18 +4945,18 @@ Generate the optimal 4-week production schedule following all rules.`;
         is_confirmed: false
       }));
 
+      let savedEntries = [];
       if (entries.length > 0) {
         const entRes = await fetch(`${SB}/rest/v1/ai_schedule_entries`, {
           method: 'POST',
-          headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
           body: JSON.stringify(entries)
         });
         const entTxt = await entRes.text();
         if (!entRes.ok) throw new Error(`Failed to save entries: ${entRes.status} ${entTxt}`);
-        const savedEntries = entTxt ? JSON.parse(entTxt) : [];
-        setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
+        savedEntries = entTxt ? JSON.parse(entTxt) : [];
       }
-
+      setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
       setAiScheduleView(true);
       setToast({ msg: `✅ AI generated a ${schedule.length}-entry 5-day schedule`, ok: true });
     } catch(e) {
@@ -4974,6 +4974,7 @@ Generate the optimal 4-week production schedule following all rules.`;
       if (scheds && scheds[0]) {
         const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
         setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: new Date(scheds[0].created_at) });
+        setAiScheduleView(true);
       }
     })();
   }, [refreshKey]);
