@@ -20,12 +20,22 @@ const EDIT_EMAILS = new Set([
   'contracts@fencecrete.com',
   'alex@fencecrete.com',
 ]);
+const STATUS_EDIT_EMAILS = new Set([
+  'david@fencecrete.com',
+  'amiee@fencecrete.com',
+  'contracts@fencecrete.com',
+  'alex@fencecrete.com',
+  'max@fencecrete.com',
+  'ccontreras@fencecrete.com',
+  'luis@fencecrete.com',
+]);
+const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
+const canEditStatus = (email) => STATUS_EDIT_EMAILS.has((email||'').toLowerCase().trim());
 // Only Amiee can approve/reject change orders
 const AMIEE_EMAILS = new Set([
   'amiee@fencecrete.com',
   'contracts@fencecrete.com',
 ]);
-const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
 const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim());
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
@@ -1636,8 +1646,8 @@ function WeeklyDigest({jobs,active}){
     Promise.all([
       sbGet('weather_days',`weather_date=gte.${weekAgoDate}&select=id`).catch(()=>[]),
       sbGet('change_orders',`status=eq.Pending&select=id`).catch(()=>[]),
-      sbGet('production_removals',`removed_date=gte.${weekAgoDate}&select=reason`).catch(()=>[]),
-    ]).then(([wdRaw,coRaw,remRaw])=>{
+    ]).then(([wdRaw,coRaw])=>{
+      const remRaw=[];
       // sbGet may return a PostgREST error object instead of an array on failure.
       // Normalize each result to a guaranteed array before touching array methods.
       const wd=Array.isArray(wdRaw)?wdRaw:[];
