@@ -1708,7 +1708,17 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
-  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026count=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').length;const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
+  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026count=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').length;
+  // Backlog = contracted but not yet fully billed, in active stages
+  const ACTIVE_STS=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
+  const backlogJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status));
+  const tBacklog=backlogJobs.reduce((s,j)=>s+n(j.left_to_bill),0);
+  // Never billed = active jobs with $0 invoiced
+  const neverBilledJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status)&&n(j.ytd_invoiced)===0);
+  const tNeverBilled=neverBilledJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+  // Stale = last billed before 2026, still open
+  const today=new Date().toISOString().split('T')[0];
+  const staleJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status)&&n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01');const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
   // Backlog months + market breakdown (shown inside Backlog LF card)
   const blCurrentMo=new Date().getMonth()+1;
   const blRunRate=blCurrentMo>0?ty/blCurrentMo:0;
@@ -1765,6 +1775,9 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       <KPI label="2026 YTD Billed" value={$k(ty2026)} color="#065F46" sub={`${ty2026count} jobs billed in 2026`}/>
       <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="All jobs incl. closed"/>
       <KPI label="Left to Bill" trendDir="neutral" trend="collect now" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
+      <KPI label="Active Backlog" value={$k(tBacklog)} color="#185FA5" sub={`${backlogJobs.length} jobs in progress`} trendDir={tBacklog>5000000?"up":"neutral"} trend={tBacklog>5000000?"strong pipeline":""}/>
+      <KPI label="Never Billed ⚠" value={$k(tNeverBilled)} color={neverBilledJobs.length>10?"#991B1B":"#B45309"} sub={`${neverBilledJobs.length} active jobs · $0 invoiced`}/>
+      <KPI label="Stale Billing ⚠" value={staleJobs.length} color={staleJobs.length>5?"#991B1B":"#B45309"} sub={`${staleJobs.length} jobs not billed since 2025`}/>
       <div style={card}>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#065F46'}}>{tlfPC.toLocaleString()}</div>
         <div style={{fontSize:12,color:'#625650',marginTop:4}}>Precast LF <span style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>(production)</span></div>
@@ -2254,7 +2267,9 @@ function BillingPage({jobs,onRefresh,onNav}){
   const confirmMarkFull=async()=>{if(!confirmFullJob)return;const j=confirmFullJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:adj,pct_billed:1,left_to_bill:0};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,adj);setConfirmFullJob(null);setToast(`${j.job_name} marked as 100% billed`);onRefresh();};
   const confirmUndo=async()=>{if(!undoJob)return;const j=undoJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:0,pct_billed:0,left_to_bill:adj};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,0);setUndoJob(null);setToast(`Undo: ${j.job_name} YTD reset to $0`);onRefresh();};
   const recentlyBilled=useMemo(()=>jobs.filter(j=>n(j.pct_billed)>=0.99).sort((a,b)=>(b.last_billed||'').localeCompare(a.last_billed||'')).slice(0,10),[jobs]);
-  const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF]);
+  const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);
+    if(bStatusF==='never_billed')f=f.filter(j=>n(j.ytd_invoiced)===0&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));
+    if(bStatusF==='stale')f=f.filter(j=>n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01'&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF]);
   // ─── PM Submissions (AR Exception Dashboard) ───
   const[arMonth,setArMonth]=useState(curBillingMonth);
   const[arSubs,setArSubs]=useState([]);
