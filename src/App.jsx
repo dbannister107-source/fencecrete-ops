@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import QRCode from 'react-qr-code';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
 import 'leaflet/dist/leaflet.css';
@@ -9069,40 +9070,21 @@ async function uploadFleetPhoto(file, folder) {
 /* ── QR Code Generator using inline SVG ── */
 function FleetQRCode({ equipmentId, unitNumber, qrToken }) {
   const qrData = `https://fencecrete-ops.vercel.app?fleet_qr=${qrToken}`;
-  const [svgContent, setSvgContent] = React.useState('');
-  React.useEffect(() => {
-    // Simple QR representation using unit number as identifier
-    // In production this would use a QR library
-    setSvgContent(unitNumber);
-  }, [unitNumber]);
   return (
     <div style={{ textAlign: 'center', padding: 16 }}>
-      <div style={{ background: '#1A1A1A', borderRadius: 12, padding: 16, display: 'inline-block', marginBottom: 8 }}>
-        <div style={{ background: '#FFF', padding: 12, borderRadius: 8 }}>
-          <div id={`qr-${equipmentId}`} style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
-            <svg width="160" height="160" viewBox="0 0 160 160" style={{ display: 'block' }}>
-              <rect width="160" height="160" fill="white"/>
-              {/* QR pattern - simplified visual indicator */}
-              <rect x="10" y="10" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
-              <rect x="22" y="22" width="26" height="26" fill="#1A1A1A" rx="2"/>
-              <rect x="100" y="10" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
-              <rect x="112" y="22" width="26" height="26" fill="#1A1A1A" rx="2"/>
-              <rect x="10" y="100" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
-              <rect x="22" y="112" width="26" height="26" fill="#1A1A1A" rx="2"/>
-              {/* Data pixels */}
-              {[70,76,82,88,94,70,88,70,76,82,88].map((x,i)=>(
-                <rect key={i} x={x} y={10+i*6} width="4" height="4" fill="#1A1A1A"/>
-              ))}
-              {[70,76,82,88,94,70,88].map((x,i)=>(
-                <rect key={i} x={10+i*8} y={70} width="4" height="4" fill="#1A1A1A"/>
-              ))}
-              <text x="80" y="148" textAnchor="middle" fontSize="10" fill="#625650" fontFamily="monospace" fontWeight="700">{unitNumber}</text>
-            </svg>
-          </div>
-        </div>
+      <div style={{ background: '#FFF', padding: 16, borderRadius: 12, display: 'inline-block', border: '1px solid #E5E3E0' }}>
+        <QRCode
+          value={qrData}
+          size={180}
+          level="M"
+          fgColor="#1A1A1A"
+          bgColor="#FFFFFF"
+          style={{ display: 'block' }}
+        />
       </div>
-      <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 4 }}>Scan to open in Ops App</div>
-      <div style={{ fontSize: 10, color: '#D1CEC9', fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all', maxWidth: 200, margin: '4px auto 0' }}>{qrToken?.slice(0,16)}…</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A', marginTop: 10 }}>{unitNumber}</div>
+      <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 2 }}>Scan to open in Ops App</div>
+      <div style={{ fontSize: 9, color: '#D1CEC9', fontFamily: 'monospace', marginTop: 4, wordBreak: 'break-all', maxWidth: 220, margin: '4px auto 0' }}>{qrToken?.slice(0,20)}…</div>
     </div>
   );
 }
