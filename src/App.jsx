@@ -5074,8 +5074,14 @@ Generate the optimal 4-week production schedule following all rules.`;
       const actualsByJob={};
       if(jobIds.length>0){
         const idFilter=jobIds.map(id=>`job_id.eq.${id}`).join(',');
-        const allActs=await sbGet('production_actuals',`or=(${idFilter})&select=job_id,${PLAN_PIECE_KEYS.map(k=>'actual_'+k).join(',')},actual_lf`);
-        (allActs||[]).forEach(a=>{const jid=a.job_id;if(!actualsByJob[jid]){actualsByJob[jid]={};PLAN_PIECE_KEYS.forEach(k=>{actualsByJob[jid][k]=0;});actualsByJob[jid].lf=0;}PLAN_PIECE_KEYS.forEach(k=>{actualsByJob[jid][k]+=n(a['actual_'+k]);});actualsByJob[jid].lf+=n(a.actual_lf);});
+        const allActs=await sbGet('production_actuals',`or=(${idFilter})&select=job_id,actual_lf,actual_posts,actual_panels,actual_rails,actual_caps`);
+        (allActs||[]).forEach(a=>{const jid=a.job_id;if(!actualsByJob[jid]){actualsByJob[jid]={posts_line:0,posts_corner:0,posts_stop:0,panels_regular:0,panels_half:0,panels_bottom:0,panels_top:0,rails_regular:0,rails_top:0,rails_bottom:0,rails_center:0,caps_line:0,caps_stop:0,lf:0};}
+        // Map aggregate columns to piece keys (DB only stores totals, not per-type)
+        actualsByJob[jid].posts_line+=n(a.actual_posts);
+        actualsByJob[jid].panels_regular+=n(a.actual_panels);
+        actualsByJob[jid].rails_regular+=n(a.actual_rails);
+        actualsByJob[jid].caps_line+=n(a.actual_caps);
+        actualsByJob[jid].lf+=n(a.actual_lf);});
       }
       const incomplete=(yLines||[]).map(l=>{
         const job=jobs.find(x=>x.id===l.job_id);
@@ -5945,8 +5951,14 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
       const actualsByJob={};
       if(jobIds.length>0){
         const idFilter=jobIds.map(id=>`job_id.eq.${id}`).join(',');
-        const allActs=await sbGet('production_actuals',`or=(${idFilter})&select=job_id,${PLAN_PIECE_KEYS.map(k=>'actual_'+k).join(',')},actual_lf`);
-        (allActs||[]).forEach(a=>{const jid=a.job_id;if(!actualsByJob[jid]){actualsByJob[jid]={};PLAN_PIECE_KEYS.forEach(k=>{actualsByJob[jid][k]=0;});actualsByJob[jid].lf=0;}PLAN_PIECE_KEYS.forEach(k=>{actualsByJob[jid][k]+=n(a['actual_'+k]);});actualsByJob[jid].lf+=n(a.actual_lf);});
+        const allActs=await sbGet('production_actuals',`or=(${idFilter})&select=job_id,actual_lf,actual_posts,actual_panels,actual_rails,actual_caps`);
+        (allActs||[]).forEach(a=>{const jid=a.job_id;if(!actualsByJob[jid]){actualsByJob[jid]={posts_line:0,posts_corner:0,posts_stop:0,panels_regular:0,panels_half:0,panels_bottom:0,panels_top:0,rails_regular:0,rails_top:0,rails_bottom:0,rails_center:0,caps_line:0,caps_stop:0,lf:0};}
+        // Map aggregate columns to piece keys (DB only stores totals, not per-type)
+        actualsByJob[jid].posts_line+=n(a.actual_posts);
+        actualsByJob[jid].panels_regular+=n(a.actual_panels);
+        actualsByJob[jid].rails_regular+=n(a.actual_rails);
+        actualsByJob[jid].caps_line+=n(a.actual_caps);
+        actualsByJob[jid].lf+=n(a.actual_lf);});
       }
       const incomplete=(yLines||[]).map(l=>{
         const job=jobs.find(x=>x.id===l.job_id);
