@@ -913,7 +913,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   return(
     <div style={isMobile
       ? {position:'fixed',inset:0,background:'#FFF',zIndex:200,display:'flex',flexDirection:'column'}
-      : {position:'fixed',top:0,right:0,bottom:0,width:Math.min(540,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
+      : {position:'fixed',top:0,right:0,bottom:0,width:Math.min(Math.max(window.innerWidth*0.65,680),window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-12px 0 40px rgba(0,0,0,.12)'}}>
       <div style={{padding:isMobile?'12px 14px':'16px 20px',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexShrink:0,background:'#F9F8F6'}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
           {isMobile && <button onClick={onClose} aria-label="Back" style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#1A1A1A',padding:'4px 6px',lineHeight:1}}>←</button>}
@@ -967,7 +967,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
         <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
       </div>}
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
-      <div style={{flex:1,overflow:'auto',padding:20,pointerEvents:canEdit?'auto':'none'}}>
+      <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:canEdit?'auto':'none'}}>
         {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8A261D33',borderLeft:'4px solid #8A261D',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
             <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
