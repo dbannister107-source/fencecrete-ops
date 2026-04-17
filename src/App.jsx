@@ -10627,27 +10627,6 @@ function SalesDashboardPage({jobs,onNav}){
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();},[fetchLeads]);
   const today=new Date();
-  // Win rate calculations using all leads
-  const wonLeads=leads.filter(l=>l.stage==='won');
-  const lostLeads=leads.filter(l=>l.stage==='lost');
-  const closedLeads=[...wonLeads,...lostLeads];
-  const winRate=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
-  const totalWonValue=wonLeads.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
-  const openPipeline=leads.filter(l=>l.stage==='proposal_sent').reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability||50)/100),0);
-  const avgDaysToClose=wonLeads.length?Math.round(wonLeads.reduce((s,l)=>{
-    if(!l.stage_entered_at&&!l.created_at)return s;
-    const created=new Date(l.created_at||l.stage_entered_at);
-    const won=new Date(l.won_date||l.updated_at);
-    return s+Math.max(0,Math.floor((won-created)/86400000));
-  },0)/wonLeads.length):0;
-  // Win rate by rep
-  const repStats=REPS.map(rep=>{
-    const repWon=wonLeads.filter(l=>l.sales_rep===rep);
-    const repLost=lostLeads.filter(l=>l.sales_rep===rep);
-    const repOpen=leads.filter(l=>l.sales_rep===rep&&l.stage==='proposal_sent');
-    const repClosed=repWon.length+repLost.length;
-    return{rep,won:repWon.length,lost:repLost.length,open:repOpen.length,rate:repClosed?Math.round(repWon.length/repClosed*100):null,value:repWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0)};
-  }).filter(r=>r.won>0||r.open>0);
   const startOfMonth=new Date(today.getFullYear(),today.getMonth(),1).toISOString().slice(0,10);
   const ninetyDaysAgo=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
   const proposalsOpen=useMemo(()=>leads.filter(l=>l.stage==='proposal_sent'),[leads]);
