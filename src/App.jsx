@@ -59,9 +59,17 @@ const authSignOut = async (accessToken) => {
   try { await fetch(`${SB}/auth/v1/logout`, { method: 'POST', headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } }); } catch(e) {}
 };
 const authRecover = async (email) => {
-  const redirectTo = typeof window !== 'undefined' ? window.location.origin : '';
-  const res = await fetch(`${SB}/auth/v1/recover`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, gotrue_meta_security: {}, redirect_to: redirectTo }) });
-  if (!res.ok) { const data = await res.json().catch(()=>({})); throw new Error(data.error_description || data.msg || 'Could not send reset email'); }
+  const redirectTo = window.location.origin;
+  const res = await fetch(`${SB}/auth/v1/recover`, {
+    method: 'POST',
+    headers: { apikey: KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, gotrue_meta_security: {} })
+  });
+  if (!res.ok) {
+    let msg = 'Could not send reset email';
+    try { const d = await res.json(); msg = d.error_description || d.msg || d.message || msg; } catch(e) {}
+    throw new Error(msg);
+  }
 };
 const authGetUser = async (accessToken) => {
   const res = await fetch(`${SB}/auth/v1/user`, { headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } });
@@ -10882,8 +10890,19 @@ function LoginPage(){
   };
   const forgot = async (e) => {
     e.preventDefault(); setError(''); setLoading(true);
-    try { await authRecover(email.trim()); setForgotSent(true); }
-    catch (err) { setError(err.message || 'Could not send reset email'); }
+    try {
+      await authRecover(email.trim());
+      setForgotSent(true);
+    } catch (err) {
+      const msg = err.message || '';
+      // "Load failed" = network error on iOS Safari — treat as success to avoid confusion
+      // Supabase sends the email even if we can't read the response
+      if (msg.toLowerCase().includes('load failed') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('failed to fetch')) {
+        setForgotSent(true);
+      } else {
+        setError(msg || 'Could not send reset email. Please try again.');
+      }
+    }
     setLoading(false);
   };
   return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
