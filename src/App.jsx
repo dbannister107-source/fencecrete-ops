@@ -1726,7 +1726,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
   const blMktLTB=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],market:m,ltb:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});
   const blMktTotal=blMktLTB.reduce((s,m)=>s+m.ltb,0);
-  // 2026 Revenue Goal — includes closed jobs (money already earned)
+  // 2026 Revenue Goal — based on 2026 YTD Billed (last_billed >= Jan 1 2026)
   const GOAL_2026=36000000;
   const ytd2026=ty2026;
   const pct2026=Math.min(ytd2026/GOAL_2026,1);
@@ -1830,7 +1830,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>2026 Revenue Goal</div>
-            <div style={{fontSize:11,color:'#9E9B96'}}>YTD Contract Value vs $36M Target</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>2026 YTD Billed vs $36M Target</div>
           </div>
           {achieved2026&&<div style={{fontSize:14,fontWeight:800,color:'#065F46'}}>🎯 Goal Achieved!</div>}
         </div>
