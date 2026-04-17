@@ -5906,7 +5906,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
     try{
       // Explicit column list forces PostgREST to return every per-piece column
       const actualPieceCols=PIECE_TYPES.map(pt=>'actual_'+pt.key).join(',');
-      const actualsSelect=`id,plan_id,plan_line_id,job_id,job_number,job_name,production_date,shift,submitted_at,${actualPieceCols},actual_lf,actual_panels,actual_posts,actual_rails,actual_caps,actual_pieces,variance_reason,adjustment_reason,notes`;
+      const actualsSelect='id,plan_id,plan_line_id,job_id,job_number,job_name,production_date,shift,submitted_at,actual_lf,actual_pieces,actual_panels,actual_posts,actual_rails,actual_caps,actual_caps_line,actual_panels_line,actual_posts_line,actual_rails_line,actual_lf_line,actual_pieces_line,crew_size,logged_by,notes';
       let acts=null;
       try{acts=await sbGet('production_actuals',`production_date=eq.${date}&select=${actualsSelect}&order=submitted_at.asc`);}
       catch(e1){
