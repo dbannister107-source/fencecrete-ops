@@ -5247,7 +5247,7 @@ Generate the optimal 4-week production schedule following all rules.`;
     </div>
 
     {/* AI SCHEDULE GENERATOR */}
-    <div style={{...card,marginBottom:16,padding:16,borderLeft:'4px solid #8A261D',background:aiScheduleView?'#FDF4F4':'#FFF'}}>
+    <div style={{...card,marginBottom:16,padding:16,borderLeft:'4px solid #8A261D',background:aiScheduleView?'rgba(138,38,29,0.04)':'#FFF'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
         <div>
           <div style={{fontSize:13,fontWeight:800,color:'#8A261D',display:'flex',alignItems:'center',gap:6}}>
@@ -5299,7 +5299,7 @@ Generate the optimal 4-week production schedule following all rules.`;
         if (currentWeek.length) weeks.push(currentWeek);
 
         const typeColor = {posts:'#854F0B',panels:'#1D4ED8',caps:'#065F46',full:'#8A261D'};
-        const typeBg = {posts:'#FAEEDA',panels:'#DBEAFE',caps:'#D1FAE5',full:'#FEF2F2'};
+        const typeBg = {posts:'#FAEEDA',panels:'#E6F1FB',caps:'#E1F5EE',full:'#FFFFFF'};
 
         const updateEntry = async (entryId, field, value) => {
           await sbPatch('ai_schedule_entries', entryId, {[field]: value});
@@ -5352,7 +5352,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:6}}>
                     {dayEntries.map(e => (
-                      <div key={e.id} style={{display:'flex',alignItems:'center',gap:v?.ipad?12:8,padding:v?.ipad?'10px 14px':'6px 10px',background:typeBg[e.production_type]||'#F9F8F6',borderRadius:6,border:`1px solid ${typeColor[e.production_type]||'#E5E3E0'}33`}}>
+                      <div key={e.id} style={{display:'flex',alignItems:'center',gap:v?.ipad?12:8,padding:v?.ipad?'10px 14px':'6px 10px',background:typeBg[e.production_type]||'#F9F8F6',borderRadius:6,border:'1px solid #E5E3E0',borderLeft:`3px solid ${typeColor[e.production_type]||'#E5E3E0'}`}}>
                         <span style={{fontSize:10,fontWeight:700,color:typeColor[e.production_type]||'#625650',textTransform:'uppercase',minWidth:40}}>{e.production_type}</span>
                         <span style={{fontSize:12,fontWeight:700,flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.job_name||e.job_number}</span>
                         <span style={{fontSize:11,color:'#625650',whiteSpace:'nowrap'}}>{e.style} · {e.color}</span>
@@ -5481,8 +5481,8 @@ Generate the optimal 4-week production schedule following all rules.`;
             <button onClick={()=>setPlanDate(shiftDate(planDate,-1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#625650'}}>←</button>
             <input type="date" value={planDate} onChange={e=>setPlanDate(e.target.value)} style={{...inputS,width:150}}/>
             <button onClick={()=>setPlanDate(shiftDate(planDate,1))} style={{padding:'5px 9px',border:'1px solid #E5E3E0',background:'#FFF',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,color:'#625650'}}>→</button>
-            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'5px 9px',border:planDate===todayISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===todayISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#8A261D':'#625650'}}>Today</button>
-            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'5px 9px',border:planDate===tomorrowISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#FDF4F4':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#8A261D':'#625650'}}>Tomorrow</button>
+            <button onClick={()=>setPlanDate(todayISO)} style={{padding:'5px 9px',border:planDate===todayISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===todayISO?'#F4F4F2':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===todayISO?'#8A261D':'#625650'}}>Today</button>
+            <button onClick={()=>setPlanDate(tomorrowISO)} style={{padding:'5px 9px',border:planDate===tomorrowISO?'2px solid #8A261D':'1px solid #E5E3E0',background:planDate===tomorrowISO?'#F4F4F2':'#FFF',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700,color:planDate===tomorrowISO?'#8A261D':'#625650'}}>Tomorrow</button>
           </div>
         </div>
 
@@ -5591,7 +5591,7 @@ Generate the optimal 4-week production schedule following all rules.`;
 
         {/* Plan summary + save */}
         {planLines.length>0&&<>
-          <div style={{marginTop:12,padding:10,background:'#FDF4F4',borderRadius:8,display:'flex',gap:16,fontSize:11,fontWeight:600,color:'#8A261D',flexWrap:'wrap'}}>
+          <div style={{marginTop:12,padding:10,background:'#F4F4F2',borderRadius:8,display:'flex',gap:16,fontSize:11,fontWeight:600,color:'#8A261D',flexWrap:'wrap'}}>
             <span>Jobs: <b>{planTotals.count}</b></span>
             <span>Panels: <b>{planTotals.panels.toLocaleString()}</b></span>
             <span>Posts: <b>{planTotals.posts.toLocaleString()}</b></span>
