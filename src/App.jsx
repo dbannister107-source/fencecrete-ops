@@ -149,14 +149,14 @@ const SL = { contract_review:'Contract Review', production_queue:'Production Que
 // These map 1:1 with StatusBadge in src/components/ui/status-badge.jsx so a
 // status pill rendered via the inline `pill()` helper looks identical to one
 // rendered via <StatusBadge>.
-const SC = { contract_review:'#374151', production_queue:'#92400E', in_production:'#5B21B6', material_ready:'#1E40AF', active_install:'#065F46', fence_complete:'#115E59', fully_complete:'#064E3B', closed:'#374151', canceled:'#991B1B' };
-const SB_ = { contract_review:'#E5E7EB', production_queue:'#FEF3C7', in_production:'#EDE9FE', material_ready:'#DBEAFE', active_install:'#D1FAE5', fence_complete:'#CCFBF1', fully_complete:'#D1FAE5', closed:'#E5E7EB', canceled:'#FEE2E2' };
-const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#7C3AED', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
+const SC = { contract_review:'#625650', production_queue:'#854F0B', in_production:'#185FA5', material_ready:'#0F6E56', active_install:'#065F46', fence_complete:'#085041', fully_complete:'#04342C', closed:'#625650', canceled:'#991B1B' };
+const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_production:'#E6F1FB', material_ready:'#E1F5EE', active_install:'#E1F5EE', fence_complete:'#E1F5EE', fully_complete:'#E1F5EE', closed:'#F4F4F2', canceled:'#FEF2F2' };
+const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
 const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
 const CLOSED_SET=new Set(['fully_complete','closed','canceled']);
 const MKTS = ['Austin','Dallas-Fort Worth','Houston','San Antonio'];
-const MC = { Austin:'#C2410C', 'Dallas-Fort Worth':'#1D4ED8', Houston:'#065F46', 'San Antonio':'#9D174D' };
-const MB = { Austin:'#FED7AA', 'Dallas-Fort Worth':'#DBEAFE', Houston:'#D1FAE5', 'San Antonio':'#FCE7F3' };
+const MC = { Austin:'#854F0B', 'Dallas-Fort Worth':'#185FA5', Houston:'#0F6E56', 'San Antonio':'#8A261D' };
+const MB = { Austin:'#FAEEDA', 'Dallas-Fort Worth':'#E6F1FB', Houston:'#E1F5EE', 'San Antonio':'#FDF4F4' };
 const MS = { Austin:'Austin', 'Dallas-Fort Worth':'DFW', Houston:'Houston', 'San Antonio':'SA' };
 const MKT_CODE={Austin:'A','Dallas-Fort Worth':'D',Houston:'H','San Antonio':'S'};
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
@@ -471,7 +471,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   const grd={display:'grid',gridTemplateColumns:'1fr 1fr',gap:8};
   const lbl={fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600};
   const val={fontFamily:'Inter',fontSize:13,fontWeight:700,color:'#1A1A1A'};
-  const addC={G:['#B45309','Gates'],C:['#6D28D9','Columns'],WI:['#374151','WI']};
+  const addC={G:['#B45309','Gates'],C:['#854F0B','Columns'],WI:['#374151','WI']};
   return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
     <div style={{background:'#FFF',borderRadius:16,width:680,maxWidth:'96vw',maxHeight:'92vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
       {/* Header */}
@@ -1748,7 +1748,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:isMobile?20:24,fontWeight:900,margin:0}}>Dashboard</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:isMobile?20:22,fontWeight:800,margin:0}}>Dashboard</h1>
       <span style={{fontSize:11,color:'#9E9B96'}}>Updated {lastRefreshed.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>
     </div>
     <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:16,marginBottom:16}}>
@@ -1860,7 +1860,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       </div>)}</div>
     </div>;})()}
     {/* ═══ PIPELINE STAGE SUMMARY ═══ */}
-    {(()=>{const PIPELINE_STAGES=[{key:'contract_review',label:'Review',color:'#6B7280',bg:'#F3F4F6'},{key:'production_queue',label:'Prod Queue',color:'#7C3AED',bg:'#EDE9FE'},{key:'in_production',label:'In Prod',color:'#1D4ED8',bg:'#DBEAFE'},{key:'material_ready',label:'Inventory',color:'#B45309',bg:'#FEF3C7'},{key:'active_install',label:'Active Install',color:'#C2410C',bg:'#FFEDD5'},{key:'fence_complete',label:'Fence Complete',color:'#0F766E',bg:'#CCFBF1'},{key:'fully_complete',label:'Fully Complete',color:'#15803D',bg:'#DCFCE7'}];const stData=PIPELINE_STAGES.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+lfPC(j),0),lfAll:sj.reduce((x,j)=>x+lfTotal(j),0)};});const fcCount=stData.find(s=>s.key==='fully_complete')?.count||0;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0);const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);const pipeLFAll=stData.reduce((s2,d)=>s2+d.lfAll,0);return<div style={{...card,marginBottom:16}}>
+    {(()=>{const PIPELINE_STAGES=[{key:'contract_review',label:'Review',color:'#6B7280',bg:'#F3F4F6'},{key:'production_queue',label:'Prod Queue',color:'#854F0B',bg:'#FAEEDA'},{key:'in_production',label:'In Prod',color:'#1D4ED8',bg:'#DBEAFE'},{key:'material_ready',label:'Inventory',color:'#B45309',bg:'#FEF3C7'},{key:'active_install',label:'Active Install',color:'#854F0B',bg:'#FFEDD5'},{key:'fence_complete',label:'Fence Complete',color:'#0F766E',bg:'#CCFBF1'},{key:'fully_complete',label:'Fully Complete',color:'#15803D',bg:'#DCFCE7'}];const stData=PIPELINE_STAGES.map(s=>{const sj=jobs.filter(j=>j.status===s.key);return{...s,count:sj.length,lf:sj.reduce((x,j)=>x+lfPC(j),0),lfAll:sj.reduce((x,j)=>x+lfTotal(j),0)};});const fcCount=stData.find(s=>s.key==='fully_complete')?.count||0;const pipeTotal=stData.reduce((s2,d)=>s2+d.count,0);const pipeLF=stData.reduce((s2,d)=>s2+d.lf,0);const pipeLFAll=stData.reduce((s2,d)=>s2+d.lfAll,0);return<div style={{...card,marginBottom:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:12}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Production Pipeline</div><div style={{fontSize:12,color:'#625650'}}>{pipeTotal} active projects | <b style={{color:'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</b> <span style={{color:'#9E9B96'}}>({pipeLFAll.toLocaleString()} total)</span></div></div>
       <div style={{display:'flex',gap:4,alignItems:'stretch',flexWrap:'wrap'}}>
         {stData.map((s,i)=><React.Fragment key={s.key}>
@@ -1898,7 +1898,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     </div>}
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Contract Value by Market</div><ResponsiveContainer width="100%" height={220}><BarChart data={mktData} barSize={40}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+(v/1e6).toFixed(1)+'M'}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="value" radius={[6,6,0,0]}>{mktData.map((e,i)=><Cell key={i} fill={e.fill}/>)}</Bar></BarChart></ResponsiveContainer></div>
-      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:2,fontSize:13}}>Jobs by Status</div><div style={{fontSize:11,color:'#9E9B96',marginBottom:10}}>{active.length} active</div>{(()=>{const SC2={'active_install':'#065F46','material_ready':'#0F6E56','in_production':'#185FA5','production_queue':'#854F0B','contract_review':'#D97706','fence_complete':'#6B7280','fully_complete':'#374151'};const pd2=STS.filter(s=>!CLOSED_SET.has(s)).map(s=>({name:SS[s]||s,value:active.filter(j=>j.status===s).length,color:SC2[s]||'#9E9B96'})).filter(d=>d.value>0);return(<div><ResponsiveContainer width='100%' height={150}><PieChart><Pie data={pd2} cx='50%' cy='50%' innerRadius={38} outerRadius={62} paddingAngle={2} dataKey='value'>{pd2.map((d,i)=><Cell key={i} fill={d.color}/>)}</Pie><Tooltip formatter={(v,nm)=>[v+' jobs',nm]} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,fontSize:11}}/></PieChart></ResponsiveContainer><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'3px 8px',marginTop:6}}>{pd2.map(d=><div key={d.name} style={{display:'flex',alignItems:'center',gap:4,fontSize:10}}><span style={{width:6,height:6,borderRadius:1,background:d.color,flexShrink:0}}/><span style={{color:'#625650',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span><b style={{color:'#1A1A1A'}}>{d.value}</b></div>)}</div></div>);})()}</div>
+      <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:2,fontSize:13}}>Jobs by Status</div><div style={{fontSize:11,color:'#9E9B96',marginBottom:10}}>{active.length} active</div>{(()=>{const SC2={'active_install':'#065F46','material_ready':'#0F6E56','in_production':'#185FA5','production_queue':'#854F0B','contract_review':'#625650','fence_complete':'#085041','fully_complete':'#04342C'};const pd2=STS.filter(s=>!CLOSED_SET.has(s)).map(s=>({name:SS[s]||s,value:active.filter(j=>j.status===s).length,color:SC2[s]||'#9E9B96'})).filter(d=>d.value>0);return(<div><ResponsiveContainer width='100%' height={150}><PieChart><Pie data={pd2} cx='50%' cy='50%' innerRadius={38} outerRadius={62} paddingAngle={2} dataKey='value'>{pd2.map((d,i)=><Cell key={i} fill={d.color}/>)}</Pie><Tooltip formatter={(v,nm)=>[v+' jobs',nm]} contentStyle={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,fontSize:11}}/></PieChart></ResponsiveContainer><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'3px 8px',marginTop:6}}>{pd2.map(d=><div key={d.name} style={{display:'flex',alignItems:'center',gap:4,fontSize:10}}><span style={{width:6,height:6,borderRadius:1,background:d.color,flexShrink:0}}/><span style={{color:'#625650',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span><b style={{color:'#1A1A1A'}}>{d.value}</b></div>)}</div></div>);})()}</div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
       <div style={card}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:12}}>Top 15 Left to Bill</div><table style={{width:'100%',borderCollapse:'collapse'}}><tbody>{top15.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'5px 8px',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'5px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#8A261D',fontSize:13}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table></div>
@@ -2113,7 +2113,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     <div style={{position:'sticky',top:0,zIndex:10,background:'#F4F4F2',paddingBottom:8,marginBottom:8}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
         <div style={{display:'flex',alignItems:'baseline',gap:16}}>
-          <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>Projects</h1>
+          <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Projects</h1>
           <div style={{display:'flex',gap:4}}>
             <button onClick={()=>setProjTab('active')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='active'?'#8A261D':'#625650',fontWeight:projTab==='active'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='active'?'2px solid #8A261D':'2px solid transparent'}}>Active</button>
             <button onClick={()=>setProjTab('closed')} style={{padding:'6px 14px',border:'none',background:'transparent',color:projTab==='closed'?'#8A261D':'#625650',fontWeight:projTab==='closed'?700:400,fontSize:13,cursor:'pointer',borderBottom:projTab==='closed'?'2px solid #8A261D':'2px solid transparent'}}>Closed{closedCount>0&&<span style={{marginLeft:4,background:'#F4F4F2',color:'#625650',padding:'1px 6px',borderRadius:8,fontSize:10,fontWeight:600}}>{closedCount}</span>}</button>
@@ -2347,11 +2347,11 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
   const hasAnyReviewed=arReviewedCount>0;
   const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${s.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
-  const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
+  const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#FAEEDA',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Billing</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:20}}>Billing</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
     {/* Tabs — 2 only */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
@@ -2826,7 +2826,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});if(res.ok){const txt=await res.text();const saved=JSON.parse(txt);newRecs.push(saved[0]||saved);success++;}}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
 
   if(!selPM)return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:24}}>PM Bill Sheet</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:24}}>PM Bill Sheet</h1>
     <div style={{...card,textAlign:'center',padding:40}}>
       <div style={{fontSize:16,color:'#625650',marginBottom:20}}>Select your name to get started</div>
       <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>{PM_LIST.map(pm=><button key={pm.id} onClick={()=>pickPM(pm.id)} style={{padding:'14px 32px',borderRadius:12,border:'2px solid #E5E3E0',background:'#FFF',color:'#1A1A1A',fontSize:16,fontWeight:700,cursor:'pointer',transition:'all .15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#8A261D';e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='#8A261D';}} onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#1A1A1A';e.currentTarget.style.borderColor='#E5E3E0';}}>{pm.label}</button>)}</div>
@@ -2866,7 +2866,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       ]
     },
     {
-      title:'Wrought Iron',bg:'#EDE9FE',
+      title:'Wrought Iron',bg:'#FAEEDA',
       contractKey:'lf_wrought_iron',
       contractLabel:'WI LF',
       fields:[
@@ -3045,7 +3045,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   return(<div style={{paddingBottom:v?.ipad?80:0}}>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:v?.ipad?16:12}}>
-      <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:900}}>PM Bill Sheet</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:800}}>PM Bill Sheet</h1>
     </div>
     {/* PM Selector + Month — iPad: larger buttons */}
     <div style={{display:'flex',gap:v?.ipad?12:8,marginBottom:v?.ipad?16:12,flexWrap:'wrap',alignItems:'center'}}>
@@ -3095,7 +3095,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
             <span style={{fontSize:v?.ipad?16:13,fontWeight:600,color:'#1A1A1A',flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
             <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:j.billing_date?'#1D4ED8':'#9E9B96',background:j.billing_date?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {j.billing_date||'—'}</span>
             {(j.third_party_billing===true||j.ocip_ccip===true)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
-            {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#6D28D9',background:'#EDE9FE',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
+            {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#854F0B',background:'#FAEEDA',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
             <span style={{fontSize:11,color:'#625650',display:'flex',gap:6,flexWrap:'nowrap'}}>
               {j.style&&<span>{j.style}</span>}
               {j.height_precast&&<span style={{opacity:0.7}}>{j.height_precast}ft</span>}
@@ -3177,7 +3177,7 @@ function StartDateBadge({date,status}){
 }
 const STAGE_THRESHOLDS={contract_review:[30,60],production_queue:[21,45],in_production:[30,60],material_ready:[14,30],active_install:[30,60],fence_complete:[7,14],fully_complete:[7,14]};
 const STAGE_DATE_KEY={material_ready:'inventory_ready_date',active_install:'active_install_date',fence_complete:'fence_complete_date',fully_complete:'fully_complete_date',in_production:'production_start_date'};
-function ProdCard({j,move,locked,compact,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,lineItems}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#6D28D9','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#625650',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#625650',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div>{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{!compact&&(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#EDE9FE',border:'1px solid #7C3AED40',borderRadius:6,fontSize:10,color:'#5B21B6'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#625650',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
+function ProdCard({j,move,locked,compact,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,lineItems}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));return<div style={{...card,padding:12,marginBottom:6,position:'relative'}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#854F0B','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#625650',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#625650',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}</div>{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{!compact&&(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#FAEEDA',border:'1px solid #854F0B40',borderRadius:6,fontSize:10,color:'#185FA5'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#625650',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
 function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
@@ -3213,7 +3213,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const fetchProdBillSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${prodBillingMonth}&order=created_at.desc`);setProdBillSubs(d||[]);},[prodBillingMonth]);
   useEffect(()=>{fetchProdBillSubs();},[fetchProdBillSubs,refreshKey]);
   const prodSubByJob=useMemo(()=>{const m={};(prodBillSubs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[prodBillSubs]);
-  const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#EDE9FE',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
+  const PROD_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'One Line Items',bg:'#FAEEDA',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
   const[groupBy,setGroupBy]=useState('status');const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);const[search,setSearch]=useState('');const[addonsF,setAddonsF]=useState(new Set());
   // Edit lock — defaults to locked on every page load (intentionally not persisted).
   const[editUnlocked,setEditUnlocked]=useState(true);const[showPinModal,setShowPinModal]=useState(false);const[pinInput,setPinInput]=useState('');const[pinError,setPinError]=useState(false);
@@ -3231,7 +3231,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   return(<div>
     {moveToast&&<Toast message={moveToast.msg} isError={!moveToast.ok} onDone={()=>setMoveToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Production</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Production</h1>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {editUnlocked
           ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FDF4F4',border:'1px solid #8A261D40',color:'#8A261D',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
@@ -3244,7 +3244,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       <button onClick={()=>setCompactCards(v=>!v)} style={{...gpill(compactCards),marginLeft:8}} title="Toggle compact view">{compactCards?'⊞ Compact':'⊟ Full'}</button>
     </div>
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
-    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#6D28D9',bg:'#EDE9FE'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#625650',marginLeft:4}}>{filtered.length} jobs</span>}</div>
+    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#854F0B',bg:'#FAEEDA'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#625650',marginLeft:4}}>{filtered.length} jobs</span>}</div>
     {isMobile
       ? <MobileKanban
           columns={colArr.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.bg,items:col.jobs}))}
@@ -3374,7 +3374,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   const[prodSec,setProdSec]=useState({pc:false,sw:false,wi:false});
   const renderReport=()=>{
     if(activeRpt==='ltb_rep'){const reps={};active.forEach(j=>{const r=j.sales_rep||'Unassigned';if(!reps[r])reps[r]={rep:r,count:0,tc:0,ytd:0,ltb:0};reps[r].count++;reps[r].tc+=n(j.adj_contract_value||j.contract_value);reps[r].ytd+=n(j.ytd_invoiced);reps[r].ltb+=n(j.left_to_bill);});const data=Object.values(reps).sort((a,b)=>b.ltb-a.ltb);return<div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Rep','Projects','Contract','YTD','LTB','%'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{data.map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:8,fontWeight:600}}>{r.rep}</td><td style={{padding:8}}>{r.count}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700}}>{$(r.tc)}</td><td style={{padding:8}}>{$(r.ytd)}</td><td style={{padding:8,fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(r.ltb)}</td><td style={{padding:8}}>{r.tc>0?Math.round(r.ytd/r.tc*100):0}%</td></tr>)}</tbody></table><div style={{marginTop:16}}><ResponsiveContainer width="100%" height={200}><BarChart data={data} barSize={30}><XAxis dataKey="rep" tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Bar dataKey="ltb" fill="#8A261D" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div></div>;}
-    if(activeRpt==='aging'){const unbilled=active.filter(j=>n(j.pct_billed)===0);const bkts={'Not Started':unbilled.filter(j=>n(j.contract_age)<30),Watch:unbilled.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60),Overdue:unbilled.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90),Critical:unbilled.filter(j=>n(j.contract_age)>=90)};const colors={'Not Started':'#9E9B96',Watch:'#B45309',Overdue:'#C2410C',Critical:'#991B1B'};return<div>{Object.entries(bkts).map(([name,bj])=>bj.length>0&&<div key={name} style={{marginBottom:16}}><div style={{fontFamily:'Inter',fontWeight:700,color:colors[name],marginBottom:6}}>{name} ({bj.length}) — {$(bj.reduce((s,j)=>s+n(j.contract_value),0))}</div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><tbody>{bj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${colors[name]}`}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:colors[name]}}>{j.contract_age}d</td></tr>)}</tbody></table></div>)}</div>;}
+    if(activeRpt==='aging'){const unbilled=active.filter(j=>n(j.pct_billed)===0);const bkts={'Not Started':unbilled.filter(j=>n(j.contract_age)<30),Watch:unbilled.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60),Overdue:unbilled.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90),Critical:unbilled.filter(j=>n(j.contract_age)>=90)};const colors={'Not Started':'#9E9B96',Watch:'#B45309',Overdue:'#854F0B',Critical:'#991B1B'};return<div>{Object.entries(bkts).map(([name,bj])=>bj.length>0&&<div key={name} style={{marginBottom:16}}><div style={{fontFamily:'Inter',fontWeight:700,color:colors[name],marginBottom:6}}>{name} ({bj.length}) — {$(bj.reduce((s,j)=>s+n(j.contract_value),0))}</div><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><tbody>{bj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${colors[name]}`}}><td style={{padding:'6px 8px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.contract_value)}</td><td style={{padding:'6px 8px',color:colors[name]}}>{j.contract_age}d</td></tr>)}</tbody></table></div>)}</div>;}
     if(activeRpt==='pipeline'){const data=MKTS.map(m=>{const d={name:MS[m]};STS.forEach(s=>{d[s]=jobs.filter(j=>j.market===m&&j.status===s).reduce((x,j)=>x+n(j.adj_contract_value||j.contract_value),0);});return d;});return<ResponsiveContainer width="100%" height={300}><BarChart data={data}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/>{STS.map(s=><Bar key={s} dataKey={s} stackId="a" fill={SC[s]} name={SS[s]}/>)}</BarChart></ResponsiveContainer>;}
     if(activeRpt==='revenue'){const data=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],billed:mj.reduce((s,j)=>s+n(j.ytd_invoiced),0),remaining:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});return<ResponsiveContainer width="100%" height={260}><BarChart data={data} barSize={30}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/><Tooltip formatter={v=>$(v)} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="billed" fill="#065F46" name="Billed" radius={[4,4,0,0]}/><Bar dataKey="remaining" fill="#B45309" name="Remaining" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>;}
     if(activeRpt==='prod_sched'){const pj=jobs.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).sort((a,b)=>new Date(a.est_start_date||'9999')-new Date(b.est_start_date||'9999'));return<table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Code','Project','Market','Fence','LF','Est Start','Rep','Contract','LTB'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{pj.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}><td style={{padding:'6px 8px'}}>{j.job_number}</td><td style={{padding:'6px 8px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{j.fence_type||'—'}</td><td style={{padding:'6px 8px'}}>{n(j.total_lf).toLocaleString()}</td><td style={{padding:'6px 8px'}}><StartDateBadge date={j.est_start_date} status={j.status}/></td><td style={{padding:'6px 8px'}}>{j.sales_rep||'—'}</td><td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td><td style={{padding:'6px 8px',color:'#8A261D',fontFamily:'Inter',fontWeight:700}}>{$(j.left_to_bill)}</td></tr>)}</tbody></table>;}
@@ -3407,12 +3407,12 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
           <div style={{...card,borderTop:'3px solid #8A261D'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Precast (PC)</div><div style={{fontSize:22,fontWeight:800,color:'#8A261D',marginBottom:4}}>{pc.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{pc.jobs.length} jobs · {totalLF>0?Math.round(pc.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(pc.rev)}</div></div>
           <div style={{...card,borderTop:'3px solid #1D4ED8'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Single Wythe / Masonry (SW)</div><div style={{fontSize:22,fontWeight:800,color:'#1D4ED8',marginBottom:4}}>{sw.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{sw.jobs.length} jobs · {totalLF>0?Math.round(sw.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(sw.rev)}</div></div>
-          <div style={{...card,borderTop:'3px solid #6D28D9'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Wrought Iron (WI)</div><div style={{fontSize:22,fontWeight:800,color:'#6D28D9',marginBottom:4}}>{wi.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{wi.jobs.length} jobs · {totalLF>0?Math.round(wi.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(wi.rev)}</div></div>
+          <div style={{...card,borderTop:'3px solid #854F0B'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Wrought Iron (WI)</div><div style={{fontSize:22,fontWeight:800,color:'#854F0B',marginBottom:4}}>{wi.lf.toLocaleString()} LF</div><div style={{fontSize:12,color:'#625650'}}>{wi.jobs.length} jobs · {totalLF>0?Math.round(wi.lf/totalLF*100):0}% of total LF</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(wi.rev)}</div></div>
           <div style={{...card,borderTop:'3px solid #F59E0B'}}><div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Gates</div><div style={{fontSize:22,fontWeight:800,color:'#F59E0B',marginBottom:4}}>{gt.count.toLocaleString()} Gates</div><div style={{fontSize:12,color:'#625650'}}>{gt.jobs.length} jobs · {aj.length>0?Math.round(gt.jobs.length/aj.length*100):0}% of jobs</div><div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',marginTop:6}}>Est. Rev: {$(gt.rev)}</div></div>
         </div>
         {/* Section 2 — Stacked Bar Chart */}
         <div style={{marginBottom:24}}><div style={{fontWeight:700,fontSize:13,marginBottom:12}}>LF by Product Type — by Market</div>
-          <ResponsiveContainer width="100%" height={280}><BarChart data={chartData}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v.toLocaleString()}/><Tooltip formatter={(v,name)=>[v.toLocaleString()+' LF',name]} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="PC" stackId="a" fill="#8A261D" name="Precast"/><Bar dataKey="SW" stackId="a" fill="#1D4ED8" name="Single Wythe"/><Bar dataKey="WI" stackId="a" fill="#6D28D9" name="Wrought Iron"/></BarChart></ResponsiveContainer>
+          <ResponsiveContainer width="100%" height={280}><BarChart data={chartData}><XAxis dataKey="name" tick={{fill:'#625650',fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v.toLocaleString()}/><Tooltip formatter={(v,name)=>[v.toLocaleString()+' LF',name]} contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/><Legend/><Bar dataKey="PC" stackId="a" fill="#8A261D" name="Precast"/><Bar dataKey="SW" stackId="a" fill="#1D4ED8" name="Single Wythe"/><Bar dataKey="WI" stackId="a" fill="#854F0B" name="Wrought Iron"/></BarChart></ResponsiveContainer>
         </div>
         {/* Section 3 — Product Mix Table */}
         <div style={{marginBottom:24}}><div style={{fontWeight:700,fontSize:13,marginBottom:12}}>Product Mix by Market</div>
@@ -3421,7 +3421,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               <td style={tdS}>{r.market}</td><td style={tdS}>{r.jobs}</td>
               <td style={tdS}>{r.pclf.toLocaleString()}</td><td style={{...tdS,color:r.pcPct<50?'#991B1B':'#1A1A1A',background:r.pcPct<50?'#FEF2F210':'transparent'}}>{r.pcPct}%</td>
               <td style={tdS}>{r.swlf.toLocaleString()}</td><td style={{...tdS,color:r.swPct>20?'#1D4ED8':'#1A1A1A',background:r.swPct>20?'#DBEAFE30':'transparent'}}>{r.swPct}%</td>
-              <td style={tdS}>{r.wilf.toLocaleString()}</td><td style={{...tdS,color:r.wiPct>5?'#6D28D9':'#1A1A1A',background:r.wiPct>5?'#EDE9FE30':'transparent'}}>{r.wiPct}%</td>
+              <td style={tdS}>{r.wilf.toLocaleString()}</td><td style={{...tdS,color:r.wiPct>5?'#854F0B':'#1A1A1A',background:r.wiPct>5?'#FAEEDA30':'transparent'}}>{r.wiPct}%</td>
               <td style={tdS}>{r.gates}</td><td style={{...tdS,fontWeight:700}}>{r.tlf.toLocaleString()}</td><td style={{...tdS,fontWeight:700}}>{$(r.cv)}</td>
             </tr>;})}</tbody></table></div>
         </div>
@@ -3446,13 +3446,13 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}>{j.style_single_wythe||'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe).toLocaleString()}</td><td style={tdS}>{j.height_single_wythe||'—'}</td><td style={tdS}>{n(j.contract_rate_single_wythe)>0?'$'+n(j.contract_rate_single_wythe).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{n(j.lf_single_wythe)>0&&n(j.contract_rate_single_wythe)>0?$(n(j.lf_single_wythe)*n(j.contract_rate_single_wythe)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
             </tr>)}</tbody></table></div>}</div>
           {/* C. Wrought Iron & Gates */}
-          <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,wi:!p.wi}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#6D28D9',padding:0}}>
+          <div style={{marginBottom:12}}><button onClick={()=>setProdSec(p=>({...p,wi:!p.wi}))} style={{display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'#854F0B',padding:0}}>
             <span style={{fontSize:11,transition:'transform .2s',transform:prodSec.wi?'rotate(90deg)':'rotate(0deg)',display:'inline-block'}}>▶</span>
             Wrought Iron & Gates ({wiGateJobs.length}) — {wi.lf.toLocaleString()} LF WI · {gt.count} gates · {$(wi.rev+gt.rev)} est. revenue
           </button>
           {prodSec.wi&&<div style={{overflow:'auto',marginTop:8}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Code','Project','Market','Fence Type','LF WI','WI Rate','Gates','Gate Rate','Est. WI Rev','Est. Gate Rev','Status','Rep'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
-            <tbody>{wiGateJobs.map(j=>{const hasWI=n(j.lf_wrought_iron)>0;const hasGt=n(j.number_of_gates)>0;const ftPill=hasWI&&hasGt?pill('#6D28D9','#EDE9FE'):hasWI?pill('#6D28D9','#EDE9FE'):pill('#F59E0B','#FEF3C7');return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}><span style={ftPill}>{j.fence_type||'—'}</span></td><td style={{...tdS,fontWeight:700}}>{hasWI?n(j.lf_wrought_iron).toLocaleString():'—'}</td><td style={tdS}>{n(j.contract_rate_wrought_iron)>0?'$'+n(j.contract_rate_wrought_iron).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{hasGt?n(j.number_of_gates):'—'}</td><td style={tdS}>{n(j.gate_rate)>0?'$'+n(j.gate_rate).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700,color:'#6D28D9'}}>{hasWI&&n(j.contract_rate_wrought_iron)>0?$(n(j.lf_wrought_iron)*n(j.contract_rate_wrought_iron)):'—'}</td><td style={{...tdS,fontWeight:700,color:'#F59E0B'}}>{hasGt&&n(j.gate_rate)>0?$(n(j.number_of_gates)*n(j.gate_rate)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
+            <tbody>{wiGateJobs.map(j=>{const hasWI=n(j.lf_wrought_iron)>0;const hasGt=n(j.number_of_gates)>0;const ftPill=hasWI&&hasGt?pill('#854F0B','#FAEEDA'):hasWI?pill('#854F0B','#FAEEDA'):pill('#F59E0B','#FEF3C7');return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+              <td style={tdS}>{j.job_number}</td><td style={{...tdS,fontWeight:500,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</td><td style={tdS}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td><td style={tdS}><span style={ftPill}>{j.fence_type||'—'}</span></td><td style={{...tdS,fontWeight:700}}>{hasWI?n(j.lf_wrought_iron).toLocaleString():'—'}</td><td style={tdS}>{n(j.contract_rate_wrought_iron)>0?'$'+n(j.contract_rate_wrought_iron).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700}}>{hasGt?n(j.number_of_gates):'—'}</td><td style={tdS}>{n(j.gate_rate)>0?'$'+n(j.gate_rate).toFixed(2):'—'}</td><td style={{...tdS,fontWeight:700,color:'#854F0B'}}>{hasWI&&n(j.contract_rate_wrought_iron)>0?$(n(j.lf_wrought_iron)*n(j.contract_rate_wrought_iron)):'—'}</td><td style={{...tdS,fontWeight:700,color:'#F59E0B'}}>{hasGt&&n(j.gate_rate)>0?$(n(j.number_of_gates)*n(j.gate_rate)):'—'}</td><td style={tdS}><span style={statusPill(j.status)}>{SS[j.status]||'—'}</span></td><td style={tdS}>{j.sales_rep||'—'}</td>
             </tr>;})}</tbody></table></div>}</div>
         </div>
         {/* Section 5 — Average Rates */}
@@ -3498,7 +3498,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.lf.toLocaleString()}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.panels.toLocaleString()}</td>
             <td style={{padding:'6px 8px',textAlign:'right',color:'#625650'}}>{r.capacity>0?`${r.capacity}/day`:'—'}</td>
-            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#7C3AED'}}>{r.days!=null?`~${r.days.toLocaleString()} days`:'—'}</td>
+            <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#854F0B'}}>{r.days!=null?`~${r.days.toLocaleString()} days`:'—'}</td>
             <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#1D4ED8'}}>{r.cyd>0?r.cyd.toFixed(1)+' CYD':'—'}</td>
           </tr>)}
           <tr style={{borderTop:'2px solid #1A1A1A',background:'#F9F8F6'}}>
@@ -3507,7 +3507,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totLf.toLocaleString()}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{totPanels.toLocaleString()}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#625650'}}>—</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#7C3AED'}}>—</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#854F0B'}}>—</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#1D4ED8'}}>{totCyd.toFixed(1)} CYD</td>
           </tr>
           </tbody>
@@ -3553,11 +3553,11 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>B) Missing Color ({missingColor.length})</div>
         <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Style confirmed but color not yet chosen.</div>
         {sec('',(''),'#FEF3C7',missingColor,[['Job #',j=>j.job_number],['Job Name',j=>j.job_name],['Style',j=>j.style],['PM',j=>j.pm],['LF',j=>n(j.total_lf).toLocaleString()]],'All active jobs with a style also have a color')}
-        <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>C) Missing Material Calculation ({missingCalc.length})</div>
+        <div style={{fontSize:11,fontWeight:800,color:'#854F0B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6,marginTop:16}}>C) Missing Material Calculation ({missingCalc.length})</div>
         <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Style + color are set but materials haven't been calculated yet — can't be added to a production plan.</div>
         {missingCalc.length===0?<div style={{padding:10,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>All eligible jobs have material calculations</div>:
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{background:'#EDE9FE'}}>{['Job #','Job Name','PM','Style','Color','LF','Est Start','Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:'#FAEEDA'}}>{['Job #','Job Name','PM','Style','Color','LF','Est Start','Action'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>{missingCalc.map(j=><tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
             <td style={{padding:'6px 10px'}}>{j.job_number}</td>
             <td style={{padding:'6px 10px',fontWeight:500}}>{j.job_name}</td>
@@ -3566,7 +3566,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <td style={{padding:'6px 10px'}}>{j.color||'—'}</td>
             <td style={{padding:'6px 10px'}}>{n(j.total_lf).toLocaleString()}</td>
             <td style={{padding:'6px 10px'}}>{j.est_start_date?fD(j.est_start_date):'—'}</td>
-            <td style={{padding:'6px 10px'}}><button onClick={()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}if(onNav)onNav('material_calc');}} style={{background:'none',border:'1px solid #7C3AED40',color:'#7C3AED',padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer'}}>Calculate Materials →</button></td>
+            <td style={{padding:'6px 10px'}}><button onClick={()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}if(onNav)onNav('material_calc');}} style={{background:'none',border:'1px solid #854F0B40',color:'#854F0B',padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer'}}>Calculate Materials →</button></td>
           </tr>)}</tbody>
         </table>}
       </div>;
@@ -3604,7 +3604,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <td style={{padding:'6px 8px'}}><div style={{fontWeight:600}}>{r.job.job_name}</div><div style={{fontSize:10,color:'#9E9B96'}}>#{r.job.job_number}</div></td>
             <td style={{padding:'6px 8px'}}>{r.job.style||'—'}</td>
             <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700}}>{r.panels.toLocaleString()}</td>
-            <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#7C3AED'}}>{r.days!=null?`~${r.days} days`:'—'}</td>
+            <td style={{padding:'6px 8px',fontFamily:'Inter',fontWeight:700,color:'#854F0B'}}>{r.days!=null?`~${r.days} days`:'—'}</td>
             <td style={{padding:'6px 8px'}}>{r.projReady?r.projReady.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</td>
             <td style={{padding:'6px 8px'}}>{r.job.est_start_date?fD(r.job.est_start_date):<span style={{color:'#9E9B96'}}>—</span>}</td>
             <td style={{padding:'6px 8px',fontWeight:700,color:col}}>{r.status==='on_track'?'✓ On Track':r.status==='at_risk'?`⚠ At Risk — ${r.daysLate} ${r.daysLate===1?'day':'days'} late`:'No install date set'}</td>
@@ -3894,7 +3894,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
           <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Total Pipeline PC LF</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#8A261D',marginTop:4}}>{totalPipeLf.toLocaleString()}</div></div>
-          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>In Production Now</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#6D28D9',marginTop:4}}>{inProdNow.toLocaleString()}</div></div>
+          <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>In Production Now</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#854F0B',marginTop:4}}>{inProdNow.toLocaleString()}</div></div>
           <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Ready to Produce</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:'#1D4ED8',marginTop:4}}>{readyToProd.toLocaleString()}</div></div>
           <div style={{...card}}><div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Unknown Style</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:unknownLF>10000?'#991B1B':'#9E9B96',marginTop:4}}>{unknownLF.toLocaleString()}</div></div>
         </div>
@@ -3912,7 +3912,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <Legend wrapperStyle={{fontSize:11}}/>
             <Bar dataKey="Contract Review" stackId="a" fill="#9CA3AF"/>
             <Bar dataKey="Inventory Ready" stackId="a" fill="#3B82F6"/>
-            <Bar dataKey="In Production" stackId="a" fill="#8B5CF6"/>
+            <Bar dataKey="In Production" stackId="a" fill="#D97706"/>
             <Bar dataKey="Active Install" stackId="a" fill="#10B981"/>
           </BarChart>
         </ResponsiveContainer>
@@ -3965,7 +3965,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     return(<div>
       <button onClick={closeReport} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:700,cursor:'pointer',padding:'4px 0',marginBottom:10,display:'inline-flex',alignItems:'center',gap:4}}>← Back to Reports</button>
       {meta&&<div style={{marginBottom:6}}>
-        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:4}}>{meta.icon?<span style={{marginRight:8}}>{meta.icon}</span>:null}{meta.title}</h1>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:4}}>{meta.icon?<span style={{marginRight:8}}>{meta.icon}</span>:null}{meta.title}</h1>
         {meta.desc&&<div style={{fontSize:13,color:'#625650',marginBottom:16}}>{meta.desc}</div>}
       </div>}
       <div style={{...card}}><ErrorBoundary label={`Report: ${activeRpt}`}>{renderReport()}</ErrorBoundary></div>
@@ -3973,7 +3973,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   }
   // INDEX VIEW — just the cards
   return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:6}}>Reports</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:6}}>Reports</h1>
     {/* EXECUTIVE */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>📈 Executive</div>
@@ -3984,7 +3984,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>{salesReports.map(renderReportCard)}</div>
     {/* PRODUCTION REPORTS */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:18,marginBottom:10}}>
-      <div style={{fontSize:11,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5}}>🏭 Production</div>
+      <div style={{fontSize:11,fontWeight:800,color:'#854F0B',textTransform:'uppercase',letterSpacing:0.5}}>🏭 Production</div>
       <div style={{fontSize:10,color:'#9E9B96'}}>Data refreshed at {fmtLoadedAt}</div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:16}}>{productionReports.map(renderReportCard)}</div>
@@ -4137,7 +4137,7 @@ function MaterialCalcPage({jobs,preJob}){
 
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:20}}>Material Calculator</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:20}}>Material Calculator</h1>
     {/* Inputs */}
     <div style={{...card,marginBottom:20,padding:20}}>
       <div style={{display:'grid',gridTemplateColumns:'1.3fr 1.1fr 1.2fr 1fr auto',gap:12,alignItems:'start'}}>
@@ -4403,13 +4403,13 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{marginBottom:8}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:2}}>Production Orders</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:2}}>Production Orders</h1>
       <div style={{fontSize:12,color:'#9E9B96'}}>Jobs with saved material calculations</div>
     </div>
     {/* Summary cards */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16,marginTop:12}}>
       <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{ordersJobs.length}</div><div style={{fontSize:11,color:'#625650'}}>Total Orders</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #7C3AED'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#7C3AED'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#625650'}}>Needs Production</div></div>
+      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #854F0B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#854F0B'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#625650'}}>Needs Production</div></div>
       <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{inProd.length}</div><div style={{fontSize:11,color:'#625650'}}>In Production</div></div>
       <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{thisWeek.length}</div><div style={{fontSize:11,color:'#625650'}}>Starting This Week</div></div>
     </div>
@@ -4418,15 +4418,15 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
       <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',marginBottom:8}}>🏭 Plant Summary</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
         <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22}}>{moldTotals.molds}</div><div style={{fontSize:10,color:'#625650'}}>Total Molds</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#7C3AED'}}>~{moldTotals.panelsPerDay.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Max Panels/Day</div></div>
+        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#854F0B'}}>~{moldTotals.panelsPerDay.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Max Panels/Day</div></div>
         <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#B45309'}}>{n(plantCfg.max_lf_per_day)||2640} LF</div><div style={{fontSize:10,color:'#625650'}}>Max LF/Day</div></div>
         <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#1D4ED8'}}>{(n(plantCfg.daily_cy_capacity)||52.8).toFixed(1)} CYD</div><div style={{fontSize:10,color:'#625650'}}>Batch Plant/Day</div></div>
       </div>
       <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',fontSize:10,color:'#9E9B96'}}>2× WIGGERT HPGM 500 mixers · 60 batches/shift × 0.44 CYD · 24hr cure · {Math.round(MOLD_UTIL_RATE*100)}% mold util · {Math.round(SCRAP_RATE*100)}% scrap rate</div>
     </div>}
     {/* Mold Utilization Table */}
-    {moldUtilization.length>0&&<div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #7C3AED'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🔧 Mold Utilization — Today</div>
+    {moldUtilization.length>0&&<div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #854F0B'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#854F0B',textTransform:'uppercase',marginBottom:10}}>🔧 Mold Utilization — Today</div>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
         <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
         <tbody>
@@ -4445,7 +4445,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
               <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
               <td style={{padding:'6px 8px',textAlign:'right'}}>{r.molds}</td>
               <td style={{padding:'6px 8px',textAlign:'right',color:'#9E9B96'}}>{r.panelsPerMold}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#7C3AED'}}>{r.capacity.toLocaleString()}</td>
+              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#854F0B'}}>{r.capacity.toLocaleString()}</td>
               <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
               <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#B45309':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
               <td style={{padding:'6px 8px'}}>{r.notPlanned?<span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Not planned</span>:<div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -4460,7 +4460,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
             <td style={{padding:'8px',fontWeight:800}}>TOTAL</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.molds}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#9E9B96'}}>—</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#7C3AED'}}>{moldTotals.capacity.toLocaleString()}*</td>
+            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#854F0B'}}>{moldTotals.capacity.toLocaleString()}*</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.inUse.toLocaleString()}</td>
             <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.avail.toLocaleString()}</td>
             <td style={{padding:'8px'}}><div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -4499,7 +4499,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:10,color:'#625650',marginBottom:2}}>Shift 2: <b>{s2.toLocaleString()}</b></div>
-              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s2/planned*100:0,100)}%`,height:'100%',background:'#7C3AED'}}/></div>
+              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s2/planned*100:0,100)}%`,height:'100%',background:'#854F0B'}}/></div>
             </div>
           </div>
           <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:4}}><div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/></div>
@@ -4671,7 +4671,7 @@ function SchedulePage({jobs}){
   const getMonday=d=>{const dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay()+1);return dt;};
   const weeks8=useMemo(()=>{const w=[];const s=getMonday(new Date());for(let i=0;i<8;i++){const d=new Date(s);d.setDate(d.getDate()+i*7);w.push(d);}return w;},[]);
   return(<div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>setView('weather')} style={gpill(view==='weather')}>Weather Days</button><button onClick={()=>setView('changeorders')} style={gpill(view==='changeorders')}>Change Orders</button>{view!=='weather'&&view!=='changeorders'&&<button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button>}</div></div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Schedule</h1><div style={{display:'flex',gap:8}}><button onClick={()=>setView('calendar')} style={gpill(view==='calendar')}>Calendar</button><button onClick={()=>setView('list')} style={gpill(view==='list')}>List</button><button onClick={()=>setView('gantt')} style={gpill(view==='gantt')}>Gantt</button><button onClick={()=>setView('weather')} style={gpill(view==='weather')}>Weather Days</button><button onClick={()=>setView('changeorders')} style={gpill(view==='changeorders')}>Change Orders</button>{view!=='weather'&&view!=='changeorders'&&<button onClick={()=>{setEditEvt(null);setForm({job_id:'',event_type:'production_start',scheduled_date:'',end_date:'',assigned_to:'',crew:'',lf_scheduled:'',notes:''});setJobSearch('');setShowAdd(true);}} style={btnP}>+ Add Event</button>}</div></div>
     {view==='weather'&&<WeatherDaysPage jobs={jobs}/>}
     {view==='changeorders'&&<ChangeOrdersPage jobs={jobs}/>}
     {view!=='weather'&&view!=='changeorders'&&<><div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
@@ -5242,7 +5242,7 @@ Generate the optimal 4-week production schedule following all rules.`;
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
     <div style={{marginBottom:16}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:2}}>Production Planning</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:2}}>Production Planning</h1>
       <div style={{fontSize:12,color:'#9E9B96'}}>Build tomorrow's plan from the production queue</div>
     </div>
 
@@ -5298,8 +5298,8 @@ Generate the optimal 4-week production schedule following all rules.`;
         });
         if (currentWeek.length) weeks.push(currentWeek);
 
-        const typeColor = {posts:'#7C3AED',panels:'#1D4ED8',caps:'#065F46',full:'#8A261D'};
-        const typeBg = {posts:'#EDE9FE',panels:'#DBEAFE',caps:'#D1FAE5',full:'#FEF2F2'};
+        const typeColor = {posts:'#854F0B',panels:'#1D4ED8',caps:'#065F46',full:'#8A261D'};
+        const typeBg = {posts:'#FAEEDA',panels:'#DBEAFE',caps:'#D1FAE5',full:'#FEF2F2'};
 
         const updateEntry = async (entryId, field, value) => {
           await sbPatch('ai_schedule_entries', entryId, {[field]: value});
@@ -5342,7 +5342,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 const dayLabel = dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
                 return <div key={d} style={{borderBottom:'1px solid #F4F4F2',padding:'10px 14px'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-                    <span style={{fontWeight:700,fontSize:12,color:isSat?'#7C3AED':'#1A1A1A'}}>{dayLabel}{isSat?' 🔧':''}</span>
+                    <span style={{fontWeight:700,fontSize:12,color:isSat?'#854F0B':'#1A1A1A'}}>{dayLabel}{isSat?' 🔧':''}</span>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <div style={{width:80,height:6,background:'#F4F4F2',borderRadius:3,overflow:'hidden'}}>
                         <div style={{width:`${pct}%`,height:'100%',background:pct>90?'#DC2626':pct>70?'#B45309':'#065F46',borderRadius:3}}/>
@@ -5379,8 +5379,8 @@ Generate the optimal 4-week production schedule following all rules.`;
     </div>
 
     {/* CAPACITY BAR */}
-    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #7C3AED'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',marginBottom:10}}>🏭 Plant Capacity — {fmtDateLabel(planDate)}</div>
+    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #854F0B'}}>
+      <div style={{fontSize:12,fontWeight:800,color:'#854F0B',textTransform:'uppercase',marginBottom:10}}>🏭 Plant Capacity — {fmtDateLabel(planDate)}</div>
       {hasUnadjustedLines&&<div style={{fontSize:11,color:'#1D4ED8',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,padding:'6px 10px',marginBottom:10}}>ℹ️ One or more plan lines still show the full material order. Adjust "Today's Run" quantities on each plan card to see accurate daily capacity — these numbers reflect today's run, not the entire job.</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
         <div>
@@ -5403,16 +5403,16 @@ Generate the optimal 4-week production schedule following all rules.`;
     {/* TWO COLUMN LAYOUT */}
     <div style={{display:'grid',gridTemplateColumns:'40% 60%',gap:16,alignItems:'start'}}>
       {/* LEFT — QUEUE */}
-      <div style={{...card,padding:14,borderTop:'3px solid #7C3AED'}}>
+      <div style={{...card,padding:14,borderTop:'3px solid #854F0B'}}>
         <div style={{marginBottom:8}}>
           <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#7C3AED',textTransform:'uppercase'}}>Production Queue</div>
-            <span style={{background:'#EDE9FE',color:'#7C3AED',padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700}}>{queueGroups.total}</span>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#854F0B',textTransform:'uppercase'}}>Production Queue</div>
+            <span style={{background:'#FAEEDA',color:'#854F0B',padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700}}>{queueGroups.total}</span>
           </div>
           <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>All jobs in production queue — sorted by est. install date</div>
         </div>
         <div style={{display:'flex',gap:4,marginBottom:10}}>
-          {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #7C3AED':'1px solid #E5E3E0',background:queueFilter===k?'#EDE9FE':'#FFF',color:queueFilter===k?'#7C3AED':'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
+          {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #854F0B':'1px solid #E5E3E0',background:queueFilter===k?'#FAEEDA':'#FFF',color:queueFilter===k?'#854F0B':'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
         </div>
         <div style={{maxHeight:720,overflow:'auto',display:'flex',flexDirection:'column',gap:12}}>
           {queueGroups.total===0&&<div style={{textAlign:'center',padding:20,color:'#9E9B96',fontSize:12}}>No jobs in queue</div>}
@@ -5438,7 +5438,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                     {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
                     {urgent&&!overdue&&<span style={{marginLeft:6}}>🟡 URGENT</span>}
                   </div>
-                  <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:'#7C3AED',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
+                  <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:'#854F0B',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
                 </div>;
               })}
             </div>
@@ -5507,7 +5507,7 @@ Generate the optimal 4-week production schedule following all rules.`;
             const partial=lineIsPartial(l);
             const row=(label,val)=>val>0?<div style={{display:'flex',justifyContent:'space-between',fontSize:11,padding:'1px 0'}}><span style={{color:'#625650'}}>{label}:</span><b style={{color:'#1A1A1A'}}>{val.toLocaleString()}</b></div>:null;
             const phLabel=l.post_height?`${l.post_height}ft`:(l.height?`${l.height}ft`:'');
-            return<div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:`4px solid ${partial?'#B45309':'#7C3AED'}`,borderRadius:8,padding:10,background:'#FFF'}}>
+            return<div key={idx} style={{border:'1px solid #E5E3E0',borderLeft:`4px solid ${partial?'#B45309':'#854F0B'}`,borderRadius:8,padding:10,background:'#FFF'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
                 <div style={{display:'flex',flexDirection:'column',gap:1}}>
                   <button onClick={()=>movePlanLine(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',fontSize:9,cursor:idx===0?'not-allowed':'pointer',color:'#9E9B96',padding:0,lineHeight:1}}>▲</button>
@@ -5548,7 +5548,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 };
                 const groupHas=(g)=>PLAN_PIECE_TYPES.filter(pt=>pt.group===g).some(pt=>n(l.material?.[pt.key])>0);
                 return<div style={{marginTop:6,border:'1px solid #E5E3E0',borderRadius:6,overflow:'hidden'}}>
-                  <div style={{padding:'6px 10px',background:'#F5F3FF',fontSize:9,fontWeight:800,color:'#7C3AED',textTransform:'uppercase',letterSpacing:0.5}}>Today's Run (adjust any quantity for partial runs)</div>
+                  <div style={{padding:'6px 10px',background:'#F5F3FF',fontSize:9,fontWeight:800,color:'#854F0B',textTransform:'uppercase',letterSpacing:0.5}}>Today's Run (adjust any quantity for partial runs)</div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
                     <thead><tr>
                       <th style={{...thCell,textAlign:'left'}}>Piece Type</th>
@@ -5572,7 +5572,7 @@ Generate the optimal 4-week production schedule following all rules.`;
               })()}
               <div style={{marginTop:8,display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
                 <label style={{fontSize:9,color:'#625650',fontWeight:600}}>Shift:</label>
-                {['1','2','both'].map(s=><button key={s} onClick={()=>updatePlanLine(idx,'shift_assignment',s)} style={{padding:'3px 8px',border:l.shift_assignment===s?'2px solid #7C3AED':'1px solid #E5E3E0',background:l.shift_assignment===s?'#EDE9FE':'#FFF',borderRadius:4,fontSize:10,fontWeight:700,color:l.shift_assignment===s?'#7C3AED':'#625650',cursor:'pointer'}}>{s==='both'?'Both':'Shift '+s}</button>)}
+                {['1','2','both'].map(s=><button key={s} onClick={()=>updatePlanLine(idx,'shift_assignment',s)} style={{padding:'3px 8px',border:l.shift_assignment===s?'2px solid #854F0B':'1px solid #E5E3E0',background:l.shift_assignment===s?'#FAEEDA':'#FFF',borderRadius:4,fontSize:10,fontWeight:700,color:l.shift_assignment===s?'#854F0B':'#625650',cursor:'pointer'}}>{s==='both'?'Both':'Shift '+s}</button>)}
               </div>
               {partial&&<div style={{marginTop:8,padding:'8px 10px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:6}}>
                 <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:800,textTransform:'uppercase',marginBottom:3}}>⚡ Partial run reason (required)</label>
@@ -5635,7 +5635,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
                 <td style={{padding:'6px 8px',textAlign:'right'}}>{r.molds}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',color:'#9E9B96'}}>{r.panelsPerMold}</td>
-                <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#7C3AED'}}>{r.capacity.toLocaleString()}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#854F0B'}}>{r.capacity.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#B45309':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
                 <td style={{padding:'6px 8px'}}>{r.notPlanned?<span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Not planned</span>:<div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -6231,7 +6231,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
 
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.msg} isError={typeof toast==='object'&&!toast.ok} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Production Daily Report</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Production Daily Report</h1>
     {/* Tabs */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0',position:'sticky',top:0,background:'#F4F4F2',zIndex:10,paddingTop:8}}>
       {[['actuals','✅ Log Actuals','#8A261D'],['history','📊 History','#0F766E']].map(([k,l,c])=><button key={k} onClick={()=>setTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:tab===k?c:'#625650',fontWeight:tab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:tab===k?`3px solid ${c}`:'3px solid transparent',marginBottom:-2}}>{l}</button>)}
@@ -6562,7 +6562,7 @@ function WeatherDaysPage({jobs}){
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Weather Days Tracker</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Weather Days Tracker</h1>
       <button onClick={()=>openForm(null)} style={btnP}>+ Log Weather Day</button>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
@@ -6649,7 +6649,7 @@ function ChangeOrdersPage({jobs}){
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Change Orders</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Change Orders</h1>
       <button onClick={openNew} style={btnP}>+ Add Change Order</button>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
@@ -6847,7 +6847,7 @@ function PMDailyReportPage({jobs}){
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>PM Daily Report</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>PM Daily Report</h1>
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#8A261D',borderColor:'#E5C4C4'}}>Clear Form</button>}</div>
     </div>
     {/* PM Selector - always visible */}
@@ -7011,7 +7011,7 @@ function EstimatingPage(){
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Estimating</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Estimating</h1>
       {view==='list'&&<button onClick={()=>{setF({...emptyForm,estimate_number:nextNum});setView('form');}} style={btnP}>+ New Estimate</button>}
     </div>
     {view==='list'&&<div>
@@ -7369,7 +7369,7 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 
   return(<div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Import Projects</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:8}}>Import Projects</h1>
     <div style={{fontSize:12,color:'#9E9B96',marginBottom:12}}>Safely import the Master Project Tracker from Excel</div>
     <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1D4ED8'}}>
       <div style={{fontWeight:800,marginBottom:4}}>ℹ️ Status mapping for new jobs:</div>
@@ -7558,7 +7558,7 @@ function MapPage({jobs,onNav}){
   const positions=filtered.filter(j=>j.lat&&j.lng).map(j=>[j.lat,j.lng]);
   return(<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 96px)'}}>
     <div style={{display:'flex',gap:8,padding:'0 0 12px',flexWrap:'wrap',alignItems:'center'}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0,marginRight:12}}>Map</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0,marginRight:12}}>Map</h1>
       <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
       {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
       <span style={{color:'#E5E3E0'}}>|</span>
@@ -7851,7 +7851,7 @@ function MaterialRequestsPage({jobs,refreshKey=0,onNav}){
   }),[requests]);
   return(<div>
     {toast&&<Toast message={toast.msg} isError={toast.ok===false} onDone={()=>setToast(null)}/>}
-    <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:900,marginBottom:8}}>Material Requests</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:v?.ipad?28:24,fontWeight:800,marginBottom:8}}>Material Requests</h1>
     <div style={{fontSize:v?.ipad?14:12,color:'#9E9B96',marginBottom:16}}>Digital PMR form — request materials from the production plant</div>
     {/* Tabs */}
     <div style={{display:'flex',gap:v?.ipad?10:6,marginBottom:v?.ipad?20:16,flexWrap:'wrap'}}>
@@ -8236,7 +8236,7 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile}){
 /* ═══ INSTALL SCHEDULE PAGE ═══ */
 function InstallSchedulePage({jobs}){
   return(<div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8}}>Install Schedule</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:8}}>Install Schedule</h1>
     <div style={{fontSize:12,color:'#9E9B96',marginBottom:20}}>Field install scheduling and crew coordination</div>
     <div style={{...card,textAlign:'center',padding:60}}>
       <div style={{fontSize:48,marginBottom:12}}>📅</div>
@@ -8657,7 +8657,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   return <div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Sales Pipeline</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Sales Pipeline</h1>
       <div style={{display:'flex',gap:8}}>
         <input ref={importInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:'none'}}/>
         {leads.length<10&&<button onClick={()=>importInputRef.current?.click()} disabled={importing} style={btnS} title="Available until pipeline has 10+ leads">{importing?'Parsing...':'Import Leads from Excel'}</button>}
@@ -8755,7 +8755,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
   return <div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
-      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900}}>Contacts</h1>
+      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Contacts</h1>
       <button onClick={()=>setShowAdd(true)} style={btnP}>+ Add Contact</button>
     </div>
     {importBanner&&<div style={{...card,marginBottom:16,background:'#FFFBEB',borderColor:'#FEF3C7',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
@@ -9103,7 +9103,7 @@ function ProspectingPage({jobs}){
   const TIERS=['A','B','C'];
   const RELS=['prospect','past_customer','active_customer'];
   const STATUSES=['new','researching','contacted','meeting_set','proposal','won','lost','nurture'];
-  const STATUS_COLOR={new:'#6B7280',researching:'#2563EB',contacted:'#D97706',meeting_set:'#7C3AED',proposal:'#059669',won:'#065F46',lost:'#DC2626',nurture:'#9333EA'};
+  const STATUS_COLOR={new:'#6B7280',researching:'#2563EB',contacted:'#D97706',meeting_set:'#854F0B',proposal:'#059669',won:'#065F46',lost:'#DC2626',nurture:'#9333EA'};
   const REL_COLOR={prospect:'#2563EB',past_customer:'#D97706',active_customer:'#065F46'};
   const TIER_COLOR={'A':'#8A261D','B':'#1D4ED8','C':'#6B7280'};
 
@@ -9198,7 +9198,7 @@ function ProspectingPage({jobs}){
     {/* Header */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:12}}>
       <div>
-        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>SA Prospecting</h1>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>SA Prospecting</h1>
         <div style={{fontSize:12,color:'#9E9B96',marginTop:4}}>Master-Plan Community Developers &amp; Homebuilders</div>
       </div>
       <div style={{display:'flex',gap:8}}>
@@ -9538,7 +9538,7 @@ function ProposalsPage({jobs}){
     return <span>{fD(d)}</span>;
   };
   return <div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Proposals</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Proposals</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
       <div style={{...card}}>
         <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Weighted Forecast</div>
@@ -9737,16 +9737,16 @@ function SalesDashboardPage({jobs,onNav}){
     const pct=forecastPool>0?Math.round((actualClosed/forecastPool)*100):0;
     return{pct,forecastPool,actualClosed};
   },[leads]);// eslint-disable-line
-  const PIE_COLORS=['#8A261D','#B45309','#1D4ED8','#065F46','#9D174D','#6D28D9','#374151'];
+  const PIE_COLORS=['#8A261D','#B45309','#1D4ED8','#065F46','#8A261D','#854F0B','#374151'];
   const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
   const kpi=(label,value,sub,color='#1A1A1A')=>(<div style={{...card}}>
     <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
     <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color,marginTop:4}}>{value}</div>
     {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
   </div>);
-  if(loading)return <div><h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Sales Dashboard</h1><SkeletonKpis n={4}/><div style={{height:16}}/><SkeletonKpis n={4}/><div style={{height:16}}/><div style={{...card,padding:20}}><Skeleton h={240} r={10}/></div></div>;
+  if(loading)return <div><h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1><SkeletonKpis n={4}/><div style={{height:16}}/><SkeletonKpis n={4}/><div style={{height:16}}/><div style={{...card,padding:20}}><Skeleton h={240} r={10}/></div></div>;
   return <div>
-    <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:16}}>Sales Dashboard</h1>
+    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
       {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8A261D')}
       {kpi('Weighted Forecast',$k(weightedForecast),'value × win probability','#8A261D')}
@@ -9953,7 +9953,7 @@ const ROLE_META = {
   admin:           { label:'Admin',           c:'#8A261D', bg:'#FDF4F4' },
   sales_director:  { label:'Sales Director',  c:'#1D4ED8', bg:'#DBEAFE' },
   sales_rep:       { label:'Sales Rep',       c:'#1D4ED8', bg:'#DBEAFE' },
-  pm:              { label:'PM',              c:'#6D28D9', bg:'#EDE9FE' },
+  pm:              { label:'PM',              c:'#854F0B', bg:'#FAEEDA' },
   production:      { label:'Production',      c:'#B45309', bg:'#FEF3C7' },
   billing:         { label:'Billing',         c:'#065F46', bg:'#D1FAE5' },
   viewer:          { label:'Viewer',          c:'#625650', bg:'#F4F4F2' },
