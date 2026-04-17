@@ -1696,7 +1696,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
   const isTablet = useIsMobile(1024); // true below 1024px → tablet or mobile
   // Phase 4: responsive KPI grid — 4 cols desktop, 2 tablet, 1 mobile.
-  const kpiCols = isMobile ? '1fr' : isTablet ? 'repeat(2,1fr)' : 'repeat(4,1fr)';
+  const kpiCols = isMobile ? '1fr' : isTablet ? 'repeat(3,1fr)' : 'repeat(7,1fr)';
   const pairCols = isMobile ? '1fr' : 'repeat(2,1fr)';
   const[showRemindConfirm,setShowRemindConfirm]=useState(false);
   const[lastRefreshed,setLastRefreshed]=useState(new Date());
@@ -2458,6 +2458,8 @@ function BillingPage({jobs,onRefresh,onNav}){
         <select value={bPmF} onChange={e=>setBPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
         <button onClick={()=>setBStatusF(null)} style={fpill(!bStatusF)}>All</button>
         <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
+        <button onClick={()=>setBStatusF('never_billed')} style={fpill(bStatusF==='never_billed')}>⚠ Never Billed</button>
+        <button onClick={()=>setBStatusF('stale')} style={fpill(bStatusF==='stale')}>⚠ Stale 2025</button>
         <span style={{fontSize:12,color:'#625650'}}>{shown.length} jobs</span>
       </div>
       <div style={{display:'flex',gap:8,marginBottom:12}}><span style={{fontSize:12,color:'#625650',lineHeight:'28px'}}>Billing Method:</span><button onClick={()=>setBillingF(null)} style={fpill(!billingF)}>All</button>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(m=><button key={m} onClick={()=>setBillingF(m)} style={fpill(billingF===m)}>{m}</button>)}</div>
