@@ -5589,9 +5589,12 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const[histPlans,setHistPlans]=useState([]);
   const[histPlanLines,setHistPlanLines]=useState([]);
   const[histShift,setHistShift]=useState('');
+  const[histRange,setHistRange]=useState('7d');
   const[expandedDate,setExpandedDate]=useState(null);
   // Capacity calc state
   const[calcStyles,setCalcStyles]=useState([]);
+  const[moldInventory,setMoldInventory]=useState([]);
+  const[plantCfg,setPlantCfg]=useState({});
   // Tomorrow + today date helpers
   const tomorrowISO=(()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0];})();
   const todayISO=new Date().toISOString().split('T')[0];
