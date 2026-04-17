@@ -10654,7 +10654,7 @@ function SalesDashboardPage({jobs,onNav}){
   const lostLeads=useMemo(()=>leads.filter(l=>l.stage==='lost'),[leads]);
   // Win rate calculations
   const closedLeads=[...wonLeads,...lostLeads];
-  const winRate=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
+  const winRateAllTime=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
   const totalWonValue=wonLeads.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
   const avgDaysToClose=wonLeads.length?Math.round(wonLeads.reduce((s,l)=>{
     const created=new Date(l.created_at||l.stage_entered_at);
