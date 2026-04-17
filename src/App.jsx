@@ -10479,8 +10479,8 @@ function ProposalsPage({jobs}){
     return{weighted,openCount,openTotal,avgDays:Math.round(avgDays)};
   },[leads]);
   const saveInline=async(id,patch)=>{
-    try{await sbPatch('leads',id,{...patch,updated_at:new Date().toISOString()});setLeads(prev=>prev.map(l=>l.id===id?{...l,...patch}:l));toast.success('Saved');}
-    catch(e){toast.error('Save failed');}
+    try{await sbPatch('leads',id,{...patch,updated_at:new Date().toISOString()});setLeads(prev=>prev.map(l=>l.id===id?{...l,...patch}:l));setToast({message:'Saved',isError:false});}
+    catch(e){setToast({message:'Save failed',isError:true});}
   };
   const hdr=(key,label,align='left')=>{const active=sortKey===key;return <th onClick={()=>{if(active)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc');}}} style={{textAlign:align,padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>{label}{active&&<span style={{marginLeft:4,color:'#8A261D'}}>{sortDir==='asc'?'▲':'▼'}</span>}</th>;};
   const fuCell=(l)=>{
