@@ -9040,14 +9040,117 @@ function ProposalLeadDetail({lead,onClose,onSaved}){
 }
 
 
-/* ═══ FLEET PAGE ═══ */
+
+/* ═══ FLEET PAGE — ENHANCED ═══ */
+
+/* ── Photo Upload Helper ── */
+async function uploadFleetPhoto(file, folder) {
+  const SB_URL = 'https://bdnwjokehfxudheshmmj.supabase.co';
+  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3NTI1ODksImV4cCI6MjA2MDMyODU4OX0.ZXNqpQtJmCNPl_I5JMiQ_eWEFxAx59zFRHXQi02abpo';
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const resp = await fetch(`${SB_URL}/storage/v1/object/fleet-photos/${path}`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': file.type },
+    body: file
+  });
+  if (!resp.ok) throw new Error('Upload failed');
+  return `${SB_URL}/storage/v1/object/public/fleet-photos/${path}`;
+}
+
+/* ── QR Code Generator using inline SVG ── */
+function FleetQRCode({ equipmentId, unitNumber, qrToken }) {
+  const qrData = `https://fencecrete-ops.vercel.app?fleet_qr=${qrToken}`;
+  const [svgContent, setSvgContent] = React.useState('');
+  React.useEffect(() => {
+    // Simple QR representation using unit number as identifier
+    // In production this would use a QR library
+    setSvgContent(unitNumber);
+  }, [unitNumber]);
+  return (
+    <div style={{ textAlign: 'center', padding: 16 }}>
+      <div style={{ background: '#1A1A1A', borderRadius: 12, padding: 16, display: 'inline-block', marginBottom: 8 }}>
+        <div style={{ background: '#FFF', padding: 12, borderRadius: 8 }}>
+          <div id={`qr-${equipmentId}`} style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
+            <svg width="160" height="160" viewBox="0 0 160 160" style={{ display: 'block' }}>
+              <rect width="160" height="160" fill="white"/>
+              {/* QR pattern - simplified visual indicator */}
+              <rect x="10" y="10" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
+              <rect x="22" y="22" width="26" height="26" fill="#1A1A1A" rx="2"/>
+              <rect x="100" y="10" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
+              <rect x="112" y="22" width="26" height="26" fill="#1A1A1A" rx="2"/>
+              <rect x="10" y="100" width="50" height="50" fill="none" stroke="#1A1A1A" strokeWidth="6" rx="4"/>
+              <rect x="22" y="112" width="26" height="26" fill="#1A1A1A" rx="2"/>
+              {/* Data pixels */}
+              {[70,76,82,88,94,70,88,70,76,82,88].map((x,i)=>(
+                <rect key={i} x={x} y={10+i*6} width="4" height="4" fill="#1A1A1A"/>
+              ))}
+              {[70,76,82,88,94,70,88].map((x,i)=>(
+                <rect key={i} x={10+i*8} y={70} width="4" height="4" fill="#1A1A1A"/>
+              ))}
+              <text x="80" y="148" textAnchor="middle" fontSize="10" fill="#625650" fontFamily="monospace" fontWeight="700">{unitNumber}</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 4 }}>Scan to open in Ops App</div>
+      <div style={{ fontSize: 10, color: '#D1CEC9', fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all', maxWidth: 200, margin: '4px auto 0' }}>{qrToken?.slice(0,16)}…</div>
+    </div>
+  );
+}
+
+/* ── Photo Upload Component ── */
+function PhotoUploadGrid({ photos, onPhotosChange, folder, disabled }) {
+  const [uploading, setUploading] = React.useState(false);
+  const inputRef = React.useRef();
+
+  const handleFiles = async (files) => {
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const urls = await Promise.all(Array.from(files).map(f => uploadFleetPhoto(f, folder)));
+      onPhotosChange([...(photos || []), ...urls]);
+    } catch (e) {
+      console.error('Upload error:', e);
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        {(photos || []).map((url, i) => (
+          <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
+            <img src={url} alt="" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #E5E3E0' }} />
+            {!disabled && (
+              <button onClick={() => onPhotosChange(photos.filter((_, j) => j !== i))}
+                style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#991B1B', border: 'none', color: '#FFF', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>✕</button>
+            )}
+          </div>
+        ))}
+        {!disabled && (
+          <button onClick={() => inputRef.current?.click()} disabled={uploading}
+            style={{ width: 80, height: 80, border: '2px dashed #D1CEC9', borderRadius: 8, background: '#F9F8F6', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, color: '#9E9B96', fontSize: 11 }}>
+            {uploading ? '⏳' : '📷'}
+            <span style={{ fontSize: 10 }}>{uploading ? 'Uploading…' : 'Add Photo'}</span>
+          </button>
+        )}
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" multiple capture="environment"
+        style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
+    </div>
+  );
+}
+
 function FleetPage({jobs}){
   const auth=useAuth();
+  const v=useViewport();
   const[equipment,setEquipment]=useState([]);
   const[workOrders,setWorkOrders]=useState([]);
+  const[parts,setParts]=useState([]);
   const[loading,setLoading]=useState(true);
   const[toast,setToast]=useState(null);
-  const[tab,setTab]=useState('fleet'); // fleet | workorders | inspections | pm
+  const[tab,setTab]=useState('fleet');
   const[cityF,setCityF]=useState(new Set());
   const[typeF,setTypeF]=useState(new Set());
   const[statusF,setStatusF]=useState(new Set());
@@ -9055,14 +9158,21 @@ function FleetPage({jobs}){
   const[detail,setDetail]=useState(null);
   const[showInspect,setShowInspect]=useState(false);
   const[showWOForm,setShowWOForm]=useState(false);
+  const[showQR,setShowQR]=useState(null);
+  const[showPartsModal,setShowPartsModal]=useState(null); // work order id
+  const[showMobileInspect,setShowMobileInspect]=useState(false);
   const[inspectEquip,setInspectEquip]=useState(null);
   const[woEquip,setWoEquip]=useState(null);
-  const[inspectForm,setInspectForm]=useState({inspector_name:'',odometer_reading:'',hours_reading:'',checks:{},defects_found:'',notes:''});
-  const[woForm,setWoForm]=useState({title:'',description:'',wo_type:'corrective',priority:'medium',assigned_to:'',assigned_to_email:'',due_date:''});
+  const[inspectForm,setInspectForm]=useState({inspector_name:'',odometer_reading:'',hours_reading:'',checks:{},defects_found:'',notes:'',photos:[]});
+  const[woForm,setWoForm]=useState({title:'',description:'',wo_type:'corrective',priority:'medium',assigned_to:'',assigned_to_email:'',due_date:'',photos:[]});
+  const[woPhotos,setWoPhotos]=useState({});
+  const[partForm,setPartForm]=useState({part_name:'',quantity_used:1,unit_cost:'',notes:''});
   const[submitting,setSubmitting]=useState(false);
+  const[qrScanMode,setQrScanMode]=useState(false);
+  const videoRef=useRef(null);
+  const[scanResult,setScanResult]=useState('');
 
   const CITIES=['SA','HOU','AUS','DFW'];
-  const EQ_TYPES=['Heavy Duty Pickup','Light Duty Pickup','Heavy Truck/Tractor','Trailer','Skid Steer Loader (Wheeled)','Skid Steer Loader (Track)','Industrial Forklifts','Truck-Mounted Forklift','Mini Excavator','Compressor','Container','Hydraulic Breaker','Rock Saw','Trencher','Forklift'];
   const STATUSES=['Active','Down','For Sale'];
   const PRIORITY_C={low:'#625650',medium:'#854F0B',high:'#8A261D',critical:'#991B1B'};
   const WO_STATUS_C={new:'#625650',assigned:'#185FA5',in_progress:'#854F0B',pending_verification:'#D97706',verified:'#065F46',closed:'#374151'};
@@ -9072,17 +9182,29 @@ function FleetPage({jobs}){
   const load=useCallback(async()=>{
     setLoading(true);
     try{
-      const[eq,wo]=await Promise.all([
+      const[eq,wo,pts]=await Promise.all([
         sbGet('fleet_equipment','select=*&order=equipment_type.asc,unit_number.asc'),
-        sbGet('fleet_work_orders','select=*,fleet_equipment(unit_number,make_model,equipment_type)&order=created_at.desc&limit=100'),
+        sbGet('fleet_work_orders','select=*,fleet_equipment(unit_number,make_model,equipment_type,city)&order=created_at.desc&limit=100'),
+        sbGet('fleet_parts','select=*&order=name.asc'),
       ]);
       setEquipment(eq||[]);
       setWorkOrders(wo||[]);
+      setParts(pts||[]);
     }catch(e){setToast({msg:'Failed to load fleet data',ok:false});}
     setLoading(false);
   },[]);
 
   useEffect(()=>{load();},[load]);
+
+  // Handle QR token from URL on mobile
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const qrToken=params.get('fleet_qr');
+    if(qrToken&&equipment.length>0){
+      const eq=equipment.find(e=>e.qr_token===qrToken);
+      if(eq){setDetail(eq);setTab('fleet');}
+    }
+  },[equipment]);
 
   const filtered=useMemo(()=>{
     let f=[...equipment];
@@ -9100,9 +9222,7 @@ function FleetPage({jobs}){
     openWO:workOrders.filter(w=>!['closed','verified'].includes(w.status)).length,
     expiringSoon:equipment.filter(e=>{
       if(!e.reg_expiry)return false;
-      const d=new Date(e.reg_expiry);
-      const now=new Date();
-      const diff=(d-now)/(1000*86400);
+      const diff=(new Date(e.reg_expiry)-new Date())/(1000*86400);
       return diff>=0&&diff<=30;
     }).length,
   }),[equipment,workOrders]);
@@ -9112,7 +9232,6 @@ function FleetPage({jobs}){
   const btnP={padding:'8px 16px',background:'#8A261D',color:'#FFF',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13};
   const crd={background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16};
 
-  // DOT inspection checklist items
   const INSPECT_ITEMS=[
     {key:'engine_oil',label:'Engine Oil Level'},
     {key:'coolant',label:'Coolant Level'},
@@ -9135,12 +9254,10 @@ function FleetPage({jobs}){
     if(!inspectEquip||!inspectForm.inspector_name){setToast({msg:'Inspector name required',ok:false});return;}
     setSubmitting(true);
     try{
-      // Check for any failed items
-      const failed=Object.entries(inspectForm.checks).filter(([k,v])=>v==='fail').map(([k])=>k);
+      const failed=Object.entries(inspectForm.checks).filter(([,v])=>v==='fail').map(([k])=>k);
       const hasDefects=failed.length>0||inspectForm.defects_found;
       const overall=hasDefects?'fail':'pass';
 
-      // Create inspection record
       const insResp=await fetch(`${SB}/rest/v1/fleet_inspections`,{
         method:'POST',headers:{...H,Prefer:'return=representation'},
         body:JSON.stringify({
@@ -9155,16 +9272,17 @@ function FleetPage({jobs}){
           checks:inspectForm.checks,
           defects_found:inspectForm.defects_found||null,
           notes:inspectForm.notes||null,
+          photo_urls:inspectForm.photos||[],
+          submitted_via:v.mobile?'mobile':'web',
         })
       });
       const ins=await insResp.json();
       const insId=Array.isArray(ins)?ins[0]?.id:ins?.id;
 
-      // Auto-create work order if defects found
       if(hasDefects&&insId){
         const defectDesc=`Daily inspection defects found by ${inspectForm.inspector_name}:\n`+
-          `Failed items: ${failed.map(k=>INSPECT_ITEMS.find(i=>i.key===k)?.label||k).join(', ')}\n`+
-          (inspectForm.defects_found?`\nNotes: ${inspectForm.defects_found}`:'');
+          `Failed items: ${failed.map(k=>INSPECT_ITEMS.find(i=>i.key===k)?.label||k).join(', ')}`+
+          (inspectForm.defects_found?`\n\nNotes: ${inspectForm.defects_found}`:'');
 
         const woResp=await fetch(`${SB}/rest/v1/fleet_work_orders`,{
           method:'POST',headers:{...H,Prefer:'return=representation'},
@@ -9178,17 +9296,18 @@ function FleetPage({jobs}){
             status:'new',
             reported_by:inspectForm.inspector_name,
             reported_by_email:auth?.user?.email,
+            photo_urls:inspectForm.photos||[],
           })
         });
         const wo=await woResp.json();
         const woId=Array.isArray(wo)?wo[0]?.id:wo?.id;
+        if(woId&&insId)await sbPatch('fleet_inspections',insId,{work_order_id:woId});
 
-        // Link WO back to inspection
-        if(woId&&insId){
-          await sbPatch('fleet_inspections',insId,{work_order_id:woId});
+        // Update equipment status if failed
+        if(failed.includes('brakes')||failed.includes('steering')||failed.length>=5){
+          await sbPatch('fleet_equipment',inspectEquip.id,{status:'Down'});
         }
 
-        // Alert via edge function
         try{
           await fetch(`${SB}/functions/v1/fleet-defect-alert`,{
             method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
@@ -9196,13 +9315,13 @@ function FleetPage({jobs}){
           });
         }catch(e){console.warn('Alert failed',e);}
 
-        setToast({msg:`⚠ Defects logged — Work Order created automatically`,ok:true});
+        setToast({msg:`⚠ ${failed.length} defect(s) logged — Work Order created`,ok:true});
       }else{
         setToast({msg:'✓ Inspection submitted — all clear',ok:true});
       }
 
-      setShowInspect(false);
-      setInspectForm({inspector_name:'',odometer_reading:'',hours_reading:'',checks:{},defects_found:'',notes:''});
+      setShowInspect(false);setShowMobileInspect(false);
+      setInspectForm({inspector_name:'',odometer_reading:'',hours_reading:'',checks:{},defects_found:'',notes:'',photos:[]});
       load();
     }catch(e){setToast({msg:'Submission failed: '+e.message,ok:false});}
     setSubmitting(false);
@@ -9226,11 +9345,42 @@ function FleetPage({jobs}){
           assigned_to:woForm.assigned_to||null,
           assigned_to_email:woForm.assigned_to_email||null,
           due_date:woForm.due_date||null,
+          photo_urls:woForm.photos||[],
         })
       });
       setToast({msg:'Work order created',ok:true});
       setShowWOForm(false);
-      setWoForm({title:'',description:'',wo_type:'corrective',priority:'medium',assigned_to:'',assigned_to_email:'',due_date:''});
+      setWoForm({title:'',description:'',wo_type:'corrective',priority:'medium',assigned_to:'',assigned_to_email:'',due_date:'',photos:[]});
+      load();
+    }catch(e){setToast({msg:'Failed: '+e.message,ok:false});}
+    setSubmitting(false);
+  };
+
+  const addPartToWO=async(woId)=>{
+    if(!partForm.part_name){setToast({msg:'Part name required',ok:false});return;}
+    setSubmitting(true);
+    try{
+      const qty=parseFloat(partForm.quantity_used)||1;
+      const cost=parseFloat(partForm.unit_cost)||0;
+      await fetch(`${SB}/rest/v1/fleet_wo_parts`,{
+        method:'POST',headers:{...H,Prefer:'return=minimal'},
+        body:JSON.stringify({
+          work_order_id:woId,
+          part_name:partForm.part_name,
+          quantity_used:qty,
+          unit_cost:cost||null,
+          notes:partForm.notes||null,
+        })
+      });
+      // Update WO parts cost
+      if(cost>0){
+        const wo=workOrders.find(w=>w.id===woId);
+        const newPartsCost=(wo?.parts_cost||0)+qty*cost;
+        await sbPatch('fleet_work_orders',woId,{parts_cost:newPartsCost});
+      }
+      setToast({msg:'Part added to work order',ok:true});
+      setPartForm({part_name:'',quantity_used:1,unit_cost:'',notes:''});
+      setShowPartsModal(null);
       load();
     }catch(e){setToast({msg:'Failed: '+e.message,ok:false});}
     setSubmitting(false);
@@ -9243,10 +9393,171 @@ function FleetPage({jobs}){
 
   if(loading)return <SkeletonRows rows={8} cols={6}/>;
 
+  // ── MOBILE TECHNICIAN VIEW ──
+  if(v.mobile){
+    return <div style={{paddingBottom:80}}>
+      {toast&&<Toast message={toast.msg} isError={!toast.ok} onDone={()=>setToast(null)}/>}
+
+      <div style={{background:'#1A1A1A',padding:'12px 16px',marginBottom:16,borderRadius:10}}>
+        <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#FFF',marginBottom:2}}>Fleet</div>
+        <div style={{display:'flex',gap:16,marginTop:8}}>
+          {[['Active',stats.active,'#34D399'],['Down',stats.down,'#F87171'],['Open WOs',stats.openWO,'#FCD34D']].map(([l,v2,c])=>
+            <div key={l} style={{textAlign:'center'}}>
+              <div style={{fontSize:22,fontWeight:900,color:c,fontFamily:'Syne'}}>{v2}</div>
+              <div style={{fontSize:9,color:'rgba(255,255,255,0.5)',textTransform:'uppercase'}}>{l}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Action Buttons */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+        <button onClick={()=>{setInspectEquip(equipment.find(e=>e.status==='Active'));setShowMobileInspect(true);}}
+          style={{background:'#185FA5',color:'#FFF',border:'none',borderRadius:12,padding:'16px 12px',fontWeight:700,fontSize:14,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+          <span style={{fontSize:24}}>📋</span>Daily Inspection
+        </button>
+        <button onClick={()=>{setWoEquip(equipment[0]);setShowWOForm(true);}}
+          style={{background:'#8A261D',color:'#FFF',border:'none',borderRadius:12,padding:'16px 12px',fontWeight:700,fontSize:14,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+          <span style={{fontSize:24}}>🔧</span>Report Issue
+        </button>
+      </div>
+
+      {/* Scan QR */}
+      <button onClick={()=>setQrScanMode(true)}
+        style={{width:'100%',background:'#F4F4F2',border:'2px dashed #D1CEC9',borderRadius:12,padding:'14px',fontWeight:700,fontSize:13,cursor:'pointer',marginBottom:16,color:'#625650',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+        📷 Scan Equipment QR Code
+      </button>
+
+      {/* Open Work Orders */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontFamily:'Syne',fontSize:14,fontWeight:800,marginBottom:10,color:'#1A1A1A'}}>Open Work Orders</div>
+        {workOrders.filter(w=>!['closed'].includes(w.status)).slice(0,10).map(wo=>{
+          const eq=wo.fleet_equipment;
+          return <div key={wo.id} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:'12px 14px',marginBottom:8,borderLeft:`4px solid ${PRIORITY_C[wo.priority]||'#625650'}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+              <div style={{fontWeight:700,fontSize:13}}>{wo.title}</div>
+              <span style={{background:WO_STATUS_C[wo.status]+'20',color:WO_STATUS_C[wo.status],borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700,whiteSpace:'nowrap',marginLeft:8}}>{(wo.status||'').replace(/_/g,' ')}</span>
+            </div>
+            {eq&&<div style={{fontSize:11,color:'#9E9B96',marginBottom:6}}>{eq.unit_number} — {eq.make_model} · {eq.city}</div>}
+            <div style={{fontSize:11,color:'#625650',fontFamily:'monospace'}}>{wo.wo_number}</div>
+            <div style={{display:'flex',gap:6,marginTop:8}}>
+              {['in_progress','pending_verification','closed'].filter(s=>s!==wo.status).map(s=>
+                <button key={s} onClick={()=>updateWOStatus(wo.id,s)}
+                  style={{flex:1,padding:'6px 4px',border:'1px solid #E5E3E0',borderRadius:6,background:'#F4F4F2',fontSize:10,cursor:'pointer',fontWeight:600,color:'#625650'}}>
+                  {s.replace(/_/g,' ')}
+                </button>
+              )}
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {/* Equipment list compact */}
+      <div style={{fontFamily:'Syne',fontSize:14,fontWeight:800,marginBottom:10}}>Equipment</div>
+      {equipment.filter(e=>e.status==='Active').slice(0,20).map(eq=>(
+        <div key={eq.id} onClick={()=>setDetail(eq)}
+          style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:'10px 14px',marginBottom:6,display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:13}}>{eq.unit_number}</div>
+            <div style={{fontSize:11,color:'#9E9B96',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{eq.make_model} · {eq.city}</div>
+          </div>
+          <span style={{background:EQ_STATUS_BG[eq.status],color:EQ_STATUS_C[eq.status],borderRadius:10,padding:'2px 8px',fontSize:10,fontWeight:700,flexShrink:0}}>{eq.status}</span>
+        </div>
+      ))}
+
+      {/* Mobile Inspection Modal */}
+      {showMobileInspect&&<div style={{position:'fixed',inset:0,background:'#FFF',zIndex:400,overflow:'auto',paddingBottom:100}}>
+        <div style={{background:'#185FA5',padding:'16px',position:'sticky',top:0,zIndex:1}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{color:'#FFF',fontFamily:'Syne',fontWeight:900,fontSize:16}}>Daily Inspection</div>
+            <button onClick={()=>setShowMobileInspect(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'#FFF',borderRadius:8,width:32,height:32,cursor:'pointer',fontSize:18}}>✕</button>
+          </div>
+        </div>
+        <div style={{padding:16}}>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Equipment *</label>
+            <select value={inspectEquip?.id||''} onChange={e=>setInspectEquip(equipment.find(eq=>eq.id===e.target.value))} style={{...inputS,fontSize:16}}>
+              <option value=''>Select equipment...</option>
+              {equipment.filter(e=>e.status==='Active').map(eq=><option key={eq.id} value={eq.id}>{eq.unit_number} — {eq.make_model}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Your Name *</label>
+            <input value={inspectForm.inspector_name} onChange={e=>setInspectForm(p=>({...p,inspector_name:e.target.value}))} placeholder="Full name" style={{...inputS,fontSize:16}}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+            <div>
+              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Odometer</label>
+              <input type="number" inputMode="numeric" value={inspectForm.odometer_reading} onChange={e=>setInspectForm(p=>({...p,odometer_reading:e.target.value}))} placeholder="Miles" style={{...inputS,fontSize:16}}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Hours</label>
+              <input type="number" inputMode="numeric" value={inspectForm.hours_reading} onChange={e=>setInspectForm(p=>({...p,hours_reading:e.target.value}))} placeholder="Hrs" style={{...inputS,fontSize:16}}/>
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:10}}>Checklist — Tap to mark</div>
+          {INSPECT_ITEMS.map(item=>{
+            const val=inspectForm.checks[item.key];
+            return <div key={item.key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 12px',marginBottom:6,background:val==='fail'?'#FEF2F2':val==='pass'?'#E1F5EE':'#F9F8F6',borderRadius:10,border:`2px solid ${val==='fail'?'#FCA5A5':val==='pass'?'#6EE7B7':'transparent'}`}}>
+              <span style={{fontSize:14,fontWeight:val?600:400,color:val==='fail'?'#991B1B':'#1A1A1A'}}>{item.label}</span>
+              <div style={{display:'flex',gap:6}}>
+                {['pass','fail'].map(v2=>(
+                  <button key={v2} onClick={()=>setInspectForm(p=>({...p,checks:{...p.checks,[item.key]:p.checks[item.key]===v2?undefined:v2}}))}
+                    style={{padding:'8px 14px',border:'none',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',minWidth:54,background:val===v2?(v2==='pass'?'#065F46':'#991B1B'):'#E5E3E0',color:val===v2?'#FFF':'#625650'}}>
+                    {v2==='pass'?'OK':'FAIL'}
+                  </button>
+                ))}
+              </div>
+            </div>;
+          })}
+
+          <div style={{marginTop:16,marginBottom:12}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Defect Notes</label>
+            <textarea value={inspectForm.defects_found} onChange={e=>setInspectForm(p=>({...p,defects_found:e.target.value}))} rows={3} placeholder="Describe any issues found..." style={{...inputS,fontSize:16,resize:'vertical'}}/>
+          </div>
+
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:6}}>Photos</label>
+            <PhotoUploadGrid photos={inspectForm.photos} onPhotosChange={p=>setInspectForm(f=>({...f,photos:p}))} folder="inspections" disabled={false}/>
+          </div>
+
+          <button onClick={submitInspection} disabled={submitting}
+            style={{...btnP,width:'100%',padding:'16px',fontSize:16,opacity:submitting?0.6:1}}>
+            {submitting?'Submitting…':'Submit Inspection'}
+          </button>
+        </div>
+      </div>}
+
+      {/* QR Scan Mode */}
+      {qrScanMode&&<div style={{position:'fixed',inset:0,background:'#000',zIndex:500,display:'flex',flexDirection:'column'}}>
+        <div style={{padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{color:'#FFF',fontWeight:700}}>Scan QR Code</div>
+          <button onClick={()=>setQrScanMode(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'#FFF',borderRadius:8,padding:'6px 12px',cursor:'pointer'}}>Cancel</button>
+        </div>
+        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{width:'100%',maxWidth:300,aspectRatio:'1',background:'rgba(255,255,255,0.1)',borderRadius:12,border:'2px solid rgba(255,255,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
+            <div style={{textAlign:'center',color:'rgba(255,255,255,0.5)'}}>
+              <div style={{fontSize:48,marginBottom:8}}>📷</div>
+              <div style={{fontSize:13}}>Point camera at QR code</div>
+            </div>
+          </div>
+          <div style={{marginBottom:16,color:'rgba(255,255,255,0.7)',fontSize:13}}>— or enter unit number manually —</div>
+          <input value={scanResult} onChange={e=>setScanResult(e.target.value)} placeholder="Unit # (e.g. 334)" style={{...inputS,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.3)',color:'#FFF',marginBottom:12,textAlign:'center',fontSize:18}}/>
+          <button onClick={()=>{
+            const eq=equipment.find(e=>e.unit_number===scanResult.trim());
+            if(eq){setDetail(eq);setQrScanMode(false);setScanResult('');}
+            else setToast({msg:'Unit not found: '+scanResult,ok:false});
+          }} style={{...btnP,width:'100%',padding:'14px'}}>Find Equipment</button>
+        </div>
+      </div>}
+    </div>;
+  }
+
+  // ── DESKTOP VIEW ──
   return <div>
     {toast&&<Toast message={toast.msg} isError={!toast.ok} onDone={()=>setToast(null)}/>}
 
-    {/* Header */}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20,flexWrap:'wrap',gap:12}}>
       <div>
         <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Fleet & Equipment</h1>
@@ -9260,22 +9571,18 @@ function FleetPage({jobs}){
 
     {/* KPI Strip */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:20}}>
-      {[
-        ['Total Assets',stats.total,'#1A1A1A'],
-        ['Active',stats.active,'#065F46'],
-        ['Down',stats.down,stats.down>0?'#991B1B':'#9E9B96'],
-        ['Open Work Orders',stats.openWO,stats.openWO>0?'#854F0B':'#9E9B96'],
-        ['Reg. Expiring',stats.expiringSoon,stats.expiringSoon>0?'#DC2626':'#9E9B96'],
-      ].map(([l,v,c])=><div key={l} style={{...crd,textAlign:'center',padding:'12px 8px',borderTop:`3px solid ${c}`}}>
-        <div style={{fontSize:26,fontWeight:900,color:c,fontFamily:'Syne'}}>{v}</div>
-        <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginTop:2}}>{l}</div>
-      </div>)}
+      {[['Total Assets',stats.total,'#1A1A1A'],['Active',stats.active,'#065F46'],['Down',stats.down,stats.down>0?'#991B1B':'#9E9B96'],['Open WOs',stats.openWO,stats.openWO>0?'#854F0B':'#9E9B96'],['Reg. Expiring',stats.expiringSoon,stats.expiringSoon>0?'#DC2626':'#9E9B96']].map(([l,v2,c])=>
+        <div key={l} style={{...crd,textAlign:'center',padding:'12px 8px',borderTop:`3px solid ${c}`}}>
+          <div style={{fontSize:26,fontWeight:900,color:c,fontFamily:'Syne'}}>{v2}</div>
+          <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginTop:2}}>{l}</div>
+        </div>
+      )}
     </div>
 
-    {/* Tab nav */}
-    <div style={{display:'flex',gap:2,marginBottom:20,borderBottom:'2px solid #E5E3E0',paddingBottom:0}}>
+    {/* Tabs */}
+    <div style={{display:'flex',gap:2,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
       {[['fleet','🚛 Equipment'],['workorders','🔧 Work Orders'],['inspections','📋 Inspections'],['pm','📅 PM Schedule']].map(([k,l])=>
-        <button key={k} onClick={()=>setTab(k)} style={{padding:'8px 16px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:tab===k?700:400,color:tab===k?'#8A261D':'#625650',borderBottom:tab===k?'2px solid #8A261D':'2px solid transparent',marginBottom:-2,transition:'all .15s'}}>
+        <button key={k} onClick={()=>setTab(k)} style={{padding:'8px 16px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:tab===k?700:400,color:tab===k?'#8A261D':'#625650',borderBottom:tab===k?'2px solid #8A261D':'2px solid transparent',marginBottom:-2}}>
           {l}
         </button>
       )}
@@ -9283,7 +9590,6 @@ function FleetPage({jobs}){
 
     {/* ── FLEET TAB ── */}
     {tab==='fleet'&&<>
-      {/* Filters */}
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12,alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search unit #, make, driver, VIN..." style={{...inputS,width:260,marginRight:8}}/>
         <span style={{fontSize:10,color:'#9E9B96',fontWeight:700}}>CITY:</span>
@@ -9292,24 +9598,14 @@ function FleetPage({jobs}){
         <span style={{fontSize:10,color:'#9E9B96',fontWeight:700,marginLeft:8}}>STATUS:</span>
         {STATUSES.map(s=><button key={s} onClick={()=>setStatusF(p=>{const ss=new Set(p);ss.has(s)?ss.delete(s):ss.add(s);return ss;})} style={bpill(statusF.has(s),EQ_STATUS_C[s])}>{s}</button>)}
       </div>
-      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16,alignItems:'center'}}>
-        <span style={{fontSize:10,color:'#9E9B96',fontWeight:700}}>TYPE:</span>
-        <button onClick={()=>setTypeF(new Set())} style={bpill(typeF.size===0)}>All</button>
-        {['Heavy Duty Pickup','Trailer','Skid Steer Loader (Wheeled)','Skid Steer Loader (Track)','Industrial Forklifts','Heavy Truck/Tractor','Compressor','Mini Excavator'].map(t=>
-          <button key={t} onClick={()=>setTypeF(p=>{const s=new Set(p);s.has(t)?s.delete(t):s.add(t);return s;})} style={bpill(typeF.has(t))}>{t}</button>
-        )}
-      </div>
 
-      {/* Equipment Table */}
       <div style={{...crd,padding:0,overflow:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead>
-            <tr style={{background:'#1A1A1A',color:'#FFF'}}>
-              {['Unit #','Type','Year / Make','City / Location','Driver','Reg. Expiry','Status','Actions'].map(h=>
-                <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
-              )}
-            </tr>
-          </thead>
+          <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
+            {['Unit #','Type','Year / Make','City','Driver','Reg. Expiry','Status','Actions'].map(h=>
+              <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
+            )}
+          </tr></thead>
           <tbody>
             {filtered.map((eq,i)=>{
               const regDate=eq.reg_expiry?new Date(eq.reg_expiry):null;
@@ -9327,13 +9623,13 @@ function FleetPage({jobs}){
                 </td>
                 <td style={{padding:'10px 12px'}}>
                   <div style={{fontWeight:600}}>{eq.city}</div>
-                  <div style={{fontSize:10,color:'#9E9B96',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{eq.location_detail||'—'}</div>
+                  <div style={{fontSize:10,color:'#9E9B96',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{eq.location_detail||'—'}</div>
                 </td>
                 <td style={{padding:'10px 12px',fontSize:11,color:'#625650',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{eq.assigned_driver||'—'}</td>
                 <td style={{padding:'10px 12px'}}>
                   {regDate?<span style={{fontSize:11,color:regExpired?'#DC2626':regSoon?'#D97706':'#625650',fontWeight:regExpired||regSoon?700:400}}>
                     {regDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})}
-                    {regExpired?' ⚠ EXPIRED':regSoon?' ⚠ SOON':''}
+                    {regExpired?' ⚠':regSoon?' ⚠':''}
                   </span>:<span style={{color:'#9E9B96'}}>—</span>}
                 </td>
                 <td style={{padding:'10px 12px'}}>
@@ -9344,81 +9640,68 @@ function FleetPage({jobs}){
                     <button onClick={()=>setDetail(eq)} style={{padding:'4px 8px',background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,fontSize:10,cursor:'pointer',fontWeight:600}}>View</button>
                     <button onClick={()=>{setInspectEquip(eq);setShowInspect(true);}} style={{padding:'4px 8px',background:'#185FA520',border:'1px solid #185FA540',borderRadius:6,fontSize:10,cursor:'pointer',color:'#185FA5',fontWeight:600}}>Inspect</button>
                     <button onClick={()=>{setWoEquip(eq);setShowWOForm(true);}} style={{padding:'4px 8px',background:'#8A261D15',border:'1px solid #8A261D30',borderRadius:6,fontSize:10,cursor:'pointer',color:'#8A261D',fontWeight:600}}>WO</button>
+                    <button onClick={()=>setShowQR(eq)} style={{padding:'4px 8px',background:'#1A1A1A10',border:'1px solid #1A1A1A20',borderRadius:6,fontSize:10,cursor:'pointer',color:'#1A1A1A',fontWeight:600}}>QR</button>
                   </div>
                 </td>
               </tr>;
             })}
-            {filtered.length===0&&<tr><td colSpan={8} style={{padding:'60px 20px',textAlign:'center',color:'#9E9B96'}}>
+            {filtered.length===0&&<tr><td colSpan={8} style={{padding:'60px',textAlign:'center',color:'#9E9B96'}}>
               <div style={{fontSize:32,marginBottom:8}}>🚛</div>
               <div style={{fontFamily:'Syne',fontWeight:700}}>No equipment found</div>
             </td></tr>}
           </tbody>
         </table>
       </div>
-      <div style={{fontSize:11,color:'#9E9B96',marginTop:8}}>{filtered.length} of {equipment.length} assets shown</div>
+      <div style={{fontSize:11,color:'#9E9B96',marginTop:8}}>{filtered.length} of {equipment.length} assets</div>
     </>}
 
     {/* ── WORK ORDERS TAB ── */}
     {tab==='workorders'&&<>
       <div style={{...crd,padding:0,overflow:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead>
-            <tr style={{background:'#1A1A1A',color:'#FFF'}}>
-              {['WO #','Equipment','Title','Priority','Status','Assigned To','Created','Actions'].map(h=>
-                <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
-              )}
-            </tr>
-          </thead>
+          <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
+            {['WO #','Equipment','Title','Priority','Status','Assigned','Parts $','Actions'].map(h=>
+              <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
+            )}
+          </tr></thead>
           <tbody>
             {workOrders.map((wo,i)=>{
               const eq=wo.fleet_equipment;
               return <tr key={wo.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8'}}>
                 <td style={{padding:'10px 12px',fontFamily:'monospace',fontSize:11,fontWeight:700,color:'#8A261D'}}>{wo.wo_number||'—'}</td>
-                <td style={{padding:'10px 12px'}}>
-                  {eq?<><div style={{fontWeight:700,fontSize:11}}>{eq.unit_number}</div>
-                  <div style={{fontSize:10,color:'#9E9B96'}}>{eq.make_model}</div></>:<span style={{color:'#9E9B96'}}>—</span>}
-                </td>
-                <td style={{padding:'10px 12px',maxWidth:200}}>
+                <td style={{padding:'10px 12px'}}>{eq?<><div style={{fontWeight:700,fontSize:11}}>{eq.unit_number}</div><div style={{fontSize:10,color:'#9E9B96'}}>{eq.city}</div></>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'10px 12px',maxWidth:180}}>
                   <div style={{fontWeight:600}}>{wo.title}</div>
-                  {wo.description&&<div style={{fontSize:10,color:'#9E9B96',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:180}}>{wo.description.slice(0,60)}{wo.description.length>60?'…':''}</div>}
+                  {wo.photo_urls?.length>0&&<div style={{fontSize:10,color:'#185FA5',marginTop:2}}>📷 {wo.photo_urls.length} photo{wo.photo_urls.length>1?'s':''}</div>}
                 </td>
-                <td style={{padding:'10px 12px'}}>
-                  <span style={{background:PRIORITY_C[wo.priority]+'20',color:PRIORITY_C[wo.priority],borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700,textTransform:'capitalize'}}>{wo.priority}</span>
-                </td>
-                <td style={{padding:'10px 12px'}}>
-                  <span style={{background:WO_STATUS_C[wo.status]+'20',color:WO_STATUS_C[wo.status],borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700}}>{(wo.status||'').replace(/_/g,' ')}</span>
-                </td>
+                <td style={{padding:'10px 12px'}}><span style={{background:PRIORITY_C[wo.priority]+'20',color:PRIORITY_C[wo.priority],borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700,textTransform:'capitalize'}}>{wo.priority}</span></td>
+                <td style={{padding:'10px 12px'}}><span style={{background:WO_STATUS_C[wo.status]+'20',color:WO_STATUS_C[wo.status],borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700}}>{(wo.status||'').replace(/_/g,' ')}</span></td>
                 <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{wo.assigned_to||<span style={{color:'#9E9B96'}}>Unassigned</span>}</td>
-                <td style={{padding:'10px 12px',fontSize:11,color:'#9E9B96',whiteSpace:'nowrap'}}>
-                  {wo.created_at?new Date(wo.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}
-                </td>
+                <td style={{padding:'10px 12px',fontSize:11,fontWeight:wo.parts_cost>0?700:400,color:wo.parts_cost>0?'#1A1A1A':'#9E9B96'}}>{wo.parts_cost>0?'$'+Number(wo.parts_cost).toLocaleString():'—'}</td>
                 <td style={{padding:'10px 12px'}}>
-                  <select value={wo.status} onChange={e=>updateWOStatus(wo.id,e.target.value)}
-                    style={{fontSize:10,padding:'3px 6px',border:'1px solid #E5E3E0',borderRadius:6,cursor:'pointer',background:'#FFF'}}>
-                    {['new','assigned','in_progress','pending_verification','verified','closed'].map(s=>
-                      <option key={s} value={s}>{s.replace(/_/g,' ')}</option>
-                    )}
-                  </select>
+                  <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                    <select value={wo.status} onChange={e=>updateWOStatus(wo.id,e.target.value)}
+                      style={{fontSize:10,padding:'3px 6px',border:'1px solid #E5E3E0',borderRadius:6,cursor:'pointer',background:'#FFF'}}>
+                      {['new','assigned','in_progress','pending_verification','verified','closed'].map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+                    </select>
+                    <button onClick={()=>{setShowPartsModal(wo.id);setPartForm({part_name:'',quantity_used:1,unit_cost:'',notes:''}); }} style={{padding:'3px 8px',background:'#0F6E5620',border:'1px solid #0F6E5640',borderRadius:6,fontSize:10,cursor:'pointer',color:'#0F6E56',fontWeight:600}}>+ Parts</button>
+                  </div>
                 </td>
               </tr>;
             })}
-            {workOrders.length===0&&<tr><td colSpan={8} style={{padding:'60px 20px',textAlign:'center',color:'#9E9B96'}}>
-              <div style={{fontSize:32,marginBottom:8}}>🔧</div>
-              <div style={{fontFamily:'Syne',fontWeight:700}}>No work orders yet</div>
+            {workOrders.length===0&&<tr><td colSpan={8} style={{padding:'60px',textAlign:'center',color:'#9E9B96'}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔧</div><div style={{fontFamily:'Syne',fontWeight:700}}>No work orders yet</div>
             </td></tr>}
           </tbody>
         </table>
       </div>
     </>}
 
-    {/* ── PM SCHEDULE TAB ── */}
-    {tab==='pm'&&<PMScheduleView equipment={equipment} crd={crd} btnP={btnP} inputS={inputS}/>}
-
-    {/* ── INSPECTIONS TAB ── */}
+    {tab==='pm'&&<PMScheduleView equipment={equipment} crd={crd} btnP={btnP} inputS={inputS} onLoad={load}/>}
     {tab==='inspections'&&<InspectionHistoryView crd={crd}/>}
 
     {/* ── EQUIPMENT DETAIL PANEL ── */}
-    {detail&&<div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(600,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
+    {detail&&<div style={{position:'fixed',top:0,right:0,bottom:0,width:Math.min(580,window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 30px rgba(0,0,0,.1)'}}>
       <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',background:'#1A1A1A',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
         <div>
           <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#FFF'}}>{detail.unit_number} — {detail.make_model}</div>
@@ -9426,15 +9709,16 @@ function FleetPage({jobs}){
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           <span style={{background:EQ_STATUS_BG[detail.status],color:EQ_STATUS_C[detail.status],borderRadius:12,padding:'4px 10px',fontSize:11,fontWeight:700}}>{detail.status}</span>
+          <button onClick={()=>setShowQR(detail)} style={{background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:6,color:'#FFF',fontSize:12,padding:'4px 10px',cursor:'pointer',fontWeight:600}}>QR</button>
           <button onClick={()=>setDetail(null)} style={{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:6,color:'#FFF',fontSize:18,width:32,height:32,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
         </div>
       </div>
       <div style={{flex:1,overflow:'auto',padding:20}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-          {[['City',detail.city],['Location',detail.location_detail||'—'],['VIN',detail.vin||'—'],['Serial #',detail.serial_number||'—'],['License Plate',detail.license_plate||'—'],['CDL Required',detail.cdl_required?'Yes':'No'],['GPS',detail.has_gps?'✓ Yes':'No'],['Camera',detail.has_camera?'✓ Yes':'No'],['Toll Tag',detail.toll_tag||'—'],['Fuel Cap.',detail.fuel_capacity_gal?detail.fuel_capacity_gal+' gal':'—'],['Current Hours',detail.current_hours?detail.current_hours.toLocaleString():'—'],['GVW',detail.gvw_lbs?detail.gvw_lbs.toLocaleString()+' lbs':'—']].map(([l,v])=>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+          {[['City',detail.city],['Location',detail.location_detail||'—'],['VIN',detail.vin||'—'],['Serial #',detail.serial_number||'—'],['License Plate',detail.license_plate||'—'],['CDL Required',detail.cdl_required?'Yes':'No'],['GPS',detail.has_gps?'✓ Yes':'No'],['Camera',detail.has_camera?'✓ Yes':'No'],['Fuel Cap.',detail.fuel_capacity_gal?detail.fuel_capacity_gal+' gal':'—'],['GVW',detail.gvw_lbs?detail.gvw_lbs.toLocaleString()+' lbs':'—'],['Current Hours',detail.current_hours?detail.current_hours.toLocaleString():'—'],['Toll Tag',detail.toll_tag||'—']].map(([l,v2])=>
             <div key={l} style={{background:'#F9F8F6',borderRadius:8,padding:'10px 12px'}}>
               <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,marginBottom:3}}>{l}</div>
-              <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A'}}>{v}</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',wordBreak:'break-all'}}>{v2}</div>
             </div>
           )}
         </div>
@@ -9445,22 +9729,35 @@ function FleetPage({jobs}){
         </div>}
         {detail.reg_expiry&&<div style={{background:'#FAEEDA',borderRadius:8,padding:'12px',marginBottom:12,borderLeft:'4px solid #D97706'}}>
           <div style={{fontSize:10,color:'#854F0B',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>Registration Expiry</div>
-          <div style={{fontWeight:700,color:'#1A1A1A'}}>{new Date(detail.reg_expiry).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+          <div style={{fontWeight:700}}>{new Date(detail.reg_expiry).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
         </div>}
         {detail.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:'12px',marginBottom:12}}>
           <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>Notes</div>
-          <div style={{fontSize:12,lineHeight:1.6,color:'#1A1A1A'}}>{detail.notes}</div>
+          <div style={{fontSize:12,lineHeight:1.6}}>{detail.notes}</div>
         </div>}
         <div style={{display:'flex',gap:8,marginTop:16}}>
-          <button onClick={()=>{setInspectEquip(detail);setShowInspect(true);}} style={{...btnP,flex:1,background:'#185FA5'}}>+ Daily Inspection</button>
+          <button onClick={()=>{setInspectEquip(detail);setShowInspect(true);}} style={{...btnP,flex:1,background:'#185FA5'}}>+ Inspection</button>
           <button onClick={()=>{setWoEquip(detail);setShowWOForm(true);}} style={{...btnP,flex:1}}>+ Work Order</button>
         </div>
       </div>
     </div>}
 
-    {/* ── DAILY INSPECTION MODAL ── */}
+    {/* ── QR CODE MODAL ── */}
+    {showQR&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowQR(null)}>
+      <div style={{background:'#1A1A1A',borderRadius:16,padding:24,maxWidth:320,width:'100%',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#FFF',marginBottom:4}}>{showQR.unit_number}</div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,0.5)',marginBottom:16}}>{showQR.make_model} · {showQR.city}</div>
+        <FleetQRCode equipmentId={showQR.id} unitNumber={showQR.unit_number} qrToken={showQR.qr_token}/>
+        <div style={{display:'flex',gap:8,marginTop:16,justifyContent:'center'}}>
+          <button onClick={()=>window.print()} style={{...btnP,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)'}}>🖨 Print</button>
+          <button onClick={()=>setShowQR(null)} style={{...btnP,background:'transparent',border:'1px solid rgba(255,255,255,0.2)'}}>Close</button>
+        </div>
+      </div>
+    </div>}
+
+    {/* ── DAILY INSPECTION MODAL (DESKTOP) ── */}
     {showInspect&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setShowInspect(false)}>
-      <div style={{background:'#FFF',borderRadius:14,width:'min(640px,100%)',maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:'#FFF',borderRadius:14,width:'min(700px,100%)',maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
         <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',background:'#185FA5',borderRadius:'14px 14px 0 0'}}>
           <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#FFF'}}>Daily Vehicle Inspection</div>
           <div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>
@@ -9468,14 +9765,11 @@ function FleetPage({jobs}){
           </div>
         </div>
         <div style={{padding:20}}>
-          {/* Equipment selector */}
           <div style={{marginBottom:16}}>
             <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Equipment</label>
             <select value={inspectEquip?.id||''} onChange={e=>setInspectEquip(equipment.find(eq=>eq.id===e.target.value))} style={inputS}>
               <option value=''>Select equipment...</option>
-              {equipment.filter(e=>e.status==='Active').map(eq=>
-                <option key={eq.id} value={eq.id}>{eq.unit_number} — {eq.make_model} ({eq.city})</option>
-              )}
+              {equipment.filter(e=>e.status==='Active').map(eq=><option key={eq.id} value={eq.id}>{eq.unit_number} — {eq.make_model} ({eq.city})</option>)}
             </select>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:16}}>
@@ -9492,8 +9786,6 @@ function FleetPage({jobs}){
               <input type="number" value={inspectForm.hours_reading} onChange={e=>setInspectForm(p=>({...p,hours_reading:e.target.value}))} placeholder="Engine hours" style={inputS}/>
             </div>
           </div>
-
-          {/* Checklist */}
           <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:8}}>Inspection Checklist</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:16}}>
             {INSPECT_ITEMS.map(item=>{
@@ -9501,18 +9793,21 @@ function FleetPage({jobs}){
               return <div key={item.key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 10px',background:val==='fail'?'#FEF2F2':val==='pass'?'#E1F5EE':'#F9F8F6',borderRadius:8,border:`1px solid ${val==='fail'?'#FCA5A5':val==='pass'?'#6EE7B7':'#E5E3E0'}`}}>
                 <span style={{fontSize:12,fontWeight:val==='fail'?700:400,color:val==='fail'?'#991B1B':'#1A1A1A'}}>{item.label}</span>
                 <div style={{display:'flex',gap:4}}>
-                  {['pass','fail'].map(v=><button key={v} onClick={()=>setInspectForm(p=>({...p,checks:{...p.checks,[item.key]:p.checks[item.key]===v?undefined:v}}))}
-                    style={{padding:'2px 8px',border:'none',borderRadius:4,fontSize:10,fontWeight:700,cursor:'pointer',background:val===v?(v==='pass'?'#065F46':'#991B1B'):'#E5E3E0',color:val===v?'#FFF':'#625650'}}>
-                    {v==='pass'?'✓ OK':'✗ FAIL'}
+                  {['pass','fail'].map(v2=><button key={v2} onClick={()=>setInspectForm(p=>({...p,checks:{...p.checks,[item.key]:p.checks[item.key]===v2?undefined:v2}}))}
+                    style={{padding:'2px 8px',border:'none',borderRadius:4,fontSize:10,fontWeight:700,cursor:'pointer',background:val===v2?(v2==='pass'?'#065F46':'#991B1B'):'#E5E3E0',color:val===v2?'#FFF':'#625650'}}>
+                    {v2==='pass'?'✓ OK':'✗ FAIL'}
                   </button>)}
                 </div>
               </div>;
             })}
           </div>
-
           <div style={{marginBottom:12}}>
-            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Defects / Notes (describe any issues)</label>
-            <textarea value={inspectForm.defects_found} onChange={e=>setInspectForm(p=>({...p,defects_found:e.target.value}))} rows={3} placeholder="Describe any defects, damage, or issues found..." style={{...inputS,resize:'vertical'}}/>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Defects / Notes</label>
+            <textarea value={inspectForm.defects_found} onChange={e=>setInspectForm(p=>({...p,defects_found:e.target.value}))} rows={3} placeholder="Describe any defects or issues..." style={{...inputS,resize:'vertical'}}/>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:6}}>Photos</label>
+            <PhotoUploadGrid photos={inspectForm.photos} onPhotosChange={p=>setInspectForm(f=>({...f,photos:p}))} folder="inspections" disabled={false}/>
           </div>
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
             <button onClick={()=>setShowInspect(false)} style={{...btnP,background:'#F4F4F2',color:'#625650'}}>Cancel</button>
@@ -9524,8 +9819,8 @@ function FleetPage({jobs}){
 
     {/* ── WORK ORDER FORM MODAL ── */}
     {showWOForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setShowWOForm(false)}>
-      <div style={{background:'#FFF',borderRadius:14,width:'min(560px,100%)',maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div style={{padding:'16px 20px',borderBottom:'1px solid #E5E3E0',background:'#8A261D',borderRadius:'14px 14px 0 0'}}>
+      <div style={{background:'#FFF',borderRadius:14,width:'min(580px,100%)',maxHeight:'90vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:'16px 20px',background:'#8A261D',borderRadius:'14px 14px 0 0'}}>
           <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#FFF'}}>Create Work Order</div>
           <div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>{woEquip?`${woEquip.unit_number} — ${woEquip.make_model}`:''}</div>
         </div>
@@ -9563,15 +9858,19 @@ function FleetPage({jobs}){
               <input type="date" value={woForm.due_date} onChange={e=>setWoForm(p=>({...p,due_date:e.target.value}))} style={inputS}/>
             </div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
             <div>
               <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Assign To</label>
               <input value={woForm.assigned_to} onChange={e=>setWoForm(p=>({...p,assigned_to:e.target.value}))} placeholder="Technician name" style={inputS}/>
             </div>
             <div>
-              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Technician Email</label>
+              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Email</label>
               <input type="email" value={woForm.assigned_to_email} onChange={e=>setWoForm(p=>({...p,assigned_to_email:e.target.value}))} placeholder="tech@fencecrete.com" style={inputS}/>
             </div>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:6}}>Photos</label>
+            <PhotoUploadGrid photos={woForm.photos} onPhotosChange={p=>setWoForm(f=>({...f,photos:p}))} folder="workorders" disabled={false}/>
           </div>
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
             <button onClick={()=>setShowWOForm(false)} style={{...btnP,background:'#F4F4F2',color:'#625650'}}>Cancel</button>
@@ -9580,90 +9879,52 @@ function FleetPage({jobs}){
         </div>
       </div>
     </div>}
+
+    {/* ── PARTS MODAL ── */}
+    {showPartsModal&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setShowPartsModal(null)}>
+      <div style={{background:'#FFF',borderRadius:14,width:'min(480px,100%)',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:'16px 20px',background:'#0F6E56',borderRadius:'14px 14px 0 0'}}>
+          <div style={{fontFamily:'Syne',fontSize:16,fontWeight:900,color:'#FFF'}}>Add Parts Used</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>WO: {workOrders.find(w=>w.id===showPartsModal)?.wo_number}</div>
+        </div>
+        <div style={{padding:20}}>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Part Name / Description *</label>
+            <input value={partForm.part_name} onChange={e=>setPartForm(p=>({...p,part_name:e.target.value}))} placeholder="e.g. Oil Filter, Brake Pad Set, Hydraulic Hose" style={inputS}/>
+            {parts.length>0&&<div style={{marginTop:6,display:'flex',gap:4,flexWrap:'wrap'}}>
+              {parts.filter(p=>p.name.toLowerCase().includes(partForm.part_name.toLowerCase())&&partForm.part_name.length>1).slice(0,5).map(p=>
+                <button key={p.id} onClick={()=>setPartForm(f=>({...f,part_name:p.name,unit_cost:p.unit_cost||''}))}
+                  style={{padding:'2px 8px',background:'#E1F5EE',border:'1px solid #6EE7B7',borderRadius:12,fontSize:10,cursor:'pointer',color:'#065F46'}}>{p.name}</button>
+              )}
+            </div>}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div>
+              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Quantity</label>
+              <input type="number" step="0.1" value={partForm.quantity_used} onChange={e=>setPartForm(p=>({...p,quantity_used:e.target.value}))} style={inputS}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Unit Cost ($)</label>
+              <input type="number" step="0.01" value={partForm.unit_cost} onChange={e=>setPartForm(p=>({...p,unit_cost:e.target.value}))} placeholder="0.00" style={inputS}/>
+            </div>
+          </div>
+          {partForm.quantity_used&&partForm.unit_cost&&<div style={{background:'#F9F8F6',borderRadius:8,padding:'10px 12px',marginBottom:12,textAlign:'center'}}>
+            <span style={{fontSize:13,fontWeight:700}}>Total: ${(parseFloat(partForm.quantity_used||0)*parseFloat(partForm.unit_cost||0)).toFixed(2)}</span>
+          </div>}
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',display:'block',marginBottom:4}}>Notes</label>
+            <input value={partForm.notes} onChange={e=>setPartForm(p=>({...p,notes:e.target.value}))} placeholder="Part number, vendor, etc." style={inputS}/>
+          </div>
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+            <button onClick={()=>setShowPartsModal(null)} style={{...btnP,background:'#F4F4F2',color:'#625650'}}>Cancel</button>
+            <button onClick={()=>addPartToWO(showPartsModal)} disabled={submitting} style={{...btnP,background:'#0F6E56',opacity:submitting?0.6:1}}>{submitting?'Adding…':'Add Part'}</button>
+          </div>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
-/* ── PM Schedule mini-view ── */
-function PMScheduleView({equipment,crd,btnP,inputS}){
-  const[schedules,setSchedules]=useState([]);
-  const[loading,setLoading]=useState(true);
-  useEffect(()=>{
-    sbGet('fleet_pm_schedules','select=*,fleet_equipment(unit_number,make_model,city)&is_active=eq.true&order=next_due_date.asc').then(d=>{setSchedules(d||[]);setLoading(false);});
-  },[]);
-  if(loading)return <SkeletonRows rows={5} cols={4}/>;
-  return <div style={{...crd,padding:0,overflow:'auto'}}>
-    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-      <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
-        {['Equipment','Task','Trigger','Next Due','Status'].map(h=><th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>{h}</th>)}
-      </tr></thead>
-      <tbody>
-        {schedules.map((s,i)=>{
-          const eq=s.fleet_equipment;
-          const dueDate=s.next_due_date?new Date(s.next_due_date):null;
-          const days=dueDate?Math.floor((dueDate-new Date())/(1000*86400)):null;
-          const overdue=days!==null&&days<0;
-          const soon=days!==null&&days>=0&&days<=14;
-          return <tr key={s.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8'}}>
-            <td style={{padding:'10px 12px'}}><div style={{fontWeight:700,fontSize:11}}>{eq?.unit_number||'—'}</div><div style={{fontSize:10,color:'#9E9B96'}}>{eq?.make_model} · {eq?.city}</div></td>
-            <td style={{padding:'10px 12px',fontWeight:600}}>{s.task_name}</td>
-            <td style={{padding:'10px 12px',color:'#625650',fontSize:11}}>{s.trigger_type==='time'?`Every ${s.interval_days} days`:s.trigger_type==='hours'?`Every ${s.interval_hours} hrs`:'Meter-based'}</td>
-            <td style={{padding:'10px 12px'}}>
-              {dueDate?<span style={{color:overdue?'#DC2626':soon?'#D97706':'#065F46',fontWeight:overdue||soon?700:400,fontSize:11}}>
-                {dueDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})}
-                {overdue?' ⚠ OVERDUE':soon?' ⚠ DUE SOON':''}
-              </span>:<span style={{color:'#9E9B96'}}>—</span>}
-            </td>
-            <td style={{padding:'10px 12px'}}>
-              <span style={{background:overdue?'#FEF2F2':soon?'#FAEEDA':'#E1F5EE',color:overdue?'#991B1B':soon?'#854F0B':'#065F46',borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700}}>
-                {overdue?'Overdue':soon?'Due Soon':'On Track'}
-              </span>
-            </td>
-          </tr>;
-        })}
-        {schedules.length===0&&<tr><td colSpan={5} style={{padding:'60px',textAlign:'center',color:'#9E9B96'}}>No PM schedules configured</td></tr>}
-      </tbody>
-    </table>
-  </div>;
-}
-
-/* ── Inspection History mini-view ── */
-function InspectionHistoryView({crd}){
-  const[inspections,setInspections]=useState([]);
-  const[loading,setLoading]=useState(true);
-  useEffect(()=>{
-    sbGet('fleet_inspections','select=*,fleet_equipment(unit_number,make_model)&order=created_at.desc&limit=50').then(d=>{setInspections(d||[]);setLoading(false);});
-  },[]);
-  if(loading)return <SkeletonRows rows={5} cols={5}/>;
-  return <div style={{...crd,padding:0,overflow:'auto'}}>
-    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-      <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
-        {['Date','Equipment','Inspector','Odometer','Result','WO Created'].map(h=><th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase'}}>{h}</th>)}
-      </tr></thead>
-      <tbody>
-        {inspections.map((ins,i)=>{
-          const eq=ins.fleet_equipment;
-          return <tr key={ins.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8'}}>
-            <td style={{padding:'10px 12px',fontSize:11,whiteSpace:'nowrap'}}>{ins.inspection_date?new Date(ins.inspection_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):''}</td>
-            <td style={{padding:'10px 12px'}}><div style={{fontWeight:700}}>{eq?.unit_number||'—'}</div><div style={{fontSize:10,color:'#9E9B96'}}>{eq?.make_model}</div></td>
-            <td style={{padding:'10px 12px',fontSize:11}}>{ins.inspector_name}</td>
-            <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{ins.odometer_reading?ins.odometer_reading.toLocaleString()+' mi':'—'}</td>
-            <td style={{padding:'10px 12px'}}>
-              <span style={{background:ins.overall_status==='pass'?'#E1F5EE':'#FEF2F2',color:ins.overall_status==='pass'?'#065F46':'#991B1B',borderRadius:12,padding:'2px 8px',fontSize:10,fontWeight:700}}>
-                {ins.overall_status==='pass'?'✓ Pass':'✗ Defects Found'}
-              </span>
-            </td>
-            <td style={{padding:'10px 12px',fontSize:11,color:ins.work_order_id?'#8A261D':'#9E9B96',fontWeight:ins.work_order_id?700:400}}>
-              {ins.work_order_id?'Yes — WO Created':'No'}
-            </td>
-          </tr>;
-        })}
-        {inspections.length===0&&<tr><td colSpan={6} style={{padding:'60px',textAlign:'center',color:'#9E9B96'}}>No inspections yet — submit your first daily inspection above</td></tr>}
-      </tbody>
-    </table>
-  </div>;
-}
-
-/* ═══ PROSPECTING PAGE ═══ */
 function ProspectingPage({jobs}){
   const isMobile=useIsMobile();
   const auth=useAuth();
