@@ -2275,7 +2275,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const[arSubs,setArSubs]=useState([]);
   const[arPmF,setArPmF]=useState('');
   const[arMktF,setArMktF]=useState(null);
-  const[arViewF,setArViewF]=useState('all');
+  const[arViewF,setArViewF]=useState('submitted'); // Default to show submitted-not-yet-reviewed
   const[arDetail,setArDetail]=useState(null);
   const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});
   const[invEntries,setInvEntries]=useState([]);
@@ -2295,7 +2295,7 @@ function BillingPage({jobs,onRefresh,onNav}){
   const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
   const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arFilteredJobs,arSubByJob]);
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
-  const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast(`Reviewed — ${$(amt)} added to ${s.job_name} YTD invoiced`);}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
+  const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}. YTD invoiced updated.`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
@@ -2597,11 +2597,11 @@ function BillingPage({jobs,onRefresh,onNav}){
           <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',display:'flex',gap:16}}>
             <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontSize:15,fontWeight:800,color:'#8A261D'}}>{n(s.total_lf).toLocaleString()}</div></div>
           </div>
-          {(lfPC(arJob)>0||n(arJob.lf_installed_to_date)>0)&&(()=>{const existing=n(arJob.lf_installed_to_date);const thisSub=n(s.total_lf);const afterTotal=s.ar_reviewed?existing:existing+thisSub;const contracted=lfPC(arJob)||n(arJob.total_lf);const pctAfter=contracted>0?Math.round(afterTotal/contracted*100):0;return<div style={{marginTop:8,padding:'8px 10px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
+          {(lfPC(arJob)>0||n(arJob.lf_installed_to_date)>0)&&(()=>{const existing=n(arJob.lf_installed_to_date);const thisSub=n(s.total_lf);const afterTotal=s.ar_reviewed?existing:existing+thisSub;const contracted=lfPC(arJob)||n(arJob.total_lf);const pctAfter=contracted>0?Math.round(afterTotal/contracted*100):0;const lfOverage=contracted>0&&afterTotal>contracted*1.05;return<div style={{marginTop:8,padding:'8px 10px',background:lfOverage?'#FEF2F2':'#EFF6FF',border:`1px solid ${lfOverage?'#FCA5A5':'#BFDBFE'}`,borderRadius:6,fontSize:12,color:lfOverage?'#991B1B':'#1D4ED8'}}>{lfOverage&&<div style={{fontWeight:800,marginBottom:4}}>⚠ LF EXCEEDS CONTRACT: {afterTotal.toLocaleString()} submitted vs {contracted.toLocaleString()} contracted ({Math.round(afterTotal/contracted*100)}%). Verify with PM before approving.</div>}
             {s.ar_reviewed?<span>📊 <b>LF installed to date:</b> {existing.toLocaleString()} LF ({pctAfter}% of {contracted.toLocaleString()} LF contracted)</span>:<span>📊 <b>LF installed after this submission:</b> {existing.toLocaleString()} + {thisSub.toLocaleString()} = <b>{afterTotal.toLocaleString()} LF</b> ({pctAfter}% of {contracted.toLocaleString()} contracted)</span>}
           </div>;})()}
         </div>
-        {s.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{s.notes}</div></div>}
+        <div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:s.notes?'#1A1A1A':'#9E9B96',whiteSpace:'pre-wrap',fontStyle:s.notes?'normal':'italic'}}>{s.notes||'No notes submitted by PM.'}</div></div>
         {/* Invoice History */}
         <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
@@ -2695,7 +2695,7 @@ function BillingPage({jobs,onRefresh,onNav}){
 }
 
 /* ═══ PM BILLING PAGE ═══ */
-const ACTIVE_BILL_STATUSES=['in_production','material_ready','active_install','fence_complete','fully_complete'];
+const ACTIVE_BILL_STATUSES=['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
 
 function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const v=useViewport();
