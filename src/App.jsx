@@ -8337,7 +8337,7 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
       {lead.follow_up_date&&<span style={{color:fuOverdue?'#B45309':'#9E9B96',fontWeight:fuOverdue?700:400}}>F/U {fD(lead.follow_up_date)}</span>}
       {lead.expected_close_date&&<span>Close {fD(lead.expected_close_date)}</span>}
     </div>
-    {onMoveStage&&<StageMover currentStage={lead.stage} onMove={toStage=>onMoveStage(lead,toStage)} stages={LEAD_STAGES}/>}
+    {onMoveStage&&<StageMover currentStage={lead.stage} onMove={toStage=>onMoveStage(lead,toStage)} stages={lead.stage==='won'?LEAD_STAGES.filter(s=>s.key!=='lost'):LEAD_STAGES}/>}
   </div>;
 }
 
