@@ -347,7 +347,7 @@ class ErrorBoundary extends React.Component {
     if(this.state.error){
       return <div style={{background:'#FEF2F2',border:'1px solid #FEE2E2',borderLeft:'4px solid #991B1B',borderRadius:10,padding:16,color:'#991B1B'}}>
         <div style={{fontWeight:800,marginBottom:4}}>⚠ {this.props.label||'Component'} failed to render</div>
-        <div style={{fontSize:12,fontFamily:'monospace',color:'#7F1D1D',whiteSpace:'pre-wrap'}}>{String(this.state.error.message||this.state.error)}</div>
+        <div style={{fontSize:12,fontFamily:'monospace',color:'#8A261D',whiteSpace:'pre-wrap'}}>{String(this.state.error.message||this.state.error)}</div>
         <button onClick={()=>this.setState({error:null})} style={{marginTop:10,background:'#991B1B',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontSize:12,cursor:'pointer'}}>Retry</button>
       </div>;
     }
@@ -9202,7 +9202,7 @@ function ProspectingPage({jobs}){
         <div style={{fontSize:12,color:'#9E9B96',marginTop:4}}>Master-Plan Community Developers &amp; Homebuilders</div>
       </div>
       <div style={{display:'flex',gap:8}}>
-        <button onClick={runResearch} disabled={researching} style={{...btnP,background:researching?'#9E9B96':'#1D4ED8',fontSize:13}}>
+        <button onClick={runResearch} disabled={researching} style={{...btnP,background:researching?'#9E9B96':'#8A261D',fontSize:13}}>
           {researching?'🔍 Researching…':'🔍 Run AI Research'}
         </button>
         <button onClick={()=>openForm()} style={btnP}>+ Add Target</button>
@@ -9864,17 +9864,17 @@ function SalesDashboardPage({jobs,onNav}){
 
 const NAV_GROUPS=[
   {label:'OVERVIEW',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
-  {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'📋'}]},
+  {label:'PROJECTS',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
   {label:'OPERATIONS',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'material_requests',label:'Material Requests',icon:'🚚'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
-  {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'📊'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📋'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
+  {label:'PROJECT MANAGEMENT',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
-  {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔀'},{key:'proposals',label:'Proposals',icon:'📋'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
   {key:'dashboard',label:'Dashboard',icon:'🏠'},
-  {key:'projects',label:'Projects',icon:'📋'},
+  {key:'projects',label:'Projects',icon:'🏗'},
   {key:'production',label:'Production',icon:'🗂'},
   {key:'billing',label:'Billing',icon:'💰'},
   {key:'__more',label:'More',icon:'☰'},
@@ -10195,6 +10195,7 @@ function AppShell(){
       <style>{`
         *{box-sizing:border-box;}
         html,body{max-width:100%;position:relative;}
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         /* ── Sidebar nav scrollbar (dark) ── */
         .fc-nav-scroll{scrollbar-width:thin;scrollbar-color:#4A4A4A #1A1A1A;}
