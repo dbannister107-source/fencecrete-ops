@@ -8296,7 +8296,7 @@ const LEAD_SOURCES=['Inbound Call','Referral','Website','Bid Invitation','Cold O
 const FENCE_TYPES_LEAD=['PC','SW','WI','Mixed','Other'];
 const COMPANY_TYPES=['GC','Developer','MUD','Homeowner','Municipality','Other'];
 
-function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted}){
+function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted,onMoveStage}){
   const mc=MC[lead.market]||'#625650';
   const mb=MB[lead.market]||'#F4F4F2';
   const stageDate=lead.stage_entered_at||lead.updated_at||lead.created_at;
