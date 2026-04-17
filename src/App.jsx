@@ -44,27 +44,6 @@ const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { hea
 const sbPatch = async (t, id, b) => { const r = await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: {...H, Prefer: 'return=minimal'}, body: JSON.stringify(b) }); if (!r.ok && r.status !== 204) { const txt = await r.text(); throw new Error(`PATCH ${t} failed (${r.status}): ${txt}`); } return {}; };
 const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) })).json();
 const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
-// Auto-generate next job number for a given market and year
-const generateJobNumber = async (market) => {
-  const yr = new Date().getFullYear().toString().slice(2); // "26"
-  const MC_CODE = {
-    'Houston':'H','San Antonio':'S','Austin':'A',
-    'Dallas-Fort Worth':'D','College Station':'CS'
-  };
-  const code = MC_CODE[market] || 'X';
-  // Query max sequence for this year+market
-  const pattern = `${yr}${code}`;
-  const rows = await sbGet('jobs', `select=job_number&job_number=like.${pattern}*&order=job_number.desc&limit=50`);
-  let maxSeq = 0;
-  if (Array.isArray(rows)) {
-    rows.forEach(r => {
-      const num = parseInt((r.job_number || '').replace(pattern, ''), 10);
-      if (!isNaN(num) && num > maxSeq) maxSeq = num;
-    });
-  }
-  const nextSeq = String(maxSeq + 1).padStart(3, '0');
-  return `${pattern}${nextSeq}`;
-};
 // Auth — GoTrue REST helpers (Supabase Auth). Sessions are stored in localStorage
 // under fc_auth. When a session is active, H.Authorization carries the user's JWT
 // (instead of the anon key); PostgREST accepts both so existing "public all" RLS
@@ -8500,6 +8479,9 @@ function WonModal({lead,onClose,onCreate}){
   const[cv,setCv]=useState(lead.proposal_value||lead.estimated_value||'');
   const[lf,setLf]=useState(lead.estimated_lf||'');
   const[residential,setResidential]=useState(false);
+  const[closeDate,setCloseDate]=useState(new Date().toISOString().slice(0,10));
+  const[amieNotes,setAmieeNotes]=useState('');
+  const[fenceType,setFenceType]=useState(lead.fence_type||'PC');
   const[jobNumber,setJobNumber]=useState('');
   const[creating,setCreating]=useState(false);
   useEffect(()=>{(async()=>{
@@ -8528,12 +8510,13 @@ function WonModal({lead,onClose,onCreate}){
         pm:pm,
         status:'contract_review',
         job_type:residential?'Residential':'Commercial',
-        fence_type:lead.fence_type||'PC',
+        fence_type:fenceType||lead.fence_type||'PC',
         contract_value:n(cv)||null,
+        contract_date:closeDate||null,
         adj_contract_value:n(cv)||null,
         total_lf:n(lf)||null,
         total_lf_precast:n(lf)||null,
-        notes:lead.notes||null,
+        notes:(amieNotes?'FOR AMIEE: '+amieNotes+'\n\n':'')+(lead.notes||'')+(lead.contact_name?'\nContact: '+lead.contact_name:'')+( lead.contact_email?' | '+lead.contact_email:'')+(lead.contact_phone?' | '+lead.contact_phone:''),
       };
       await sbPost('jobs',body);
       onCreate(jobNumber);
@@ -8557,6 +8540,20 @@ function WonModal({lead,onClose,onCreate}){
         <input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)}/>
         Residential (uses R-prefix job code)
       </label>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Fence Type</div>
+          <select value={fenceType} onChange={e=>setFenceType(e.target.value)} style={inputS}>
+            {['PC','SW','PC/SW','WI','PC/Columns','PC/Gates'].map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Close Date</div>
+          <input type="date" value={closeDate} onChange={e=>setCloseDate(e.target.value)} style={inputS}/>
+        </div>
+      </div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Notes for Amiee <span style={{fontWeight:400,color:'#9E9B96'}}>(optional)</span></div>
+        <textarea value={amieNotes} onChange={e=>setAmieeNotes(e.target.value)} rows={2} placeholder="Special instructions, timeline, customer preferences..." style={{...inputS,resize:'vertical'}}/>
+      </div>
       <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
         <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700}}>Job Number</div>
         <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#8A261D'}}>{jobNumber||'—'}</div>
@@ -8756,38 +8753,11 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     }catch(err){console.error(err);toast.error('Import failed: '+err.message);}
     setImporting(false);
   };
-  const afterProjectCreated=async(manualJobNumber)=>{
-    const lead=wonModal;
-    const today=new Date().toISOString().slice(0,10);
-    const nowIso=new Date().toISOString();
-    // Auto-generate job number if not manually provided
-    let jobNumber=manualJobNumber;
-    if(!jobNumber||jobNumber.trim()===''){
-      try{jobNumber=await generateJobNumber(lead.market);}catch(e){jobNumber='PENDING';}
-    }
-    // Create project stub in jobs table
-    try{
-      await sbPost('jobs',{
-        job_number:jobNumber,
-        job_name:lead.company_name+(lead.project_description?' - '+lead.project_description:''),
-        customer_name:lead.company_name,
-        market:lead.market,
-        sales_rep:lead.sales_rep,
-        fence_type:lead.fence_type||'',
-        contract_value:lead.proposal_value||lead.estimated_value||0,
-        total_lf:lead.estimated_lf||0,
-        status:'contract_review',
-        notes:'Created from pipeline. Contact: '+(lead.contact_name||'')+' '+(lead.contact_email||'')+' '+(lead.contact_phone||''),
-        created_at:nowIso,
-        updated_at:nowIso,
-      });
-    }catch(e){console.warn('Project stub creation failed',e);}
-    // Mark lead as won
+  const afterProjectCreated=async(jobNumber)=>{
+    const lead=wonModal;const today=new Date().toISOString().slice(0,10);const nowIso=new Date().toISOString();
     await sbPatch('leads',lead.id,{stage:'won',won_date:today,job_number:jobNumber,updated_at:nowIso,stage_entered_at:nowIso});
     setWonModal(null);await fetchLeads();onRefresh&&onRefresh();
-    // Notify Amiee + David
-    try{fetch(SB+'/functions/v1/send-alert',{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({event:'lead_won',lead,job_number:jobNumber})});}catch(e){console.warn('Won notification failed',e);}
-    setToast('Won! Job '+jobNumber+' created. Amiee has been notified.');
+    setToast(`Project ${jobNumber} created — Amiee will take it from here.`);
   };
   return <div>
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
@@ -10652,11 +10622,32 @@ function ProposalsPage({jobs}){
 
 /* ═══ SALES DASHBOARD PAGE ═══ */
 function SalesDashboardPage({jobs,onNav}){
-  const[leads,setLeads]=useState([]);
+  const[leads,setLeads]=useState([]);const[allLeads,setAllLeads]=useState([]);
   const[loading,setLoading]=useState(true);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();},[fetchLeads]);
   const today=new Date();
+  // Win rate calculations using all leads
+  const wonLeads=leads.filter(l=>l.stage==='won');
+  const lostLeads=leads.filter(l=>l.stage==='lost');
+  const closedLeads=[...wonLeads,...lostLeads];
+  const winRate=closedLeads.length?Math.round(wonLeads.length/closedLeads.length*100):0;
+  const totalWonValue=wonLeads.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+  const openPipeline=leads.filter(l=>l.stage==='proposal_sent').reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability||50)/100),0);
+  const avgDaysToClose=wonLeads.length?Math.round(wonLeads.reduce((s,l)=>{
+    if(!l.stage_entered_at&&!l.created_at)return s;
+    const created=new Date(l.created_at||l.stage_entered_at);
+    const won=new Date(l.won_date||l.updated_at);
+    return s+Math.max(0,Math.floor((won-created)/86400000));
+  },0)/wonLeads.length):0;
+  // Win rate by rep
+  const repStats=REPS.map(rep=>{
+    const repWon=wonLeads.filter(l=>l.sales_rep===rep);
+    const repLost=lostLeads.filter(l=>l.sales_rep===rep);
+    const repOpen=leads.filter(l=>l.sales_rep===rep&&l.stage==='proposal_sent');
+    const repClosed=repWon.length+repLost.length;
+    return{rep,won:repWon.length,lost:repLost.length,open:repOpen.length,rate:repClosed?Math.round(repWon.length/repClosed*100):null,value:repWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0)};
+  }).filter(r=>r.won>0||r.open>0);
   const startOfMonth=new Date(today.getFullYear(),today.getMonth(),1).toISOString().slice(0,10);
   const ninetyDaysAgo=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
   const proposalsOpen=useMemo(()=>leads.filter(l=>l.stage==='proposal_sent'),[leads]);
@@ -10856,6 +10847,26 @@ function SalesDashboardPage({jobs,onNav}){
               <td style={{padding:'8px 12px',fontWeight:700,color:'#8A261D'}}>{$k(l.estimated_value||l.proposal_value)}</td>
               <td style={{padding:'8px 12px',color:days>30?'#B45309':'#625650'}}>{days}d</td>
             </tr>;})}
+          </tbody>
+        </table>
+      </div>}
+      {repStats.length>0&&<div style={{...card,padding:20,marginTop:16}}>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Win Rate by Rep</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+            {['Rep','Won','Lost','Open','Win Rate','Won Value'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {repStats.sort((a,b)=>(b.rate||0)-(a.rate||0)).map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}>
+              <td style={{padding:'8px 12px',fontWeight:700}}>{r.rep}</td>
+              <td style={{padding:'8px 12px',color:'#065F46',fontWeight:700}}>{r.won}</td>
+              <td style={{padding:'8px 12px',color:'#991B1B'}}>{r.lost}</td>
+              <td style={{padding:'8px 12px',color:'#B45309'}}>{r.open}</td>
+              <td style={{padding:'8px 12px'}}>
+                {r.rate!=null?<span style={{background:r.rate>=60?'#D1FAE5':r.rate>=40?'#FEF3C7':'#FEE2E2',color:r.rate>=60?'#065F46':r.rate>=40?'#B45309':'#991B1B',padding:'2px 8px',borderRadius:99,fontWeight:700,fontSize:12}}>{r.rate}%</span>:'—'}
+              </td>
+              <td style={{padding:'8px 12px',fontWeight:600}}>{$k(r.value)}</td>
+            </tr>)}
           </tbody>
         </table>
       </div>}
