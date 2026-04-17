@@ -8306,6 +8306,46 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
       {lead.follow_up_date&&<span style={{color:fuOverdue?'#B45309':'#9E9B96',fontWeight:fuOverdue?700:400}}>F/U {fD(lead.follow_up_date)}</span>}
       {lead.expected_close_date&&<span>Close {fD(lead.expected_close_date)}</span>}
     </div>
+    {onMoveStage&&<StageMover currentStage={lead.stage} onMove={toStage=>onMoveStage(lead,toStage)} stages={LEAD_STAGES}/>}
+  </div>;
+}
+
+/* ── Stage Mover Strip ── */
+function StageMover({currentStage,onMove,stages}){
+  const ci=stages.findIndex(s=>s.key===currentStage);
+  const prev=ci>0?stages[ci-1]:null;
+  const next=ci<stages.length-1?stages[ci+1]:null;
+  const[open,setOpen]=useState(false);
+  return <div style={{marginTop:8,borderTop:'1px solid #F0EFED',paddingTop:6}} onClick={e=>e.stopPropagation()}>
+    <div style={{display:'flex',gap:4,alignItems:'center'}}>
+      {prev&&<button onClick={e=>{e.stopPropagation();onMove(prev.key);}}
+        style={{flex:1,padding:'5px 4px',border:'1px solid #E5E3E0',borderRadius:6,background:'#F9F8F6',cursor:'pointer',fontSize:9,color:'#625650',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transition:'all .12s'}}
+        onMouseEnter={e=>{e.currentTarget.style.background=prev.bg||'#F4F4F2';e.currentTarget.style.borderColor=prev.color;e.currentTarget.style.color=prev.color;}}
+        onMouseLeave={e=>{e.currentTarget.style.background='#F9F8F6';e.currentTarget.style.borderColor='#E5E3E0';e.currentTarget.style.color='#625650';}}>
+        &#8592; {prev.label}
+      </button>}
+      <button onClick={e=>{e.stopPropagation();setOpen(o=>!o);}}
+        style={{padding:'5px 7px',border:'1px solid #E5E3E0',borderRadius:6,background:open?'#1A1A1A':'#F9F8F6',cursor:'pointer',fontSize:11,color:open?'#FFF':'#9E9B96',flexShrink:0,lineHeight:1,transition:'all .12s'}}
+        title="Move to any stage">
+        &#8942;
+      </button>
+      {next&&<button onClick={e=>{e.stopPropagation();onMove(next.key);}}
+        style={{flex:1,padding:'5px 4px',border:'1px solid #E5E3E0',borderRadius:6,background:'#F9F8F6',cursor:'pointer',fontSize:9,color:'#625650',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transition:'all .12s'}}
+        onMouseEnter={e=>{e.currentTarget.style.background=next.bg||'#F4F4F2';e.currentTarget.style.borderColor=next.color;e.currentTarget.style.color=next.color;}}
+        onMouseLeave={e=>{e.currentTarget.style.background='#F9F8F6';e.currentTarget.style.borderColor='#E5E3E0';e.currentTarget.style.color='#625650';}}>
+        {next.label} &#8594;
+      </button>}
+    </div>
+    {open&&<div style={{marginTop:5,display:'flex',gap:4,flexWrap:'wrap'}}>
+      {stages.filter(s=>s.key!==currentStage).map(s=>(
+        <button key={s.key} onClick={e=>{e.stopPropagation();onMove(s.key);setOpen(false);}}
+          style={{padding:'3px 8px',border:'1px solid '+s.color,borderRadius:12,background:s.bg||'#F4F4F2',cursor:'pointer',fontSize:9,fontWeight:700,color:s.color,textTransform:'uppercase',letterSpacing:'0.06em',transition:'all .1s'}}
+          onMouseEnter={e=>{e.currentTarget.style.background=s.color;e.currentTarget.style.color='#FFF';}}
+          onMouseLeave={e=>{e.currentTarget.style.background=s.bg||'#F4F4F2';e.currentTarget.style.color=s.color;}}>
+          {s.label}
+        </button>
+      ))}
+    </div>}
   </div>;
 }
 
@@ -8572,6 +8612,16 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     await fetchLeads();
     setToast(`Moved to ${LEAD_STAGES.find(s=>s.key===toStage)?.label||toStage}`);
   };
+  const onMoveStage=async(lead,toStage)=>{
+    if(!lead||lead.stage===toStage)return;
+    if(toStage==='proposal_sent'){setPropModal(lead);return;}
+    if(toStage==='won'){setWonModal(lead);return;}
+    if(toStage==='lost'){setLostModal(lead);return;}
+    const nowIso=new Date().toISOString();
+    await sbPatch('leads',lead.id,{stage:toStage,updated_at:nowIso,stage_entered_at:nowIso});
+    await fetchLeads();
+    setToast(`Moved to ${LEAD_STAGES.find(s=>s.key===toStage)?.label||toStage}`);
+  };
   const saveProposal=async(data)=>{
     const lead=propModal;const nowIso=new Date().toISOString();
     await sbPatch('leads',lead.id,{...data,stage:'proposal_sent',updated_at:nowIso,stage_entered_at:nowIso});
@@ -8686,7 +8736,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     isMobile?<MobileKanban
       columns={LEAD_STAGES.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.accent,items:byStage[col.key]||[]}))}
       emptyMessage="No leads in this stage"
-      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id}/>}
+      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>}
     />:
     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,alignItems:'flex-start'}}>
       {LEAD_STAGES.map(col=>{
@@ -8702,7 +8752,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id}/>)}</div>}
+          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>)}</div>}
         </div>;
       })}
     </div>}
