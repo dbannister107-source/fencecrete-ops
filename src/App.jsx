@@ -837,6 +837,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const auth = useAuth();
   const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
   const canEdit = isNew || canEditProjects(currentUserEmail);
+  const canChangeStatus = isNew || canEditStatus(currentUserEmail);
   const roInput = canEdit ? {} : {pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'};
   const roStyle = (extra={}) => canEdit ? extra : {...extra,pointerEvents:'none',opacity:0.7,cursor:'default'};
   // Phase 4: close the panel on Escape.
@@ -941,7 +942,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
             : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
           }
-          {!isNew&&job.status==='closed'&&canEdit&&<div style={{position:'relative'}}>
+          {!isNew&&job.status==='closed'&&canChangeStatus&&<div style={{position:'relative'}}>
             <button onClick={()=>setShowReopenPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#065F46',borderColor:'#065F46',fontWeight:700}}>
               {reopening?'Reopening...':'🔓 Reopen Job'}
             </button>
@@ -4366,6 +4367,8 @@ function MaterialCalcPage({jobs,preJob}){
 
 /* ═══ PRODUCTION ORDERS PAGE ═══ */
 function ProductionOrdersPage({jobs,setJobs,onNav}){
+  const auth=useAuth();
+  const currentUserEmail=(auth?.user?.email||'').toLowerCase().trim();
   const[filterTab,setFilterTab]=useState('all');
   const[expanded,setExpanded]=useState(null);
   const[toast,setToast]=useState(null);
@@ -4547,7 +4550,7 @@ function ProductionOrdersPage({jobs,setJobs,onNav}){
               <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>{j.job_number||'—'}</span>
               <span style={{fontWeight:700,fontSize:14,flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
               <span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
-              <select value={j.status} onClick={e=>e.stopPropagation()} onChange={e=>updateStatus(j,e.target.value)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status],cursor:'pointer'}}>{STS.filter(s=>s!=='closed').map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>
+              canEditStatus(currentUserEmail)?<select value={j.status} onClick={e=>e.stopPropagation()} onChange={e=>updateStatus(j,e.target.value)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status],cursor:'pointer'}}>{STS.filter(s=>s!=='closed').map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>:<span style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status]}}>{SL[j.status]||j.status}</span>
               <span style={{fontSize:12,color:'#9E9B96'}}>{isExp?'▲':'▼'}</span>
             </div>
             <div style={{display:'flex',gap:14,fontSize:11,color:'#625650',marginLeft:26,flexWrap:'wrap'}}>
