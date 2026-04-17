@@ -163,11 +163,11 @@ const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_producti
 const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
 const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
 const CLOSED_SET=new Set(['fully_complete','closed','canceled']);
-const MKTS = ['Austin','Dallas-Fort Worth','Houston','San Antonio'];
-const MC = { Austin:'#854F0B', 'Dallas-Fort Worth':'#185FA5', Houston:'#0F6E56', 'San Antonio':'#8A261D' };
-const MB = { Austin:'#FAEEDA', 'Dallas-Fort Worth':'#E6F1FB', Houston:'#E1F5EE', 'San Antonio':'#FDF4F4' };
-const MS = { Austin:'Austin', 'Dallas-Fort Worth':'DFW', Houston:'Houston', 'San Antonio':'SA' };
-const MKT_CODE={Austin:'A','Dallas-Fort Worth':'D',Houston:'H','San Antonio':'S'};
+const MKTS = ['Austin','College Station','Dallas-Fort Worth','Houston','San Antonio'];
+const MC = { Austin:'#854F0B', 'College Station':'#5B21B6', 'Dallas-Fort Worth':'#185FA5', Houston:'#0F6E56', 'San Antonio':'#8A261D' };
+const MB = { Austin:'#FAEEDA', 'College Station':'#EDE9FE', 'Dallas-Fort Worth':'#E6F1FB', Houston:'#E1F5EE', 'San Antonio':'#FDF4F4' };
+const MS = { Austin:'Austin', 'College Station':'CS', 'Dallas-Fort Worth':'DFW', Houston:'Houston', 'San Antonio':'SA' };
+const MKT_CODE={Austin:'A','College Station':'CS','Dallas-Fort Worth':'D',Houston:'H','San Antonio':'S'};
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
@@ -7148,7 +7148,7 @@ const IMPORT_STATUS_MAP={
 };
 const IMPORT_STATUS_DEFAULT='contract_review';
 const mapImportStatus=(raw)=>{if(raw==null||raw==='')return{mapped:IMPORT_STATUS_DEFAULT,matched:false,raw:''};const s=String(raw).trim();return{mapped:IMPORT_STATUS_MAP[s]||IMPORT_STATUS_DEFAULT,matched:!!IMPORT_STATUS_MAP[s],raw:s};};
-const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth'};
+const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth','College Station':'College Station','Bryan':'College Station','CS':'College Station','Bryan/College Station':'College Station'};
 // Fields protected from UPDATES on existing jobs (kanban/AR/material calc own these — never overwritten from Excel)
 const PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
 // Fields stripped on INSERT of new jobs (derived/computed fields only — status IS set on insert so it's NOT here)
@@ -7304,6 +7304,15 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
         // New jobs: status IS set — warn if Excel status was unrecognized
         if(statusRaw&&!statusMatched){
           warnings.push({row:idx+7,issue:`Status "${statusRaw}" not recognized → will default to Contract Review`,data:`${jobNumber} · ${mapped.job_name}`});
+        }
+        // Auto-assign PM from market if not set
+        if(!mapped.pm&&mapped.market){
+          if(mapped.market==='San Antonio'||mapped.market==='College Station')mapped.pm='Ray Garcia';
+          else if(mapped.market==='Austin'||mapped.market==='Dallas-Fort Worth')mapped.pm='Doug Monroe';
+          else if(mapped.market==='Houston'){
+            const ft=(mapped.fence_type||'').toUpperCase();
+            mapped.pm=(ft.includes('SW')||ft.includes('MASONRY')||ft.includes('SINGLE WYTHE'))?'Rafael Anaya Jr.':'Manuel Salazar';
+          }
         }
         newJobs.push({rowNum:idx+7,mapped,statusRaw,statusMatched});
       }
@@ -7529,8 +7538,8 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 }
 
 /* ═══ MAP PAGE ═══ */
-const MKT_COORDS={Austin:[30.2672,-97.7431],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
-const MKT_PIN={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
+const MKT_COORDS={Austin:[30.2672,-97.7431],'College Station':[30.6280,-96.3344],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
+const MKT_PIN={Austin:'#FB923C','College Station':'#A78BFA','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
 function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.length>0){const b=L.latLngBounds(positions);map.fitBounds(b,{padding:[40,40]});}},[positions,map]);return null;}
 function MapPage({jobs,onNav}){
   const[pins,setPins]=useState([]);const[geocoding,setGeocoding]=useState(false);const[geoProgress,setGeoProgress]=useState('');
