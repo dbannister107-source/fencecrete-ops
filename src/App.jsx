@@ -9058,6 +9058,8 @@ function ProspectingPage({jobs}){
   const[editCo,setEditCo]=useState(null);
   const[aiDrafting,setAiDrafting]=useState(false);
   const[aiDraft,setAiDraft]=useState(null);
+  const[researching,setResearching]=useState(false);
+  const[researchResult,setResearchResult]=useState(null);
   const[form,setForm]=useState({company_name:'',company_type:'homebuilder',tier:'A',website:'',hq_city:'',markets_active:[],active_communities:[],known_fence_spend:'unknown',fencecrete_relationship:'prospect',relationship_notes:'',assigned_rep:'Matt',status:'new',next_action:'',next_action_date:'',source:'research'});
   const[newContact,setNewContact]=useState({name:'',title:'',email:'',phone:'',linkedin_url:'',is_primary:false,contact_notes:''});
   const[showContactForm,setShowContactForm]=useState(false);
@@ -9153,6 +9155,21 @@ function ProspectingPage({jobs}){
     }catch(e){setToast({msg:'Failed',ok:false});}
   };
 
+  const runResearch=async()=>{
+    setResearching(true);setResearchResult(null);
+    try{
+      const resp=await fetch(`${SB}/functions/v1/prospect-researcher`,{
+        method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({})
+      });
+      const data=await resp.json();
+      setResearchResult(data);
+      if(data.new_targets_found>0){setToast({msg:`✅ Found ${data.new_targets_found} new target${data.new_targets_found>1?'s':''}! Refreshing...`,ok:true});load();}
+      else{setToast({msg:'Research complete — no new targets found this week',ok:true});}
+    }catch(e){setToast({msg:'Research failed: '+e.message,ok:false});}
+    setResearching(false);
+  };
+
   const generateAIOutreach=async(co)=>{
     setAiDrafting(true);setAiDraft(null);
     try{
@@ -9184,7 +9201,12 @@ function ProspectingPage({jobs}){
         <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:900,margin:0}}>SA Prospecting</h1>
         <div style={{fontSize:12,color:'#9E9B96',marginTop:4}}>Master-Plan Community Developers &amp; Homebuilders</div>
       </div>
-      <button onClick={()=>openForm()} style={btnP}>+ Add Target</button>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={runResearch} disabled={researching} style={{...btnP,background:researching?'#9E9B96':'#1D4ED8',fontSize:13}}>
+          {researching?'🔍 Researching…':'🔍 Run AI Research'}
+        </button>
+        <button onClick={()=>openForm()} style={btnP}>+ Add Target</button>
+      </div>
     </div>
 
     {/* KPI Strip */}
@@ -9196,6 +9218,18 @@ function ProspectingPage({jobs}){
         </div>
       )}
     </div>
+
+    {/* Research Result Banner */}
+    {researchResult&&<div style={{background:researchResult.new_targets_found>0?'#F0FDF4':'#F9F8F6',border:`1px solid ${researchResult.new_targets_found>0?'#86EFAC':'#E5E3E0'}`,borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+      <div>
+        <div style={{fontWeight:700,fontSize:13,color:researchResult.new_targets_found>0?'#065F46':'#1A1A1A'}}>
+          {researchResult.new_targets_found>0?`✅ ${researchResult.new_targets_found} new target${researchResult.new_targets_found>1?'s':''} added to your list`:'Research complete — no new targets this week'}
+        </div>
+        {researchResult.companies?.length>0&&<div style={{fontSize:12,color:'#625650',marginTop:4}}>{researchResult.companies.join(', ')}</div>}
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:4}}>Email digest sent to david@ and alex@</div>
+      </div>
+      <button onClick={()=>setResearchResult(null)} style={{background:'transparent',border:'none',cursor:'pointer',color:'#9E9B96',fontSize:16}}>✕</button>
+    </div>}
 
     {/* Filters */}
     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16,alignItems:'center'}}>
