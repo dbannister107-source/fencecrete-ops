@@ -966,6 +966,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.total_lf_precast||form.lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
             onNav('material_requests');
           }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
+          {!isNew&&(currentUserEmail==='david@fencecrete.com'||currentUserEmail==='amiee@fencecrete.com'||currentUserEmail==='contracts@fencecrete.com')&&<button
+            title="TEST ONLY: Generate a PIS form link for this job"
+            onClick={async()=>{
+              try{
+                const res=await fetch(`${SB}/functions/v1/pis-send`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:currentUserEmail,sent_to_name:'TEST',sent_by:currentUserEmail})});
+                const data=await res.json();
+                if(data.form_url){window.open(data.form_url,'_blank');}
+                else{alert('Error: '+(data.error||'Unknown'));}
+              }catch(e){alert('Error: '+e.message);}
+            }}
+            style={{background:'#FFF',border:'1px dashed #B45309',borderRadius:8,padding:'8px 14px',color:'#B45309',fontWeight:700,fontSize:12,cursor:'pointer'}}
+          >🧪 Test PIS</button>}
           {canEdit
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
             : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
