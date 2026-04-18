@@ -7988,7 +7988,7 @@ function ChatWidget({currentPage}){
 }
 
 /* ═══ TOPBAR ═══ */
-function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile}){
+function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBack,canGoBack}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
@@ -8004,6 +8004,7 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile}){
   return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}}>
     <style>{`@keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
+    {canGoBack&&<button onClick={onBack} aria-label="Go back" title="Go back" style={{background:'none',border:'none',borderRadius:8,height:32,padding:'0 8px',cursor:'pointer',color:'#625650',fontSize:14,display:'inline-flex',alignItems:'center',gap:4,fontWeight:600,flexShrink:0,transition:'color .15s'}} onMouseEnter={e=>e.currentTarget.style.color='#8A261D'} onMouseLeave={e=>e.currentTarget.style.color='#625650'}>&#8592; Back</button>}
     <div style={{flex:1}}/>
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
@@ -11802,7 +11803,10 @@ function AppShell(){
   const isAdmin=profile?.role==='admin';
   // Phase 1: everyone sees everything. Only admins get an extra Admin link appended.
   const filteredNav=useMemo(()=>isAdmin?[...NAV_GROUPS,{label:'ADMIN',items:[{key:'admin',label:'User Management',icon:'🔐'}]}]:NAV_GROUPS,[isAdmin]);
-  const[page,setPage]=useState('dashboard');const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
+  const[page,setPage]=useState('dashboard');
+  const[pageHistory,setPageHistory]=useState([]);
+  const navigateTo=(newPage)=>{if(newPage===page)return;setPageHistory(h=>[...h,page]);setPage(newPage);};
+  const navigateBack=()=>{if(pageHistory.length===0)return;const prev=pageHistory[pageHistory.length-1];setPageHistory(h=>h.slice(0,-1));setPage(prev);};const[jobs,setJobs]=useState([]);const[loading,setLoading]=useState(true);const[openJob,setOpenJob]=useState(null);const[showSearch,setShowSearch]=useState(false);
   const[showProfile,setShowProfile]=useState(false);
   const[sideCollapsed,setSideCollapsed]=useState(()=>{try{return localStorage.getItem('fc_side_collapsed')==='1';}catch(e){return false;}});
   const[tabletOverlay,setTabletOverlay]=useState(false);
@@ -11874,13 +11878,13 @@ function AppShell(){
         </div>
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
-        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)}/>
+        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)} onBack={navigateBack} canGoBack={pageHistory.length>0}/>
         <div style={{flex:1,overflowY:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
           </div>:<>
-            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={setPage}/>}
@@ -11888,7 +11892,7 @@ function AppShell(){
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
             {page==='production_planning'&&<ErrorBoundary label="Production Planning"><ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/></ErrorBoundary>}
-            {page==='reports'&&<ReportsPage jobs={jobs} onNav={setPage} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
+            {page==='reports'&&<ReportsPage jobs={jobs} onNav={navigateTo} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
