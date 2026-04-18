@@ -6772,7 +6772,6 @@ function PMDailyReportPage({jobs}){
 
 /* ═══ ESTIMATING PAGE ═══ */
 const EST_SC={draft:['#625650','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2']};
-const RATE_PCTILES={pc:{Houston:{p25:89,med:92,p75:136,min:83,max:195},Austin:{p25:92,med:106,p75:146,min:88,max:455},'Dallas-Fort Worth':{p25:105,med:120,p75:148,min:93,max:192},'San Antonio':{p25:95,med:108,p75:160,min:85,max:180}},sw:{Houston:{p25:123,med:126,p75:192,min:118,max:192},Austin:{p25:138,med:148,p75:158,min:138,max:158},'Dallas-Fort Worth':{p25:192,med:192,p75:192,min:192,max:192}}};
 function EstimatingPage(){
   const[view,setView]=useState('list');
   const[estimates,setEstimates]=useState([]);
