@@ -1781,8 +1781,12 @@ function WeeklyDigest({jobs,active}){
 function Dashboard({jobs,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
   const isTablet = useIsMobile(1024); // true below 1024px → tablet or mobile
-  // Phase 4: responsive KPI grid — 4 cols desktop, 2 tablet, 1 mobile.
-  const kpiCols = isMobile ? '1fr' : isTablet ? 'repeat(3,1fr)' : 'repeat(7,1fr)';
+  // Responsive KPI grid: <900→1, 900–1200→2, 1200–1600→3, ≥1600→4.
+  // Caps column count so $-values like "$12.7M" fit without truncation.
+  const kpiMobile = useIsMobile(900);
+  const kpiNarrow = useIsMobile(1200);
+  const kpiMid = useIsMobile(1600);
+  const kpiCols = kpiMobile ? '1fr' : kpiNarrow ? 'repeat(2,1fr)' : kpiMid ? 'repeat(3,1fr)' : 'repeat(4,1fr)';
   const pairCols = isMobile ? '1fr' : 'repeat(2,1fr)';
   const[showRemindConfirm,setShowRemindConfirm]=useState(false);
   const[lastRefreshed,setLastRefreshed]=useState(new Date());
