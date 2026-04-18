@@ -11885,15 +11885,15 @@ function AppShell(){
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
           </div>:<>
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
-            {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
-            {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}setPage(pg);}}/>}
+            {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
+            {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={setPage}/>}
-            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
-            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={setPage} refreshKey={refreshKey}/>}
-            {page==='production_planning'&&<ErrorBoundary label="Production Planning"><ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/></ErrorBoundary>}
+            {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
+            {page==='production_planning'&&<ErrorBoundary label="Production Planning"><ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/></ErrorBoundary>}
             {page==='reports'&&<ReportsPage jobs={jobs} onNav={navigateTo} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
-            {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={setPage}/>}
+            {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
             {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey} onNav={setPage}/>}
