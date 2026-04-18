@@ -10534,11 +10534,13 @@ function ProposalsPage({ jobs }) {
       ? rows
       : rows.filter(p => productOf(p.fence_type) === pricingProduct);
 
-    // group by market|style
+    // group by market|style (skip rows with missing style — they're called out separately)
+    const missingStyle = filtered.filter(p => !p.style || !String(p.style).trim());
     const groups = {};
     filtered.forEach(p => {
+      if (!p.style || !String(p.style).trim()) return;
       const mkt = p.market || "Unknown";
-      const sty = p.style || "Unspecified";
+      const sty = p.style;
       const key = `${mkt}||${sty}`;
       if (!groups[key]) groups[key] = { market: mkt, style: sty, deals: [], lfs: [], plfs: [], wins: 0 };
       groups[key].deals.push(p);
@@ -10590,7 +10592,7 @@ function ProposalsPage({ jobs }) {
     const nonBondAvg = nonBondPlfs.length ? nonBondPlfs.reduce((s, x) => s + x, 0) / nonBondPlfs.length : 0;
 
     return {
-      filtered, groupList, avgByProd, masonryPremium,
+      filtered, groupList, missingStyle, avgByProd, masonryPremium,
       smallAvg, largeAvg, smallN: smallPlfs.length, largeN: largePlfs.length,
       bondAvg, nonBondAvg, bondN: bondPlfs.length, nonBondN: nonBondPlfs.length,
     };
@@ -11460,6 +11462,16 @@ function ProposalsPage({ jobs }) {
                   </div>
                 </div>
               </div>
+
+              {/* Missing-style callout */}
+              {pricing.missingStyle.length > 0 && (
+                <div style={{ padding: 12, background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: 10, marginBottom: 12, fontSize: 13, color: "#78350F", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <span>
+                    <strong>⚠️ Style missing</strong> — {pricing.missingStyle.length} deal{pricing.missingStyle.length !== 1 ? "s" : ""} hidden from the table. Tag during review to include them in pricing groups.
+                  </span>
+                  <button onClick={() => { setMode("review"); setReviewF(true); }} style={{ ...btnS, padding: "4px 10px", fontSize: 11, whiteSpace: "nowrap" }}>Go to Review →</button>
+                </div>
+              )}
 
               {/* SECTION 2: Pricing Library Table */}
               <div style={{ ...card, padding: 0, overflow: "auto", marginBottom: 16 }}>
