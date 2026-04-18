@@ -867,16 +867,22 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
     setPisSending(true);
     try{
+      // Resolve true jobs table UUID via job_number to avoid passing a lead ID by mistake
+      let resolvedJobId=job.id;
+      if(job.job_number){
+        const rows=await sbGet('jobs',`job_number=eq.${job.job_number}&select=id`);
+        if(Array.isArray(rows)&&rows.length>0)resolvedJobId=rows[0].id;
+      }
       const res=await fetch(`${SB}/functions/v1/pis-send`,{
         method:'POST',
-        headers:{...H,'Content-Type':'application/json'},
-        body:JSON.stringify({job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'}),
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},
+        body:JSON.stringify({job_id:resolvedJobId,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'}),
       });
       const data=await res.json();
       if(!res.ok||!data.success){throw new Error(data.error||'Send failed');}
       setPisEmail('');setPisName('');
       setPisToast('Sent to '+pisEmail.trim()+'. Customer will receive email shortly.');
-      sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
+      sbGet('pis_tokens',`job_id=eq.${resolvedJobId}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
     }catch(e){alert('Send failed: '+e.message);}
     setPisSending(false);
   };
@@ -970,7 +976,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             title="TEST ONLY: Generate a PIS form link for this job"
             onClick={async()=>{
               try{
-                const res=await fetch(`${SB}/functions/v1/pis-send`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({job_id:job.id,job_number:job.job_number,job_name:job.job_name,sent_to_email:currentUserEmail,sent_to_name:'TEST',sent_by:currentUserEmail})});
+                const jRows=await sbGet('jobs',`job_number=eq.${job.job_number}&select=id`);
+                const resolvedId=(Array.isArray(jRows)&&jRows.length>0)?jRows[0].id:job.id;
+                const res=await fetch(`${SB}/functions/v1/pis-send`,{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},body:JSON.stringify({job_id:resolvedId,job_number:job.job_number,job_name:job.job_name,sent_to_email:currentUserEmail,sent_to_name:'TEST',sent_by:currentUserEmail})});
                 const data=await res.json();
                 if(data.form_url){window.open(data.form_url,'_blank');}
                 else{alert('Error: '+(data.error||'Unknown'));}
