@@ -11887,25 +11887,25 @@ function AppShell(){
             {page==='dashboard'&&<Dashboard jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
-            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={setPage}/>}
+            {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={navigateTo}/>}
             {page==='billing'&&<BillingPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='pm_billing'&&<PMBillingPage jobs={jobs} onRefresh={fetchJobs} refreshKey={refreshKey}/>}
             {page==='production'&&<ProductionPage jobs={jobs} setJobs={setJobs} onRefresh={fetchJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='production_planning'&&<ErrorBoundary label="Production Planning"><ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/></ErrorBoundary>}
-            {page==='reports'&&<ReportsPage jobs={jobs} onNav={navigateTo} onOpenJob={j=>{setOpenJob(j);setPage('projects');}} refreshKey={refreshKey}/>}
+            {page==='reports'&&<ReportsPage jobs={jobs} onNav={navigateTo} onOpenJob={j=>{setOpenJob(j);navigateTo('projects');}} refreshKey={refreshKey}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
-            {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey} onNav={setPage}/>}
-            {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='material_requests'&&<MaterialRequestsPage jobs={jobs} refreshKey={refreshKey} onNav={navigateTo}/>}
+            {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
-            {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={setPage} refreshKey={refreshKey}/>}
+            {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='pipeline'&&<ErrorBoundary label="Pipeline"><PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/></ErrorBoundary>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
-            {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={setPage}/>}
+            {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={navigateTo}/>}
             {page==='fleet'&&<ErrorBoundary label="Fleet"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='fleet_wo'&&<ErrorBoundary label="Fleet Work Orders"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='prospecting'&&<ErrorBoundary label="Prospecting"><ProspectingPage jobs={jobs}/></ErrorBoundary>}
