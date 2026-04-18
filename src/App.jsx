@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap } from 'react-leaflet';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
@@ -7321,78 +7321,313 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 const MKT_COORDS={Austin:[30.2672,-97.7431],'College Station':[30.6280,-96.3344],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
 const MKT_PIN={Austin:'#FB923C','College Station':'#A78BFA','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
 function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.length>0){const b=L.latLngBounds(positions);map.fitBounds(b,{padding:[40,40]});}},[positions,map]);return null;}
-function MapPage({jobs,onNav}){
-  const[pins,setPins]=useState([]);const[geocoding,setGeocoding]=useState(false);const[geoProgress,setGeoProgress]=useState('');
-  const[mktF,setMktF]=useState(null);const[statusF,setStatusF]=useState(null);
-  const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
-  useEffect(()=>{let cancelled=false;
-    const run=async()=>{setGeocoding(true);const result=[];let toGeo=0;
-      for(const j of activeJobs){
-        if(j.lat&&j.lng){result.push({...j,lat:n(j.lat),lng:n(j.lng)});continue;}
-        toGeo++;
+const MAP_LAYER_STATUSES = ['active_install','material_ready','contract_review','in_production'];
+const MAP_LAYER_COLOR = { active_install:'#DC2626', material_ready:'#EAB308', contract_review:'#6B7280', in_production:'#2563EB' };
+const MAP_LAYER_LABEL = { active_install:'Active Installs', material_ready:'Material Ready', contract_review:'Contract Review', in_production:'In Production' };
+const productOfJob = (j) => {
+  const s = String(j.style||'').toLowerCase();
+  if (s.includes('gate') || n(j.gate_height) > 0) return 'Gate';
+  const prim = String(j.primary_fence_type||'').toLowerCase();
+  const hasP = n(j.lf_precast) > 0 || n(j.total_lf_precast) > 0;
+  const hasM = n(j.total_lf_masonry) > 0 || n(j.lf_single_wythe) > 0;
+  const hasWI = n(j.lf_wrought_iron) > 0 || n(j.total_lf_wrought_iron) > 0;
+  const kinds = [hasP, hasM, hasWI].filter(Boolean).length;
+  if (kinds >= 2) return 'Hybrid';
+  if (prim === 'precast' || hasP) return 'Precast';
+  if (prim === 'masonry' || hasM) return 'Masonry';
+  return 'Other';
+};
+const sizeOfJob = (j) => { const lf = n(j.total_lf); if (lf < 500) return 'Small'; if (lf <= 1500) return 'Medium'; return 'Large'; };
+const weekRangeFor = (sel) => {
+  if (sel === 'All Active') return null;
+  const now = new Date();
+  const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0);
+  const end = new Date(start); end.setDate(start.getDate() + 7);
+  if (sel === 'Next Week') { start.setDate(start.getDate() + 7); end.setDate(end.getDate() + 7); }
+  return [start, end];
+};
+
+function MapPage({ jobs, onNav }) {
+  const isMobile = useIsMobile();
+  const [pins, setPins] = useState([]);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geoProgress, setGeoProgress] = useState('');
+  const [layers, setLayers] = useState({ active_install: true, material_ready: true, contract_review: false, in_production: false });
+  const [pmF, setPmF] = useState('All');
+  const [mktF, setMktF] = useState('All');
+  const [productF, setProductF] = useState('All');
+  const [sizeF, setSizeF] = useState('All');
+  const [weekF, setWeekF] = useState('All Active');
+  const [selected, setSelected] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  useEffect(() => { setFiltersOpen(!isMobile); }, [isMobile]);
+
+  const mapJobs = useMemo(() => jobs.filter(j => MAP_LAYER_STATUSES.includes(j.status)), [jobs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const already = mapJobs.filter(j => n(j.lat) && n(j.lng)).map(j => ({ ...j, lat: n(j.lat), lng: n(j.lng) }));
+    setPins(already);
+    const need = mapJobs.filter(j => !n(j.lat) || !n(j.lng));
+    if (need.length === 0) { setGeocoding(false); setGeoProgress(''); return; }
+    setGeocoding(true); setGeoProgress(`Locating ${need.length} jobs...`);
+    (async () => {
+      for (let i = 0; i < need.length; i++) {
+        if (cancelled) return;
+        setGeoProgress(`Locating ${i+1}/${need.length}...`);
+        const j = need[i];
+        const q = `${j.address || ''} ${j.city || ''} ${j.state || 'TX'}`.trim();
+        let lat = 0, lng = 0;
+        if (q.length > 3) {
+          try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, { headers: { 'User-Agent': 'FencecreteOps/1.0' } });
+            const d = await r.json();
+            if (d && d[0]) { lat = parseFloat(d[0].lat); lng = parseFloat(d[0].lon); }
+          } catch (e) {}
+        }
+        if (!lat && j.market && MKT_COORDS[j.market]) {
+          const c = MKT_COORDS[j.market];
+          lat = c[0] + (Math.random()-0.5) * 0.05;
+          lng = c[1] + (Math.random()-0.5) * 0.05;
+        }
+        if (lat && lng) {
+          try { sbPatch('jobs', j.id, { lat, lng }); } catch (e) {}
+          if (!cancelled) setPins(prev => [...prev, { ...j, lat, lng }]);
+        }
+        if (q.length > 3) await new Promise(r => setTimeout(r, 1100));
       }
-      // Batch geocode jobs without coords
-      const needGeo=activeJobs.filter(j=>!j.lat||!j.lng);
-      setGeoProgress(`Locating ${needGeo.length} jobs...`);
-      for(let i=0;i<needGeo.length;i++){
-        if(cancelled)return;const j=needGeo[i];
-        setGeoProgress(`Locating ${i+1}/${needGeo.length}...`);
-        const q=`${j.address||''} ${j.city||''} ${j.state||'TX'}`.trim();
-        let lat=0,lng=0;
-        if(q.length>3){try{const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,{headers:{'User-Agent':'FencecreteOps/1.0'}});const d=await r.json();if(d&&d[0]){lat=parseFloat(d[0].lat);lng=parseFloat(d[0].lon);}}catch(e){}}
-        // Fallback to market center
-        if(!lat&&j.market&&MKT_COORDS[j.market]){const c=MKT_COORDS[j.market];lat=c[0]+(Math.random()-0.5)*0.05;lng=c[1]+(Math.random()-0.5)*0.05;}
-        if(lat&&lng){try{sbPatch('jobs',j.id,{lat,lng});}catch(e){}result.push({...j,lat,lng});}
-        if(i<needGeo.length-1&&q.length>3)await new Promise(r=>setTimeout(r,1100));
-      }
-      // Add already-geocoded
-      for(const j of activeJobs){if(j.lat&&j.lng&&!result.some(r=>r.id===j.id))result.push({...j,lat:n(j.lat),lng:n(j.lng)});}
-      if(!cancelled){setPins(result);setGeocoding(false);}
-    };run();return()=>{cancelled=true;};
-  },[activeJobs]);
-  const filtered=useMemo(()=>{let f=pins;if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);return f;},[pins,mktF,statusF]);
-  const fTC=filtered.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
-  const fLTB=filtered.reduce((s,j)=>s+n(j.left_to_bill),0);
-  const positions=filtered.filter(j=>j.lat&&j.lng).map(j=>[j.lat,j.lng]);
-  return(<div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 96px)'}}>
-    <div style={{display:'flex',gap:8,padding:'0 0 12px',flexWrap:'wrap',alignItems:'center'}}>
-      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0,marginRight:12}}>Map</h1>
-      <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
-      <span style={{color:'#E5E3E0'}}>|</span>
-      <button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All Statuses</button>
-      {STS.filter(s=>!CLOSED_SET.has(s)).map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}
-      <span style={{fontSize:12,color:'#625650',marginLeft:8}}>{filtered.length} jobs | {$k(fTC)} contract | {$k(fLTB)} LTB</span>
+      if (!cancelled) { setGeocoding(false); setGeoProgress(''); }
+    })();
+    return () => { cancelled = true; };
+  }, [mapJobs]);
+
+  // Pre-layer filters
+  const passesScalarFilters = useCallback((j) => {
+    if (pmF !== 'All' && j.pm !== pmF) return false;
+    if (mktF !== 'All' && j.market !== mktF) return false;
+    if (productF !== 'All' && productOfJob(j) !== productF) return false;
+    if (sizeF !== 'All' && sizeOfJob(j) !== sizeF) return false;
+    const wr = weekRangeFor(weekF);
+    if (wr) {
+      if (!j.est_start_date) return false;
+      const d = new Date(j.est_start_date);
+      if (d < wr[0] || d >= wr[1]) return false;
+    }
+    return true;
+  }, [pmF, mktF, productF, sizeF, weekF]);
+
+  const baseFiltered = useMemo(() => pins.filter(passesScalarFilters), [pins, passesScalarFilters]);
+  const filtered = useMemo(() => baseFiltered.filter(j => layers[j.status]), [baseFiltered, layers]);
+  const layerCounts = useMemo(() => {
+    const c = { active_install: 0, material_ready: 0, contract_review: 0, in_production: 0 };
+    baseFiltered.forEach(j => { if (c[j.status] !== undefined) c[j.status]++; });
+    return c;
+  }, [baseFiltered]);
+
+  // Unmapped (passes scalar filters but no coords)
+  const notMappedCount = useMemo(() =>
+    mapJobs.filter(j => passesScalarFilters(j) && layers[j.status] && (!n(j.lat) || !n(j.lng))).length,
+    [mapJobs, layers, passesScalarFilters]);
+
+  const unscheduled = useMemo(() => filtered.filter(j => !j.est_start_date), [filtered]);
+
+  const kpiCount = filtered.length;
+  const kpiLF = filtered.reduce((s, j) => s + n(j.total_lf), 0);
+  const kpiValue = filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0);
+  const kpiCustomers = new Set(filtered.map(j => j.customer_name).filter(Boolean)).size;
+
+  // PM route: connect active_install pins in est_start_date order, only when one PM selected
+  const pmRoute = useMemo(() => {
+    if (pmF === 'All') return [];
+    return filtered
+      .filter(j => j.status === 'active_install' && j.est_start_date && j.lat && j.lng)
+      .sort((a, b) => String(a.est_start_date).localeCompare(String(b.est_start_date)))
+      .map(j => [j.lat, j.lng]);
+  }, [filtered, pmF]);
+
+  const positions = filtered.filter(j => j.lat && j.lng).map(j => [j.lat, j.lng]);
+  const kpiTile = (label, value) => (
+    <div style={{ ...card, padding: 10 }}>
+      <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: '#1A1A1A', marginTop: 2 }}>{value}</div>
     </div>
-    {geocoding&&<div style={{padding:'8px 0',fontSize:12,color:'#625650'}}>{geoProgress}</div>}
-    <div style={{flex:1,borderRadius:12,overflow:'hidden',border:'1px solid #E5E3E0',position:'relative'}}>
-      <MapContainer center={[31.0,-99.0]} zoom={6} style={{height:'100%',width:'100%'}} scrollWheelZoom={true}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap'/>
-        {positions.length>1&&<FitBounds positions={positions}/>}
-        <>
-          {filtered.filter(j=>j.lat&&j.lng).map(j=><CircleMarker key={j.id} center={[j.lat,j.lng]} radius={10} pathOptions={{fillColor:MKT_PIN[j.market]||'#8A261D',color:'#1A1A1A',weight:2,fillOpacity:0.85}}>
-            <Popup maxWidth={280}><div style={{fontFamily:'Inter,sans-serif',fontSize:13}}>
-              <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>{j.job_name}</div>
-              <div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,color:'#625650'}}>#{j.job_number}</span>
-                <span style={{...pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2'),display:'inline-block'}}>{MS[j.market]||'—'}</span>
-                <span style={{...statusPill(j.status),display:'inline-block'}}>{SS[j.status]||j.status}</span>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 96px)' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Map</h1>
+        {isMobile && (
+          <button onClick={() => setFiltersOpen(v => !v)} style={{ ...btnS, padding: '4px 12px', fontSize: 12 }}>
+            {filtersOpen ? 'Hide Filters' : 'Show Filters'}
+          </button>
+        )}
+      </div>
+
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10, marginBottom: 10 }}>
+        {kpiTile('Visible Jobs', kpiCount)}
+        {kpiTile('Total LF', kpiLF.toLocaleString())}
+        {kpiTile('Total Value', $k(kpiValue))}
+        {kpiTile('Unique Customers', kpiCustomers)}
+      </div>
+
+      {/* Filter bar */}
+      {filtersOpen && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>PM:
+            <select value={pmF} onChange={e => setPmF(e.target.value)} style={{ ...inputS, width: 160, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
+              <option value="All">All</option>
+              {PM_LIST.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Market:
+            <select value={mktF} onChange={e => setMktF(e.target.value)} style={{ ...inputS, width: 140, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
+              <option value="All">All</option>
+              {MKTS.map(m => <option key={m} value={m}>{MS[m] || m}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Product:
+            <select value={productF} onChange={e => setProductF(e.target.value)} style={{ ...inputS, width: 120, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
+              {['All','Precast','Masonry','Gate','Hybrid'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Size:
+            <select value={sizeF} onChange={e => setSizeF(e.target.value)} style={{ ...inputS, width: 150, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
+              <option value="All">All sizes</option>
+              <option value="Small">Small (&lt;500 LF)</option>
+              <option value="Medium">Medium (500–1500)</option>
+              <option value="Large">Large (&gt;1500)</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Week:
+            <select value={weekF} onChange={e => setWeekF(e.target.value)} style={{ ...inputS, width: 130, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
+              <option value="All Active">All Active</option>
+              <option value="This Week">This Week</option>
+              <option value="Next Week">Next Week</option>
+            </select>
+          </label>
+          <button onClick={() => { setPmF('All'); setMktF('All'); setProductF('All'); setSizeF('All'); setWeekF('All Active'); }}
+            style={{ ...btnS, padding: '4px 12px', fontSize: 12 }}>Reset</button>
+        </div>
+      )}
+
+      {/* Layer toggles */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        {MAP_LAYER_STATUSES.map(s => {
+          const on = layers[s];
+          return (
+            <button key={s} onClick={() => setLayers(prev => ({ ...prev, [s]: !prev[s] }))}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9999,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                border: `1px solid ${on ? MAP_LAYER_COLOR[s] : '#E5E3E0'}`,
+                background: on ? `${MAP_LAYER_COLOR[s]}14` : '#FFF',
+                color: on ? MAP_LAYER_COLOR[s] : '#9E9B96',
+              }}>
+              <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1px solid #1A1A1A' }} />
+              {MAP_LAYER_LABEL[s]} ({layerCounts[s]})
+            </button>
+          );
+        })}
+        {geocoding && <span style={{ fontSize: 11, color: '#625650', marginLeft: 8 }}>{geoProgress}</span>}
+      </div>
+
+      {/* Callouts */}
+      {(notMappedCount > 0 || unscheduled.length > 0) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          {notMappedCount > 0 && (
+            <div style={{ padding: '6px 12px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 12, color: '#78350F' }}>
+              ⚠️ {notMappedCount} job{notMappedCount !== 1 ? 's' : ''} not mapped — missing lat/lng.{' '}
+              <span onClick={() => onNav && onNav('production')} style={{ textDecoration: 'underline', cursor: 'pointer', fontWeight: 700 }}>Fix in Production →</span>
+            </div>
+          )}
+          {unscheduled.length > 0 && weekF === 'All Active' && (
+            <div style={{ padding: '6px 12px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 12, color: '#78350F' }}>
+              🗓 {unscheduled.length} Unscheduled (no est_start_date)
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Map + Side panel */}
+      <div style={{ display: 'flex', flex: 1, gap: 12, minHeight: 0 }}>
+        <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E3E0', position: 'relative' }}>
+          <MapContainer center={[31.0, -99.0]} zoom={6} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
+            {positions.length > 1 && <FitBounds positions={positions} />}
+            {pmRoute.length > 1 && (
+              <Polyline positions={pmRoute} pathOptions={{ color: '#8B2020', weight: 3, opacity: 0.75, dashArray: '6 6' }} />
+            )}
+            {filtered.filter(j => j.lat && j.lng).map(j => (
+              <CircleMarker key={j.id}
+                center={[j.lat, j.lng]} radius={selected && selected.id === j.id ? 13 : 9}
+                pathOptions={{ fillColor: MAP_LAYER_COLOR[j.status] || '#8A261D', color: '#1A1A1A', weight: 2, fillOpacity: 0.9 }}
+                eventHandlers={{ click: () => setSelected(j) }} />
+            ))}
+          </MapContainer>
+          {/* Legend */}
+          <div style={{ position: 'absolute', bottom: 14, right: 12, background: 'rgba(255,255,255,0.95)', borderRadius: 8, padding: '8px 12px', zIndex: 1000, border: '1px solid #E5E3E0', fontSize: 11 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4, color: '#6B6056', textTransform: 'uppercase', fontSize: 10 }}>Layers</div>
+            {MAP_LAYER_STATUSES.filter(s => layers[s]).map(s => (
+              <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1.5px solid #1A1A1A' }} />
+                <span>{MAP_LAYER_LABEL[s]}</span>
               </div>
-              {j.pm&&<div style={{fontSize:11,color:'#625650',marginBottom:2}}>PM: {j.pm}</div>}
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#625650'}}>Contract</span><span style={{fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</span></div>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}><span style={{color:'#625650'}}>Left to Bill</span><span style={{fontWeight:700,color:'#8A261D'}}>{$(j.left_to_bill)}</span></div>
-              {j.est_start_date&&<div style={{fontSize:11,color:'#625650'}}>Est. Start: {fD(j.est_start_date)}</div>}
-              <button onClick={()=>{if(onNav)onNav('projects',j);}} style={{marginTop:8,padding:'6px 14px',background:'#8A261D',color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',width:'100%'}}>View Job</button>
-            </div></Popup>
-          </CircleMarker>)}
-        </>
-      </MapContainer>
-      {/* Legend */}
-      <div style={{position:'absolute',bottom:24,right:12,background:'rgba(255,255,255,0.92)',borderRadius:8,padding:'8px 12px',zIndex:1000,border:'1px solid #E5E3E0',display:'flex',gap:10,fontSize:11}}>
-        {MKTS.map(m=><div key={m} style={{display:'flex',alignItems:'center',gap:3}}><div style={{width:10,height:10,borderRadius:5,background:MKT_PIN[m],border:'1.5px solid #1A1A1A'}}/>{MS[m]}</div>)}
+            ))}
+            {pmRoute.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingTop: 4, borderTop: '1px solid #F1EFEC' }}>
+                <span style={{ width: 16, height: 2, background: '#8B2020', borderRadius: 1, borderTop: '1px dashed #8B2020' }} />
+                <span>{pmF} route</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Side panel */}
+        {selected && (
+          <div style={{ ...card, width: isMobile ? '100%' : 340, padding: 16, overflow: 'auto', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800, color: '#1A1A1A' }}>{selected.job_name || 'Untitled'}</div>
+                <div style={{ fontSize: 12, color: '#6B6056', marginTop: 2 }}>{selected.customer_name || '—'}</div>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9E9B96' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ ...statusPill(selected.status), display: 'inline-block' }}>{SS[selected.status] || selected.status}</span>
+              {selected.market && <span style={{ ...pill(MC[selected.market] || '#6B6056', MB[selected.market] || '#F4F4F2'), display: 'inline-block' }}>{MS[selected.market] || selected.market}</span>}
+              {!selected.est_start_date && <span style={{ ...pill('#B45309','#FEF3C7','#B45309'), display: 'inline-block' }}>Unscheduled</span>}
+            </div>
+            <div style={{ fontSize: 12, color: '#1A1A1A', lineHeight: 1.6 }}>
+              {[
+                ['Address', [selected.address, selected.city, selected.state, selected.zip].filter(Boolean).join(', ') || '—'],
+                ['Total LF', n(selected.total_lf) ? n(selected.total_lf).toLocaleString() : '—'],
+                ['Product', productOfJob(selected)],
+                ['Style', selected.style || '—'],
+                ['Color', selected.color || '—'],
+                ['Height', selected.height || selected.height_precast || '—'],
+                ['PM', selected.pm || '—'],
+                ['Est. Start', selected.est_start_date ? fD(selected.est_start_date) : '—'],
+                ['Contract', $k(selected.adj_contract_value || selected.contract_value)],
+                ['Left to Bill', $k(selected.left_to_bill)],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F1EFEC', padding: '4px 0' }}>
+                  <span style={{ color: '#6B6056', fontWeight: 600 }}>{k}</span>
+                  <span style={{ textAlign: 'right', maxWidth: '70%' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => onNav && onNav('projects', selected)}
+              style={{ marginTop: 14, padding: '8px 14px', background: '#8B2020', color: '#FFF', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+              Open Job Detail →
+            </button>
+          </div>
+        )}
       </div>
     </div>
-  </div>);
+  );
 }
 
 /* ═══ MATERIAL REQUESTS — digitized PMR form ═══ */
