@@ -10554,179 +10554,1094 @@ function ProspectingPage({jobs}){
   </div>;
 }
 
-function ProposalsPage({jobs}){
+function ProposalsPage({ jobs }) {
   const isMobile = useIsMobile();
-  const[leads,setLeads]=useState([]);
-  const[loading,setLoading]=useState(true);
-  const[repF,setRepF]=useState(new Set());
-  const[mktF,setMktF]=useState(new Set());
-  const[search,setSearch]=useState('');
-  const[detail,setDetail]=useState(null);
-  const[sortKey,setSortKey]=useState('follow_up_date');
-  const[sortDir,setSortDir]=useState('asc');
-  const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','stage=eq.proposal_sent&select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
-  useEffect(()=>{fetchLeads();},[fetchLeads]);
-  const today=new Date().toISOString().slice(0,10);
-  const daysSince=(d)=>{if(!d)return 0;return Math.floor((Date.now()-new Date(d).getTime())/86400000);};
-  const filtered=useMemo(()=>{
-    let f=leads;
-    if(repF.size>0)f=f.filter(l=>repF.has(l.sales_rep));
-    if(mktF.size>0)f=f.filter(l=>mktF.has(l.market));
-    if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
+  /* ── state ── */
+  const [mode, setMode] = useState("list"); // list | analytics | review | tagging | quality
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [repF, setRepF] = useState(null);
+  const [mktF, setMktF] = useState(null);
+  const [statusF, setStatusF] = useState(null);
+  const [sourceF, setSourceF] = useState(null);
+  const [reviewF, setReviewF] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortKey, setSortKey] = useState("proposal_date");
+  const [sortDir, setSortDir] = useState("desc");
+  const [listPage, setListPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const [detail, setDetail] = useState(null);
+  const [detailDocs, setDetailDocs] = useState([]);
+  const [detailLines, setDetailLines] = useState([]);
+  const [detailEdit, setDetailEdit] = useState(null);
+  const [detailSaving, setDetailSaving] = useState(false);
+  // tagging mode
+  const [tagIdx, setTagIdx] = useState(0);
+  const [tagLossReason, setTagLossReason] = useState("");
+  const [tagLossOther, setTagLossOther] = useState("");
+  const [tagJobSearch, setTagJobSearch] = useState("");
+  const [tagJobResults, setTagJobResults] = useState([]);
+  const [tagLinkedJob, setTagLinkedJob] = useState(null);
+  const [tagCelebrate, setTagCelebrate] = useState(false);
+  // review mode
+  const [reviewBulk, setReviewBulk] = useState(new Set());
+  const [reviewBulkMode, setReviewBulkMode] = useState(false);
+
+  /* ── data fetch ── */
+  const fetchProposals = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await sbGet("proposals_enriched", "select=*&order=proposal_date.desc.nullsfirst&limit=500");
+      setProposals(Array.isArray(d) ? d : []);
+    } catch (e) {
+      toast.error("Failed to load proposals");
+      setProposals([]);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchProposals(); }, [fetchProposals]);
+
+  /* ── formatters ── */
+  const fCur = (v) => {
+    const x = Number(v);
+    if (!x && x !== 0) return "—";
+    return x.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  };
+  const fCur2 = (v) => {
+    const x = Number(v);
+    if (!x && x !== 0) return "—";
+    return x.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const fPct = (v) => (v == null ? "—" : `${(Number(v) * 100).toFixed(0)}%`);
+
+  /* ── filtering ── */
+  const filtered = useMemo(() => {
+    let f = proposals;
+    if (repF) f = f.filter(p => p.assigned_rep === repF);
+    if (mktF) f = f.filter(p => p.market === mktF);
+    if (statusF) f = f.filter(p => p.status === statusF);
+    if (sourceF === "crm") f = f.filter(p => p.source === "manual");
+    if (sourceF === "archive") f = f.filter(p => p.source === "ingested");
+    if (reviewF) f = f.filter(p => p.needs_review);
+    if (dateFrom) f = f.filter(p => (p.proposal_date || "") >= dateFrom);
+    if (dateTo) f = f.filter(p => (p.proposal_date || "") <= dateTo);
+    if (search) {
+      const q = search.toLowerCase();
+      f = f.filter(p =>
+        `${p.customer_name || ""} ${p.title || ""} ${p.assigned_rep || ""} ${p.market || ""}`.toLowerCase().includes(q)
+      );
+    }
     return f;
-  },[leads,repF.size,mktF.size,search]);
-  const sorted=useMemo(()=>{
-    const arr=[...filtered];
-    const dir=sortDir==='asc'?1:-1;
-    arr.sort((a,b)=>{
-      if(sortKey==='follow_up_date'){
-        const av=a.follow_up_date||'9999-12-31';
-        const bv=b.follow_up_date||'9999-12-31';
-        return av.localeCompare(bv)*dir;
-      }
-      if(sortKey==='weighted'){
-        const av=n(a.estimated_value||a.proposal_value)*(n(a.win_probability)/100);
-        const bv=n(b.estimated_value||b.proposal_value)*(n(b.win_probability)/100);
-        return (av-bv)*dir;
-      }
-      const av=a[sortKey];const bv=b[sortKey];
-      if(typeof av==='number'||typeof bv==='number')return ((n(av))-(n(bv)))*dir;
-      return String(av||'').localeCompare(String(bv||''))*dir;
+  }, [proposals, repF, mktF, statusF, sourceF, reviewF, dateFrom, dateTo, search]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" || typeof bv === "number") return (n(av) - n(bv)) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
     });
     return arr;
-  },[filtered,sortKey,sortDir]);
-  const kpis=useMemo(()=>{
-    const weighted=leads.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0);
-    const openCount=leads.length;
-    const openTotal=leads.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
-    const avgDays=leads.length?leads.reduce((s,l)=>s+daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at),0)/leads.length:0;
-    return{weighted,openCount,openTotal,avgDays:Math.round(avgDays)};
-  },[leads]);
-  const saveInline=async(id,patch)=>{
-    try{await sbPatch('leads',id,{...patch,updated_at:new Date().toISOString()});setLeads(prev=>prev.map(l=>l.id===id?{...l,...patch}:l));setToast({message:'Saved',isError:false});}
-    catch(e){setToast({message:'Save failed',isError:true});}
-  };
-  const hdr=(key,label,align='left')=>{const active=sortKey===key;return <th onClick={()=>{if(active)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc');}}} style={{textAlign:align,padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>{label}{active&&<span style={{marginLeft:4,color:'#8A261D'}}>{sortDir==='asc'?'▲':'▼'}</span>}</th>;};
-  const fuCell=(l)=>{
-    if(!l.follow_up_date)return <span style={{color:'#9E9B96',fontStyle:'italic',fontSize:12}}>Not set</span>;
-    const d=l.follow_up_date;
-    if(d<today)return <span style={{color:'#991B1B',fontWeight:700}}>{fD(d)} · overdue</span>;
-    if(d===today)return <span style={{color:'#B45309',fontWeight:800}}>{fD(d)} · today</span>;
-    return <span>{fD(d)}</span>;
-  };
-  return <div>
-    <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Proposals</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
-      <div style={{...card}}>
-        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Weighted Forecast</div>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#8A261D',marginTop:4}}>{$k(kpis.weighted)}</div>
-        <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>value × win probability</div>
-      </div>
-      <div style={{...card}}>
-        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Total Open Proposals</div>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#1A1A1A',marginTop:4}}>{kpis.openCount}</div>
-        <div style={{fontSize:11,color:'#625650',marginTop:2}}>{$k(kpis.openTotal)} total value</div>
-      </div>
-      <div style={{...card}}>
-        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>Avg Days Outstanding</div>
-        <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:kpis.avgDays>30?'#B45309':'#065F46',marginTop:4}}>{kpis.avgDays}d</div>
-        <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>since proposal sent</div>
-      </div>
-    </div>
-    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
-      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
-      <button onClick={()=>setRepF(new Set())} style={fpill(repF.size===0)}>All</button>
-      {REPS.map(r=><button key={r} onClick={()=>setRepF(prev=>{const s=new Set(prev);s.has(r)?s.delete(r):s.add(r);return s;})} style={fpill(repF.has(r))}>{r}</button>)}
-      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
-      <button onClick={()=>setMktF(new Set())} style={fpill(mktF.size===0)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
-    </div>
-    {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={12}/></div>:
-    sorted.length===0?<div style={{...card}}><EmptyState icon="📋" title="No open proposals" subtitle="Proposals will appear here once leads move into the Proposal Sent stage in the Pipeline."/></div>:
-    isMobile?<MobileCards
-      items={sorted}
-      emptyMessage="No open proposals"
-      renderCard={l=>{
-        const overdue=l.follow_up_date&&l.follow_up_date<today;
-        const weighted=n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100);
-        const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
-        return <div style={{...mobileCardStyle(overdue?'#B45309':'#8A261D'),background:overdue?'#FFFBEB':'#FFF'}} onClick={()=>setDetail(l)}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.company_name||'—'}</div>
-              <div style={{fontSize:12,color:'#625650',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</div>
-            </div>
-            {l.market && <span style={pill(MC[l.market]||'#625650',MB[l.market]||'#F4F4F2',MC[l.market])}>{MS[l.market]||l.market}</span>}
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
-            <div>
-              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Est. Value</div>
-              <div style={{fontSize:13,fontWeight:800,color:'#8A261D',marginTop:2}}>{$k(l.estimated_value||l.proposal_value)}</div>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Win %</div>
-              <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{l.win_probability==null?'—':`${l.win_probability}%`}</div>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Weighted</div>
-              <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{$k(weighted)}</div>
-            </div>
-          </div>
-          <div style={{marginTop:8,fontSize:11,color:'#625650',display:'flex',justifyContent:'space-between'}}>
-            <span>{l.sales_rep||'—'}{l.proposal_sent_date?` · Sent ${fD(l.proposal_sent_date)}`:''}</span>
-            <span style={{fontWeight:700,color:days>30?'#B45309':'#625650'}}>{days}d out</span>
-          </div>
-        </div>;
-      }}
-    />:
-    <div style={{...card,padding:0,overflow:'auto'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',position:'sticky',top:0}}>
-          {hdr('company_name','Customer')}
-          {hdr('project_description','Project')}
-          {hdr('market','Market')}
-          {hdr('sales_rep','Rep')}
-          {hdr('estimated_value','Est. Value','right')}
-          {hdr('estimated_lf','LF','right')}
-          {hdr('proposal_sent_date','Date Sent')}
-          {hdr('follow_up_date','Follow-up')}
-          <th style={{textAlign:'right',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>Days Out</th>
-          {hdr('win_probability','Win %','right')}
-          {hdr('weighted','Weighted','right')}
-        </tr></thead>
-        <tbody>
-          {sorted.map(l=>{
-            const overdue=l.follow_up_date&&l.follow_up_date<today;
-            const weighted=n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100);
-            const days=daysSince(l.proposal_sent_date||l.stage_entered_at||l.updated_at);
-            return <tr key={l.id} onClick={()=>setDetail(l)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:overdue?'#FEF3C7':'transparent'}} onMouseEnter={e=>e.currentTarget.style.background=overdue?'#FDE68A':'#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=overdue?'#FEF3C7':'transparent'}>
-              <td style={{padding:'10px 12px',fontWeight:600}}>{l.company_name||'—'}</td>
-              <td style={{padding:'10px 12px',color:'#625650',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.project_description||'—'}</td>
-              <td style={{padding:'10px 12px'}}>{l.market?<span style={pill(MC[l.market]||'#625650',MB[l.market]||'#F4F4F2')}>{MS[l.market]||l.market}</span>:'—'}</td>
-              <td style={{padding:'10px 12px'}}>{l.sales_rep||'—'}</td>
-              <td style={{padding:'10px 12px',fontWeight:700,textAlign:'right',color:'#8A261D'}}>{$k(l.estimated_value||l.proposal_value)}</td>
-              <td style={{padding:'10px 12px',textAlign:'right',color:'#625650'}}>{n(l.estimated_lf)?n(l.estimated_lf).toLocaleString():'—'}</td>
-              <td style={{padding:'10px 12px',color:'#625650'}}>{fD(l.proposal_sent_date)}</td>
-              <td style={{padding:'10px 12px'}} onClick={e=>e.stopPropagation()}>
-                <input type="date" defaultValue={l.follow_up_date||''} onBlur={e=>{const v=e.target.value||null;if(v!==l.follow_up_date)saveInline(l.id,{follow_up_date:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:140,background:overdue?'#FEF3C7':'#FFF'}}/>
-                <div style={{marginTop:2}}>{fuCell(l)}</div>
-              </td>
-              <td style={{padding:'10px 12px',textAlign:'right',color:days>30?'#B45309':'#625650',fontWeight:days>30?700:400}}>{days}d</td>
-              <td style={{padding:'10px 12px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
-                <input type="number" min={0} max={100} defaultValue={l.win_probability==null?50:l.win_probability} onBlur={e=>{const v=Math.max(0,Math.min(100,parseInt(e.target.value)||0));if(v!==l.win_probability)saveInline(l.id,{win_probability:v});}} style={{...inputS,padding:'4px 6px',fontSize:12,width:60,textAlign:'right'}}/>
-              </td>
-              <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700}}>{$k(weighted)}</td>
-            </tr>;
-          })}
-        </tbody>
-      </table>
-    </div>}
-    {detail&&<ProposalLeadDetail lead={detail} onClose={()=>setDetail(null)} onSaved={()=>{setDetail(null);fetchLeads();}}/>}
-  </div>;
-}
+  }, [filtered, sortKey, sortDir]);
 
-/* ═══ SALES DASHBOARD PAGE ═══ */
+  const paged = useMemo(() => sorted.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE), [sorted, listPage]);
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+
+  /* ── KPIs ── */
+  const kpis = useMemo(() => {
+    const total = proposals.length;
+    const totalValue = proposals.reduce((s, p) => s + n(p.grand_total), 0);
+    const needsReview = proposals.filter(p => p.needs_review).length;
+    const ingested = proposals.filter(p => p.source === "ingested").length;
+    const tagged = proposals.filter(p => p.source === "ingested" && p.status !== "pending").length;
+    return { total, totalValue, needsReview, ingested, tagged };
+  }, [proposals]);
+
+  /* ── detail open ── */
+  const openDetail = async (p) => {
+    setDetail(p);
+    setDetailEdit(null);
+    try {
+      const docs = await sbGet("proposal_documents", `proposal_id=eq.${p.id}&select=*`);
+      setDetailDocs(Array.isArray(docs) ? docs : []);
+    } catch { setDetailDocs([]); }
+    try {
+      const lines = await sbGet("proposal_line_items", `proposal_id=eq.${p.id}&select=*&order=sort_order`);
+      setDetailLines(Array.isArray(lines) ? lines : []);
+    } catch { setDetailLines([]); }
+  };
+
+  /* ── detail save ── */
+  const saveDetail = async () => {
+    if (!detailEdit || !detail) return;
+    setDetailSaving(true);
+    try {
+      const patch = { ...detailEdit, updated_at: new Date().toISOString() };
+      await sbPatch("proposals", detail.id, patch);
+      setProposals(prev => prev.map(p => p.id === detail.id ? { ...p, ...patch } : p));
+      setDetail(prev => ({ ...prev, ...patch }));
+      setDetailEdit(null);
+      toast.success("Proposal saved");
+    } catch (e) {
+      toast.error("Save failed");
+    }
+    setDetailSaving(false);
+  };
+
+  const recalcMath = async () => {
+    if (!detail) return;
+    const e = detailEdit || {};
+    const lf = n(e.total_lf ?? detail.total_lf);
+    const matl = n(e.materials_subtotal ?? detail.materials_subtotal);
+    const labor = n(e.labor_subtotal ?? detail.labor_subtotal);
+    const other = n(e.other_charges ?? detail.other_charges);
+    const tax = n(e.sales_tax ?? detail.sales_tax);
+    const subtotal = matl + labor + other;
+    const grand = subtotal + tax;
+    const pplf = lf > 0 ? grand / lf : 0;
+    const patch = {
+      subtotal, grand_total: grand, price_per_lf: Math.round(pplf * 100) / 100,
+      math_validation_passed: true, math_validation_notes: "Recalculated by user",
+      needs_review: false, updated_at: new Date().toISOString(),
+    };
+    setDetailSaving(true);
+    try {
+      await sbPatch("proposals", detail.id, patch);
+      setProposals(prev => prev.map(p => p.id === detail.id ? { ...p, ...patch } : p));
+      setDetail(prev => ({ ...prev, ...patch }));
+      setDetailEdit(null);
+      toast.success("Math recalculated & validated");
+    } catch { toast.error("Recalc failed"); }
+    setDetailSaving(false);
+  };
+
+  /* ── tagging helpers ── */
+  const untagged = useMemo(() => proposals.filter(p => p.source === "ingested" && p.status === "pending"), [proposals]);
+  const currentTag = untagged[tagIdx] || null;
+
+  const tagProposal = async (status, extras = {}) => {
+    if (!currentTag) return;
+    const patch = { status, ...extras, updated_at: new Date().toISOString() };
+    try {
+      await sbPatch("proposals", currentTag.id, patch);
+      setProposals(prev => prev.map(p => p.id === currentTag.id ? { ...p, ...patch } : p));
+      toast.success(`Tagged as ${status}`);
+      // advance
+      setTagLossReason(""); setTagLossOther(""); setTagLinkedJob(null); setTagJobSearch("");
+      if (tagIdx >= untagged.length - 1) {
+        setTagCelebrate(true);
+      }
+      // tagIdx stays same since the item leaves untagged array
+    } catch { toast.error("Tag failed"); }
+  };
+
+  // keyboard shortcuts for tagging
+  useEffect(() => {
+    if (mode !== "tagging" || !currentTag || tagCelebrate) return;
+    const handler = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "w" || e.key === "W") tagProposal("won");
+      if (e.key === "l" || e.key === "L") tagProposal("lost", tagLossReason ? { loss_reason: tagLossReason === "other" ? tagLossOther : tagLossReason } : {});
+      if (e.key === "e" || e.key === "E") tagProposal("expired");
+      if (e.key === "k" || e.key === "K") { setTagIdx(i => Math.min(i + 1, untagged.length - 1)); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [mode, currentTag, tagCelebrate, tagLossReason, tagLossOther, untagged.length, tagIdx]);
+
+  // job search for tagging
+  useEffect(() => {
+    if (!tagJobSearch || tagJobSearch.length < 2) { setTagJobResults([]); return; }
+    const t = setTimeout(async () => {
+      const d = await sbGet("jobs", `job_name=ilike.*${encodeURIComponent(tagJobSearch)}*&select=id,job_name,job_number&limit=10`);
+      setTagJobResults(Array.isArray(d) ? d : []);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [tagJobSearch]);
+
+  /* ── review helpers ── */
+  const reviewItems = useMemo(() => proposals.filter(p => p.needs_review), [proposals]);
+
+  const markReviewed = async (ids) => {
+    for (const id of ids) {
+      try {
+        await sbPatch("proposals", id, { needs_review: false, updated_at: new Date().toISOString() });
+      } catch {}
+    }
+    setProposals(prev => prev.map(p => ids.includes(p.id) ? { ...p, needs_review: false } : p));
+    setReviewBulk(new Set());
+    toast.success(`${ids.length} item(s) marked as reviewed`);
+  };
+
+  /* ── analytics data ── */
+  const analytics = useMemo(() => {
+    const ingested = proposals.filter(p => p.source === "ingested");
+    // avg $/LF by market
+    const mktMap = {};
+    ingested.forEach(p => {
+      if (!p.market || !p.price_per_lf) return;
+      if (!mktMap[p.market]) mktMap[p.market] = { sum: 0, count: 0 };
+      mktMap[p.market].sum += n(p.price_per_lf);
+      mktMap[p.market].count++;
+    });
+    const avgPlfByMkt = Object.entries(mktMap).map(([m, v]) => ({ market: MS[m] || m, avg: Math.round(v.sum / v.count * 100) / 100 }));
+
+    // win rate by rep
+    const repWL = {};
+    proposals.forEach(p => {
+      if (!p.assigned_rep) return;
+      if (!["won", "lost"].includes(p.status)) return;
+      if (!repWL[p.assigned_rep]) repWL[p.assigned_rep] = { won: 0, lost: 0 };
+      repWL[p.assigned_rep][p.status]++;
+    });
+    const winByRep = Object.entries(repWL).map(([rep, v]) => ({
+      rep, winRate: Math.round(v.won / (v.won + v.lost) * 100), won: v.won, lost: v.lost
+    }));
+
+    // status distribution
+    const statusMap = {};
+    proposals.forEach(p => { const s = p.status || "pending"; statusMap[s] = (statusMap[s] || 0) + 1; });
+    const statusDist = Object.entries(statusMap).map(([name, value]) => ({ name, value }));
+
+    // math error rate by rep
+    const repMath = {};
+    ingested.forEach(p => {
+      if (!p.assigned_rep) return;
+      if (!repMath[p.assigned_rep]) repMath[p.assigned_rep] = { errors: 0, total: 0 };
+      repMath[p.assigned_rep].total++;
+      if (p.math_validation_passed === false) repMath[p.assigned_rep].errors++;
+    });
+    const mathByRep = Object.entries(repMath).map(([rep, v]) => ({
+      rep, errorRate: Math.round(v.errors / v.total * 100), errors: v.errors, total: v.total
+    }));
+
+    // volume by quarter
+    const qMap = {};
+    proposals.forEach(p => {
+      if (!p.proposal_date) return;
+      const d = new Date(p.proposal_date);
+      const q = `${d.getFullYear()} Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+      qMap[q] = (qMap[q] || 0) + 1;
+    });
+    const volByQ = Object.entries(qMap).sort((a, b) => a[0].localeCompare(b[0])).map(([q, count]) => ({ quarter: q, count }));
+
+    // $/LF distribution histogram
+    const plfBuckets = {};
+    ingested.forEach(p => {
+      if (!p.price_per_lf || n(p.price_per_lf) <= 0) return;
+      const bucket = Math.floor(n(p.price_per_lf) / 10) * 10;
+      const label = `$${bucket}-${bucket + 10}`;
+      plfBuckets[label] = (plfBuckets[label] || 0) + 1;
+    });
+    const plfHist = Object.entries(plfBuckets).sort((a, b) => {
+      const na = parseInt(a[0].replace("$", "")), nb = parseInt(b[0].replace("$", ""));
+      return na - nb;
+    }).map(([range, count]) => ({ range, count }));
+
+    return { avgPlfByMkt, winByRep, statusDist, mathByRep, volByQ, plfHist };
+  }, [proposals]);
+
+  /* ── quality data ── */
+  const quality = useMemo(() => {
+    const ingested = proposals.filter(p => p.source === "ingested");
+    const total = ingested.length;
+    if (!total) return null;
+    const mathErrors = ingested.filter(p => p.math_validation_passed === false).length;
+    const missingCustomer = ingested.filter(p => !p.customer_name).length;
+    const missingTotal = ingested.filter(p => !p.grand_total && p.grand_total !== 0).length;
+    const missingLF = ingested.filter(p => !p.total_lf && p.total_lf !== 0).length;
+    const totalBidValue = ingested.reduce((s, p) => s + n(p.grand_total), 0);
+
+    // error rate by rep
+    const repMap = {};
+    ingested.forEach(p => {
+      const rep = p.assigned_rep || "Unknown";
+      if (!repMap[rep]) repMap[rep] = { errors: 0, total: 0 };
+      repMap[rep].total++;
+      if (p.math_validation_passed === false) repMap[rep].errors++;
+    });
+    const errorByRep = Object.entries(repMap).map(([rep, v]) => ({
+      rep, errors: v.errors, total: v.total, rate: Math.round(v.errors / v.total * 100)
+    }));
+
+    // top 10 biggest discrepancies - sort by math_validation_notes mentioning dollar amounts
+    const discrepancies = ingested
+      .filter(p => p.math_validation_passed === false && p.math_validation_notes)
+      .sort((a, b) => n(b.grand_total) - n(a.grand_total))
+      .slice(0, 10);
+
+    return { total, mathErrors, missingCustomer, missingTotal, missingLF, totalBidValue, errorByRep, discrepancies };
+  }, [proposals]);
+
+  /* ── sort header helper ── */
+  const hdr = (key, label, align = "left") => {
+    const active = sortKey === key;
+    return (
+      <th onClick={() => { if (active) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortKey(key); setSortDir("asc"); } }}
+        style={{ textAlign: align, padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+        {label}{active && <span style={{ marginLeft: 4, color: "#8B2020" }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
+      </th>
+    );
+  };
+
+  /* ── status colors ── */
+  const stColor = (s) => {
+    const m = { won: "#065F46", lost: "#991B1B", pending: "#6B7280", expired: "#92400E", withdrawn: "#6B7280", proposal_sent: "#1D4ED8" };
+    return m[s] || "#6B6056";
+  };
+  const stBg = (s) => {
+    const m = { won: "#D1FAE5", lost: "#FEE2E2", pending: "#F3F4F6", expired: "#FEF3C7", withdrawn: "#F3F4F6", proposal_sent: "#DBEAFE" };
+    return m[s] || "#F4F4F2";
+  };
+
+  const LOSS_REASONS = [
+    { value: "price_too_high", label: "Price Too High" },
+    { value: "price_too_low_trust_issue", label: "Price Too Low (Trust Issue)" },
+    { value: "timing", label: "Timing" },
+    { value: "scope_fit", label: "Scope Fit" },
+    { value: "relationship", label: "Relationship" },
+    { value: "no_decision", label: "No Decision Made" },
+    { value: "non_responsive", label: "Non-Responsive" },
+    { value: "other", label: "Other" },
+  ];
+
+  const STATUSES = ["pending", "proposal_sent", "won", "lost", "expired", "withdrawn"];
+
+  /* ── mode tabs ── */
+  const modes = [
+    { key: "list", label: "All Proposals" },
+    { key: "analytics", label: "Analytics" },
+    { key: "review", label: `Review Queue${kpis.needsReview ? ` (${kpis.needsReview})` : ""}` },
+    { key: "tagging", label: "Win/Loss Tagging" },
+    { key: "quality", label: "Data Quality" },
+  ];
+
+  /* ═══════════════════════════════════════════════ */
+  /* ═══ DETAIL MODAL ═══ */
+  /* ═══════════════════════════════════════════════ */
+  const DetailModal = () => {
+    if (!detail) return null;
+    const p = detail;
+    const isEditing = !!detailEdit;
+    const ev = (field) => detailEdit && detailEdit[field] !== undefined ? detailEdit[field] : p[field];
+    const setEv = (field, val) => setDetailEdit(prev => ({ ...(prev || {}), [field]: val }));
+    const editNum = (field) => (
+      <input type="number" value={ev(field) ?? ""} onChange={e => setEv(field, e.target.value === "" ? null : Number(e.target.value))}
+        style={{ ...inputS, width: 120, padding: "4px 8px", fontSize: 13 }} />
+    );
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        onClick={() => { setDetail(null); setDetailEdit(null); }}>
+        <div style={{ background: "#FFF", borderRadius: 16, maxWidth: 1000, width: "100%", maxHeight: "90vh", overflow: "auto", padding: 28 }}
+          onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div>
+              <h2 style={{ fontFamily: "Syne", fontSize: 22, fontWeight: 800, margin: 0 }}>{p.title || "Untitled Proposal"}</h2>
+              <div style={{ fontSize: 13, color: "#6B6056", marginTop: 4 }}>{p.customer_name || "Unknown Customer"}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={pill(stColor(p.status), stBg(p.status))}>{(p.status || "pending").replace(/_/g, " ")}</span>
+              {p.source === "ingested" && <span style={pill("#92400E", "#FEF3C7")}>Archive</span>}
+              {p.source === "manual" && <span style={pill("#1D4ED8", "#DBEAFE")}>CRM</span>}
+              <button onClick={() => { setDetail(null); setDetailEdit(null); }} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9E9B96" }}>✕</button>
+            </div>
+          </div>
+          {/* Math warning */}
+          {p.math_validation_passed === false && p.math_validation_notes && (
+            <div style={{ background: "#FFFBEB", border: "1px solid #F59E0B", borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
+              <strong style={{ color: "#92400E" }}>⚠ Math Validation Issue:</strong>{" "}
+              <span style={{ color: "#78350F" }}>{p.math_validation_notes}</span>
+            </div>
+          )}
+          {/* Extraction confidence */}
+          {p.extraction_confidence != null && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: n(p.extraction_confidence) < 0.7 ? "#991B1B" : "#6B6056" }}>
+              Extraction confidence: <strong>{(n(p.extraction_confidence) * 100).toFixed(0)}%</strong>
+              {n(p.extraction_confidence) < 0.7 && " — low confidence, verify data"}
+            </div>
+          )}
+          {/* Two-column layout */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20 }}>
+            {/* Left: Contact & Deal */}
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", textTransform: "uppercase", marginBottom: 10 }}>Contact & Project</h3>
+              <div style={{ display: "grid", gap: 8 }}>
+                {[
+                  ["Customer", p.customer_name], ["Contact", p.customer_contact_name], ["Email", p.customer_email],
+                  ["Phone", p.customer_phone], ["Address", p.customer_address],
+                  ["Market", p.market], ["Division", p.division], ["Rep", p.assigned_rep],
+                  ["Fence Type", p.fence_type], ["Style", p.style], ["Color", p.color],
+                  ["Height (ft)", p.fence_height_ft],
+                  ["Proposal Date", fD(p.proposal_date)], ["Sent Date", fD(p.sent_date)], ["Expiry", fD(p.expiry_date)],
+                ].map(([label, val]) => (
+                  <div key={label} style={{ display: "flex", fontSize: 13 }}>
+                    <span style={{ width: 120, color: "#6B6056", fontWeight: 600, flexShrink: 0 }}>{label}</span>
+                    <span style={{ color: "#1A1A1A" }}>{val || "—"}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Scope */}
+              {(p.scope_inclusions?.length > 0 || p.scope_exclusions?.length > 0) && (
+                <div style={{ marginTop: 16 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", textTransform: "uppercase", marginBottom: 8 }}>Scope</h3>
+                  {p.scope_inclusions?.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#065F46", marginBottom: 4 }}>Inclusions</div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>{p.scope_inclusions.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                    </div>
+                  )}
+                  {p.scope_exclusions?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#991B1B", marginBottom: 4 }}>Exclusions</div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>{p.scope_exclusions.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Flags */}
+              <div style={{ marginTop: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", textTransform: "uppercase", marginBottom: 8 }}>Flags</h3>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {p.bond_required && <span style={pill("#7C3AED", "#EDE9FE")}>Bond Required</span>}
+                  {p.certified_payroll && <span style={pill("#7C3AED", "#EDE9FE")}>Certified Payroll</span>}
+                  {p.permits_by_customer && <span style={pill("#059669", "#D1FAE5")}>Permits by Customer</span>}
+                  {p.is_revised && <span style={pill("#B45309", "#FEF3C7")}>Revised</span>}
+                </div>
+              </div>
+            </div>
+            {/* Right: Pricing */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", textTransform: "uppercase", margin: 0 }}>Pricing</h3>
+                {!isEditing && (
+                  <button onClick={() => setDetailEdit({})} style={{ ...btnS, padding: "4px 12px", fontSize: 11 }}>Edit Pricing</button>
+                )}
+              </div>
+              <div style={{ ...card, padding: 16 }}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {[
+                    ["Total LF", "total_lf"], ["Price / LF", "price_per_lf"],
+                    ["Materials", "materials_subtotal"], ["Labor", "labor_subtotal"],
+                    ["Other Charges", "other_charges"], ["Subtotal", "subtotal"],
+                    ["Sales Tax", "sales_tax"], ["Grand Total", "grand_total"],
+                  ].map(([label, field]) => (
+                    <div key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, borderBottom: "1px solid #F1EFEC", paddingBottom: 6 }}>
+                      <span style={{ color: "#6B6056", fontWeight: 600 }}>{label}</span>
+                      {isEditing ? editNum(field) : (
+                        <span style={{ fontWeight: field === "grand_total" ? 800 : 400, color: field === "grand_total" ? "#8B2020" : "#1A1A1A", fontSize: field === "grand_total" ? 16 : 13 }}>
+                          {field === "total_lf" ? (n(p[field]) ? n(p[field]).toLocaleString() : "—") : fCur2(p[field])}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {isEditing && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button onClick={saveDetail} disabled={detailSaving} style={{ ...btnP, opacity: detailSaving ? 0.6 : 1 }}>
+                    {detailSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                  <button onClick={recalcMath} disabled={detailSaving} style={{ ...btnS }}>Recalculate & Mark Valid</button>
+                  <button onClick={() => setDetailEdit(null)} style={{ ...btnS }}>Cancel</button>
+                </div>
+              )}
+              {/* Line items */}
+              {detailLines.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 700, color: "#6B6056", marginBottom: 8 }}>Line Items</h4>
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                    <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                      <th style={{ textAlign: "left", padding: 6 }}>Description</th>
+                      <th style={{ textAlign: "right", padding: 6 }}>Qty</th>
+                      <th style={{ textAlign: "right", padding: 6 }}>Unit</th>
+                      <th style={{ textAlign: "right", padding: 6 }}>Total</th>
+                    </tr></thead>
+                    <tbody>
+                      {detailLines.map(li => (
+                        <tr key={li.id} style={{ borderBottom: "1px solid #F1EFEC" }}>
+                          <td style={{ padding: 6 }}>{li.description || "—"}</td>
+                          <td style={{ padding: 6, textAlign: "right" }}>{li.quantity ?? "—"}</td>
+                          <td style={{ padding: 6, textAlign: "right" }}>{fCur2(li.unit_price)}</td>
+                          <td style={{ padding: 6, textAlign: "right" }}>{fCur2(li.total_price)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {/* Documents */}
+              {detailDocs.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 700, color: "#6B6056", marginBottom: 8 }}>Documents</h4>
+                  {detailDocs.map(doc => (
+                    <a key={doc.id}
+                      href={doc.storage_path ? `https://bdnwjokehfxudheshmmj.supabase.co/storage/v1/object/public/proposals/${doc.storage_path}` : "#"}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ display: "block", fontSize: 13, color: "#1D4ED8", marginBottom: 4, textDecoration: "none" }}>
+                      📄 {doc.file_name || doc.storage_path || "Document"}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Win/Loss section at bottom */}
+          <div style={{ marginTop: 24, borderTop: "2px solid #E5E3E0", paddingTop: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", textTransform: "uppercase", marginBottom: 12 }}>Win / Loss Status</h3>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Status</label>
+                <select value={ev("status") || p.status || "pending"} onChange={e => setEv("status", e.target.value)}
+                  style={{ ...inputS, width: 160, padding: "6px 10px" }}>
+                  {STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                </select>
+              </div>
+              {(ev("status") || p.status) === "lost" && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Loss Reason</label>
+                  <select value={ev("loss_reason") || p.loss_reason || ""} onChange={e => setEv("loss_reason", e.target.value)}
+                    style={{ ...inputS, width: 200, padding: "6px 10px" }}>
+                    <option value="">Select reason...</option>
+                    {LOSS_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </div>
+              )}
+              {(ev("status") || p.status) === "lost" && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Competitor Won</label>
+                  <input value={ev("competitor_won") ?? p.competitor_won ?? ""} onChange={e => setEv("competitor_won", e.target.value)}
+                    placeholder="Competitor name" style={{ ...inputS, width: 160, padding: "6px 10px" }} />
+                </div>
+              )}
+              <button onClick={saveDetail} disabled={detailSaving} style={{ ...btnP, padding: "6px 16px" }}>
+                {detailSaving ? "Saving..." : "Save Status"}
+              </button>
+            </div>
+          </div>
+          {/* Source info */}
+          {p.source_file_name && (
+            <div style={{ marginTop: 16, fontSize: 12, color: "#9E9B96" }}>
+              Source: {p.source_folder_path && `${p.source_folder_path}/`}{p.source_file_name}
+            </div>
+          )}
+          {p.notes && (
+            <div style={{ marginTop: 12, fontSize: 13, color: "#6B6056", background: "#F9FAFB", borderRadius: 8, padding: 12 }}>
+              <strong>Notes:</strong> {p.notes}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ═══════════════════════════════════════════════ */
+  /* ═══ RENDER ═══ */
+  /* ═══════════════════════════════════════════════ */
+  return (
+    <div>
+      <DetailModal />
+      <h1 style={{ fontFamily: "Syne", fontSize: 24, fontWeight: 900, marginBottom: 16 }}>Proposals</h1>
+      {/* KPI tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+        <div style={{ ...card }}>
+          <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Total Proposals</div>
+          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: "#1A1A1A", marginTop: 4 }}>{kpis.total}</div>
+        </div>
+        <div style={{ ...card }}>
+          <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Total Bid Value</div>
+          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: "#8B2020", marginTop: 4 }}>{$k(kpis.totalValue)}</div>
+        </div>
+        <div style={{ ...card }}>
+          <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Needs Review</div>
+          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: kpis.needsReview > 0 ? "#B45309" : "#065F46", marginTop: 4 }}>{kpis.needsReview}</div>
+        </div>
+        <div style={{ ...card }}>
+          <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Tagged</div>
+          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: "#065F46", marginTop: 4 }}>{kpis.tagged} / {kpis.ingested}</div>
+          <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>win/loss tagged</div>
+        </div>
+      </div>
+      {/* Mode tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
+        {modes.map(m => (
+          <button key={m.key} onClick={() => { setMode(m.key); setListPage(0); }}
+            style={{ ...gpill(mode === m.key), fontSize: 12 }}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ MODE A: LIST VIEW ═══ */}
+      {mode === "list" && (
+        <div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, title, rep..."
+              style={{ ...inputS, width: 220, padding: "6px 10px", fontSize: 12 }} />
+            <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>REP:</span>
+            <button onClick={() => setRepF(null)} style={fpill(!repF)}>All</button>
+            {REPS.map(r => <button key={r} onClick={() => setRepF(repF === r ? null : r)} style={fpill(repF === r)}>{r}</button>)}
+            <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>MKT:</span>
+            <button onClick={() => setMktF(null)} style={fpill(!mktF)}>All</button>
+            {MKTS.map(m => <button key={m} onClick={() => setMktF(mktF === m ? null : m)} style={fpill(mktF === m)}>{MS[m] || m}</button>)}
+            <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>STATUS:</span>
+            <button onClick={() => setStatusF(null)} style={fpill(!statusF)}>All</button>
+            {STATUSES.map(s => <button key={s} onClick={() => setStatusF(statusF === s ? null : s)} style={fpill(statusF === s)}>{s.replace(/_/g," ")}</button>)}
+            <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>SOURCE:</span>
+            <button onClick={() => setSourceF(null)} style={fpill(!sourceF)}>All</button>
+            <button onClick={() => setSourceF(sourceF === "crm" ? null : "crm")} style={fpill(sourceF === "crm")}>CRM</button>
+            <button onClick={() => setSourceF(sourceF === "archive" ? null : "archive")} style={fpill(sourceF === "archive")}>Archive</button>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, marginLeft: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={reviewF} onChange={e => setReviewF(e.target.checked)} /> Needs Review
+            </label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputS, width: 130, padding: "4px 8px", fontSize: 11 }} placeholder="From" />
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputS, width: 130, padding: "4px 8px", fontSize: 11 }} placeholder="To" />
+          </div>
+          <div style={{ fontSize: 12, color: "#6B6056", marginBottom: 8 }}>
+            Showing {sorted.length} proposal{sorted.length !== 1 ? "s" : ""} · Total value: <strong>{fCur(filtered.reduce((s, p) => s + n(p.grand_total), 0))}</strong>
+          </div>
+          {loading ? (
+            <div style={{ ...card, padding: 0 }}><SkeletonRows rows={8} cols={11} /></div>
+          ) : sorted.length === 0 ? (
+            <div style={{ ...card }}><EmptyState icon="📋" title="No proposals found" subtitle="Adjust your filters to see proposals." /></div>
+          ) : (
+            <>
+              <div style={{ ...card, padding: 0, overflow: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                    {hdr("proposal_date", "Date")}
+                    {hdr("customer_name", "Customer")}
+                    {hdr("title", "Project")}
+                    {hdr("market", "Market")}
+                    {hdr("assigned_rep", "Rep")}
+                    {hdr("total_lf", "LF", "right")}
+                    {hdr("price_per_lf", "$/LF", "right")}
+                    {hdr("grand_total", "Total", "right")}
+                    {hdr("status", "Status")}
+                    <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Source</th>
+                    <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Flags</th>
+                  </tr></thead>
+                  <tbody>
+                    {paged.map(p => (
+                      <tr key={p.id} onClick={() => openDetail(p)}
+                        style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer", transition: "background 0.1s" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#FAFAF8"}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{fD(p.proposal_date)}</td>
+                        <td style={{ padding: "10px 12px", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.customer_name || "—"}</td>
+                        <td style={{ padding: "10px 12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.title || "—"}</td>
+                        <td style={{ padding: "10px 12px" }}>{p.market ? <span style={pill(MC[p.market] || "#6B6056", MB[p.market] || "#F4F4F2", MC[p.market])}>{MS[p.market] || p.market}</span> : "—"}</td>
+                        <td style={{ padding: "10px 12px" }}>{p.assigned_rep || "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{n(p.total_lf) ? n(p.total_lf).toLocaleString() : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{n(p.price_per_lf) ? `$${n(p.price_per_lf).toFixed(2)}` : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fCur(p.grand_total)}</td>
+                        <td style={{ padding: "10px 12px" }}><span style={pill(stColor(p.status), stBg(p.status))}>{(p.status || "pending").replace(/_/g," ")}</span></td>
+                        <td style={{ padding: "10px 12px" }}>
+                          {p.source === "ingested" ? <span style={pill("#92400E", "#FEF3C7")}>Archive</span> : <span style={pill("#1D4ED8", "#DBEAFE")}>CRM</span>}
+                        </td>
+                        <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                          {p.needs_review && <span title="Needs review" style={{ cursor: "help" }}>🔍</span>}
+                          {p.math_validation_passed === false && <span title="Math error" style={{ cursor: "help", marginLeft: 4 }}>⚠️</span>}
+                          {n(p.extraction_confidence) > 0 && n(p.extraction_confidence) < 0.7 && <span title="Low confidence" style={{ cursor: "help", marginLeft: 4 }}>❓</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, alignItems: "center" }}>
+                  <button onClick={() => setListPage(p => Math.max(0, p - 1))} disabled={listPage === 0}
+                    style={{ ...btnS, padding: "4px 12px", fontSize: 12, opacity: listPage === 0 ? 0.4 : 1 }}>← Prev</button>
+                  <span style={{ fontSize: 12, color: "#6B6056" }}>Page {listPage + 1} of {totalPages}</span>
+                  <button onClick={() => setListPage(p => Math.min(totalPages - 1, p + 1))} disabled={listPage >= totalPages - 1}
+                    style={{ ...btnS, padding: "4px 12px", fontSize: 12, opacity: listPage >= totalPages - 1 ? 0.4 : 1 }}>Next →</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══ MODE B: ANALYTICS VIEW ═══ */}
+      {mode === "analytics" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+            {/* Avg $/LF by Market */}
+            <div style={{ ...card }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Average $/LF by Market</h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={analytics.avgPlfByMkt}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0" />
+                  <XAxis dataKey="market" fontSize={11} />
+                  <YAxis fontSize={11} tickFormatter={v => `$${v}`} />
+                  <Tooltip formatter={v => [`$${v.toFixed(2)}`, "Avg $/LF"]} />
+                  <Bar dataKey="avg" fill="#8B2020" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Win Rate by Rep */}
+            <div style={{ ...card }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Win Rate by Rep</h3>
+              {analytics.winByRep.length === 0 ? (
+                <div style={{ fontSize: 13, color: "#9E9B96", padding: 40, textAlign: "center" }}>Tag proposals as won/lost to see win rates</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={analytics.winByRep}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0" />
+                    <XAxis dataKey="rep" fontSize={11} />
+                    <YAxis fontSize={11} tickFormatter={v => `${v}%`} domain={[0,100]} />
+                    <Tooltip formatter={(v, name) => name === "winRate" ? [`${v}%`, "Win Rate"] : [v, name]} />
+                    <Bar dataKey="winRate" fill="#065F46" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            {/* Status Distribution */}
+            <div style={{ ...card }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Status Distribution</h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie data={analytics.statusDist} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, value }) => `${name} (${value})`}>
+                    {analytics.statusDist.map((_, i) => <Cell key={i} fill={["#8B2020","#065F46","#1D4ED8","#B45309","#6B7280","#7C3AED"][i % 6]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Math Error Rate by Rep — MOST IMPORTANT */}
+            <div style={{ ...card, border: "2px solid #8B2020" }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8B2020", marginBottom: 4 }}>⚠ Math Error Rate by Rep</h3>
+              <div style={{ fontSize: 11, color: "#6B6056", marginBottom: 12 }}>Percentage of ingested proposals with math validation failures</div>
+              {analytics.mathByRep.length === 0 ? (
+                <div style={{ fontSize: 13, color: "#9E9B96", padding: 40, textAlign: "center" }}>No ingested proposals with rep data</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={analytics.mathByRep}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0" />
+                    <XAxis dataKey="rep" fontSize={11} />
+                    <YAxis fontSize={11} tickFormatter={v => `${v}%`} domain={[0,100]} />
+                    <Tooltip formatter={v => [`${v}%`, "Error Rate"]} />
+                    <Bar dataKey="errorRate" radius={[4,4,0,0]}>
+                      {analytics.mathByRep.map((entry, i) => (
+                        <Cell key={i} fill={entry.errorRate > 50 ? "#DC2626" : entry.errorRate > 25 ? "#B45309" : "#065F46"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+              {analytics.mathByRep.filter(r => r.errorRate > 50).length > 0 && (
+                <div style={{ marginTop: 8, padding: 10, background: "#FEF2F2", borderRadius: 8, fontSize: 12, color: "#991B1B", fontWeight: 600 }}>
+                  🚨 {analytics.mathByRep.filter(r => r.errorRate > 50).map(r => r.rep).join(", ")} — error rate exceeds 50%
+                </div>
+              )}
+            </div>
+            {/* Volume by Quarter */}
+            <div style={{ ...card }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Proposal Volume by Quarter</h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={analytics.volByQ}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0" />
+                  <XAxis dataKey="quarter" fontSize={11} />
+                  <YAxis fontSize={11} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="#8B2020" strokeWidth={2} dot={{ fill: "#8B2020" }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {/* $/LF Distribution */}
+            <div style={{ ...card }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>$/LF Distribution</h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={analytics.plfHist}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0" />
+                  <XAxis dataKey="range" fontSize={10} angle={-30} textAnchor="end" height={50} />
+                  <YAxis fontSize={11} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#8B2020" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODE C: REVIEW QUEUE ═══ */}
+      {mode === "review" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#1A1A1A" }}>
+              {reviewItems.length} proposal{reviewItems.length !== 1 ? "s" : ""} need review
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setReviewBulkMode(!reviewBulkMode)} style={fpill(reviewBulkMode)}>
+                {reviewBulkMode ? "Cancel Bulk" : "Bulk Edit"}
+              </button>
+              {reviewBulkMode && reviewBulk.size > 0 && (
+                <button onClick={() => markReviewed([...reviewBulk])} style={{ ...btnP, padding: "4px 12px", fontSize: 12 }}>
+                  Mark {reviewBulk.size} as Reviewed
+                </button>
+              )}
+            </div>
+          </div>
+          {loading ? (
+            <div style={{ ...card, padding: 0 }}><SkeletonRows rows={6} cols={7} /></div>
+          ) : reviewItems.length === 0 ? (
+            <div style={{ ...card }}><EmptyState icon="✅" title="All caught up!" subtitle="No proposals need review right now." /></div>
+          ) : (
+            <div style={{ ...card, padding: 0, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                  {reviewBulkMode && <th style={{ padding: "10px 12px", width: 40 }}></th>}
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Customer</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Project</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Rep</th>
+                  <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Total</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Review Reasons</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Math Notes</th>
+                  <th style={{ padding: "10px 12px", width: 100 }}></th>
+                </tr></thead>
+                <tbody>
+                  {reviewItems.map(p => (
+                    <tr key={p.id} style={{ borderBottom: "1px solid #F1EFEC" }}>
+                      {reviewBulkMode && (
+                        <td style={{ padding: "10px 12px" }}>
+                          <input type="checkbox" checked={reviewBulk.has(p.id)}
+                            onChange={e => { const next = new Set(reviewBulk); e.target.checked ? next.add(p.id) : next.delete(p.id); setReviewBulk(next); }} />
+                        </td>
+                      )}
+                      <td style={{ padding: "10px 12px" }}>{p.customer_name || "—"}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600, cursor: "pointer", color: "#1D4ED8" }} onClick={() => openDetail(p)}>{p.title || "—"}</td>
+                      <td style={{ padding: "10px 12px" }}>{p.assigned_rep || "—"}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700 }}>{fCur(p.grand_total)}</td>
+                      <td style={{ padding: "10px 12px", maxWidth: 200 }}>
+                        {(p.review_reasons || []).map((r, i) => <span key={i} style={{ ...pill("#B45309", "#FEF3C7"), marginRight: 4, marginBottom: 2 }}>{r}</span>)}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontSize: 11, color: "#78350F", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {p.math_validation_notes || "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <button onClick={(e) => { e.stopPropagation(); markReviewed([p.id]); }}
+                          style={{ ...btnS, padding: "4px 10px", fontSize: 11 }}>✓ Reviewed</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ MODE D: WIN/LOSS TAGGING ═══ */}
+      {mode === "tagging" && (
+        <div>
+          {/* Progress bar */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+              <span style={{ fontWeight: 600 }}>Tagged {kpis.tagged} of {kpis.ingested} proposals</span>
+              <span style={{ color: "#6B6056" }}>{kpis.ingested - kpis.tagged} remaining</span>
+            </div>
+            <div style={{ width: "100%", height: 8, background: "#E5E3E0", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${kpis.ingested ? (kpis.tagged / kpis.ingested * 100) : 0}%`, height: "100%", background: "#8B2020", borderRadius: 4, transition: "width 0.3s" }} />
+            </div>
+          </div>
+          {tagCelebrate || untagged.length === 0 ? (
+            <div style={{ ...card, textAlign: "center", padding: 60 }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+              <h2 style={{ fontFamily: "Syne", fontSize: 24, fontWeight: 800, color: "#065F46", marginBottom: 8 }}>All Proposals Tagged!</h2>
+              <p style={{ fontSize: 14, color: "#6B6056" }}>Every ingested proposal has been tagged. Head to Analytics to see win/loss insights.</p>
+              <button onClick={() => { setMode("analytics"); setTagCelebrate(false); }} style={{ ...btnP, marginTop: 16 }}>View Analytics →</button>
+            </div>
+          ) : currentTag ? (
+            <div>
+              {/* Keyboard hints */}
+              <div style={{ fontSize: 11, color: "#9E9B96", marginBottom: 12, display: "flex", gap: 12 }}>
+                <span><kbd style={{ background: "#F3F4F6", padding: "2px 6px", borderRadius: 4, border: "1px solid #D1D5DB", fontFamily: "monospace" }}>W</kbd> Won</span>
+                <span><kbd style={{ background: "#F3F4F6", padding: "2px 6px", borderRadius: 4, border: "1px solid #D1D5DB", fontFamily: "monospace" }}>L</kbd> Lost</span>
+                <span><kbd style={{ background: "#F3F4F6", padding: "2px 6px", borderRadius: 4, border: "1px solid #D1D5DB", fontFamily: "monospace" }}>E</kbd> Expired</span>
+                <span><kbd style={{ background: "#F3F4F6", padding: "2px 6px", borderRadius: 4, border: "1px solid #D1D5DB", fontFamily: "monospace" }}>K</kbd> Skip</span>
+              </div>
+              {/* Proposal card */}
+              <div style={{ ...card, maxWidth: 700, margin: "0 auto", padding: 28 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                  <div>
+                    <h2 style={{ fontFamily: "Syne", fontSize: 20, fontWeight: 800, margin: 0 }}>{currentTag.title || "Untitled"}</h2>
+                    <div style={{ fontSize: 14, color: "#6B6056", marginTop: 4 }}>{currentTag.customer_name || "Unknown Customer"}</div>
+                  </div>
+                  {currentTag.market && <span style={pill(MC[currentTag.market] || "#6B6056", MB[currentTag.market] || "#F4F4F2", MC[currentTag.market])}>{MS[currentTag.market] || currentTag.market}</span>}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+                  {[
+                    ["Date", fD(currentTag.proposal_date)], ["Rep", currentTag.assigned_rep || "—"],
+                    ["Total LF", n(currentTag.total_lf) ? n(currentTag.total_lf).toLocaleString() : "—"],
+                    ["Grand Total", fCur(currentTag.grand_total)],
+                  ].map(([l, v]) => (
+                    <div key={l}>
+                      <div style={{ fontSize: 10, color: "#9E9B96", fontWeight: 600, textTransform: "uppercase" }}>{l}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "#1A1A1A", marginTop: 2 }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {currentTag.fence_type && <div style={{ fontSize: 13, color: "#6B6056", marginBottom: 8 }}>Fence: {currentTag.fence_type}{currentTag.style ? ` / ${currentTag.style}` : ""}{currentTag.fence_height_ft ? ` / ${currentTag.fence_height_ft}ft` : ""}</div>}
+                {currentTag.math_validation_passed === false && (
+                  <div style={{ background: "#FFFBEB", border: "1px solid #F59E0B", borderRadius: 8, padding: 10, marginBottom: 16, fontSize: 12, color: "#78350F" }}>
+                    ⚠ {currentTag.math_validation_notes || "Math validation failed"}
+                  </div>
+                )}
+                {currentTag.source_file_name && (
+                  <div style={{ fontSize: 11, color: "#9E9B96", marginBottom: 16 }}>Source: {currentTag.source_file_name}</div>
+                )}
+                {/* Loss reason selector */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Loss Reason (for Lost tagging):</label>
+                  <select value={tagLossReason} onChange={e => setTagLossReason(e.target.value)} style={{ ...inputS, width: 260, padding: "6px 10px" }}>
+                    <option value="">None / Skip</option>
+                    {LOSS_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                  {tagLossReason === "other" && (
+                    <input value={tagLossOther} onChange={e => setTagLossOther(e.target.value)} placeholder="Describe reason..."
+                      style={{ ...inputS, width: 260, padding: "6px 10px", marginTop: 6 }} />
+                  )}
+                </div>
+                {/* Job link for Won */}
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Link to Job (for Won tagging):</label>
+                  <input value={tagJobSearch} onChange={e => { setTagJobSearch(e.target.value); setTagLinkedJob(null); }} placeholder="Search job name..."
+                    style={{ ...inputS, width: 260, padding: "6px 10px" }} />
+                  {tagJobResults.length > 0 && !tagLinkedJob && (
+                    <div style={{ border: "1px solid #E5E3E0", borderRadius: 8, marginTop: 4, maxHeight: 150, overflow: "auto", background: "#FFF" }}>
+                      {tagJobResults.map(j => (
+                        <div key={j.id} onClick={() => { setTagLinkedJob(j); setTagJobSearch(j.job_name); setTagJobResults([]); }}
+                          style={{ padding: "8px 12px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid #F1EFEC" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#F9FAFB"} onMouseLeave={e => e.currentTarget.style.background = "#FFF"}>
+                          <strong>{j.job_number}</strong> — {j.job_name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {tagLinkedJob && <div style={{ fontSize: 12, color: "#065F46", marginTop: 4 }}>✓ Linked to: {tagLinkedJob.job_number} — {tagLinkedJob.job_name}</div>}
+                </div>
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button onClick={() => tagProposal("won", tagLinkedJob ? {} : {})}
+                    style={{ ...btnP, background: "#065F46", padding: "10px 24px", fontSize: 14, fontWeight: 700 }}>
+                    ✓ WON
+                  </button>
+                  <button onClick={() => tagProposal("lost", tagLossReason ? { loss_reason: tagLossReason === "other" ? tagLossOther : tagLossReason } : {})}
+                    style={{ ...btnP, background: "#991B1B", padding: "10px 24px", fontSize: 14, fontWeight: 700 }}>
+                    ✕ LOST
+                  </button>
+                  <button onClick={() => tagProposal("expired")}
+                    style={{ ...btnP, background: "#92400E", padding: "10px 24px", fontSize: 14, fontWeight: 700 }}>
+                    ⏱ EXPIRED
+                  </button>
+                  <button onClick={() => tagProposal("withdrawn")}
+                    style={{ ...btnP, background: "#6B7280", padding: "10px 24px", fontSize: 14, fontWeight: 700 }}>
+                    ↩ WITHDRAWN
+                  </button>
+                  <button onClick={() => setTagIdx(i => Math.min(i + 1, untagged.length - 1))}
+                    style={{ ...btnS, padding: "10px 24px", fontSize: 14 }}>
+                    → SKIP
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ ...card, textAlign: "center", padding: 40 }}>
+              <EmptyState icon="📋" title="No untagged proposals" subtitle="All ingested proposals have been tagged." />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ MODE E: DATA QUALITY DASHBOARD ═══ */}
+      {mode === "quality" && (
+        <div>
+          {!quality ? (
+            <div style={{ ...card }}><EmptyState icon="📊" title="No ingested data" subtitle="Import proposals to see data quality metrics." /></div>
+          ) : (
+            <>
+              {/* Summary tiles */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
+                {[
+                  { label: "Total Ingested", value: quality.total, color: "#1A1A1A" },
+                  { label: "Math Errors", value: `${quality.mathErrors} (${Math.round(quality.mathErrors / quality.total * 100)}%)`, color: quality.mathErrors > 0 ? "#991B1B" : "#065F46" },
+                  { label: "Missing Customer", value: `${quality.missingCustomer} (${Math.round(quality.missingCustomer / quality.total * 100)}%)`, color: quality.missingCustomer > 0 ? "#B45309" : "#065F46" },
+                  { label: "Missing Grand Total", value: `${quality.missingTotal} (${Math.round(quality.missingTotal / quality.total * 100)}%)`, color: quality.missingTotal > 0 ? "#B45309" : "#065F46" },
+                  { label: "Missing LF", value: `${quality.missingLF} (${Math.round(quality.missingLF / quality.total * 100)}%)`, color: quality.missingLF > 0 ? "#B45309" : "#065F46" },
+                  { label: "Total Bid Value", value: fCur(quality.totalBidValue), color: "#8B2020" },
+                ].map(t => (
+                  <div key={t.label} style={{ ...card }}>
+                    <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>{t.label}</div>
+                    <div style={{ fontFamily: "Syne", fontSize: 22, fontWeight: 800, color: t.color, marginTop: 4 }}>{t.value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Error rate by rep */}
+              <div style={{ ...card, marginBottom: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Error Rate by Rep</h3>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Rep</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Proposals</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Errors</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Error Rate</th>
+                  </tr></thead>
+                  <tbody>
+                    {quality.errorByRep.sort((a, b) => b.rate - a.rate).map(r => (
+                      <tr key={r.rep} style={{ borderBottom: "1px solid #F1EFEC", background: r.rate > 50 ? "#FEF2F2" : "transparent" }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{r.rep}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>{r.total}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right" }}>{r.errors}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: r.rate > 50 ? "#991B1B" : r.rate > 25 ? "#B45309" : "#065F46" }}>
+                          {r.rate}%{r.rate > 50 && " 🚨"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Top 10 discrepancies */}
+              {quality.discrepancies.length > 0 && (
+                <div style={{ ...card }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 12 }}>Top 10 Biggest Discrepancies</h3>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                      <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Customer</th>
+                      <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Project</th>
+                      <th style={{ textAlign: "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Total</th>
+                      <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Math Notes</th>
+                    </tr></thead>
+                    <tbody>
+                      {quality.discrepancies.map(p => (
+                        <tr key={p.id} onClick={() => openDetail(p)} style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#FEF2F2"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "8px 12px" }}>{p.customer_name || "—"}</td>
+                          <td style={{ padding: "8px 12px", fontWeight: 600 }}>{p.title || "—"}</td>
+                          <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700 }}>{fCur(p.grand_total)}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 11, color: "#78350F", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>{p.math_validation_notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function SalesDashboardPage({jobs,onNav}){
   const[leads,setLeads]=useState([]);const[allLeads,setAllLeads]=useState([]);
   const[loading,setLoading]=useState(true);
