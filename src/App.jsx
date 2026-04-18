@@ -4784,7 +4784,6 @@ Generate the optimal 4-week production schedule following all rules.`;
       if (scheds && scheds[0]) {
         const entries = await sbGet('ai_schedule_entries', `schedule_id=eq.${scheds[0].id}&order=scheduled_date.asc,day_sequence.asc`);
         setAiSchedule({ scheduleId: scheds[0].id, entries: entries||[], reasoning: scheds[0].agent_reasoning, generatedAt: scheds[0].created_at ? new Date(scheds[0].created_at) : new Date() });
-        setAiScheduleView(true);
       }
     })();
   }, [refreshKey]);
