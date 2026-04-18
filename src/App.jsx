@@ -1039,10 +1039,24 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           </div>
           {pisTokens.length>0&&<div>
             <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Send History</div>
-            {pisTokens.map(t=><div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
-              <div><div style={{fontWeight:600,color:'#1A1A1A'}}>{t.sent_to_email}</div><div style={{color:'#9E9B96',fontSize:11}}>Sent {new Date(t.created_at).toLocaleDateString()} by {t.sent_by}</div></div>
-              <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:700,background:t.submitted_at?'#D1FAE5':new Date(t.expires_at)<new Date()?'#FEE2E2':'#FEF3C7',color:t.submitted_at?'#065F46':new Date(t.expires_at)<new Date()?'#991B1B':'#B45309'}}>{t.submitted_at?'Received':new Date(t.expires_at)<new Date()?'Expired':'Pending'}</span>
-            </div>)}
+            {pisTokens.map(t=>{
+              const formUrl=`${SB}/functions/v1/pis-public?token=${t.token}`;
+              const isExpired=new Date(t.expires_at)<new Date();
+              const statusBg=t.submitted_at?'#D1FAE5':isExpired?'#FEE2E2':'#FEF3C7';
+              const statusColor=t.submitted_at?'#065F46':isExpired?'#991B1B':'#B45309';
+              const statusLabel=t.submitted_at?'Received':isExpired?'Expired':'Pending';
+              return<div key={t.id} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <div><div style={{fontWeight:600,color:'#1A1A1A'}}>{t.sent_to_email}</div><div style={{color:'#9E9B96',fontSize:11,marginTop:2}}>Sent {new Date(t.created_at).toLocaleDateString()} by {t.sent_by}</div></div>
+                  <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:700,background:statusBg,color:statusColor,flexShrink:0,marginLeft:8}}>{statusLabel}</span>
+                </div>
+                {!t.submitted_at&&!isExpired&&<div style={{display:'flex',alignItems:'center',gap:6,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 10px'}}>
+                  <span style={{fontSize:10,color:'#9E9B96',flexShrink:0}}>Link:</span>
+                  <span style={{fontSize:10,color:'#625650',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formUrl}</span>
+                  <button onClick={()=>{navigator.clipboard.writeText(formUrl);setPisToast('Link copied!');}} style={{padding:'3px 8px',border:'1px solid #8A261D',borderRadius:5,background:'#FDF4F4',color:'#8A261D',fontSize:10,fontWeight:700,cursor:'pointer',flexShrink:0}}>Copy</button>
+                  <a href={formUrl} target="_blank" rel="noreferrer" style={{padding:'3px 8px',border:'1px solid #E5E3E0',borderRadius:5,background:'#FFF',color:'#625650',fontSize:10,fontWeight:700,cursor:'pointer',textDecoration:'none',flexShrink:0}}>Open</a>
+                </div>}
+              </div>;})}
           </div>}
         </div>:tab==='requirements'?<div>
           <div style={{fontSize:11,color:'#625650',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
