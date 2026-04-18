@@ -5,7 +5,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
@@ -1790,7 +1789,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   useEffect(()=>{setLastRefreshed(new Date());},[refreshKey]);
   const[remindSending,setRemindSending]=useState(false);
   const[dashToast,setDashToast]=useState(null);
-  const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();console.log('[Reminders] status=',res.status,'response=',txt);if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
+  const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
@@ -3334,7 +3333,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const submitPin=()=>{if(pinInput==='2020'){setEditUnlocked(true);setShowPinModal(false);setPinInput('');setPinError(false);}else{setPinError(true);setPinInput('');}};
   useEffect(()=>{if(!showPinModal)return;const onKey=(e)=>{if(e.key==='Escape'){setShowPinModal(false);setPinInput('');setPinError(false);}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[showPinModal]);
   const[moveToast,setMoveToast]=useState(null);
-  const move=async(job,ns)=>{if(!editUnlocked){console.warn('[Kanban] Move blocked — editing locked');return;}const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='material_ready')u.inventory_ready_date=today;if(ns==='active_install')u.active_install_date=today;if(ns==='fence_complete')u.fence_complete_date=today;if(ns==='fully_complete')u.fully_complete_date=today;if(ns==='closed')u.closed_date=today;if(ns==='canceled')u.canceled_date=today;console.log('[Kanban] Moving',job.job_name,'('+job.id+') from',job.status,'→',ns);try{const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(u)});if(!res.ok){const txt=await res.text();console.error('[Kanban] PATCH failed:',res.status,txt);setMoveToast({msg:`Move failed (${res.status}): ${txt}`,ok:false});return;}setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);setMoveToast({msg:`Moved ${job.job_name} to ${SL[ns]||ns}`,ok:true});fetch(`${SB}/functions/v1/job-stage-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{job_name:job.job_name,job_number:job.job_number,market:job.market,pm:job.pm,sales_rep:job.sales_rep,style:job.style,color:job.color,height_precast:job.height_precast,total_lf:job.total_lf,adj_contract_value:job.adj_contract_value},from_status:job.status,to_status:ns})}).catch(e=>console.error('Stage notification failed:',e));}catch(e){console.error('[Kanban] Move error:',e);setMoveToast({msg:e.message||'Move failed',ok:false});}};
+  const move=async(job,ns)=>{if(!editUnlocked){console.warn('[Kanban] Move blocked — editing locked');return;}const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='material_ready')u.inventory_ready_date=today;if(ns==='active_install')u.active_install_date=today;if(ns==='fence_complete')u.fence_complete_date=today;if(ns==='fully_complete')u.fully_complete_date=today;if(ns==='closed')u.closed_date=today;if(ns==='canceled')u.canceled_date=today;try{const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(u)});if(!res.ok){const txt=await res.text();console.error('[Kanban] PATCH failed:',res.status,txt);setMoveToast({msg:`Move failed (${res.status}): ${txt}`,ok:false});return;}setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);setMoveToast({msg:`Moved ${job.job_name} to ${SL[ns]||ns}`,ok:true});fetch(`${SB}/functions/v1/job-stage-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{job_name:job.job_name,job_number:job.job_number,market:job.market,pm:job.pm,sales_rep:job.sales_rep,style:job.style,color:job.color,height_precast:job.height_precast,total_lf:job.total_lf,adj_contract_value:job.adj_contract_value},from_status:job.status,to_status:ns})}).catch(e=>console.error('Stage notification failed:',e));}catch(e){console.error('[Kanban] Move error:',e);setMoveToast({msg:e.message||'Move failed',ok:false});}};
   const toggleAddon=code=>setAddonsF(prev=>{const s=new Set(prev);if(s.has(code))s.delete(code);else s.add(code);return s;});
   const filtered=useMemo(()=>{const seen=new Set();let f=jobs.filter(j=>{if(seen.has(j.id))return false;seen.add(j.id);return j.status!=='closed';});if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}if(addonsF.size>0)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));return f;},[jobs,mktF,statusF,search,addonsF]);
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
@@ -4451,324 +4450,6 @@ function MaterialCalcPage({jobs,preJob}){
   </div>);
 }
 
-/* ═══ PRODUCTION ORDERS PAGE ═══ */
-function ProductionOrdersPage({jobs,setJobs,onNav}){
-  const auth=useAuth();
-  const currentUserEmail=(auth?.user?.email||'').toLowerCase().trim();
-  const[filterTab,setFilterTab]=useState('all');
-  const[expanded,setExpanded]=useState(null);
-  const[toast,setToast]=useState(null);
-  const[printJob,setPrintJob]=useState(null);
-  const[moldInventory,setMoldInventory]=useState([]);
-  const[todayPlanLines,setTodayPlanLines]=useState([]);
-  const[plantCfg,setPlantCfg]=useState({});
-  const[todayActuals,setTodayActuals]=useState([]);
-  const[todayHasPlan,setTodayHasPlan]=useState(false);
-  const todayStr=new Date().toISOString().split('T')[0];
-
-  useEffect(()=>{
-    sbGet('mold_inventory','select=style_name,total_molds&order=style_name').then(d=>setMoldInventory(d||[]));
-    sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
-    (async()=>{try{const plans=await sbGet('production_plans',`plan_date=eq.${todayStr}&select=id&limit=1`);if(plans&&plans[0]){setTodayHasPlan(true);const lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);setTodayPlanLines(lines||[]);const acts=await sbGet('production_actuals',`production_date=eq.${todayStr}&select=*`);setTodayActuals(acts||[]);}else{setTodayHasPlan(false);setTodayPlanLines([]);setTodayActuals([]);}}catch(e){console.error('Today plan load failed',e);}})();
-  },[todayStr]);
-  const todayByLine=useMemo(()=>{const m={};todayActuals.forEach(a=>{const k=a.plan_line_id;if(!k)return;if(!m[k])m[k]={1:0,2:0};const p=n(a.actual_panels_regular)+n(a.actual_panels_half)+n(a.actual_panels_bottom)+n(a.actual_panels_top);m[k][n(a.shift)||1]=(m[k][n(a.shift)||1]||0)+p;});return m;},[todayActuals]);
-  const panelsPerMoldFor=useCallback((style)=>panelsPerMoldLookup(style),[]);
-  const MOLD_UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
-  const SCRAP_RATE=n(plantCfg.scrap_rate_warm)||0.03;
-  // Only rows that represent physical mold sets (not shared child styles)
-  const physicalMoldInv=useMemo(()=>moldInventory.filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name)),[moldInventory]);
-  const moldUtilization=useMemo(()=>{
-    // Sum planned panels by canonical (parent) style
-    const inUseByParent={};const childStylesByParent={};
-    todayPlanLines.forEach(l=>{const s=l.style||'—';const p=canonicalStyle(s);inUseByParent[p]=(inUseByParent[p]||0)+n(l.planned_panels);if(!childStylesByParent[p])childStylesByParent[p]=new Set();childStylesByParent[p].add(s);});
-    return physicalMoldInv.map(m=>{
-      let used=n(inUseByParent[m.style_name]);
-      // Fuzzy fallback for any canonical key that isn't an exact match
-      if(!used){Object.keys(inUseByParent).forEach(k=>{if(k&&m.style_name&&k!==m.style_name&&(k.toLowerCase().includes(m.style_name.toLowerCase())||m.style_name.toLowerCase().includes(k.toLowerCase())))used+=inUseByParent[k];});}
-      const ppm=panelsPerMoldFor(m.style_name);
-      const confirmed=ppm!=null;
-      const capacity=confirmed?Math.floor(m.total_molds*ppm*MOLD_UTIL_RATE):0;
-      const panelsPerDay=confirmed?Math.floor((m.total_molds*ppm*MOLD_UTIL_RATE)/(1+SCRAP_RATE)):0;
-      const avail=confirmed?Math.max(capacity-used,0):0;
-      const pct=capacity>0?Math.round(used/capacity*100):0;
-      const children=MOLD_CHILDREN[m.style_name]||[];
-      const label=children.length>0?`${m.style_name} / ${children.join(' / ')}`:m.style_name;
-      return{style:m.style_name,label,molds:m.total_molds,panelsPerMold:ppm,confirmed,capacity,panelsPerDay,inUse:used,available:avail,pct,notPlanned:used===0,children};
-    });
-  },[physicalMoldInv,todayPlanLines,panelsPerMoldFor,MOLD_UTIL_RATE,SCRAP_RATE]);
-  const moldTotals=useMemo(()=>{const molds=moldUtilization.reduce((s,r)=>s+r.molds,0);const capacity=moldUtilization.reduce((s,r)=>s+r.capacity,0);const panelsPerDay=moldUtilization.reduce((s,r)=>s+r.panelsPerDay,0);const inUse=moldUtilization.reduce((s,r)=>s+r.inUse,0);const avail=capacity-inUse;const pct=capacity>0?Math.round(inUse/capacity*100):0;return{molds,capacity,panelsPerDay,inUse,avail,pct};},[moldUtilization]);
-
-  const ordersJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&j.status!=='closed').sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
-
-  // Queue only includes jobs in production_queue with a saved material order — auto-clears as status advances
-  const needsProd=ordersJobs.filter(j=>j.status==='production_queue'&&j.material_calc_date);
-  const inProd=ordersJobs.filter(j=>j.status==='in_production');
-  const complete=ordersJobs.filter(j=>['material_ready','active_install','fence_complete','fully_complete'].includes(j.status));
-  const today=new Date();const weekOut=new Date();weekOut.setDate(weekOut.getDate()+7);
-  const thisWeek=ordersJobs.filter(j=>j.est_start_date&&new Date(j.est_start_date+'T12:00:00')<=weekOut&&new Date(j.est_start_date+'T12:00:00')>=today);
-
-  const filtered=useMemo(()=>{
-    if(filterTab==='needs')return needsProd;
-    if(filterTab==='in_prod')return inProd;
-    if(filterTab==='complete')return complete;
-    return ordersJobs;
-  },[filterTab,ordersJobs]);
-
-  const updateStatus=async(job,newStatus)=>{const u={status:newStatus};const t=new Date().toISOString().split('T')[0];if(newStatus==='material_ready')u.inventory_ready_date=t;if(newStatus==='active_install')u.active_install_date=t;if(newStatus==='fence_complete')u.fence_complete_date=t;if(newStatus==='fully_complete')u.fully_complete_date=t;if(newStatus==='closed')u.closed_date=t;if(newStatus==='canceled')u.canceled_date=t;try{const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(u)});if(!res.ok)throw new Error(await res.text());setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));setToast(`${job.job_name} → ${SL[newStatus]}`);}catch(e){setToast({message:e.message||'Update failed',isError:true});}};
-
-  return(<div>
-    {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
-    <div style={{marginBottom:8}}>
-      <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:2}}>Production Orders</h1>
-      <div style={{fontSize:12,color:'#9E9B96'}}>Jobs with saved material calculations</div>
-    </div>
-    {/* Summary cards */}
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16,marginTop:12}}>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22}}>{ordersJobs.length}</div><div style={{fontSize:11,color:'#625650'}}>Total Orders</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #854F0B'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#854F0B'}}>{needsProd.length}</div><div style={{fontSize:11,color:'#625650'}}>Needs Production</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #1D4ED8'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#1D4ED8'}}>{inProd.length}</div><div style={{fontSize:11,color:'#625650'}}>In Production</div></div>
-      <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:22,color:'#B45309'}}>{thisWeek.length}</div><div style={{fontSize:11,color:'#625650'}}>Starting This Week</div></div>
-    </div>
-    {/* Plant Summary Stats */}
-    {moldUtilization.length>0&&<div style={{...card,marginBottom:12,padding:14,borderLeft:'4px solid #1A1A1A'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',marginBottom:8}}>🏭 Plant Summary</div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22}}>{moldTotals.molds}</div><div style={{fontSize:10,color:'#625650'}}>Total Molds</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#854F0B'}}>~{moldTotals.panelsPerDay.toLocaleString()}</div><div style={{fontSize:10,color:'#625650'}}>Max Panels/Day</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#B45309'}}>{n(plantCfg.max_lf_per_day)||2640} LF</div><div style={{fontSize:10,color:'#625650'}}>Max LF/Day</div></div>
-        <div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#1D4ED8'}}>{(n(plantCfg.daily_cy_capacity)||52.8).toFixed(1)} CYD</div><div style={{fontSize:10,color:'#625650'}}>Batch Plant/Day</div></div>
-      </div>
-      <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #E5E3E0',fontSize:10,color:'#9E9B96'}}>2× WIGGERT HPGM 500 mixers · 60 batches/shift × 0.44 CYD · 24hr cure · {Math.round(MOLD_UTIL_RATE*100)}% mold util · {Math.round(SCRAP_RATE*100)}% scrap rate</div>
-    </div>}
-    {/* Mold Utilization Table */}
-    {moldUtilization.length>0&&<div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #854F0B'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#854F0B',textTransform:'uppercase',marginBottom:10}}>🔧 Mold Utilization — Today</div>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-        <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-        <tbody>
-          {moldUtilization.map(r=>{
-            if(!r.confirmed)return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:'#FAFAF8'}}>
-              <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
-              <td style={{padding:'6px 8px',textAlign:'right'}}>{r.molds}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',color:'#6B7280',fontWeight:700}}>[?]</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#6B7280'}}>TBD</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',color:'#6B7280'}}>—</td>
-              <td style={{padding:'6px 8px'}}><span style={{fontSize:10,color:'#6B7280',fontWeight:700,background:'#F4F4F2',padding:'2px 6px',borderRadius:4}}>⚙️ Verify with Max</span></td>
-            </tr>;
-            const col=r.pct>=70?'#B45309':'#15803D';const emoji=r.notPlanned?'':r.pct>=70?'🟡':'🟢';
-            return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2'}}>
-              <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
-              <td style={{padding:'6px 8px',textAlign:'right'}}>{r.molds}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',color:'#9E9B96'}}>{r.panelsPerMold}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#854F0B'}}>{r.capacity.toLocaleString()}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
-              <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#B45309':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
-              <td style={{padding:'6px 8px'}}>{r.notPlanned?<span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Not planned</span>:<div style={{display:'flex',alignItems:'center',gap:8}}>
-                <div style={{flex:1,height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',maxWidth:140}}>
-                  <div style={{width:`${Math.min(r.pct,100)}%`,height:'100%',background:col}}/>
-                </div>
-                <span style={{fontSize:11,fontWeight:700,color:col,minWidth:42}}>{r.pct}% {emoji}</span>
-              </div>}</td>
-            </tr>;
-          })}
-          <tr style={{borderTop:'2px solid #1A1A1A',background:'#F9F8F6'}}>
-            <td style={{padding:'8px',fontWeight:800}}>TOTAL</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.molds}</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#9E9B96'}}>—</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800,color:'#854F0B'}}>{moldTotals.capacity.toLocaleString()}*</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.inUse.toLocaleString()}</td>
-            <td style={{padding:'8px',textAlign:'right',fontWeight:800}}>{moldTotals.avail.toLocaleString()}</td>
-            <td style={{padding:'8px'}}><div style={{display:'flex',alignItems:'center',gap:8}}>
-              <div style={{flex:1,height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',maxWidth:140}}>
-                <div style={{width:`${Math.min(moldTotals.pct,100)}%`,height:'100%',background:moldTotals.pct>=70?'#B45309':'#15803D'}}/>
-              </div>
-              <span style={{fontSize:11,fontWeight:800,minWidth:42}}>{moldTotals.pct}% {moldTotals.pct>=70?'🟡':'🟢'}</span>
-            </div></td>
-          </tr>
-        </tbody>
-      </table>
-      {moldUtilization.some(r=>!r.confirmed)&&<div style={{marginTop:10,padding:'8px 12px',background:'#F4F4F2',border:'1px solid #D1CEC9',borderRadius:6,fontSize:11,color:'#625650'}}>
-        <b>*</b> Excludes Vertical Wood — panels/mold unconfirmed. <b>⚙️ Vertical Wood panels/mold needs confirmation from Max.</b> Contact Max to verify how many panels each gang mold produces per pour for Vertical Wood styles.
-      </div>}
-    </div>}
-    {/* Today's Plan section */}
-    <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #8A261D'}}>
-      <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-        <span>📅 Today's Plan — {new Date(todayStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
-        {!todayHasPlan&&<button onClick={()=>{const t=new Date();t.setDate(t.getDate()+1);const tISO=t.toISOString().split('T')[0];try{localStorage.setItem('fc_daily_goto',JSON.stringify({tab:'plan',date:tISO}));}catch(e){}if(onNav)onNav('daily_report');window.scrollTo({top:0,behavior:'smooth'});}} style={{...btnS,padding:'4px 10px',fontSize:11}}>View Tomorrow's Plan →</button>}
-      </div>
-      {!todayHasPlan?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>No plan for today. Plans are created by Max for the next day (default).</div>:
-      todayPlanLines.length===0?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>Plan exists but has no lines.</div>:
-      <div style={{display:'flex',flexDirection:'column',gap:8}}>
-        {todayPlanLines.map(l=>{const planned=n(l.planned_panels);const s1=n(todayByLine[l.id]?.[1]);const s2=n(todayByLine[l.id]?.[2]);const total=s1+s2;const pct=planned>0?Math.round(total/planned*100):0;const col=pct>=100?'#065F46':pct>=70?'#B45309':'#1D4ED8';return<div key={l.id} style={{padding:10,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:6}}>
-            <div style={{fontWeight:700,fontSize:13}}>{l.job_name} <span style={{color:'#9E9B96',fontWeight:500,fontSize:11}}>#{l.job_number}</span></div>
-            <div style={{fontSize:11,color:col,fontWeight:700}}>{total.toLocaleString()} / {planned.toLocaleString()} panels ({pct}%)</div>
-          </div>
-          <div style={{fontSize:10,color:'#625650',marginBottom:6}}>{[l.style,l.color,l.height?l.height+'ft':null].filter(Boolean).join(' | ')}</div>
-          {/* Shift bars */}
-          <div style={{display:'flex',gap:12,marginBottom:4}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,color:'#625650',marginBottom:2}}>Shift 1: <b>{s1.toLocaleString()}</b></div>
-              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s1/planned*100:0,100)}%`,height:'100%',background:'#1D4ED8'}}/></div>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,color:'#625650',marginBottom:2}}>Shift 2: <b>{s2.toLocaleString()}</b></div>
-              <div style={{height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden'}}><div style={{width:`${Math.min(planned>0?s2/planned*100:0,100)}%`,height:'100%',background:'#854F0B'}}/></div>
-            </div>
-          </div>
-          <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:4}}><div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:col,transition:'width 0.3s'}}/></div>
-        </div>;})}
-      </div>}
-    </div>
-    {/* Filter tabs */}
-    <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-      {[['all','All',ordersJobs.length],['needs','Needs Production',needsProd.length],['in_prod','In Production',inProd.length],['complete','Complete',complete.length]].map(([k,l,c])=><button key={k} onClick={()=>setFilterTab(k)} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?'2px solid #8A261D':'1px solid #E5E3E0',background:filterTab===k?'#FDF4F4':'#FFF',color:filterTab===k?'#8A261D':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
-    </div>
-    {/* Job list */}
-    {filtered.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No production orders in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:10}}>
-      {filtered.map(j=>{const isExp=expanded===j.id;const lp=n(j.material_posts_line),cp=n(j.material_posts_corner),sp=n(j.material_posts_stop);const totalPosts=lp+cp+sp;const rp=n(j.material_panels_regular),hp=n(j.material_panels_half);const totalPanels=rp+hp;const cr=n(j.material_rails_regular),tr2=n(j.material_rails_top),br=n(j.material_rails_bottom),mr=n(j.material_rails_center);const totalRails=cr+tr2+br+mr;const lc=n(j.material_caps_line),sc=n(j.material_caps_stop);const totalCaps=lc+sc;const calcDate=j.material_calc_date?new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-        return<div key={j.id} style={{...card,padding:0,overflow:'hidden'}}>
-          <div onClick={()=>setExpanded(isExp?null:j.id)} style={{padding:'12px 16px',cursor:'pointer'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,flexWrap:'wrap'}}>
-              <span style={{fontSize:16}}>📋</span>
-              <span style={{fontFamily:'Inter',fontSize:11,color:'#9E9B96',fontWeight:600}}>{j.job_number||'—'}</span>
-              <span style={{fontWeight:700,fontSize:14,flex:'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
-              <span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
-              canEditStatus(currentUserEmail)?<select value={j.status} onClick={e=>e.stopPropagation()} onChange={e=>updateStatus(j,e.target.value)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status],cursor:'pointer'}}>{STS.filter(s=>s!=='closed').map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>:<span style={{padding:'4px 8px',borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${SC[j.status]}40`,background:SB_[j.status],color:SC[j.status]}}>{SL[j.status]||j.status}</span>
-              <span style={{fontSize:12,color:'#9E9B96'}}>{isExp?'▲':'▼'}</span>
-            </div>
-            <div style={{display:'flex',gap:14,fontSize:11,color:'#625650',marginLeft:26,flexWrap:'wrap'}}>
-              {j.est_start_date&&<span>Est Start: <b style={{color:'#1A1A1A'}}>{fD(j.est_start_date)}</b></span>}
-              {(lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||lfGates(j)>0)&&<span><LfBadges job={j}/></span>}
-              {j.style&&<span>{j.style}</span>}
-              {j.color&&<span>{j.color}</span>}
-              {j.height_precast&&<span>{j.height_precast}ft</span>}
-              <span>Calculated: <b style={{color:'#1A1A1A'}}>{calcDate}</b></span>
-            </div>
-            {!isExp&&<div style={{marginLeft:26,marginTop:8,fontSize:12,color:'#625650',display:'flex',gap:16,flexWrap:'wrap'}}>
-              <span><b style={{color:'#8A261D'}}>POSTS:</b> {lp}/{cp}/{sp}{j.material_post_height?` — ${j.material_post_height}ft`:''}</span>
-              <span><b style={{color:'#1D4ED8'}}>PANELS:</b> {totalPanels}</span>
-              <span><b style={{color:'#B45309'}}>RAILS:</b> {totalRails}</span>
-              <span><b style={{color:'#065F46'}}>CAPS:</b> {lc}/{sc}</span>
-            </div>}
-          </div>
-          {isExp&&<div style={{padding:'14px 16px',borderTop:'1px solid #E5E3E0',background:'#F9F8F6'}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12,marginBottom:12}}>
-              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #8A261D20'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#8A261D',textTransform:'uppercase',marginBottom:6}}>Posts{j.material_post_height?` (${j.material_post_height}ft)`:''}</div>
-                <div style={{fontSize:12,color:'#625650'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lp||'—'}</b></div>
-                <div style={{fontSize:12,color:'#625650'}}>Corner: <b style={{color:'#1A1A1A',fontSize:16}}>{cp||'—'}</b></div>
-                <div style={{fontSize:12,color:'#625650'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sp||'—'}</b></div>
-                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPosts}</div>
-              </div>
-              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #1D4ED820'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#1D4ED8',textTransform:'uppercase',marginBottom:6}}>Panels</div>
-                <div style={{fontSize:12,color:'#625650'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{rp||'—'}</b></div>
-                {hp>0&&<div style={{fontSize:12,color:'#625650'}}>Half: <b style={{color:'#1A1A1A',fontSize:16}}>{hp}</b></div>}
-                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalPanels}</div>
-              </div>
-              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #B4530920'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#B45309',textTransform:'uppercase',marginBottom:6}}>Rails</div>
-                <div style={{fontSize:12,color:'#625650'}}>Regular: <b style={{color:'#1A1A1A',fontSize:16}}>{cr||'—'}</b></div>
-                {tr2>0&&<div style={{fontSize:12,color:'#625650'}}>Top: <b style={{color:'#1A1A1A',fontSize:16}}>{tr2}</b></div>}
-                {br>0&&<div style={{fontSize:12,color:'#625650'}}>Bottom: <b style={{color:'#1A1A1A',fontSize:16}}>{br}</b></div>}
-                {mr>0&&<div style={{fontSize:12,color:'#625650'}}>Center: <b style={{color:'#1A1A1A',fontSize:16}}>{mr}</b></div>}
-                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalRails}</div>
-              </div>
-              <div style={{background:'#FFF',borderRadius:8,padding:12,border:'1px solid #065F4620'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#065F46',textTransform:'uppercase',marginBottom:6}}>Post Caps</div>
-                <div style={{fontSize:12,color:'#625650'}}>Line: <b style={{color:'#1A1A1A',fontSize:16}}>{lc||'—'}</b></div>
-                <div style={{fontSize:12,color:'#625650'}}>Stop: <b style={{color:'#1A1A1A',fontSize:16}}>{sc||'—'}</b></div>
-                <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid #E5E3E0',fontSize:11,fontWeight:700}}>Total: {totalCaps}</div>
-              </div>
-            </div>
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>setPrintJob(j)} style={{...btnP,padding:'7px 16px',fontSize:12}}>🖨 Print Production Order</button>
-              {onNav&&<button onClick={()=>onNav('material_calc')} style={{...btnS,padding:'7px 16px',fontSize:12}}>Recalculate</button>}
-            </div>
-          </div>}
-        </div>;
-      })}
-    </div>}
-    {/* Print Preview Modal */}
-    {printJob&&(()=>{const j=printJob;const ph=n(j.material_post_height)||8;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=n(j.material_posts_line),cp=n(j.material_posts_corner),sp=n(j.material_posts_stop);const rp=n(j.material_panels_regular),hp=n(j.material_panels_half);const cr=n(j.material_rails_regular),tr2=n(j.material_rails_top),br=n(j.material_rails_bottom),mr=n(j.material_rails_center);const lc=n(j.material_caps_line),sc=n(j.material_caps_stop);const mktShort=MS[j.market]||j.market||'';
-    return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setPrintJob(null)}>
-      <div style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
-        <div className="no-print" style={{display:'flex',gap:8,justifyContent:'flex-end',padding:'12px 20px',borderBottom:'1px solid #E5E3E0'}}>
-          <button onClick={()=>window.print()} style={{...btnP,padding:'8px 20px',fontSize:13}}>Print</button>
-          <button onClick={()=>setPrintJob(null)} style={{...btnS,padding:'8px 20px',fontSize:13}}>Close</button>
-        </div>
-        <div id="production-order" style={{padding:'32px 40px',fontFamily:'Arial,sans-serif',color:'#000'}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:24}}>
-            <div>
-              <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:'#666',textTransform:'uppercase'}}>Material Custom</div>
-              <div style={{fontSize:22,fontWeight:900,letterSpacing:1}}>PRODUCTION ORDER</div>
-              <div style={{marginTop:12,fontSize:16,fontWeight:700}}>Style: {j.style||'—'}</div>
-              <div style={{fontSize:16,fontWeight:700,color:'#333'}}>Color: {j.color||'—'}</div>
-            </div>
-            <div style={{border:'2px solid #000',borderRadius:4,padding:'10px 16px',width:180}}>
-              <div style={{fontSize:11,fontWeight:700,textAlign:'center',marginBottom:8}}>Batch</div>
-              {[1,2,3].map(i=><div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{borderBottom:'1px solid #ccc',flex:1}}>&nbsp;</span></div>)}
-              <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}><span style={{width:30}}>___ LB.</span><span style={{fontWeight:700}}>{j.color||''}</span></div>
-            </div>
-          </div>
-          {/* EST INSTALL START BANNER */}
-          {(()=>{const d2=j.est_start_date;const hasDate=!!d2;const label=hasDate?new Date(d2+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'TBD — Contact PM';return<div style={{background:hasDate?'#8A261D':'#B45309',color:'#FFF',padding:'16px 20px',marginBottom:24,borderRadius:4,textAlign:'center',fontSize:24,fontWeight:900,letterSpacing:0.5}}>📅&nbsp;&nbsp;EST. INSTALL START:&nbsp;&nbsp;{label}</div>;})()}
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POSTS</div>
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
-              <thead><tr><td style={{width:30}}></td><td style={{width:140,fontWeight:600}}></td><td style={{width:100,textAlign:'center',fontWeight:700}}>12'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>10'</td><td style={{width:100,textAlign:'center',fontWeight:700}}>8'</td></tr></thead>
-              <tbody>{[['Line Post',lp],['Corner Post',cp],['Stop Post',sp]].map(([label,qty])=><tr key={label} style={{borderBottom:'1px solid #eee'}}>
-                <td style={{padding:'6px 0',fontSize:16}}>{qty>0?'✓':''}</td>
-                <td style={{padding:'6px 0',fontWeight:500}}>{label}</td>
-                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='12'?d(qty):'—'}</td>
-                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='10'?d(qty):'—'}</td>
-                <td style={{padding:'6px 0',textAlign:'center',fontSize:28,fontWeight:900}}>{phCol==='8'?d(qty):'—'}</td>
-              </tr>)}</tbody>
-            </table>
-          </div>
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>PANELS</div>
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
-              <tbody>
-                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,width:80,textAlign:'center'}}>{d(rp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Regular Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / <b>Reg</b></td></tr>
-                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(hp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Half Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / Reg</td></tr>
-                <tr><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>—</td><td style={{padding:'6px 0'}}>Each / Pallets</td><td style={{padding:'6px 0',fontWeight:600}}>Diamond/Bottle Panels</td><td></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>RAILS</div>
-            <div style={{display:'flex',gap:32,fontSize:14}}>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(cr)}</span> <span style={{color:'#666'}}>Regular</span></div>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(tr2)}</span> <span style={{color:'#666'}}>Top</span></div>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(br)}</span> <span style={{color:'#666'}}>Bottom</span></div>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(mr)}</span> <span style={{color:'#666'}}>Center</span></div>
-            </div>
-          </div>
-          <div style={{marginBottom:24}}>
-            <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>POST CAPS</div>
-            <div style={{display:'flex',gap:40,fontSize:14}}>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(lc)}</span> <span style={{color:'#666'}}>Line Caps</span></div>
-              <div><span style={{fontSize:28,fontWeight:900}}>{d(sc)}</span> <span style={{color:'#666'}}>Stop Caps</span></div>
-            </div>
-          </div>
-          <div style={{border:'2px solid #000',borderRadius:4,padding:'12px 16px'}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:13}}>
-              <div>Jobcode: <b>{j.job_number||'___________'}</b></div>
-              <div style={{textAlign:'right',color:'#1D4ED8',fontWeight:700,fontSize:14}}>{n(j.total_lf)}x{j.height_precast||'—'}</div>
-              <div>City: <b>{mktShort||'___________'}</b></div>
-              <div></div>
-            </div>
-            <div style={{marginTop:8,fontSize:14}}>PROJECT: <b style={{fontSize:16}}>{j.job_name||'______________________________'}</b></div>
-          </div>
-        </div>
-      </div>
-    </div>;})()}
-  </div>);
-}
 
 /* ═══ SCHEDULE PAGE ═══ */
 function SchedulePage({jobs}){
@@ -7092,21 +6773,6 @@ function PMDailyReportPage({jobs}){
 /* ═══ ESTIMATING PAGE ═══ */
 const EST_SC={draft:['#625650','#F4F4F2'],sent:['#1D4ED8','#DBEAFE'],won:['#065F46','#D1FAE5'],lost:['#991B1B','#FEE2E2']};
 const RATE_PCTILES={pc:{Houston:{p25:89,med:92,p75:136,min:83,max:195},Austin:{p25:92,med:106,p75:146,min:88,max:455},'Dallas-Fort Worth':{p25:105,med:120,p75:148,min:93,max:192},'San Antonio':{p25:95,med:108,p75:160,min:85,max:180}},sw:{Houston:{p25:123,med:126,p75:192,min:118,max:192},Austin:{p25:138,med:148,p75:158,min:138,max:158},'Dallas-Fort Worth':{p25:192,med:192,p75:192,min:192,max:192}}};
-function RateBar({rate,market,type}){
-  if(!rate||!market)return null;const d=RATE_PCTILES[type]?.[market];if(!d)return<div style={{fontSize:9,color:'#9E9B96',marginTop:2}}>Limited data for {market}</div>;
-  const r=n(rate);const range=d.max-d.min;if(range<=0)return null;const pct=Math.max(0,Math.min(100,(r-d.min)/range*100));
-  const color=r<d.p25?'#2563EB':r<=d.p75?'#065F46':r<=d.p75+(d.max-d.p75)*0.6?'#B45309':'#991B1B';
-  const label=r<d.p25?'Below market':r<=d.p75?'Competitive':r<=d.p75+(d.max-d.p75)*0.6?'Premium':'Very high';
-  return<div style={{marginTop:4}}>
-    <div style={{position:'relative',height:8,background:'#E5E3E0',borderRadius:4,overflow:'visible'}}>
-      <div style={{position:'absolute',left:`${(d.p25-d.min)/range*100}%`,width:`${(d.p75-d.p25)/range*100}%`,height:'100%',background:'#D1FAE5',borderRadius:2}}/>
-      <div style={{position:'absolute',left:`${(d.med-d.min)/range*100}%`,width:2,height:'100%',background:'#065F46'}}/>
-      <div style={{position:'absolute',left:`${pct}%`,top:-2,width:12,height:12,borderRadius:6,background:color,border:'2px solid #fff',transform:'translateX(-6px)',boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
-    </div>
-    <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'#9E9B96',marginTop:1}}><span>${d.min}</span><span>${d.med} med</span><span>${d.max}</span></div>
-    <div style={{fontSize:9,fontWeight:600,color,marginTop:1}}>${r} — {label}</div>
-  </div>;
-}
 function EstimatingPage(){
   const[view,setView]=useState('list');
   const[estimates,setEstimates]=useState([]);
@@ -8251,21 +7917,17 @@ function ChatWidget({currentPage}){
     try{
       const url=`${SB}/functions/v1/chat-assistant`;
       const payload={messages:nextMessages,currentPage:currentPage||'dashboard'};
-      console.log('[ChatWidget] POST',url);
-      console.log('[ChatWidget] request body',payload);
       const res=await fetch(url,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       });
       const rawText=await res.text();
-      console.log('[ChatWidget] raw response',res.status,rawText);
       let data={};
       try{data=rawText?JSON.parse(rawText):{};}catch(parseErr){
         console.error('[ChatWidget] JSON parse failed:',parseErr);
         throw new Error(`Invalid JSON response: ${rawText.slice(0,120)}`);
       }
-      console.log('[ChatWidget] parsed data',data);
       // Edge function returns {message: "..."} on success.
       // Also accept legacy {text} and raw Anthropic {content:[{text}]} shapes defensively.
       let reply=null;
@@ -9181,74 +8843,6 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
   </div>;
 }
 
-/* ═══ PROPOSALS PAGE ═══ */
-function ProposalLeadDetail({lead,onClose,onSaved}){
-  const[f,setF]=useState({
-    company_name:lead.company_name||'',contact_name:lead.contact_name||'',contact_phone:lead.contact_phone||'',contact_email:lead.contact_email||'',
-    project_description:lead.project_description||'',market:lead.market||'',sales_rep:lead.sales_rep||'',source:lead.source||'',
-    estimated_value:lead.estimated_value||'',estimated_lf:lead.estimated_lf||'',fence_type:lead.fence_type||'PC',
-    proposal_value:lead.proposal_value||'',proposal_sent_date:lead.proposal_sent_date||'',win_probability:lead.win_probability==null?50:lead.win_probability,
-    expected_close_date:lead.expected_close_date||'',follow_up_date:lead.follow_up_date||'',notes:lead.notes||'',
-  });
-  const set=(k,v)=>setF(p=>({...p,[k]:v}));
-  const[saving,setSaving]=useState(false);
-  const save=async()=>{
-    setSaving(true);
-    try{
-      const body={...f};
-      ['estimated_value','estimated_lf','proposal_value'].forEach(k=>{body[k]=n(body[k])||null;});
-      body.win_probability=parseInt(body.win_probability)||0;
-      Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
-      body.updated_at=new Date().toISOString();
-      await sbPatch('leads',lead.id,body);
-      __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Lead saved'}));
-      onSaved&&onSaved();
-    }catch(e){__toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:'Save failed: '+e.message}));}
-    setSaving(false);
-  };
-  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
-    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
-    {opts?<select value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
-    :type==='textarea'?<textarea value={f[k]||''} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
-    :<input type={type} value={f[k]||''} onChange={e=>set(k,e.target.value)} style={inputS}/>}
-  </div>);
-  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{width:'min(480px,96vw)',maxWidth:'96vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <div>
-          <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{lead.company_name||'Lead'}</div>
-          <div style={{fontSize:12,color:'#625650'}}>Proposal Sent</div>
-        </div>
-        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
-      </div>
-      <div style={{...card}}>
-        {fld('Company Name','company_name')}
-        {fld('Contact Name','contact_name')}
-        {fld('Contact Phone','contact_phone')}
-        {fld('Contact Email','contact_email','email')}
-        {fld('Project Description','project_description','textarea')}
-        {fld('Market','market','text',MKTS)}
-        {fld('Sales Rep','sales_rep','text',REPS)}
-        {fld('Fence Type','fence_type','text',['PC','SW','WI','Mixed','Other'])}
-        {fld('Estimated Value ($)','estimated_value','number')}
-        {fld('Estimated LF','estimated_lf','number')}
-        {fld('Proposal Value ($)','proposal_value','number')}
-        {fld('Proposal Sent Date','proposal_sent_date','date')}
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Win Probability ({f.win_probability}%)</div>
-          <input type="range" min={0} max={100} value={f.win_probability} onChange={e=>set('win_probability',+e.target.value)} style={{width:'100%'}}/>
-        </div>
-        {fld('Expected Close Date','expected_close_date','date')}
-        {fld('Follow-up Date','follow_up_date','date')}
-        {fld('Notes','notes','textarea')}
-        <div style={{display:'flex',gap:8,marginTop:12}}>
-          <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
-          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
-        </div>
-      </div>
-    </div>
-  </div>;
-}
 
 
 
