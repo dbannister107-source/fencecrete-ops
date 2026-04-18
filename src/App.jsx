@@ -8185,7 +8185,7 @@ function ChatWidget({currentPage}){
       const payload={messages:nextMessages,currentPage:currentPage||'dashboard'};
       const res=await fetch(url,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},
         body:JSON.stringify(payload)
       });
       const rawText=await res.text();
@@ -8201,9 +8201,9 @@ function ChatWidget({currentPage}){
       else if(typeof data?.text==='string')reply=data.text;
       else if(Array.isArray(data?.content)&&typeof data.content[0]?.text==='string')reply=data.content[0].text;
       else if(typeof data?.message?.content?.[0]?.text==='string')reply=data.message.content[0].text;
-      const trimmed=(reply||'').trim();
-      if(trimmed){
-        setMessages(m=>[...m,{role:'assistant',content:trimmed}]);
+      const replyText=(reply||'').trim();
+      if(replyText){
+        setMessages(m=>[...m,{role:'assistant',content:replyText}]);
       }else{
         const errMsg=data?.error||data?.details||`No message field in response (status ${res.status})`;
         throw new Error(errMsg);
