@@ -4570,6 +4570,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   const[aiGenerating,setAiGenerating]=useState(false);
   const[aiError,setAiError]=useState(null);
   const[aiScheduleView,setAiScheduleView]=useState(false); // show AI schedule panel
+  const[aiPanelOpen,setAiPanelOpen]=useState(false); // collapsed by default
   const[aiEditingEntry,setAiEditingEntry]=useState(null); // entry being edited by Max
 
   // Capacity data (molds + plant config + styles)
@@ -5045,7 +5046,7 @@ Generate the optimal 4-week production schedule following all rules.`;
 
     {/* AI SCHEDULE GENERATOR */}
     <div style={{...card,marginBottom:16,padding:16,borderLeft:'4px solid #8A261D',background:aiScheduleView?'rgba(138,38,29,0.04)':'#FFF'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,cursor:'pointer',userSelect:'none'}} onClick={()=>setAiPanelOpen(v=>!v)}>
         <div>
           <div style={{fontSize:13,fontWeight:800,color:'#8A261D',display:'flex',alignItems:'center',gap:6}}>
             🤖 AI Production Scheduler
@@ -5058,15 +5059,18 @@ Generate the optimal 4-week production schedule following all rules.`;
           {aiSchedule&&<button onClick={()=>setAiScheduleView(v=>!v)} style={{...btnS,fontSize:12}}>
             {aiScheduleView?'Hide Schedule':'View Schedule'}
           </button>}
-          <button onClick={generateAISchedule} disabled={aiGenerating} style={{...btnP,background:'#8A261D',fontSize:12,display:'flex',alignItems:'center',gap:6,opacity:aiGenerating?0.7:1}}>
+          <button onClick={e=>{e.stopPropagation();generateAISchedule();}} disabled={aiGenerating} style={{...btnP,background:'#8A261D',fontSize:12,display:'flex',alignItems:'center',gap:6,opacity:aiGenerating?0.7:1}}>
             {aiGenerating?<>⏳ Generating...</>:<>🤖 Generate AI Schedule</>}
           </button>
+          <span style={{fontSize:13,color:'#9E9B96',paddingLeft:4}}>{aiPanelOpen?'▲':'▼'}</span>
         </div>
       </div>
+      {aiPanelOpen&&<>
       {aiError&&<div style={{marginTop:8,padding:'6px 10px',background:'#FEF2F2',borderRadius:6,fontSize:11,color:'#991B1B'}}>{aiError}</div>}
       {aiGenerating&&<div style={{marginTop:10,padding:12,background:'#F9F8F6',borderRadius:8,fontSize:12,color:'#625650',textAlign:'center'}}>
         🤖 Analyzing {jobs.filter(j=>['production_queue','in_production','material_ready','active_install'].includes(j.status)&&n(j.lf_precast)>0).length} jobs, calculating capacity, grouping by style/color...
       </div>}
+      </>}
 
       {/* 4-Week Schedule View */}
       {aiScheduleView&&aiSchedule&&(()=>{
