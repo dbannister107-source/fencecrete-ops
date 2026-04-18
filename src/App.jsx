@@ -10186,6 +10186,20 @@ function ProposalsPage({ jobs }) {
   // review mode
   const [reviewBulk, setReviewBulk] = useState(new Set());
   const [reviewBulkMode, setReviewBulkMode] = useState(false);
+  // pricing intelligence mode
+  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const [pricingData, setPricingData] = useState([]);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingProduct, setPricingProduct] = useState("Precast Concrete");
+  const [pricingDrill, setPricingDrill] = useState(null); // { market, style }
+  const [cmpProduct, setCmpProduct] = useState("Precast Concrete");
+  const [cmpMarket, setCmpMarket] = useState("All");
+  const [cmpStyle, setCmpStyle] = useState("");
+  const [cmpMinLF, setCmpMinLF] = useState(0);
+  const [cmpMaxLF, setCmpMaxLF] = useState(10000);
+  const [cmpBond, setCmpBond] = useState(false);
+  const [cmpCert, setCmpCert] = useState(false);
+  const [cmpResults, setCmpResults] = useState(null);
 
   /* ── data fetch ── */
   const fetchProposals = useCallback(async () => {
@@ -10201,6 +10215,41 @@ function ProposalsPage({ jobs }) {
   }, []);
 
   useEffect(() => { fetchProposals(); }, [fetchProposals]);
+
+  /* ── pricing intelligence: lazy fetch + helpers ── */
+  const PRODUCT_PILLS = ["All Products", "Precast Concrete", "Masonry", "Gates", "Hybrid", "Wood"];
+  const productOf = (ft) => {
+    const s = String(ft || "").toLowerCase();
+    if (!s) return "Other";
+    if (s.includes("gate") || s.includes("aluminum")) return "Gates";
+    if (s.includes("wood")) return "Wood";
+    if (s.includes("+") || s.includes("hybrid") || s.includes("wrought")) return "Hybrid";
+    if (s.includes("masonry")) return "Masonry";
+    if (s.includes("precast")) return "Precast Concrete";
+    return "Other";
+  };
+  const percentile = (arr, p) => {
+    if (!arr || !arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const i = (s.length - 1) * p;
+    const lo = Math.floor(i), hi = Math.ceil(i);
+    return lo === hi ? s[lo] : s[lo] + (s[hi] - s[lo]) * (i - lo);
+  };
+
+  useEffect(() => {
+    if (mode !== "pricing" || pricingLoaded || pricingLoading) return;
+    setPricingLoading(true);
+    (async () => {
+      try {
+        const d = await sbGet("proposals", "source=eq.ingested&source_type=eq.outgoing_proposal&select=*&order=proposal_date.desc.nullsfirst&limit=500");
+        setPricingData(Array.isArray(d) ? d : []);
+        setPricingLoaded(true);
+      } catch (e) {
+        toast.error("Failed to load pricing data");
+      }
+      setPricingLoading(false);
+    })();
+  }, [mode, pricingLoaded, pricingLoading]);
 
   /* ── formatters ── */
   const fCur = (v) => {
@@ -10478,6 +10527,101 @@ function ProposalsPage({ jobs }) {
     return { total, mathErrors, missingCustomer, missingTotal, missingLF, totalBidValue, errorByRep, discrepancies };
   }, [proposals]);
 
+  /* ── pricing intelligence data ── */
+  const pricing = useMemo(() => {
+    const rows = pricingData;
+    const filtered = pricingProduct === "All Products"
+      ? rows
+      : rows.filter(p => productOf(p.fence_type) === pricingProduct);
+
+    // group by market|style
+    const groups = {};
+    filtered.forEach(p => {
+      const mkt = p.market || "Unknown";
+      const sty = p.style || "Unspecified";
+      const key = `${mkt}||${sty}`;
+      if (!groups[key]) groups[key] = { market: mkt, style: sty, deals: [], lfs: [], plfs: [], wins: 0 };
+      groups[key].deals.push(p);
+      if (n(p.total_lf) > 0) groups[key].lfs.push(n(p.total_lf));
+      if (n(p.price_per_lf) > 0) groups[key].plfs.push(n(p.price_per_lf));
+      if (p.status === "won") groups[key].wins++;
+    });
+    const groupList = Object.values(groups)
+      .filter(g => g.deals.length >= 2 && g.plfs.length > 0)
+      .map(g => ({
+        market: g.market,
+        style: g.style,
+        count: g.deals.length,
+        low: percentile(g.plfs, 0.25),
+        avg: g.plfs.reduce((s, x) => s + x, 0) / g.plfs.length,
+        high: percentile(g.plfs, 0.75),
+        avgLF: g.lfs.length ? g.lfs.reduce((s, x) => s + x, 0) / g.lfs.length : 0,
+        wins: g.wins,
+        deals: g.deals,
+      }))
+      .sort((a, b) => {
+        if (a.market !== b.market) return String(a.market).localeCompare(String(b.market));
+        return b.count - a.count;
+      });
+
+    // insights (always across all ingested outgoing, not filtered by product)
+    const byProduct = {};
+    rows.forEach(p => {
+      const prod = productOf(p.fence_type);
+      if (!byProduct[prod]) byProduct[prod] = [];
+      if (n(p.price_per_lf) > 0) byProduct[prod].push(n(p.price_per_lf));
+    });
+    const avgByProd = {};
+    Object.entries(byProduct).forEach(([k, v]) => {
+      avgByProd[k] = v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0;
+    });
+    const masonryPremium = avgByProd["Precast Concrete"] > 0 && avgByProd["Masonry"] > 0
+      ? ((avgByProd["Masonry"] - avgByProd["Precast Concrete"]) / avgByProd["Precast Concrete"]) * 100
+      : null;
+
+    const smallPlfs = rows.filter(p => n(p.total_lf) > 0 && n(p.total_lf) < 500 && n(p.price_per_lf) > 0).map(p => n(p.price_per_lf));
+    const largePlfs = rows.filter(p => n(p.total_lf) > 1000 && n(p.price_per_lf) > 0).map(p => n(p.price_per_lf));
+    const smallAvg = smallPlfs.length ? smallPlfs.reduce((s, x) => s + x, 0) / smallPlfs.length : 0;
+    const largeAvg = largePlfs.length ? largePlfs.reduce((s, x) => s + x, 0) / largePlfs.length : 0;
+
+    const bondPlfs = rows.filter(p => p.bond_required === true && n(p.price_per_lf) > 0).map(p => n(p.price_per_lf));
+    const nonBondPlfs = rows.filter(p => p.bond_required === false && n(p.price_per_lf) > 0).map(p => n(p.price_per_lf));
+    const bondAvg = bondPlfs.length ? bondPlfs.reduce((s, x) => s + x, 0) / bondPlfs.length : 0;
+    const nonBondAvg = nonBondPlfs.length ? nonBondPlfs.reduce((s, x) => s + x, 0) / nonBondPlfs.length : 0;
+
+    return {
+      filtered, groupList, avgByProd, masonryPremium,
+      smallAvg, largeAvg, smallN: smallPlfs.length, largeN: largePlfs.length,
+      bondAvg, nonBondAvg, bondN: bondPlfs.length, nonBondN: nonBondPlfs.length,
+    };
+  }, [pricingData, pricingProduct]); // eslint-disable-line
+
+  const cmpStyles = useMemo(() => {
+    const pool = cmpProduct === "All Products"
+      ? pricingData
+      : pricingData.filter(p => productOf(p.fence_type) === cmpProduct);
+    const set = new Set();
+    pool.forEach(p => { if (p.style) set.add(p.style); });
+    return [...set].sort();
+  }, [pricingData, cmpProduct]); // eslint-disable-line
+
+  const runCompare = () => {
+    let pool = pricingData;
+    if (cmpProduct !== "All Products") pool = pool.filter(p => productOf(p.fence_type) === cmpProduct);
+    if (cmpMarket !== "All") pool = pool.filter(p => p.market === cmpMarket);
+    if (cmpStyle) pool = pool.filter(p => p.style === cmpStyle);
+    const lo = n(cmpMinLF), hi = n(cmpMaxLF) > 0 ? n(cmpMaxLF) : 1e9;
+    pool = pool.filter(p => { const lf = n(p.total_lf); return lf >= lo && lf <= hi; });
+    if (cmpBond) pool = pool.filter(p => p.bond_required === true);
+    if (cmpCert) pool = pool.filter(p => p.certified_payroll === true);
+    const mid = (lo + (n(cmpMaxLF) > 0 ? n(cmpMaxLF) : lo)) / 2;
+    const ranked = [...pool].sort((a, b) => Math.abs(n(a.total_lf) - mid) - Math.abs(n(b.total_lf) - mid)).slice(0, 10);
+    const plfs = ranked.filter(p => n(p.price_per_lf) > 0).map(p => n(p.price_per_lf));
+    const low = plfs.length ? percentile(plfs, 0.25) : 0;
+    const high = plfs.length ? percentile(plfs, 0.75) : 0;
+    setCmpResults({ matches: ranked, low, high, totalMatches: pool.length });
+  };
+
   /* ── sort header helper ── */
   const hdr = (key, label, align = "left") => {
     const active = sortKey === key;
@@ -10519,6 +10663,7 @@ function ProposalsPage({ jobs }) {
     { key: "review", label: `Review Queue${kpis.needsReview ? ` (${kpis.needsReview})` : ""}` },
     { key: "tagging", label: "Win/Loss Tagging" },
     { key: "quality", label: "Data Quality" },
+    { key: "pricing", label: "Pricing Intelligence" },
   ];
 
   /* ═══════════════════════════════════════════════ */
@@ -11233,6 +11378,284 @@ function ProposalsPage({ jobs }) {
                   </table>
                 </div>
               )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══ MODE F: PRICING INTELLIGENCE ═══ */}
+      {mode === "pricing" && (
+        <div>
+          {/* SECTION 1: Product Line Selector */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            {PRODUCT_PILLS.map(p => (
+              <button key={p} onClick={() => { setPricingProduct(p); setPricingDrill(null); }}
+                style={gpill(pricingProduct === p)}>{p}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "#6B6056", marginBottom: 16 }}>
+            {pricingLoading
+              ? "Loading pricing data..."
+              : <>Showing <strong>{pricing.filtered.length}</strong> deal{pricing.filtered.length !== 1 ? "s" : ""} for <strong>{pricingProduct}</strong></>}
+          </div>
+
+          {pricingLoading ? (
+            <div style={{ ...card, padding: 0 }}><SkeletonRows rows={6} cols={8} /></div>
+          ) : (
+            <>
+              {/* SECTION 3: Key Commercial Insights */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
+                <div style={{ ...card }}>
+                  <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Masonry vs Precast Premium</div>
+                  <div style={{ fontFamily: "Syne", fontSize: 32, fontWeight: 800, color: (pricing.masonryPremium ?? 0) >= 0 ? "#8A261D" : "#065F46", marginTop: 4 }}>
+                    {pricing.masonryPremium == null
+                      ? "—"
+                      : `${pricing.masonryPremium >= 0 ? "+" : ""}${pricing.masonryPremium.toFixed(0)}%`}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6B6056", marginTop: 4 }}>
+                    {pricing.masonryPremium == null
+                      ? "Not enough data"
+                      : `Masonry bids at ${pricing.masonryPremium >= 0 ? "a " : ""}${Math.abs(pricing.masonryPremium).toFixed(0)}% ${pricing.masonryPremium >= 0 ? "premium" : "discount"} vs Precast`}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>
+                    {pricing.avgByProd["Masonry"] ? `Masonry avg $${pricing.avgByProd["Masonry"].toFixed(0)}/LF` : ""}
+                    {pricing.avgByProd["Precast Concrete"] ? ` · Precast avg $${pricing.avgByProd["Precast Concrete"].toFixed(0)}/LF` : ""}
+                  </div>
+                </div>
+                <div style={{ ...card }}>
+                  <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Deal Size Effect</div>
+                  <div style={{ fontFamily: "Syne", fontSize: 24, fontWeight: 800, color: "#1A1A1A", marginTop: 4 }}>
+                    {pricing.smallAvg > 0 && pricing.largeAvg > 0
+                      ? <>${pricing.smallAvg.toFixed(0)} → ${pricing.largeAvg.toFixed(0)}/LF</>
+                      : "—"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6B6056", marginTop: 4 }}>
+                    {pricing.smallAvg > 0 && pricing.largeAvg > 0
+                      ? <>Small (&lt;500 LF) bid <strong>${pricing.smallAvg.toFixed(0)}/LF</strong>, large (&gt;1000 LF) bid <strong>${pricing.largeAvg.toFixed(0)}/LF</strong></>
+                      : "Not enough data"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>
+                    {pricing.smallN} small deal{pricing.smallN !== 1 ? "s" : ""} · {pricing.largeN} large deal{pricing.largeN !== 1 ? "s" : ""}
+                    {pricing.smallAvg > 0 && pricing.largeAvg > 0 && (
+                      <span style={{ marginLeft: 6, fontWeight: 600, color: pricing.largeAvg < pricing.smallAvg ? "#065F46" : "#8A261D" }}>
+                        Δ {pricing.largeAvg < pricing.smallAvg ? "−" : "+"}${Math.abs(pricing.largeAvg - pricing.smallAvg).toFixed(0)}/LF on large
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ ...card }}>
+                  <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Bond Premium</div>
+                  <div style={{ fontFamily: "Syne", fontSize: 32, fontWeight: 800, color: "#8A261D", marginTop: 4 }}>
+                    {pricing.bondN > 0 && pricing.nonBondN > 0
+                      ? <>{pricing.bondAvg - pricing.nonBondAvg >= 0 ? "+" : "−"}${Math.abs(pricing.bondAvg - pricing.nonBondAvg).toFixed(0)}/LF</>
+                      : "—"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6B6056", marginTop: 4 }}>
+                    {pricing.bondN > 0 && pricing.nonBondN > 0
+                      ? <>Bonded jobs bid at <strong>${Math.abs(pricing.bondAvg - pricing.nonBondAvg).toFixed(0)}/LF</strong> {pricing.bondAvg >= pricing.nonBondAvg ? "premium" : "discount"}</>
+                      : "Not enough data"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>
+                    Bonded ${pricing.bondAvg.toFixed(0)}/LF · {pricing.bondN} · Non-bonded ${pricing.nonBondAvg.toFixed(0)}/LF · {pricing.nonBondN}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Pricing Library Table */}
+              <div style={{ ...card, padding: 0, overflow: "auto", marginBottom: 16 }}>
+                <div style={{ padding: 16, borderBottom: "1px solid #F1EFEC" }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", margin: 0 }}>Pricing Library</h3>
+                  <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>
+                    Grouped by market &amp; style · Only groups with 2+ deals · Click a row to see comparable deals
+                  </div>
+                </div>
+                {pricing.groupList.length === 0 ? (
+                  <div style={{ padding: 24 }}>
+                    <EmptyState compact icon="📊" title="No groups meet threshold" subtitle="Need at least 2 deals per market/style combination." />
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                      {["Market","Style","Deals","Low $/LF","Avg $/LF","High $/LF","Avg LF","Wins"].map((h,i) => (
+                        <th key={h} style={{ textAlign: i < 2 ? "left" : "right", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {pricing.groupList.map((g, i) => {
+                        const tierBg = g.count >= 5 ? "#D1FAE5" : g.count >= 3 ? "#FEF3C7" : "#F3F4F6";
+                        const tierText = g.count >= 5 ? "#065F46" : g.count >= 3 ? "#78350F" : "#374151";
+                        const isDrilled = pricingDrill && pricingDrill.market === g.market && pricingDrill.style === g.style;
+                        return (
+                          <tr key={i} onClick={() => setPricingDrill(isDrilled ? null : { market: g.market, style: g.style })}
+                            style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer", background: isDrilled ? "#FDF4F4" : "transparent" }}
+                            onMouseEnter={e => { if (!isDrilled) e.currentTarget.style.background = "#FAFAF8"; }}
+                            onMouseLeave={e => { if (!isDrilled) e.currentTarget.style.background = "transparent"; }}>
+                            <td style={{ padding: "10px 12px" }}>
+                              {g.market && MC[g.market]
+                                ? <span style={pill(MC[g.market], MB[g.market] || "#F4F4F2", MC[g.market])}>{MS[g.market] || g.market}</span>
+                                : (MS[g.market] || g.market)}
+                            </td>
+                            <td style={{ padding: "10px 12px", fontWeight: 600 }}>{g.style}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                              <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 9999, background: tierBg, color: tierText, fontSize: 11, fontWeight: 700 }}>{g.count}</span>
+                            </td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${g.low.toFixed(0)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "#8A261D" }}>${g.avg.toFixed(0)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${g.high.toFixed(0)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{g.avgLF ? Math.round(g.avgLF).toLocaleString() : "—"}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: g.wins > 0 ? "#065F46" : "#9E9B96" }}>{g.wins}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Drill-down deals for selected group */}
+              {pricingDrill && (() => {
+                const group = pricing.groupList.find(g => g.market === pricingDrill.market && g.style === pricingDrill.style);
+                if (!group) return null;
+                return (
+                  <div style={{ ...card, marginBottom: 16, background: "#FDF9F6" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <h3 style={{ fontSize: 14, fontWeight: 700, color: "#8A261D", margin: 0 }}>
+                        {group.count} comparable deals — {MS[group.market] || group.market} · {group.style}
+                      </h3>
+                      <button onClick={() => setPricingDrill(null)} style={{ ...btnS, padding: "4px 10px", fontSize: 11 }}>Close ✕</button>
+                    </div>
+                    <div style={{ overflow: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                          {["Date","Customer","Project","LF","$/LF","Total","Status"].map((h,i) => (
+                            <th key={h} style={{ textAlign: i < 3 || i === 6 ? "left" : "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {group.deals.map(p => (
+                            <tr key={p.id} onClick={() => openDetail(p)}
+                              style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "#F4F4F2"}
+                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                              <td style={{ padding: "8px 12px" }}>{fD(p.proposal_date)}</td>
+                              <td style={{ padding: "8px 12px" }}>{p.customer_name || "—"}</td>
+                              <td style={{ padding: "8px 12px", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title || "—"}</td>
+                              <td style={{ padding: "8px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{n(p.total_lf) ? n(p.total_lf).toLocaleString() : "—"}</td>
+                              <td style={{ padding: "8px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{n(p.price_per_lf) ? `$${n(p.price_per_lf).toFixed(0)}` : "—"}</td>
+                              <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fCur(p.grand_total)}</td>
+                              <td style={{ padding: "8px 12px" }}><span style={pill(stColor(p.status), stBg(p.status))}>{(p.status || "pending").replace(/_/g," ")}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* SECTION 4: Comparable Deals Lookup */}
+              <div style={{ ...card }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1A1A1A", marginBottom: 4 }}>Comparable Deals Lookup</h3>
+                <div style={{ fontSize: 11, color: "#9E9B96", marginBottom: 12 }}>Find historical proposals similar to an upcoming estimate</div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, 1fr)", gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Product</label>
+                    <select value={cmpProduct} onChange={e => { setCmpProduct(e.target.value); setCmpStyle(""); }}
+                      style={{ ...inputS, padding: "6px 8px", fontSize: 12 }}>
+                      {PRODUCT_PILLS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Market</label>
+                    <select value={cmpMarket} onChange={e => setCmpMarket(e.target.value)}
+                      style={{ ...inputS, padding: "6px 8px", fontSize: 12 }}>
+                      <option value="All">All</option>
+                      {MKTS.map(m => <option key={m} value={m}>{MS[m] || m}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Style</label>
+                    <select value={cmpStyle} onChange={e => setCmpStyle(e.target.value)}
+                      style={{ ...inputS, padding: "6px 8px", fontSize: 12 }}>
+                      <option value="">Any</option>
+                      {cmpStyles.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Min LF</label>
+                    <input type="number" value={cmpMinLF} onChange={e => setCmpMinLF(e.target.value === "" ? 0 : Number(e.target.value))}
+                      style={{ ...inputS, padding: "6px 8px", fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B6056", display: "block", marginBottom: 4 }}>Max LF</label>
+                    <input type="number" value={cmpMaxLF} onChange={e => setCmpMaxLF(e.target.value === "" ? 0 : Number(e.target.value))}
+                      style={{ ...inputS, padding: "6px 8px", fontSize: 12 }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 4 }}>
+                    <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                      <input type="checkbox" checked={cmpBond} onChange={e => setCmpBond(e.target.checked)} /> Bond required
+                    </label>
+                    <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                      <input type="checkbox" checked={cmpCert} onChange={e => setCmpCert(e.target.checked)} /> Certified payroll
+                    </label>
+                  </div>
+                </div>
+                <button onClick={runCompare} style={{ ...btnP, padding: "8px 18px", fontSize: 13 }}>Find Comparable Deals</button>
+
+                {cmpResults && (
+                  <div style={{ marginTop: 16 }}>
+                    {cmpResults.matches.length === 0 ? (
+                      <div style={{ padding: 16, background: "#F9FAFB", borderRadius: 8, fontSize: 13, color: "#6B6056" }}>
+                        No matching deals found. Try broadening filters.
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ padding: 14, background: "#FDF4F4", border: "1px solid #8A261D", borderRadius: 10, marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Recommended Range</div>
+                          <div style={{ fontFamily: "Syne", fontSize: 24, fontWeight: 800, color: "#8A261D", marginTop: 2 }}>
+                            ${cmpResults.low.toFixed(0)} – ${cmpResults.high.toFixed(0)}/LF
+                          </div>
+                          <div style={{ fontSize: 12, color: "#6B6056", marginTop: 2 }}>
+                            Based on {cmpResults.matches.length} comparable deal{cmpResults.matches.length !== 1 ? "s" : ""} (25th – 75th percentile of $/LF)
+                            {cmpResults.totalMatches > cmpResults.matches.length && ` · ${cmpResults.totalMatches} total matches`}
+                          </div>
+                        </div>
+                        <div style={{ overflow: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                            <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                              {["Date","Customer","Project","Market","Style","LF","$/LF","Total","Status"].map((h,i) => (
+                                <th key={h} style={{ textAlign: i < 5 || i === 8 ? "left" : "right", padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {cmpResults.matches.map(p => (
+                                <tr key={p.id} onClick={() => openDetail(p)}
+                                  style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer" }}
+                                  onMouseEnter={e => e.currentTarget.style.background = "#FAFAF8"}
+                                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                  <td style={{ padding: "8px 12px" }}>{fD(p.proposal_date)}</td>
+                                  <td style={{ padding: "8px 12px" }}>{p.customer_name || "—"}</td>
+                                  <td style={{ padding: "8px 12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title || "—"}</td>
+                                  <td style={{ padding: "8px 12px" }}>
+                                    {p.market && MC[p.market]
+                                      ? <span style={pill(MC[p.market], MB[p.market] || "#F4F4F2", MC[p.market])}>{MS[p.market] || p.market}</span>
+                                      : "—"}
+                                  </td>
+                                  <td style={{ padding: "8px 12px" }}>{p.style || "—"}</td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{n(p.total_lf) ? n(p.total_lf).toLocaleString() : "—"}</td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{n(p.price_per_lf) ? `$${n(p.price_per_lf).toFixed(0)}` : "—"}</td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700 }}>{fCur(p.grand_total)}</td>
+                                  <td style={{ padding: "8px 12px" }}><span style={pill(stColor(p.status), stBg(p.status))}>{(p.status || "pending").replace(/_/g," ")}</span></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
