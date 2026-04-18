@@ -8230,7 +8230,7 @@ function ChatWidget({currentPage}){
 }
 
 /* ═══ TOPBAR ═══ */
-function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBack,canGoBack}){
+function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBack,canGoBack,pageLabel}){
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
@@ -8244,9 +8244,22 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBa
     setTimeout(()=>setRefreshState('idle'),1000);
   };
   return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}}>
-    <style>{`@keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    <style>{`
+      @keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      @keyframes fcShimmerRow{0%{background-position:200% 0}100%{background-position:-200% 0}}
+      .fc-row{transition:background .12s;}
+      .fc-row:hover{background:#F9F8F6 !important;}
+      .fc-btn{transition:background .12s,border-color .12s,color .12s,box-shadow .12s;}
+      .fc-btn:hover{background:#F4F4F2;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+      .fc-btn-primary{transition:background .12s,box-shadow .12s;}
+      .fc-btn-primary:hover{background:#6B1D16 !important;box-shadow:0 2px 8px rgba(138,38,29,.25);}
+      .fc-card{transition:box-shadow .15s,border-color .15s;}
+      .fc-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);border-color:#D1CDC9 !important;}
+      .fc-pill{transition:background .12s,color .12s;}
+    `}</style>
     {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
     {canGoBack&&<button onClick={onBack} aria-label="Go back" title="Go back" style={{background:'none',border:'none',borderRadius:8,height:32,padding:'0 8px',cursor:'pointer',color:'#625650',fontSize:14,display:'inline-flex',alignItems:'center',gap:4,fontWeight:600,flexShrink:0,transition:'color .15s'}} onMouseEnter={e=>e.currentTarget.style.color='#8A261D'} onMouseLeave={e=>e.currentTarget.style.color='#625650'}>&#8592; Back</button>}
+    {pageLabel&&!canGoBack&&<span style={{fontSize:13,fontWeight:700,color:'#1A1A1A',letterSpacing:'-0.01em',fontFamily:'Syne, sans-serif'}}>{pageLabel}</span>}
     <div style={{flex:1}}/>
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
@@ -8299,7 +8312,7 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
   const acv=linkedJob?n(linkedJob.adj_contract_value||linkedJob.contract_value):0;
   const billed=linkedJob?n(linkedJob.ytd_invoiced):0;
   const pct=acv>0?Math.round(billed/acv*100):0;
-  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
+  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',transition:'box-shadow .15s,border-color .15s',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
     <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
     {lead.project_description&&<div style={{fontSize:11,color:'#625650',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6,alignItems:'center'}}>
@@ -12156,6 +12169,29 @@ function SalesDashboardPage({jobs,onNav}){
   </div>;
 }
 
+const PAGE_LABELS={
+  dashboard:'Dashboard',
+  projects:'Projects',
+  map:'Project Map',
+  production:'Production Board',
+  production_planning:'Production Planning',
+  production_orders:'Production Orders',
+  material_calc:'Material Calculator',
+  material_requests:'Material Requests',
+  daily_report:'Daily Report',
+  pm_billing:'PM Billing',
+  billing:'AR Billing',
+  change_orders:'Change Orders',
+  estimating:'Estimating',
+  reports:'Reports',
+  import_projects:'Import Projects',
+  sales_dashboard:'Sales Dashboard',
+  pipeline:'Sales Pipeline',
+  prospecting:'Prospecting',
+  contacts:'Contacts',
+  fleet:'Fleet',
+  admin:'Admin',
+};
 const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
@@ -12555,7 +12591,7 @@ function AppShell(){
         </div>
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
-        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)} onBack={navigateBack} canGoBack={pageHistory.length>0}/>
+        <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)} onBack={navigateBack} canGoBack={pageHistory.length>0} pageLabel={PAGE_LABELS[page]||'Fencecrete'}/>
         <div style={{flex:1,overflowY:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
