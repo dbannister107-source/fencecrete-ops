@@ -1677,13 +1677,38 @@ function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
   const[q,setQ]=useState('');
   const[cursor,setCursor]=useState(0);
   const[recent,setRecent]=useState(()=>{try{return JSON.parse(localStorage.getItem('fc_cmdk_recent')||'[]');}catch(e){return[];}});
+  const[aiResults,setAiResults]=useState([]);
+  const[aiSearching,setAiSearching]=useState(false);
+  const aiDebounce=useRef(null);
+  // AI natural language search — triggers when query looks like a question or filter
+  const isNLQuery=(s)=>s.length>8&&(/^(show|find|list|which|what|who|how many|filter|get)/i.test(s)||s.includes(' and ')||s.includes(' with ')||s.includes(' over ')||s.includes(' under '));
+  useEffect(()=>{
+    if(!q||!isNLQuery(q)){setAiResults([]);return;}
+    clearTimeout(aiDebounce.current);
+    aiDebounce.current=setTimeout(async()=>{
+      setAiSearching(true);
+      try{
+        const jobSummary=(jobs||[]).slice(0,150).map(j=>({id:j.id,name:j.job_name,number:j.job_number,customer:j.customer_name,market:j.market,status:j.status,pm:j.pm,value:j.adj_contract_value||j.contract_value,lf:j.total_lf,rep:j.sales_rep}));
+        const res=await fetch(`${SB}/functions/v1/chat-assistant`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message:`You are a search filter for Fencecrete OPS. Given this query: "${q}", return a JSON array of job IDs from the following jobs that match. Return ONLY a JSON array of id strings, no other text. Jobs: ${JSON.stringify(jobSummary)}`})});
+        const data=await res.json();
+        const text=data?.response||data?.content?.[0]?.text||'';
+        const match=text.match(/\[[\s\S]*?\]/);
+        if(match){
+          const ids=JSON.parse(match[0]);
+          const matched=(jobs||[]).filter(j=>ids.includes(j.id)).slice(0,6);
+          setAiResults(matched.map(j=>({type:'job',key:'ai-'+j.id,label:j.job_name,sub:`#${j.job_number} · ${j.customer_name||'—'} · ${j.market}`,job:j,group:'AI Results'})));
+        }
+      }catch(e){setAiResults([]);}
+      setAiSearching(false);
+    },600);
+  },[q,jobs]);
   const ref=useRef();
   useEffect(()=>{if(open){setQ('');setCursor(0);setTimeout(()=>ref.current?.focus(),50);}},[open]);
   const jobHits=useMemo(()=>{if(!q||q.length<1)return[];return(jobs||[]).filter(j=>fuzzyMatch(q,`${j.job_name||''} ${j.job_number||''} ${j.customer_name||''} ${j.address||''}`)).slice(0,8).map(j=>({type:'job',key:'job-'+j.id,label:j.job_name,sub:`#${j.job_number} · ${j.customer_name||'—'}`,job:j,group:'Projects'}));},[q,jobs]);
   const pageHits=useMemo(()=>{if(!q)return PAGE_INDEX.slice(0,5).map(p=>({type:'page',key:'page-'+p.key,label:p.label,icon:p.icon,pageKey:p.key,group:'Pages'}));return PAGE_INDEX.filter(p=>fuzzyMatch(q,p.label)).map(p=>({type:'page',key:'page-'+p.key,label:p.label,icon:p.icon,pageKey:p.key,group:'Pages'}));},[q]);
   const actionHits=useMemo(()=>{const list=[{key:'act-new',label:'New Project',icon:'➕',pageKey:'projects'},{key:'act-lead',label:'New Lead',icon:'➕',pageKey:'pipeline'}];if(!q)return list.map(a=>({...a,type:'action',group:'Actions'}));return list.filter(a=>fuzzyMatch(q,a.label)).map(a=>({...a,type:'action',group:'Actions'}));},[q]);
   const recentHits=useMemo(()=>{if(q)return[];return recent.slice(0,4).map(r=>({...r,group:'Recent'}));},[q,recent]);
-  const flat=useMemo(()=>[...recentHits,...jobHits,...pageHits,...actionHits],[recentHits,jobHits,pageHits,actionHits]);
+  const flat=useMemo(()=>[...recentHits,...(aiResults.length?aiResults:jobHits),...pageHits,...actionHits],[recentHits,jobHits,aiResults,pageHits,actionHits]);
   const grouped=useMemo(()=>{const g={};flat.forEach(h=>{if(!g[h.group])g[h.group]=[];g[h.group].push(h);});return g;},[flat]);
   const rememberRecent=(hit)=>{
     const mini={type:hit.type,key:hit.key,label:hit.label,sub:hit.sub,icon:hit.icon,pageKey:hit.pageKey,job:hit.job};
@@ -5205,7 +5230,7 @@ Generate the optimal 4-week production schedule following all rules.`;
     </div>
 
     {/* TWO COLUMN LAYOUT */}
-    <div style={{display:'grid',gridTemplateColumns:'40% 60%',gap:16,alignItems:'start'}}>
+    <div style={{display:'grid',gridTemplateColumns:v.mobile||v.tablet?'1fr':'40% 60%',gap:16,alignItems:'start'}}>
       {/* LEFT — QUEUE */}
       <div style={{...card,padding:14,borderTop:'3px solid #854F0B'}}>
         <div style={{marginBottom:8}}>
@@ -8256,6 +8281,15 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBa
       .fc-card{transition:box-shadow .15s,border-color .15s;}
       .fc-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);border-color:#D1CDC9 !important;}
       .fc-pill{transition:background .12s,color .12s;}
+      button:not([disabled]):hover{opacity:0.92;}
+      .fc-tab-btn{transition:background .12s,color .12s,border-color .12s;}
+      .fc-tab-btn:hover{background:#F4F4F2 !important;}
+      .fc-kpi-card{transition:box-shadow .15s,transform .12s;}
+      .fc-kpi-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-1px);}
+      input:focus,select:focus,textarea:focus{outline:none;border-color:#8A261D !important;box-shadow:0 0 0 3px rgba(138,38,29,.1);}
+      .fc-status-badge{transition:background .12s,color .12s;}
+      a{color:#8A261D;text-decoration:none;}
+      a:hover{text-decoration:underline;}
     `}</style>
     {showMenu&&onMenu&&<button onClick={onMenu} aria-label="Menu" style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,width:34,height:32,cursor:'pointer',color:'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>☰</button>}
     {canGoBack&&<button onClick={onBack} aria-label="Go back" title="Go back" style={{background:'none',border:'none',borderRadius:8,height:32,padding:'0 8px',cursor:'pointer',color:'#625650',fontSize:14,display:'inline-flex',alignItems:'center',gap:4,fontWeight:600,flexShrink:0,transition:'color .15s'}} onMouseEnter={e=>e.currentTarget.style.color='#8A261D'} onMouseLeave={e=>e.currentTarget.style.color='#625650'}>&#8592; Back</button>}
@@ -12032,9 +12066,9 @@ function SalesDashboardPage({jobs,onNav}){
     {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
   </div>);
   if(loading)return <div><h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1><SkeletonKpis n={4}/><div style={{height:16}}/><SkeletonKpis n={4}/><div style={{height:16}}/><div style={{...card,padding:20}}><Skeleton h={240} r={10}/></div></div>;
-  return <div>
+  return <div style={{paddingBottom:v?.mobile?80:0}}>
     <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginBottom:14}}>
       {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8A261D')}
       {kpi('Weighted Forecast',$k(weightedForecast),'value × win probability','#8A261D')}
       {kpi('Win Rate (90d)',`${winRate.toFixed(0)}%`,`${recentWon.length}W · ${recentLost.length}L`,winRate>=50?'#065F46':winRate>=25?'#B45309':'#991B1B')}
