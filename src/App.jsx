@@ -11961,6 +11961,7 @@ function ProposalsPage({ jobs }) {
   );
 }
 function SalesDashboardPage({jobs,onNav}){
+  const v=useViewport();
   const[leads,setLeads]=useState([]);const[allLeads,setAllLeads]=useState([]);
   const[loading,setLoading]=useState(true);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
@@ -12066,7 +12067,7 @@ function SalesDashboardPage({jobs,onNav}){
     {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
   </div>);
   if(loading)return <div><h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1><SkeletonKpis n={4}/><div style={{height:16}}/><SkeletonKpis n={4}/><div style={{height:16}}/><div style={{...card,padding:20}}><Skeleton h={240} r={10}/></div></div>;
-  return <div style={{paddingBottom:v?.mobile?80:0}}>
+  return <div style={{paddingBottom:v.mobile?80:0}}>
     <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:16}}>Sales Dashboard</h1>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginBottom:14}}>
       {kpi('Pipeline Value',$k(pipelineValue),`${proposalsOpen.length} open proposals`,'#8A261D')}
