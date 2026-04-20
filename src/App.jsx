@@ -3452,9 +3452,12 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
 /* ═══ REPORTS PAGE ═══ */
 function ReportsPageInner({jobs,onNav,onOpenJob}){
   const[activeRpt,setActiveRpt]=useState(null);const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
-  // Sales data — used by Waterfall, Rep Scorecard
+  // Sales data — used by Waterfall, Rep Scorecard, Prospect Attribution
   const[leads,setLeads]=useState([]);
   useEffect(()=>{sbGet('leads','select=*&order=updated_at.desc').then(d=>{if(Array.isArray(d))setLeads(d);else console.error('[Reports] leads fetch returned non-array:',d);}).catch(e=>console.error('[Reports] leads fetch failed:',e));},[]);
+  // Prospect companies — used by Prospect Conversion Attribution report
+  const[prospects,setProspects]=useState([]);
+  useEffect(()=>{sbGet('prospect_companies','select=id,company_name,tier,assigned_rep,fencecrete_relationship,markets_active').then(d=>{if(Array.isArray(d))setProspects(d);}).catch(e=>console.error('[Reports] prospects fetch failed:',e));},[]);
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -3499,6 +3502,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   ];
   const salesReports=[
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
+    {id:'prospect_attribution',title:'Prospect Conversion Attribution',desc:'Pipeline value traced back to Prospecting — proves ROI of proactive outreach',icon:'🔭'},
   ];
   const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
   const productionReports=[
@@ -3872,6 +3876,240 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             <Bar dataKey="won" fill="#065F46" radius={[0,6,6,0]} label={{position:'right',formatter:v=>$k(v),fill:'#625650',fontSize:11}}/>
           </BarChart>
         </ResponsiveContainer>
+      </div>;
+    }
+    if(activeRpt==='prospect_attribution'){
+      // Split leads by whether they came from prospecting or not
+      const pLeads=leads.filter(l=>l.source_prospect_id);
+      const oLeads=leads.filter(l=>!l.source_prospect_id);
+      const isWon=l=>l.stage==='won';
+      const isLost=l=>l.stage==='lost';
+      const isClosed=l=>isWon(l)||isLost(l);
+      // Headline KPI numbers
+      const pWon=pLeads.filter(isWon);
+      const pLost=pLeads.filter(isLost);
+      const pOpen=pLeads.filter(l=>!isClosed(l));
+      const pWonVal=pWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+      const pOpenVal=pOpen.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+      const pClosedCt=pWon.length+pLost.length;
+      const pWinRate=pClosedCt>0?(pWon.length/pClosedCt)*100:0;
+      const pAvgWon=pWon.length>0?pWonVal/pWon.length:0;
+      // Comparison (other lead sources)
+      const oWon=oLeads.filter(isWon);
+      const oLost=oLeads.filter(isLost);
+      const oOpen=oLeads.filter(l=>!isClosed(l));
+      const oWonVal=oWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+      const oOpenVal=oOpen.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0);
+      const oClosedCt=oWon.length+oLost.length;
+      const oWinRate=oClosedCt>0?(oWon.length/oClosedCt)*100:0;
+      const oAvgWon=oWon.length>0?oWonVal/oWon.length:0;
+      // Empty-state: no prospect-sourced leads yet
+      if(leads.length===0){
+        return <div style={{...card,padding:28,textAlign:'center',color:'#9E9B96'}}>
+          <div style={{fontSize:28,marginBottom:8}}>⏳</div>
+          <div style={{fontSize:13}}>Loading pipeline data…</div>
+        </div>;
+      }
+      if(pLeads.length===0){
+        return <div>
+          <div style={{marginBottom:16}}>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Prospect Conversion Attribution</div>
+            <div style={{fontSize:12,color:'#625650'}}>Pipeline value traced back to Prospecting</div>
+          </div>
+          <div style={{...card,padding:28,textAlign:'center'}}>
+            <div style={{fontSize:32,marginBottom:8}}>🔭</div>
+            <div style={{fontSize:14,fontWeight:700,color:'#1A1A1A',marginBottom:6}}>No prospect-sourced leads yet</div>
+            <div style={{fontSize:12,color:'#625650',maxWidth:460,margin:'0 auto',lineHeight:1.5}}>
+              When a prospect on the Prospecting page is converted into a Pipeline lead (via the green <strong style={{color:'#065F46'}}>→ Convert to Lead</strong> button on a prospect's detail drawer), that lead will be tracked here. Conversions, win rates, and revenue attribution will populate as prospects move through the pipeline.
+            </div>
+          </div>
+        </div>;
+      }
+      // Per-prospect roll-up
+      const pMap={};
+      prospects.forEach(p=>{pMap[p.id]={prospect:p,leads:[],won:[],lost:[],open:[]};});
+      pLeads.forEach(l=>{
+        const key=l.source_prospect_id;
+        if(!pMap[key])pMap[key]={prospect:{id:key,company_name:l.company_name||'(unknown)',tier:'—',assigned_rep:l.sales_rep},leads:[],won:[],lost:[],open:[]};
+        pMap[key].leads.push(l);
+        if(isWon(l))pMap[key].won.push(l);
+        else if(isLost(l))pMap[key].lost.push(l);
+        else pMap[key].open.push(l);
+      });
+      const prospectRows=Object.values(pMap).filter(r=>r.leads.length>0).map(r=>({
+        name:r.prospect.company_name,tier:r.prospect.tier||'—',rep:r.prospect.assigned_rep||'—',
+        leadCt:r.leads.length,wonCt:r.won.length,lostCt:r.lost.length,openCt:r.open.length,
+        wonVal:r.won.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0),
+        openVal:r.open.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0),
+        winRate:(r.won.length+r.lost.length)>0?(r.won.length/(r.won.length+r.lost.length))*100:null,
+      })).sort((a,b)=>b.wonVal-a.wonVal||b.leadCt-a.leadCt);
+      // Per-rep roll-up
+      const repMap={};
+      pLeads.forEach(l=>{
+        const rep=l.sales_rep||'Unassigned';
+        if(!repMap[rep])repMap[rep]={rep,leadCt:0,won:[],lost:[],open:[]};
+        repMap[rep].leadCt++;
+        if(isWon(l))repMap[rep].won.push(l);
+        else if(isLost(l))repMap[rep].lost.push(l);
+        else repMap[rep].open.push(l);
+      });
+      const repRows=Object.values(repMap).map(r=>({
+        rep:r.rep,leadCt:r.leadCt,wonCt:r.won.length,lostCt:r.lost.length,openCt:r.open.length,
+        wonVal:r.won.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0),
+        openVal:r.open.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0),
+        winRate:(r.won.length+r.lost.length)>0?(r.won.length/(r.won.length+r.lost.length))*100:null,
+      })).sort((a,b)=>b.wonVal-a.wonVal);
+      // Time-series: conversions created by month (trailing 12 months)
+      const now=new Date();const months=[];
+      for(let i=11;i>=0;i--){
+        const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+        const k=d.toISOString().slice(0,7);
+        months.push({key:k,label:d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}),converted:0,won:0,wonVal:0});
+      }
+      const monthIdx={};months.forEach((m,i)=>{monthIdx[m.key]=i;});
+      pLeads.forEach(l=>{
+        if(l.created_at){
+          const k=l.created_at.slice(0,7);
+          if(k in monthIdx)months[monthIdx[k]].converted++;
+        }
+        if(isWon(l)&&l.won_date){
+          const k=l.won_date.slice(0,7);
+          if(k in monthIdx){months[monthIdx[k]].won++;months[monthIdx[k]].wonVal+=n(l.proposal_value||l.estimated_value);}
+        }
+      });
+      const tierColor={A:'#8A261D',B:'#1D4ED8',C:'#6B7280','—':'#9E9B96'};
+      const thS={textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase',borderBottom:'2px solid #E5E3E0'};
+      const tdS={padding:'6px 8px',fontSize:12};
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>Prospect Conversion Attribution</div>
+            <div style={{fontSize:12,color:'#625650'}}>Pipeline value traced back to proactive prospecting</div>
+          </div>
+          <button onClick={()=>downloadCSV('prospect_attribution.csv',prospectRows.map(r=>({Prospect:r.name,Tier:r.tier,Rep:r.rep,Leads:r.leadCt,Won:r.wonCt,Lost:r.lostCt,Open:r.openCt,WonValue:Math.round(r.wonVal),OpenValue:Math.round(r.openVal),WinRate:r.winRate===null?'—':r.winRate.toFixed(0)+'%'})))} style={btnS}>Export CSV</button>
+        </div>
+        {/* Headline KPI cards */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:16}}>
+          <div style={{...card,borderTop:'3px solid #8A261D'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Prospect-Sourced Leads</div>
+            <div style={{fontSize:26,fontWeight:900,color:'#1A1A1A'}}>{pLeads.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>of {leads.length} total pipeline leads ({leads.length>0?Math.round(pLeads.length/leads.length*100):0}%)</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #065F46'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Won from Prospecting</div>
+            <div style={{fontSize:26,fontWeight:900,color:'#065F46'}}>{pWon.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>{$(pWonVal)}</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #1D4ED8'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Open Pipeline</div>
+            <div style={{fontSize:26,fontWeight:900,color:'#1D4ED8'}}>{pOpen.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>{$(pOpenVal)} weighted value</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #B45309'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Win Rate</div>
+            <div style={{fontSize:26,fontWeight:900,color:pWinRate>=oWinRate?'#065F46':'#B45309'}}>{pClosedCt>0?pWinRate.toFixed(0)+'%':'—'}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>{pWon.length} won · {pLost.length} lost</div>
+          </div>
+        </div>
+        {/* Comparison: prospect-sourced vs other */}
+        <div style={{...card,marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:10,textTransform:'uppercase',letterSpacing:0.4}}>Prospecting vs Other Sources</div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr>
+              <th style={thS}>Source</th><th style={{...thS,textAlign:'right'}}>Leads</th>
+              <th style={{...thS,textAlign:'right'}}>Won</th><th style={{...thS,textAlign:'right'}}>Won $</th>
+              <th style={{...thS,textAlign:'right'}}>Avg Won $</th><th style={{...thS,textAlign:'right'}}>Win Rate</th>
+              <th style={{...thS,textAlign:'right'}}>Open $</th>
+            </tr></thead>
+            <tbody>
+              <tr style={{borderBottom:'1px solid #F4F4F2',background:'#FDF4F4'}}>
+                <td style={{...tdS,fontWeight:700,color:'#8A261D'}}>🔭 Prospecting</td>
+                <td style={{...tdS,textAlign:'right'}}>{pLeads.length}</td>
+                <td style={{...tdS,textAlign:'right',fontWeight:700,color:'#065F46'}}>{pWon.length}</td>
+                <td style={{...tdS,textAlign:'right',fontWeight:800,fontFamily:'Inter'}}>{$(pWonVal)}</td>
+                <td style={{...tdS,textAlign:'right'}}>{pWon.length>0?$(pAvgWon):'—'}</td>
+                <td style={{...tdS,textAlign:'right',fontWeight:700,color:pWinRate>=oWinRate?'#065F46':'#B45309'}}>{pClosedCt>0?pWinRate.toFixed(0)+'%':'—'}</td>
+                <td style={{...tdS,textAlign:'right'}}>{$(pOpenVal)}</td>
+              </tr>
+              <tr style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{...tdS,color:'#625650'}}>Other (inbound, referral, etc.)</td>
+                <td style={{...tdS,textAlign:'right'}}>{oLeads.length}</td>
+                <td style={{...tdS,textAlign:'right',color:'#065F46'}}>{oWon.length}</td>
+                <td style={{...tdS,textAlign:'right',fontFamily:'Inter'}}>{$(oWonVal)}</td>
+                <td style={{...tdS,textAlign:'right'}}>{oWon.length>0?$(oAvgWon):'—'}</td>
+                <td style={{...tdS,textAlign:'right'}}>{oClosedCt>0?oWinRate.toFixed(0)+'%':'—'}</td>
+                <td style={{...tdS,textAlign:'right'}}>{$(oOpenVal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {/* Time series */}
+        <div style={{...card,marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:10,textTransform:'uppercase',letterSpacing:0.4}}>Conversions & Wins — Last 12 Months</div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={months} margin={{top:4,right:12,bottom:4,left:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F4F4F2"/>
+              <XAxis dataKey="label" stroke="#9E9B96" fontSize={11}/>
+              <YAxis stroke="#9E9B96" fontSize={11} allowDecimals={false}/>
+              <Tooltip contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}/>
+              <Legend/>
+              <Bar dataKey="converted" fill="#1D4ED8" name="Converted to Lead" radius={[4,4,0,0]}/>
+              <Bar dataKey="won" fill="#065F46" name="Won" radius={[4,4,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Per-prospect table */}
+        {prospectRows.length>0&&<div style={{...card,marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:10,textTransform:'uppercase',letterSpacing:0.4}}>Top Converting Prospects</div>
+          <div style={{overflow:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr>
+                <th style={thS}>Prospect</th><th style={thS}>Tier</th><th style={thS}>Rep</th>
+                <th style={{...thS,textAlign:'right'}}>Leads</th>
+                <th style={{...thS,textAlign:'right'}}>Won</th>
+                <th style={{...thS,textAlign:'right'}}>Won $</th>
+                <th style={{...thS,textAlign:'right'}}>Open $</th>
+                <th style={{...thS,textAlign:'right'}}>Win Rate</th>
+              </tr></thead>
+              <tbody>
+                {prospectRows.map(r=><tr key={r.name} style={{borderBottom:'1px solid #F4F4F2'}}>
+                  <td style={{...tdS,fontWeight:600,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</td>
+                  <td style={tdS}><span style={{background:tierColor[r.tier]||'#6B7280',color:'#FFF',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700}}>{r.tier}</span></td>
+                  <td style={tdS}>{r.rep}</td>
+                  <td style={{...tdS,textAlign:'right'}}>{r.leadCt}</td>
+                  <td style={{...tdS,textAlign:'right',color:r.wonCt>0?'#065F46':'#9E9B96',fontWeight:r.wonCt>0?700:400}}>{r.wonCt}</td>
+                  <td style={{...tdS,textAlign:'right',fontWeight:700,fontFamily:'Inter'}}>{r.wonVal>0?$(r.wonVal):'—'}</td>
+                  <td style={{...tdS,textAlign:'right',color:'#625650'}}>{r.openVal>0?$(r.openVal):'—'}</td>
+                  <td style={{...tdS,textAlign:'right'}}>{r.winRate===null?<span style={{color:'#9E9B96'}}>—</span>:<span style={{color:r.winRate>=50?'#065F46':r.winRate>=25?'#B45309':'#991B1B',fontWeight:700}}>{r.winRate.toFixed(0)}%</span>}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        </div>}
+        {/* Per-rep table */}
+        {repRows.length>0&&<div style={{...card}}>
+          <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:10,textTransform:'uppercase',letterSpacing:0.4}}>Rep Conversion Performance</div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr>
+              <th style={thS}>Rep</th>
+              <th style={{...thS,textAlign:'right'}}>Converted</th>
+              <th style={{...thS,textAlign:'right'}}>Won</th>
+              <th style={{...thS,textAlign:'right'}}>Won $</th>
+              <th style={{...thS,textAlign:'right'}}>Open $</th>
+              <th style={{...thS,textAlign:'right'}}>Win Rate</th>
+            </tr></thead>
+            <tbody>
+              {repRows.map(r=><tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{...tdS,fontWeight:600}}>{r.rep}</td>
+                <td style={{...tdS,textAlign:'right'}}>{r.leadCt}</td>
+                <td style={{...tdS,textAlign:'right',color:r.wonCt>0?'#065F46':'#9E9B96',fontWeight:r.wonCt>0?700:400}}>{r.wonCt}</td>
+                <td style={{...tdS,textAlign:'right',fontWeight:700,fontFamily:'Inter'}}>{r.wonVal>0?$(r.wonVal):'—'}</td>
+                <td style={{...tdS,textAlign:'right',color:'#625650'}}>{r.openVal>0?$(r.openVal):'—'}</td>
+                <td style={{...tdS,textAlign:'right'}}>{r.winRate===null?<span style={{color:'#9E9B96'}}>—</span>:<span style={{color:r.winRate>=50?'#065F46':r.winRate>=25?'#B45309':'#991B1B',fontWeight:700}}>{r.winRate.toFixed(0)}%</span>}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
       </div>;
     }
     if(activeRpt==='backlog_aging'){
