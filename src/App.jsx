@@ -1159,7 +1159,24 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             </div>
           </div>}
         </div>:<>
-          {sec&&sec.fields.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const lbl=cd?cd.label:f.replace(/_/g,' ');const dd=DD[f];return(
+          {tab==='totals'&&<div style={{marginBottom:14,padding:'10px 14px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:12,color:'#1D4ED8',lineHeight:1.5}}>
+            <strong>LF totals are computed from Line Items.</strong> To change the Precast / Masonry / Wrought Iron / Total LF, go to the <b>Line Items</b> tab and save. These fields auto-sync.
+          </div>}
+          {sec&&sec.fields.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const lbl=cd?cd.label:f.replace(/_/g,' ');const dd=DD[f];
+          // Fields that are derived from line items should not be edited directly;
+          // editing the Line Items tab and saving re-syncs these automatically.
+          const DERIVED_FROM_LINE_ITEMS=new Set(['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other']);
+          if(DERIVED_FROM_LINE_ITEMS.has(f)){
+            const v=n(form[f]);
+            return<div key={f} style={{marginBottom:12}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                {lbl}
+                <span title="Computed from the Line Items tab — not editable here" style={{padding:'1px 7px',borderRadius:10,background:'#EFF6FF',color:'#1D4ED8',border:'1px solid #BFDBFE',fontSize:9,fontWeight:700,letterSpacing:0.3}}>Auto</span>
+              </label>
+              <div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{v>0?v.toLocaleString()+' LF':'—'}</div>
+            </div>;
+          }
+          return(
             <div key={f} style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
               {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical'}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={inputS}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600}}>Open →</a>}</div>:<input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={inputS}/>}</>}
             </div>);})}
@@ -3458,6 +3475,9 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   // Prospect companies — used by Prospect Conversion Attribution report
   const[prospects,setProspects]=useState([]);
   useEffect(()=>{sbGet('prospect_companies','select=id,company_name,tier,assigned_rep,fencecrete_relationship,markets_active').then(d=>{if(Array.isArray(d))setProspects(d);}).catch(e=>console.error('[Reports] prospects fetch failed:',e));},[]);
+  // Line items — used by the LF Data Quality Check report to compare header LF vs. line-item sums
+  const[reportLineItems,setReportLineItems]=useState([]);
+  useEffect(()=>{sbGet('job_line_items','select=job_number,fence_type,lf&limit=5000').then(d=>{if(Array.isArray(d))setReportLineItems(d);}).catch(e=>console.error('[Reports] line items fetch failed:',e));},[]);
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -3499,6 +3519,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {id:'waterfall',title:'Revenue Pipeline Waterfall',desc:'Deal lifecycle from proposal to collected',icon:'💧'},
     {id:'ltb_pm',title:'Left to Bill by PM',desc:'Unbilled revenue by project manager',icon:'💰'},
     {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
+    {id:'lf_drift',title:'LF Data Quality Check',desc:'Jobs where header LF values disagree with Line Items — flags stale data for cleanup',icon:'🔍'},
   ];
   const salesReports=[
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
@@ -4173,6 +4194,118 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
             </tr>;})}</tbody>
           </table>
         </div>
+      </div>;
+    }
+    if(activeRpt==='lf_drift'){
+      // Sum line-item LF by job_number × fence_type
+      const liByJob={};
+      (reportLineItems||[]).forEach(li=>{
+        if(!li.job_number)return;
+        if(!liByJob[li.job_number])liByJob[li.job_number]={PC:0,SW:0,WI:0,Other:0,total:0};
+        const t=li.fence_type;
+        const v=n(li.lf);
+        if(t==='PC')liByJob[li.job_number].PC+=v;
+        else if(t==='SW')liByJob[li.job_number].SW+=v;
+        else if(t==='WI')liByJob[li.job_number].WI+=v;
+        else liByJob[li.job_number].Other+=v;
+        liByJob[li.job_number].total+=v;
+      });
+      // For each job, compare header LF values against line-item sums
+      // We only flag ACTIVE (non-closed, non-canceled) jobs to reduce noise.
+      const activeOnly=(jobs||[]).filter(j=>j.status!=='closed'&&j.status!=='canceled');
+      const drift=[];
+      activeOnly.forEach(j=>{
+        const li=liByJob[j.job_number];
+        // If a job has no line items at all AND has header LF > 0, that's also a drift case
+        const hasLineItems=li&&li.total>0;
+        const headerPC=n(j.lf_precast)||n(j.total_lf_precast);
+        const headerSW=n(j.lf_single_wythe)||n(j.total_lf_masonry);
+        const headerWI=n(j.lf_wrought_iron)||n(j.total_lf_wrought_iron);
+        const headerTotal=n(j.total_lf);
+        const liPC=li?li.PC:0;
+        const liSW=li?li.SW:0;
+        const liWI=li?li.WI:0;
+        const liTotal=li?li.total:0;
+        // Tolerance: >=5 LF is a meaningful drift
+        const TOL=5;
+        const issues=[];
+        if(Math.abs(headerPC-liPC)>=TOL)issues.push({field:'Precast',header:headerPC,lineItem:liPC,diff:headerPC-liPC});
+        if(Math.abs(headerSW-liSW)>=TOL)issues.push({field:'Masonry/SW',header:headerSW,lineItem:liSW,diff:headerSW-liSW});
+        if(Math.abs(headerWI-liWI)>=TOL)issues.push({field:'Wrought Iron',header:headerWI,lineItem:liWI,diff:headerWI-liWI});
+        if(Math.abs(headerTotal-liTotal)>=TOL)issues.push({field:'Total',header:headerTotal,lineItem:liTotal,diff:headerTotal-liTotal});
+        if(issues.length>0){
+          drift.push({job:j,hasLineItems,issues,worstDiff:Math.max(...issues.map(i=>Math.abs(i.diff)))});
+        }
+      });
+      drift.sort((a,b)=>b.worstDiff-a.worstDiff);
+      const missingLineItems=drift.filter(d=>!d.hasLineItems);
+      const mismatches=drift.filter(d=>d.hasLineItems);
+      return <div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900}}>LF Data Quality Check</div>
+            <div style={{fontSize:12,color:'#625650'}}>Jobs where the header LF values on the Totals tab don't match the sum of Line Items (scope: active jobs, 5+ LF tolerance)</div>
+          </div>
+          {drift.length>0&&<button onClick={()=>downloadCSV('lf_drift.csv',drift.map(d=>({JobNumber:d.job.job_number,JobName:d.job.job_name,Market:MS[d.job.market]||d.job.market,Status:SS[d.job.status]||d.job.status,PM:d.job.pm||'',HasLineItems:d.hasLineItems?'Yes':'No',Issues:d.issues.map(i=>`${i.field}: header ${i.header} vs line ${i.lineItem} (diff ${i.diff>0?'+':''}${i.diff})`).join(' | ')})))} style={btnS}>Export CSV</button>}
+        </div>
+        {/* Summary cards */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:16}}>
+          <div style={{...card,borderTop:`3px solid ${drift.length===0?'#065F46':'#B45309'}`}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Jobs with Drift</div>
+            <div style={{fontSize:26,fontWeight:900,color:drift.length===0?'#065F46':'#B45309'}}>{drift.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>of {activeOnly.length} active jobs</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #991B1B'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Missing Line Items</div>
+            <div style={{fontSize:26,fontWeight:900,color:missingLineItems.length>0?'#991B1B':'#9E9B96'}}>{missingLineItems.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>header LF but no line items</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #B45309'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>Mismatches</div>
+            <div style={{fontSize:26,fontWeight:900,color:mismatches.length>0?'#B45309':'#9E9B96'}}>{mismatches.length}</div>
+            <div style={{fontSize:11,color:'#625650',marginTop:4}}>LF values don't add up</div>
+          </div>
+        </div>
+        {drift.length===0?<div style={{...card,padding:28,textAlign:'center'}}>
+          <div style={{fontSize:32,marginBottom:8}}>✅</div>
+          <div style={{fontSize:14,fontWeight:700,color:'#065F46',marginBottom:6}}>All clean!</div>
+          <div style={{fontSize:12,color:'#625650',maxWidth:460,margin:'0 auto',lineHeight:1.5}}>
+            Every active job's header LF values match its Line Items within tolerance. Data is in sync.
+          </div>
+        </div>:<div style={{...card}}>
+          <div style={{fontSize:12,fontWeight:800,color:'#1A1A1A',marginBottom:10,textTransform:'uppercase',letterSpacing:0.4}}>Jobs Needing Attention</div>
+          <div style={{fontSize:11,color:'#625650',marginBottom:10,lineHeight:1.5}}>
+            <b>How to fix:</b> Open the project → Line Items tab → verify each line is correct → click <b>Save Lines</b>. This auto-syncs the header LF values. If the job genuinely has no line items but should, add them.
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>
+              <th style={{textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>Job</th>
+              <th style={{textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>Market</th>
+              <th style={{textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>Status</th>
+              <th style={{textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>PM</th>
+              <th style={{textAlign:'left',padding:'6px 8px',color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>Issue</th>
+            </tr></thead>
+            <tbody>
+              {drift.map(d=><tr key={d.job.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:d.hasLineItems?'3px solid #B45309':'3px solid #991B1B'}}>
+                <td style={{padding:'8px 8px',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  <div style={{fontWeight:600}}><span onClick={()=>onOpenJob&&onOpenJob(d.job)} style={{cursor:onOpenJob?'pointer':'default',color:onOpenJob?'#8A261D':'#1A1A1A',textDecoration:onOpenJob?'underline':'none'}}>{d.job.job_name}</span></div>
+                  <div style={{fontSize:10,color:'#9E9B96'}}>#{d.job.job_number}</div>
+                </td>
+                <td style={{padding:'8px 8px'}}><span style={pill(MC[d.job.market]||'#625650',MB[d.job.market]||'#F4F4F2')}>{MS[d.job.market]||'—'}</span></td>
+                <td style={{padding:'8px 8px'}}><span style={statusPill(d.job.status)}>{SS[d.job.status]||d.job.status}</span></td>
+                <td style={{padding:'8px 8px',color:'#625650'}}>{d.job.pm||'—'}</td>
+                <td style={{padding:'8px 8px'}}>
+                  {!d.hasLineItems&&<div style={{fontSize:11,color:'#991B1B',fontWeight:700,marginBottom:3}}>No line items on file</div>}
+                  <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                    {d.issues.map(i=><div key={i.field} style={{fontSize:11}}>
+                      <b>{i.field}:</b> header <span style={{fontFamily:'Inter',fontWeight:700}}>{i.header.toLocaleString()}</span> vs line items <span style={{fontFamily:'Inter',fontWeight:700}}>{i.lineItem.toLocaleString()}</span> <span style={{color:Math.abs(i.diff)>=100?'#991B1B':'#B45309',fontWeight:700}}>({i.diff>0?'+':''}{i.diff.toLocaleString()} LF)</span>
+                    </div>)}
+                  </div>
+                </td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
       </div>;
     }
     if(activeRpt==='ltb_pm'){
