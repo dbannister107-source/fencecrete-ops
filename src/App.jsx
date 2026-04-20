@@ -903,11 +903,16 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     const reopenJob=async(newStatus)=>{
     setReopening(true);
     try{
-      await sbPatch('jobs',job.id,{status:newStatus,updated_at:new Date().toISOString()});
+      /* Clear closed_date when reopening so aging reports don't treat it as still-closed.
+         Also persists updated_at. The BEFORE trigger trigger_calculate_billing re-runs
+         automatically and keeps left_to_bill / pct_billed in sync. */
+      await sbPatch('jobs',job.id,{status:newStatus,closed_date:null,updated_at:new Date().toISOString()});
       logAct(job,'status_change','closed',newStatus,'Reopened by '+currentUserEmail);
-      if(onChange)onChange();
       setShowReopenPicker(false);
-      setToast&&setToast('Job reopened → '+newStatus);
+      /* Bug fix (Apr 20 2026): previously called onChange() which is not a prop of EditPanel,
+         causing "Reopen failed: onChange is not defined". onSaved is the canonical prop that
+         the parent uses to refresh jobs list and dismiss the panel. */
+      onSaved&&onSaved('Job reopened → '+(SL[newStatus]||newStatus));
     }catch(e){setSaveErr('Reopen failed: '+e.message);}
     setReopening(false);
   };
