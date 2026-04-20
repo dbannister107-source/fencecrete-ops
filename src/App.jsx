@@ -8418,10 +8418,12 @@ function StageMover({currentStage,onMove,stages}){
   </div>;
 }
 
-function NewLeadForm({onClose,onSaved,contacts}){
-  const[f,setF]=useState({company_name:'',contact_name:'',contact_phone:'',contact_email:'',project_description:'',market:'',sales_rep:'',source:'',estimated_value:'',estimated_lf:'',fence_type:'PC',expected_close_date:'',follow_up_date:'',notes:''});
+function NewLeadForm({onClose,onSaved,contacts,initial,sourceProspectId,sourceProspect}){
+  const defaults={company_name:'',contact_name:'',contact_phone:'',contact_email:'',project_description:'',market:'',sales_rep:'',source:'',estimated_value:'',estimated_lf:'',fence_type:'PC',expected_close_date:'',follow_up_date:'',notes:''};
+  const[f,setF]=useState({...defaults,...(initial||{})});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const[saving,setSaving]=useState(false);
+  const isConvert=!!sourceProspectId;
   const companySuggest=useMemo(()=>{if(!f.company_name||f.company_name.length<2)return[];const q=f.company_name.toLowerCase();return(contacts||[]).filter(c=>(c.company||'').toLowerCase().includes(q)).slice(0,5);},[f.company_name,contacts]);
   const pickCompany=(c)=>{setF(p=>({...p,company_name:c.company||'',contact_name:c.name||p.contact_name,contact_phone:c.phone||p.contact_phone,contact_email:c.email||p.contact_email,market:c.market||p.market}));};
   const save=async()=>{
@@ -8429,8 +8431,16 @@ function NewLeadForm({onClose,onSaved,contacts}){
     setSaving(true);
     try{
       const body={...f,estimated_value:n(f.estimated_value)||null,estimated_lf:n(f.estimated_lf)||null,stage:'new_lead',stage_entered_at:new Date().toISOString()};
+      if(sourceProspectId)body.source_prospect_id=sourceProspectId;
       Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
       await sbPost('leads',body);
+      // If converting from a prospect, update prospect status + log activity
+      if(sourceProspectId){
+        try{
+          await sbPatch('prospect_companies',sourceProspectId,{status:'proposal',last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+          await fetch(`${SB}/rest/v1/prospect_activities`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({company_id:sourceProspectId,activity_type:'note',subject:'Converted to Pipeline lead',body:`New lead created from prospect: ${f.project_description||'(no description)'}`,outcome:'Converted',activity_date:new Date().toISOString()})});
+        }catch(e){console.warn('Prospect sync failed (lead still saved):',e);}
+      }
       onSaved&&onSaved();
       onClose();
     }catch(e){alert('Save failed: '+e.message);}
@@ -8444,8 +8454,11 @@ function NewLeadForm({onClose,onSaved,contacts}){
   </div>);
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{width:440,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>New Lead</div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
+        <div>
+          <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{isConvert?'Convert to Lead':'New Lead'}</div>
+          {isConvert&&sourceProspect&&<div style={{fontSize:11,color:'#625650',marginTop:4,background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:6,padding:'4px 8px',display:'inline-block'}}>From prospect: <strong>{sourceProspect.company_name}</strong></div>}
+        </div>
         <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
       </div>
       <div style={{...card}}>
@@ -8469,7 +8482,7 @@ function NewLeadForm({onClose,onSaved,contacts}){
         {fld('Notes','notes','textarea')}
         <div style={{display:'flex',gap:8,marginTop:16}}>
           <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Lead'}</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':isConvert?'Create Lead from Prospect':'Save Lead'}</button>
         </div>
       </div>
     </div>
@@ -10025,6 +10038,7 @@ function ProspectingPage({jobs}){
   const[showContactForm,setShowContactForm]=useState(false);
   const[newActivity,setNewActivity]=useState({activity_type:'note',subject:'',body:'',outcome:''});
   const[showActivityForm,setShowActivityForm]=useState(false);
+  const[convertProspect,setConvertProspect]=useState(null);
 
   const load=useCallback(async()=>{
     setLoading(true);
@@ -10274,6 +10288,12 @@ function ProspectingPage({jobs}){
           <div style={{fontSize:12,color:'#9E9B96',marginTop:2}}>{detail.hq_city}{detail.website&&<> · <a href={'https://'+detail.website} target="_blank" rel="noreferrer" style={{color:'#8A261D'}}>{detail.website}</a></>}</div>
         </div>
         <div style={{display:'flex',gap:8,flexShrink:0}}>
+          <button
+            onClick={()=>setConvertProspect(detail)}
+            title="Create a new Pipeline lead from this prospect"
+            style={{...btnP,background:'#065F46',color:'#FFF'}}>
+            → Convert to Lead
+          </button>
           <button onClick={()=>openForm(detail)} style={{...btnP,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #D1CEC9'}}>Edit</button>
           <button onClick={()=>setDetail(null)} style={{...btnP,background:'transparent',color:'#625650',border:'1px solid #D1CEC9'}}>✕</button>
         </div>
@@ -10434,6 +10454,13 @@ function ProspectingPage({jobs}){
         </div>
       </div>
     </div>}
+    {convertProspect&&<NewLeadForm
+      onClose={()=>setConvertProspect(null)}
+      onSaved={()=>{setToast({msg:`✅ ${convertProspect.company_name} added to Pipeline`,ok:true});load();}}
+      contacts={coContacts(convertProspect).map(c=>({id:c.id,company:convertProspect.company_name,name:c.name,phone:c.phone,email:c.email,market:convertProspect.markets_active?.[0]||''}))}
+      sourceProspectId={convertProspect.id}
+      sourceProspect={convertProspect}
+      initial={(()=>{const primary=coContacts(convertProspect).find(c=>c.is_primary)||coContacts(convertProspect)[0];return{company_name:convertProspect.company_name||'',contact_name:primary?.name||'',contact_phone:primary?.phone||'',contact_email:primary?.email||'',market:convertProspect.markets_active?.[0]||'',sales_rep:convertProspect.assigned_rep||'',source:'Cold Outreach',notes:convertProspect.relationship_notes||''};})()}/>}
   </div>;
 }
 
