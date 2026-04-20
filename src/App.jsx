@@ -8727,6 +8727,129 @@ function NewLeadForm({onClose,onSaved,contacts,initial,sourceProspectId,sourcePr
   </div>;
 }
 
+function LeadEditDrawer({lead,onClose,onSaved,onDeleted,contacts}){
+  const stageObj=LEAD_STAGES.find(s=>s.key===lead.stage)||{label:lead.stage,color:'#625650',bg:'#F4F4F2'};
+  const[f,setF]=useState({
+    company_name:lead.company_name||'',
+    contact_name:lead.contact_name||'',
+    contact_phone:lead.contact_phone||'',
+    contact_email:lead.contact_email||'',
+    project_description:lead.project_description||'',
+    market:lead.market||'',
+    sales_rep:lead.sales_rep||'',
+    source:lead.source||'',
+    estimated_value:lead.estimated_value==null?'':String(lead.estimated_value),
+    estimated_lf:lead.estimated_lf==null?'':String(lead.estimated_lf),
+    fence_type:lead.fence_type||'PC',
+    expected_close_date:lead.expected_close_date||'',
+    follow_up_date:lead.follow_up_date||'',
+    win_probability:lead.win_probability==null?'':String(lead.win_probability),
+    notes:lead.notes||'',
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const[deleting,setDeleting]=useState(false);
+  const[confirmDelete,setConfirmDelete]=useState(false);
+  const save=async()=>{
+    if(!f.company_name.trim()){alert('Company name is required');return;}
+    setSaving(true);
+    try{
+      const body={
+        company_name:f.company_name.trim(),
+        contact_name:f.contact_name.trim()||null,
+        contact_phone:f.contact_phone.trim()||null,
+        contact_email:f.contact_email.trim()||null,
+        project_description:f.project_description.trim()||null,
+        market:f.market||null,
+        sales_rep:f.sales_rep||null,
+        source:f.source||null,
+        estimated_value:f.estimated_value===''?null:n(f.estimated_value),
+        estimated_lf:f.estimated_lf===''?null:n(f.estimated_lf),
+        fence_type:f.fence_type||null,
+        expected_close_date:f.expected_close_date||null,
+        follow_up_date:f.follow_up_date||null,
+        win_probability:f.win_probability===''?null:Math.max(0,Math.min(100,n(f.win_probability))),
+        notes:f.notes.trim()||null,
+        updated_at:new Date().toISOString(),
+      };
+      await sbPatch('leads',lead.id,body);
+      onSaved&&onSaved();
+      onClose();
+    }catch(e){alert('Save failed: '+(e.message||'unknown error'));}
+    setSaving(false);
+  };
+  const del=async()=>{
+    setDeleting(true);
+    try{
+      const r=await fetch(`${SB}/rest/v1/leads?id=eq.${lead.id}`,{method:'DELETE',headers:{...H,Prefer:'return=minimal'}});
+      if(!r.ok&&r.status!==204){const txt=await r.text();throw new Error(`DELETE failed (${r.status}): ${txt}`);}
+      onDeleted&&onDeleted();
+      onClose();
+    }catch(e){alert('Delete failed: '+(e.message||'unknown error'));setDeleting(false);}
+  };
+  const fld=(lbl,k,type='text',opts=null)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>{lbl}</div>
+    {opts?<select value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}><option value="">—</option>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>
+    :type==='textarea'?<textarea value={f[k]} onChange={e=>set(k,e.target.value)} style={{...inputS,minHeight:60}}/>
+    :<input type={type} value={f[k]} onChange={e=>set(k,e.target.value)} style={inputS}/>}
+  </div>);
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:460,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+        <div>
+          <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>Edit Lead</div>
+          <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>ID: {String(lead.id).slice(0,8)}…</div>
+        </div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      {/* Current stage — read-only; edited via drag or StageMover on the card */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,fontSize:11,color:'#625650'}}>
+        <span>Stage:</span>
+        <span style={{padding:'3px 10px',borderRadius:12,background:stageObj.bg||'#F4F4F2',color:stageObj.color||'#1A1A1A',border:`1px solid ${stageObj.color||'#E5E3E0'}`,fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em'}}>{stageObj.label}</span>
+        <span style={{fontSize:10,color:'#9E9B96'}}>(change via card drag or → button)</span>
+      </div>
+      {lead.source_prospect_id&&<div style={{marginBottom:14,padding:'6px 10px',background:'#ECFDF5',border:'1px solid #D1FAE5',borderRadius:6,fontSize:11,color:'#065F46',display:'inline-block'}}>🔭 Sourced from Prospecting</div>}
+      {lead.job_number&&<div style={{marginBottom:14,padding:'6px 10px',background:'#EFF6FF',border:'1px solid #DBEAFE',borderRadius:6,fontSize:11,color:'#1E40AF',display:'inline-block'}}>Linked Project #{lead.job_number}</div>}
+      <div style={{...card}}>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Company Name *</div>
+          <input value={f.company_name} onChange={e=>set('company_name',e.target.value)} style={inputS}/>
+        </div>
+        {fld('Contact Name','contact_name')}
+        {fld('Contact Phone','contact_phone')}
+        {fld('Contact Email','contact_email','email')}
+        {fld('Project Description','project_description','textarea')}
+        {fld('Market','market','text',MKTS)}
+        {fld('Sales Rep','sales_rep','text',REPS)}
+        {fld('Source','source','text',LEAD_SOURCES)}
+        {fld('Estimated Value ($)','estimated_value','number')}
+        {fld('Estimated LF','estimated_lf','number')}
+        {fld('Fence Type','fence_type','text',FENCE_TYPES_LEAD)}
+        {fld('Expected Close Date','expected_close_date','date')}
+        {fld('Follow-up Date','follow_up_date','date')}
+        {fld('Win Probability (%)','win_probability','number')}
+        {fld('Notes','notes','textarea')}
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+          <button onClick={save} disabled={saving||deleting} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
+        </div>
+      </div>
+      {/* Danger zone */}
+      <div style={{marginTop:16,padding:16,background:'#FEF2F2',border:'1px solid #FEE2E2',borderRadius:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#991B1B',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Danger Zone</div>
+        {!confirmDelete?<button onClick={()=>setConfirmDelete(true)} disabled={saving||deleting} style={{...btnS,width:'100%',color:'#991B1B',border:'1px solid #FCA5A5',background:'#FFF'}}>Delete Lead</button>
+        :<div>
+          <div style={{fontSize:12,color:'#991B1B',marginBottom:8,lineHeight:1.4}}>Are you sure? This permanently deletes the lead and all history. If it's linked to a won project, the project itself stays.</div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>setConfirmDelete(false)} disabled={deleting} style={{...btnS,flex:1}}>Keep</button>
+            <button onClick={del} disabled={deleting} style={{...btnP,flex:1,background:'#991B1B'}}>{deleting?'Deleting...':'Yes, Delete'}</button>
+          </div>
+        </div>}
+      </div>
+    </div>
+  </div>;
+}
+
 function ProposalSentModal({lead,onClose,onSave}){
   const[v,setV]=useState(lead.proposal_value||lead.estimated_value||'');
   const[d,setD]=useState(new Date().toISOString().slice(0,10));
@@ -8925,6 +9048,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   const[wonExpanded,setWonExpanded]=useState(false);
   const[lostExpanded,setLostExpanded]=useState(false);
   const[highlightId,setHighlightId]=useState(null);
+  const[editLead,setEditLead]=useState(null);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
   useEffect(()=>{try{const h=localStorage.getItem('fc_pipeline_highlight');if(h){setHighlightId(h);localStorage.removeItem('fc_pipeline_highlight');setTimeout(()=>setHighlightId(null),5000);}}catch(e){}},[]);
@@ -9090,7 +9214,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     isMobile?<MobileKanban
       columns={LEAD_STAGES.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.accent,items:byStage[col.key]||[]}))}
       emptyMessage="No leads in this stage"
-      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>}
+      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>}
     />:
     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,alignItems:'flex-start'}}>
       {LEAD_STAGES.map(col=>{
@@ -9106,7 +9230,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>{}} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>)}</div>}
+          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>)}</div>}
         </div>;
       })}
     </div>}
@@ -9114,6 +9238,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     {propModal&&<ProposalSentModal lead={propModal} onClose={()=>setPropModal(null)} onSave={saveProposal}/>}
     {lostModal&&<LostModal lead={lostModal} onClose={()=>setLostModal(null)} onSave={saveLost}/>}
     {wonModal&&<WonModal lead={wonModal} onClose={()=>setWonModal(null)} onCreate={afterProjectCreated}/>}
+    {editLead&&<LeadEditDrawer lead={editLead} onClose={()=>setEditLead(null)} onSaved={()=>{fetchLeads();setToast('Lead updated');}} onDeleted={()=>{fetchLeads();setToast('Lead deleted');}} contacts={contacts}/>}
     {importPreview&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!importing&&setImportPreview(null)}>
       <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:16,padding:24,width:460,maxWidth:'94vw'}}>
         <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>Import Preview</div>
