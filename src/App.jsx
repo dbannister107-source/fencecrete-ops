@@ -658,18 +658,22 @@ function LineItemsEditor({job,onChange}){
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
   const[confirmDel,setConfirmDel]=useState(null);
-  const[styleOpts,setStyleOpts]=useState(_STYLE_LIST);
+  /* Style options come from DD.style (overridden at runtime from
+     material_calc_styles.is_active=true — see line ~14101). This keeps the
+     Line Items dropdown consistent with the main project Style dropdown.
+     The sbGet('jobs') was previously fetched here to union legacy styles into
+     the list — no longer needed because render falls back to showing the
+     current value as an option if it's not in DD.style (line 804 pattern). */
   const[colorOpts,setColorOpts]=useState(STANDARD_COLORS);
   useEffect(()=>{
     (async()=>{
       try{
-        const[jStyles,liStyles]=await Promise.all([
-          sbGet('jobs','select=style,color&limit=5000'),
-          sbGet('job_line_items','select=style,color&limit=5000')
+        const[jColors,liColors]=await Promise.all([
+          sbGet('jobs','select=color&limit=5000'),
+          sbGet('job_line_items','select=color&limit=5000')
         ]);
-        const ss=new Set(_STYLE_LIST);const cs=new Set(STANDARD_COLORS);
-        [...(jStyles||[]),...(liStyles||[])].forEach(r=>{if(r.style&&typeof r.style==='string')ss.add(r.style.trim());if(r.color&&typeof r.color==='string')cs.add(r.color.trim());});
-        setStyleOpts(_STYLE_LIST);
+        const cs=new Set(STANDARD_COLORS);
+        [...(jColors||[]),...(liColors||[])].forEach(r=>{if(r.color&&typeof r.color==='string')cs.add(r.color.trim());});
         setColorOpts([...cs].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
       }catch(e){}
     })();
@@ -800,8 +804,8 @@ function LineItemsEditor({job,onChange}){
               <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
                 <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%',minWidth:180}}>
                   <option value="">—</option>
-                  {styleOpts.map(s=><option key={s} value={s}>{STYLE_LABEL(s)}</option>)}
-                  {l.style&&!styleOpts.includes(l.style)&&<option value={l.style}>{STYLE_LABEL(l.style)}</option>}
+                  {DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                  {l.style&&!DD.style.some(o=>o.v===l.style)&&<option value={l.style}>{STYLE_LABEL(l.style)}</option>}
                 </select>
               </div>
               <div style={{flex:'2 1 200px',minWidth:180}}><label style={fieldLabel}>Color</label>
@@ -1895,7 +1899,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     // Only count physical mold sets — exclude child styles that share molds
     const physical=(molds||[]).filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name));
     const panelCapacity=physical.reduce((s,r)=>{const ppm=panelsPerMoldFor(r.style_name);if(ppm==null)return s;return s+Math.floor(n(r.total_molds)*ppm*UTIL);},0);
-    const stylesRows=await sbGet('material_calc_styles','select=style_name,cy_per_panel');const sMap={};(stylesRows||[]).forEach(s=>{sMap[s.style_name]=s;});
+    const stylesRows=await sbGet('material_calc_styles','is_active=eq.true&select=style_name,cy_per_panel');const sMap={};(stylesRows||[]).forEach(s=>{sMap[s.style_name]=s;});
     const today=new Date().toISOString().split('T')[0];
     const plans=await sbGet('production_plans',`plan_date=eq.${today}&select=id&limit=1`);
     let panelsPlanned=0,cyPlanned=0;
@@ -3517,7 +3521,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     Promise.all([
       safeGet('mold_inventory','select=style_name,total_molds'),
       safeGet('plant_config','select=key,value'),
-      safeGet('material_calc_styles','select=style_name,cy_per_panel'),
+      safeGet('material_calc_styles','is_active=eq.true&select=style_name,cy_per_panel'),
     ]).then(([molds,cfg,cs])=>{
       setMoldInventory(Array.isArray(molds)?molds:[]);
       const m={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{if(r&&r.key)m[r.key]=n(r.value);});setPlantCfg(m);
@@ -5214,7 +5218,7 @@ Generate the optimal 4-week production schedule following all rules.`;
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds,mold_type').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
-    sbGet('material_calc_styles','select=style_name,cy_per_panel,cy_per_post,cy_per_cap_rail').then(d=>setCalcStyles(d||[]));
+    sbGet('material_calc_styles','is_active=eq.true&select=style_name,cy_per_panel,cy_per_post,cy_per_cap_rail').then(d=>setCalcStyles(d||[]));
   },[]);
   const stylesByName=useMemo(()=>{const m={};calcStyles.forEach(s=>{m[s.style_name]=s;});return m;},[calcStyles]);
   const physicalMolds=useMemo(()=>moldInventory.filter(r=>n(r.total_molds)>0&&!isChildStyle(r.style_name)),[moldInventory]);
@@ -5939,7 +5943,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   useEffect(()=>{
     sbGet('mold_inventory','select=style_name,total_molds,mold_type').then(d=>setMoldInventory(d||[]));
     sbGet('plant_config','select=key,value').then(d=>{const m={};(d||[]).forEach(r=>{m[r.key]=n(r.value);});setPlantCfg(m);});
-    sbGet('material_calc_styles','select=style_name,cy_per_panel,cy_per_post,cy_per_cap_rail').then(d=>setCalcStyles(d||[]));
+    sbGet('material_calc_styles','is_active=eq.true&select=style_name,cy_per_panel,cy_per_post,cy_per_cap_rail').then(d=>setCalcStyles(d||[]));
   },[]);
   const stylesByName=useMemo(()=>{const m={};calcStyles.forEach(s=>{m[s.style_name]=s;});return m;},[calcStyles]);
   // Only count physical mold sets — exclude child styles that share a parent's molds
@@ -7145,7 +7149,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Precast Style at Time of Visit</label><input value={form.precast_style_onsite} onChange={e=>set('precast_style_onsite',e.target.value)} placeholder="e.g. Vertical Wood 6, Santa Barbara 8" style={mInp}/></div>
+          <div><label style={lblStyle}>Precast Style at Time of Visit</label><select value={form.precast_style_onsite} onChange={e=>set('precast_style_onsite',e.target.value)} style={mSel}><option value="">— Select Style —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}{form.precast_style_onsite&&!DD.style.some(o=>o.v===form.precast_style_onsite)&&<option value={form.precast_style_onsite}>{form.precast_style_onsite}</option>}</select></div>
         </div>
       </PMReportSection>
       <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
