@@ -1850,7 +1850,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
-  const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
+  const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='canceled'&&j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
   const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026count=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').length;
   // Backlog = contracted but not yet fully billed, in active stages
   const ACTIVE_STS=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
@@ -2044,7 +2044,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     <div style={{...card,marginBottom:16}}>
       <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:12}}>PM Workload</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        {PM_LIST.map(p=>{const pj=jobs.filter(j=>j.pm===p.id&&j.status!=='closed'&&j.status!=='cancelled'&&j.status!=='lost');const pLF=pj.reduce((s,j)=>s+n(j.total_lf),0);const pCV=pj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const bsSubIds=new Set(dashBillSubs.map(s2=>s2.job_id));const pSub=pj.filter(j=>bsSubIds.has(j.id)).length;const pAll=pj.length;return<div key={p.id} onClick={()=>onNav&&onNav('projects')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,cursor:onNav?'pointer':'default'}}>
+        {PM_LIST.map(p=>{const pj=jobs.filter(j=>j.pm===p.id&&j.status!=='closed'&&j.status!=='canceled'&&j.status!=='cancelled'&&j.status!=='lost');const pLF=pj.reduce((s,j)=>s+n(j.total_lf),0);const pCV=pj.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const bsSubIds=new Set(dashBillSubs.map(s2=>s2.job_id));const pSub=pj.filter(j=>bsSubIds.has(j.id)).length;const pAll=pj.length;return<div key={p.id} onClick={()=>onNav&&onNav('projects')} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,cursor:onNav?'pointer':'default'}}>
           <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8A261D',marginBottom:8}}>{p.label}</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:10,color:'rgba(255,255,255,0.25)',marginBottom:8,letterSpacing:'0.02em'}}>
             <div>Jobs: <b style={{color:'#1A1A1A'}}>{pAll}</b></div>
