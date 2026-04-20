@@ -12223,10 +12223,411 @@ const PAGE_LABELS={
   sales_dashboard:'Sales Dashboard',
   pipeline:'Sales Pipeline',
   prospecting:'Prospecting',
+  proposals:'Proposals',
+  bid_advisor:'Bid Advisor',
   contacts:'Contacts',
   fleet:'Fleet',
   admin:'Admin',
 };
+
+/* ═══ BID ADVISOR — Phase 4a MVP ═══ */
+const BA_STYLE_LABEL = (v) => {
+  if (!v) return '';
+  if (v === 'cmu_block') return 'CMU Block';
+  return v.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+};
+const BA_FMT_USD = (n) => '$' + Math.round(Number(n)||0).toLocaleString();
+const BA_HEIGHT_OPTIONS = [
+  { key: '6', label: '6 ft', ft: 6, rail: false },
+  { key: '8', label: '8 ft', ft: 8, rail: false },
+  { key: 'rr3', label: 'Ranch Rail 3 ft', ft: 3, rail: true },
+  { key: 'rr4', label: 'Ranch Rail 4 ft', ft: 4, rail: true },
+  { key: 'rr5', label: 'Ranch Rail 5 ft', ft: 5, rail: true },
+];
+function BidAdvisor(){
+  const auth = useAuth();
+  const userEmail = auth?.user?.email || 'anonymous';
+  const [market, setMarket] = useState('San Antonio');
+  const [style, setStyle] = useState('');
+  const [heightKey, setHeightKey] = useState('6');
+  const [totalLf, setTotalLf] = useState('');
+  const [customerType, setCustomerType] = useState('');
+  const [color, setColor] = useState('standard');
+  const [removalNeeded, setRemovalNeeded] = useState(false);
+  const [removalLf, setRemovalLf] = useState('');
+  const [siliconeCount, setSiliconeCount] = useState('0');
+  const [compressorDays, setCompressorDays] = useState('0');
+  const [notes, setNotes] = useState('');
+  const [styleOptions, setStyleOptions] = useState([]);
+  const [effectiveDate, setEffectiveDate] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    sbGet('pricing_catalog', 'select=style&category=eq.installed_residential&style=not.is.null').then(rows => {
+      const uniq = Array.from(new Set((rows||[]).map(r => r.style).filter(s => s && s !== 'ranch_rail'))).sort();
+      setStyleOptions(uniq);
+      setStyle(prev => prev || uniq.find(s => s === 'wood') || uniq[0] || '');
+    }).catch(() => {});
+    sbGet('pricing_catalog', 'select=effective_date&order=effective_date.desc&limit=1').then(rows => {
+      if (rows && rows[0]) setEffectiveDate(rows[0].effective_date);
+    }).catch(() => {});
+  }, []);
+  const heightOpt = BA_HEIGHT_OPTIONS.find(h => h.key === heightKey) || BA_HEIGHT_OPTIONS[0];
+  const isRanchRail = heightOpt.rail;
+  const resolvedStyle = isRanchRail ? 'ranch_rail' : style;
+  const resolvedHeight = heightOpt.ft;
+  const lfNum = Number(totalLf);
+  const canSubmit = !!market && !!resolvedStyle && resolvedHeight > 0 && lfNum > 0 && !loading;
+  const onReset = () => {
+    setStyle(styleOptions.find(s => s === 'wood') || styleOptions[0] || '');
+    setHeightKey('6'); setTotalLf(''); setCustomerType(''); setColor('standard');
+    setRemovalNeeded(false); setRemovalLf(''); setSiliconeCount('0'); setCompressorDays('0');
+    setNotes(''); setResult(null); setError('');
+  };
+  const calculate = async () => {
+    if (!canSubmit) return;
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const mktEnc = encodeURIComponent(market);
+      const today = new Date().toISOString().slice(0, 10);
+      const expiresFilter = `or=(expires_date.is.null,expires_date.gt.${today})`;
+      const listRows = await sbGet('pricing_catalog',
+        `market=eq.${mktEnc}&category=eq.installed_residential&style=eq.${resolvedStyle}&height_feet=eq.${resolvedHeight}&${expiresFilter}&select=unit_price&limit=1`);
+      if (!listRows || !listRows[0]) {
+        setError(`No published list price for ${market} × ${BA_STYLE_LABEL(resolvedStyle)} × ${resolvedHeight} ft. This combination may not be in the current price list — please calculate manually.`);
+        setLoading(false); return;
+      }
+      const listPrice = Number(listRows[0].unit_price);
+      const addons = await sbGet('pricing_catalog',
+        `market=eq.${mktEnc}&category=eq.add_on&${expiresFilter}&select=notes,unit_price,unit`);
+      const findAddon = (kw) => (addons||[]).find(r => new RegExp(kw, 'i').test(r.notes || ''));
+      const removalRow = findAddon('removal');
+      const siliconeRow = findAddon('silicone');
+      const compressorRow = findAddon('compressor');
+      const colorRows = await sbGet('pricing_catalog',
+        `market=eq.${mktEnc}&category=eq.color_surcharge&${expiresFilter}&select=unit_price&limit=1`);
+      const colorPerLf = Number((colorRows && colorRows[0]?.unit_price) || 3.0);
+      const minRows = await sbGet('pricing_catalog',
+        `market=eq.${mktEnc}&category=eq.minimum&${expiresFilter}&select=unit_price&limit=1`);
+      const jobMinimum = Number((minRows && minRows[0]?.unit_price) || 0);
+      const lf = lfNum;
+      const rlf = removalNeeded ? Number(removalLf || totalLf) || lf : 0;
+      const baseFence = listPrice * lf;
+      const colorSurch = color !== 'standard' ? colorPerLf * lf : 0;
+      const removalPerLf = Number(removalRow?.unit_price || 0);
+      const removalTotal = removalNeeded ? removalPerLf * rlf : 0;
+      const silPerEach = Number(siliconeRow?.unit_price || 0);
+      const silCount = Number(siliconeCount || 0);
+      const silTotal = silPerEach * silCount;
+      const compDays = Number(compressorDays || 0);
+      let compPerLf = Number(compressorRow?.unit_price || 0);
+      let compressorTotal = 0;
+      let compressorFallback = false;
+      if (compDays > 0) {
+        if (!compressorRow) { compPerLf = 13.0; compressorFallback = true; }
+        compressorTotal = Math.max(compPerLf * lf, 750 * compDays);
+      }
+      const subtotal = baseFence + colorSurch + removalTotal + silTotal + compressorTotal;
+      const conservative = Math.round(subtotal * 1.05);
+      const median = Math.round(subtotal * 1.12);
+      const aggressive = Math.round(subtotal * 1.25);
+      const effLow = Math.round((conservative / lf) * 100) / 100;
+      const effHigh = Math.round((aggressive / lf) * 100) / 100;
+      const watchouts = [];
+      if (color === 'custom' && lf < 500) watchouts.push('Custom color selected but LF < 500 minimum. Custom colors require 500 LF minimum per final order.');
+      if (jobMinimum && subtotal < jobMinimum) watchouts.push(`Job total below market minimum ($${jobMinimum.toLocaleString()} for ${market}).`);
+      if (compressorFallback) watchouts.push('Compressor add-on not published for this market. Using SA compressor rate as estimate: $13/LF.');
+      if (resolvedStyle === 'smooth') watchouts.push('Smooth style is stain-only. Confirm customer does not want a paint finish.');
+      if (lf < 50) watchouts.push(`Very small job (${lf} LF) — confirm scope.`);
+      if (isRanchRail) watchouts.push('Ranch Rail height selected but rail count not specified. Default to 3-rail.');
+      const computed = {
+        listPrice, baseFence, colorSurch, colorPerLf,
+        removalTotal, removalPerLf, removalLfUsed: rlf,
+        silTotal, silPerEach, silCount,
+        compressorTotal, compPerLf, compressorFallback, compDays,
+        subtotal, conservative, median, aggressive, effLow, effHigh,
+        jobMinimum, watchouts,
+      };
+      setResult(computed);
+      try {
+        await sbPost('bid_advisor_requests', {
+          created_by: userEmail,
+          market, style: resolvedStyle, height_feet: resolvedHeight,
+          total_lf: lf, customer_type: customerType || null,
+          color, removal_lf: rlf, silicone_count: silCount,
+          compressor_days: compDays, notes: notes || null,
+          list_price_per_lf: listPrice, base_fence_total: baseFence,
+          color_surcharge_total: colorSurch, removal_total: removalTotal,
+          silicone_total: silTotal, compressor_total: compressorTotal,
+          subtotal_before_markup: subtotal,
+          recommended_conservative: conservative, recommended_median: median,
+          recommended_aggressive: aggressive,
+          effective_low_per_lf: effLow, effective_high_per_lf: effHigh,
+          watchouts,
+        });
+      } catch (e) { console.error('Bid advisor log failed:', e); }
+    } catch (e) {
+      console.error(e);
+      setError('Failed to fetch pricing. Please try again, or contact admin — pricing may have changed.');
+    }
+    setLoading(false);
+  };
+  const effectiveLabel = (() => {
+    if (!effectiveDate) return 'Aug 2024 pricing catalog';
+    try {
+      const d = new Date(effectiveDate + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) + ' pricing catalog';
+    } catch (e) { return 'Aug 2024 pricing catalog'; }
+  })();
+  const effectiveFull = (() => {
+    if (!effectiveDate) return 'Aug 1, 2024';
+    try {
+      const d = new Date(effectiveDate + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (e) { return 'Aug 1, 2024'; }
+  })();
+  const labelS = { fontSize: 11, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, display: 'block' };
+  const groupS = { marginBottom: 18 };
+  const groupTitle = { fontFamily: 'Syne', fontSize: 13, fontWeight: 800, color: '#1A1A1A', margin: '0 0 10px', letterSpacing: 0.2 };
+  const selectS = { ...inputS, appearance: 'auto' };
+  const radioBtn = (active) => ({
+    padding: '10px 12px', borderRadius: 8, border: active ? '2px solid #8A261D' : '1px solid #D1CEC9',
+    background: active ? '#FDF4F4' : '#FFF', cursor: 'pointer', fontSize: 12, fontWeight: active ? 700 : 500,
+    color: active ? '#8A261D' : '#1A1A1A', textAlign: 'left', width: '100%',
+  });
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 900, color: '#1A1A1A', letterSpacing: '-0.5px' }}>Bid Advisor</div>
+          <div style={{ fontSize: 13, color: '#625650', marginTop: 4 }}>Check recommended bid ranges against our published pricing before sending a proposal.</div>
+        </div>
+        <span style={pill('#8A261D', '#FDF4F4')}>Using {effectiveLabel}</span>
+      </div>
+      <div className="fc-stack-mobile" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 16, alignItems: 'flex-start' }}>
+        <div style={{ ...card }}>
+          <div style={groupS}>
+            <div style={groupTitle}>Job Basics</div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelS}>Market *</label>
+              <select value={market} onChange={e => setMarket(e.target.value)} style={selectS}>
+                <option value="San Antonio">San Antonio</option>
+                <option value="Houston">Houston</option>
+                <option value="Austin">Austin</option>
+                <option value="Dallas-Fort Worth">Dallas-Fort Worth</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelS}>Style *</label>
+              <select value={isRanchRail ? 'ranch_rail' : style} onChange={e => setStyle(e.target.value)} disabled={isRanchRail} style={{ ...selectS, opacity: isRanchRail ? 0.6 : 1 }}>
+                {isRanchRail ? <option value="ranch_rail">Ranch Rail (set by height)</option> : styleOptions.map(s => (
+                  <option key={s} value={s}>{BA_STYLE_LABEL(s)}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelS}>Height *</label>
+              <select value={heightKey} onChange={e => setHeightKey(e.target.value)} style={selectS}>
+                {BA_HEIGHT_OPTIONS.map(h => <option key={h.key} value={h.key}>{h.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelS}>Total Linear Feet *</label>
+              <input type="number" min="1" step="1" value={totalLf} onChange={e => setTotalLf(e.target.value.replace(/[^0-9]/g, ''))} placeholder="e.g., 500" style={inputS}/>
+            </div>
+          </div>
+          <div style={groupS}>
+            <div style={groupTitle}>Customer</div>
+            <label style={labelS}>Customer Type</label>
+            <select value={customerType} onChange={e => setCustomerType(e.target.value)} style={selectS}>
+              <option value="">— Select —</option>
+              <option value="General Contractor">General Contractor</option>
+              <option value="Developer">Developer</option>
+              <option value="Direct Residential">Direct Residential</option>
+              <option value="Municipal">Municipal</option>
+              <option value="HOA">HOA</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div style={groupS}>
+            <div style={groupTitle}>Color</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+              <button type="button" onClick={() => setColor('standard')} style={radioBtn(color === 'standard')}>
+                <div style={{ fontWeight: 700 }}>Standard</div>
+                <div style={{ fontSize: 11, color: '#625650', fontWeight: 400, marginTop: 2 }}>Regular Brown, Café, Green, Paint</div>
+              </button>
+              <button type="button" onClick={() => setColor('lac_white')} style={radioBtn(color === 'lac_white')}>
+                <div style={{ fontWeight: 700 }}>LAC / White / Custom White Cement</div>
+                <div style={{ fontSize: 11, color: '#625650', fontWeight: 400, marginTop: 2 }}>+$3/LF surcharge</div>
+              </button>
+              <button type="button" onClick={() => setColor('custom')} style={radioBtn(color === 'custom')}>
+                <div style={{ fontWeight: 700 }}>Other Custom Color</div>
+                <div style={{ fontSize: 11, color: '#625650', fontWeight: 400, marginTop: 2 }}>+$3/LF, minimum 500 LF</div>
+              </button>
+            </div>
+          </div>
+          <div style={groupS}>
+            <div style={groupTitle}>Scope Add-Ons</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', fontSize: 13, color: '#1A1A1A' }}>
+              <input type="checkbox" checked={removalNeeded} onChange={e => setRemovalNeeded(e.target.checked)} style={{ width: 16, height: 16 }}/>
+              Wood fence removal needed?
+            </label>
+            {removalNeeded && (
+              <div style={{ marginBottom: 10, paddingLeft: 24 }}>
+                <label style={labelS}>Removal LF</label>
+                <input type="number" min="0" step="1" value={removalLf} onChange={e => setRemovalLf(e.target.value.replace(/[^0-9]/g, ''))} placeholder={totalLf || 'defaults to total LF'} style={inputS}/>
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={labelS}>Silicone caulk (ea)</label>
+                <input type="number" min="0" step="1" value={siliconeCount} onChange={e => setSiliconeCount(e.target.value.replace(/[^0-9]/g, '') || '0')} style={inputS}/>
+              </div>
+              <div>
+                <label style={labelS}>Compressor (days)</label>
+                <input type="number" min="0" step="1" value={compressorDays} onChange={e => setCompressorDays(e.target.value.replace(/[^0-9]/g, '') || '0')} style={inputS}/>
+              </div>
+            </div>
+          </div>
+          <div style={groupS}>
+            <div style={groupTitle}>Notes</div>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional context, site conditions, customer quirks…" style={{ ...inputS, resize: 'vertical', minHeight: 72 }}/>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={calculate} disabled={!canSubmit} style={{ ...btnP, flex: 2, padding: '12px 16px', fontSize: 14, opacity: canSubmit ? 1 : 0.55, cursor: canSubmit ? 'pointer' : 'not-allowed' }}>
+              {loading ? 'Calculating…' : 'Calculate Recommended Bid'}
+            </button>
+            <button onClick={onReset} style={{ ...btnS, flex: 1, padding: '12px 16px', fontSize: 14 }}>Reset</button>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {!result && !loading && !error && (
+            <div style={{ ...card, padding: 28, textAlign: 'center', color: '#9E9B96' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🧮</div>
+              <div style={{ fontSize: 13 }}>Fill in the form to see your recommended bid range.</div>
+            </div>
+          )}
+          {loading && (
+            <div style={{ ...card }}>
+              <Skeleton h={20} w="50%" style={{ marginBottom: 12 }}/>
+              <SkeletonRows rows={4} cols={3}/>
+              <Skeleton h={60} style={{ marginTop: 14 }}/>
+            </div>
+          )}
+          {error && !loading && (
+            <div style={{ ...card, background: '#FEF2F2', border: '1px solid #FEE2E2' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#991B1B', marginBottom: 6 }}>Pricing unavailable</div>
+              <div style={{ fontSize: 13, color: '#7F1D1D' }}>{error}</div>
+            </div>
+          )}
+          {result && !loading && (
+            <>
+              <div style={{ ...card }}>
+                <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 900, color: '#1A1A1A', marginBottom: 12 }}>Recommended Bid Range</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #E5E3E0', color: '#625650', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      <th style={{ textAlign: 'left', padding: '6px 0', fontWeight: 700 }}>Item</th>
+                      <th style={{ textAlign: 'left', padding: '6px 0', fontWeight: 700 }}>Calculation</th>
+                      <th style={{ textAlign: 'right', padding: '6px 0', fontWeight: 700 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #F4F4F2' }}>
+                      <td style={{ padding: '8px 0' }}>Base fence</td>
+                      <td style={{ padding: '8px 0', color: '#625650', fontSize: 12 }}>${result.listPrice}/LF × {lfNum} LF</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.baseFence)}</td>
+                    </tr>
+                    {result.colorSurch > 0 && (
+                      <tr style={{ borderBottom: '1px solid #F4F4F2' }}>
+                        <td style={{ padding: '8px 0' }}>Color surcharge {color === 'lac_white' ? '(LAC)' : '(custom)'}</td>
+                        <td style={{ padding: '8px 0', color: '#625650', fontSize: 12 }}>${result.colorPerLf}/LF × {lfNum} LF</td>
+                        <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.colorSurch)}</td>
+                      </tr>
+                    )}
+                    {result.removalTotal > 0 && (
+                      <tr style={{ borderBottom: '1px solid #F4F4F2' }}>
+                        <td style={{ padding: '8px 0' }}>Wood fence removal</td>
+                        <td style={{ padding: '8px 0', color: '#625650', fontSize: 12 }}>${result.removalPerLf}/LF × {result.removalLfUsed} LF</td>
+                        <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.removalTotal)}</td>
+                      </tr>
+                    )}
+                    {result.silTotal > 0 && (
+                      <tr style={{ borderBottom: '1px solid #F4F4F2' }}>
+                        <td style={{ padding: '8px 0' }}>Silicone caulk</td>
+                        <td style={{ padding: '8px 0', color: '#625650', fontSize: 12 }}>${result.silPerEach} × {result.silCount} ea</td>
+                        <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.silTotal)}</td>
+                      </tr>
+                    )}
+                    {result.compressorTotal > 0 && (
+                      <tr style={{ borderBottom: '1px solid #F4F4F2' }}>
+                        <td style={{ padding: '8px 0' }}>Compressor{result.compressorFallback ? ' (SA rate, est.)' : ''}</td>
+                        <td style={{ padding: '8px 0', color: '#625650', fontSize: 12 }}>max(${result.compPerLf}/LF × {lfNum} LF, $750 × {result.compDays} day{result.compDays > 1 ? 's' : ''})</td>
+                        <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.compressorTotal)}</td>
+                      </tr>
+                    )}
+                    <tr style={{ borderTop: '2px solid #1A1A1A' }}>
+                      <td style={{ padding: '10px 0', fontWeight: 800 }}>Subtotal</td>
+                      <td></td>
+                      <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: 900, fontSize: 15 }}>{BA_FMT_USD(result.subtotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style={{ border: '1px solid #E5E3E0', borderRadius: 10, padding: 16, background: '#FAFAF8' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>Recommended Bid Range</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                    <div style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 8, background: '#FFF', border: '1px solid #E5E3E0' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.4 }}>Conservative</div>
+                      <div style={{ fontSize: 10, color: '#9E9B96', marginBottom: 4 }}>+5%</div>
+                      <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 900, color: '#1A1A1A' }}>{BA_FMT_USD(result.conservative)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 8, background: '#8A261D', border: '1px solid #8A261D', color: '#FFF', boxShadow: '0 4px 12px rgba(138,38,29,0.25)' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.85 }}>Median</div>
+                      <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 4 }}>+12%</div>
+                      <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 900 }}>{BA_FMT_USD(result.median)}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, marginTop: 4, opacity: 0.9 }}>← recommended</div>
+                    </div>
+                    <div style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 8, background: '#FFF', border: '1px solid #E5E3E0' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.4 }}>Aggressive</div>
+                      <div style={{ fontSize: 10, color: '#9E9B96', marginBottom: 4 }}>+25%</div>
+                      <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 900, color: '#1A1A1A' }}>{BA_FMT_USD(result.aggressive)}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: '#625650' }}>
+                    Effective <strong>${result.effLow.toFixed(2)}</strong> – <strong>${result.effHigh.toFixed(2)}</strong> per LF
+                  </div>
+                </div>
+              </div>
+              {result.watchouts.length > 0 && (
+                <div style={{ ...card }}>
+                  <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 900, color: '#1A1A1A', marginBottom: 12 }}>Watchouts</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {result.watchouts.map((w, i) => (
+                      <div key={i} style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#78350F', display: 'flex', gap: 8 }}>
+                        <span style={{ flexShrink: 0 }}>⚠️</span>
+                        <span>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ ...card, background: '#FAFAF8' }}>
+                <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 900, color: '#1A1A1A', marginBottom: 10 }}>Context</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#625650' }}>
+                  <div>Published list price used: <strong style={{ color: '#1A1A1A' }}>${result.listPrice}/LF</strong></div>
+                  <div>Pricing effective: <strong style={{ color: '#1A1A1A' }}>{effectiveFull}</strong></div>
+                  <div>Based on historical markup band from 269 new-construction proposals (Matt: median +13.4%, Laura: median +8.3%).</div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
@@ -12235,7 +12636,7 @@ const NAV_GROUPS=[
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
-  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -12265,7 +12666,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:148,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
       :<div style={{width:34,height:34,borderRadius:10,background:'#8A261D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{color:'#FFF',fontFamily:'Syne',fontWeight:900,fontSize:15,letterSpacing:'-0.5px'}}>F</span></div>}
     </div>
-    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','material_requests':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','material_requests':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'10px 8px':'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',background:'rgba(0,0,0,0.15)'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
@@ -12287,7 +12688,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
 }
 
 function MoreMenuSheet({page,setPage,onClose,jobs}){
-  const _micons={dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>',projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>',production:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>',production_planning:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>',material_calc:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',material_requests:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>',daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>',billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>',pm_billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>',reports:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>',schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>',weather_days:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>',change_orders:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>',pm_daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>',install_schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>',sales_dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>',prospecting:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>',pipeline:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>',proposals:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',contacts:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>',estimating:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>',map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>',import_projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>'};
+  const _micons={dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>',projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>',production:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>',production_planning:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>',material_calc:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',material_requests:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>',daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>',billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>',pm_billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>',reports:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>',schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>',weather_days:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>',change_orders:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>',pm_daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>',install_schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>',sales_dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>',prospecting:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>',pipeline:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>',proposals:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',contacts:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>',estimating:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>',map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>',import_projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>',bid_advisor:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};
   return <div style={{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.6)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#1A1A1A',borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:'88vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Logo header */}
@@ -12658,6 +13059,7 @@ function AppShell(){
             {page==='fleet_wo'&&<ErrorBoundary label="Fleet Work Orders"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='prospecting'&&<ErrorBoundary label="Prospecting"><ProspectingPage jobs={jobs}/></ErrorBoundary>}
             {page==='proposals'&&<ErrorBoundary label="Proposals"><ProposalsPage jobs={jobs}/></ErrorBoundary>}
+            {page==='bid_advisor'&&<ErrorBoundary label="Bid Advisor"><BidAdvisor/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
         </div>
