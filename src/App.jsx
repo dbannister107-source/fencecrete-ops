@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap } from 'react-leaflet';
+import BUILD_INFO from './build-info.json';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
@@ -402,6 +403,77 @@ function useViewport(){
   const[v,setV]=useState(get);
   useEffect(()=>{let r;const fn=()=>{cancelAnimationFrame(r);r=requestAnimationFrame(()=>setV(get()));};window.addEventListener('resize',fn);return()=>{window.removeEventListener('resize',fn);cancelAnimationFrame(r);};},[]);
   return v;
+}
+
+/* ═══ VERSION CHECKER ═══
+   Polls /version.json every 3 min and compares the server SHA to the one
+   baked into this bundle at build time (from build-info.json). When the
+   server has a newer SHA, render a banner inviting the user to reload.
+   Dismissible. Never force-reloads.
+
+   Silently no-ops when build-info.json is the "dev-initial" stub (local
+   dev, no real SHA) so the banner doesn't spam in dev. */
+const POLL_INTERVAL_MS = 3 * 60 * 1000;  // 3 minutes
+function VersionChecker(){
+  const [latestSha, setLatestSha] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
+  const builtSha = BUILD_INFO?.sha || '';
+  const isDevStub = !builtSha || builtSha.startsWith('dev-');
+
+  useEffect(() => {
+    if (isDevStub) return; // don't poll in local dev
+    let cancelled = false;
+    const check = async () => {
+      try {
+        // Cache-bust with a query param so we always hit the edge fresh
+        const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.sha) setLatestSha(data.sha);
+      } catch (e) { /* network blip, try again next interval */ }
+    };
+    check();
+    const id = setInterval(check, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [isDevStub]);
+
+  if (isDevStub) return null;
+  if (!latestSha) return null;
+  if (latestSha === builtSha) return null;
+  if (dismissed) return null;
+
+  const reload = () => {
+    try { window.location.reload(); } catch (e) {}
+  };
+
+  return (
+    <div style={{
+      position:'fixed', top:12, left:'50%', transform:'translateX(-50%)',
+      background:'#1D4ED8', color:'#FFF',
+      padding:'10px 16px', borderRadius:10,
+      boxShadow:'0 6px 20px rgba(29,78,216,0.35)',
+      zIndex:9999,
+      display:'flex', alignItems:'center', gap:12,
+      fontSize:13, fontWeight:600,
+      fontFamily:'Inter, sans-serif',
+      maxWidth:'calc(100vw - 24px)',
+    }}>
+      <span style={{fontSize:16}}>🔄</span>
+      <span>A new version of Fencecrete Ops is available.</span>
+      <button onClick={reload} style={{
+        background:'#FFF', color:'#1D4ED8',
+        border:'none', borderRadius:6,
+        padding:'5px 12px', fontSize:12, fontWeight:700,
+        cursor:'pointer',
+      }}>Reload</button>
+      <button onClick={()=>setDismissed(true)} title="Dismiss until next update" style={{
+        background:'transparent', color:'#FFF',
+        border:'1px solid rgba(255,255,255,0.4)', borderRadius:6,
+        padding:'5px 10px', fontSize:12, fontWeight:600,
+        cursor:'pointer',
+      }}>Later</button>
+    </div>
+  );
 }
 
 /* ═══ TOAST STORE (sonner-style, stacked) ═══ */
@@ -14225,6 +14297,7 @@ function AppShell(){
   const contentBottomPad=v.mobile?72:0;
   return(
     <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
+      <VersionChecker/>
       <style>{`
         *{box-sizing:border-box;}
         html,body{max-width:100%;position:relative;}
