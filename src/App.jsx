@@ -43,6 +43,27 @@ const REOPEN_EMAILS = new Set([
 const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
 const canEditStatus = (email) => STATUS_EDIT_EMAILS.has((email||'').toLowerCase().trim());
 const canReopen = (email) => REOPEN_EMAILS.has((email||'').toLowerCase().trim());
+// Sales reps and PMs often learn of install date changes directly from the customer
+// (GC calls the sales rep, PM's crew hits weather delays, etc.). Giving them a
+// narrow carve-out to edit ONLY est_start_date without opening up the full project
+// form. Everyone who can edit projects, change status, or reopen can also do this.
+const INSTALL_DATE_EDIT_EMAILS = new Set([
+  // Sales reps
+  'matt@fencecrete.com',
+  'laura@fencecrete.com',
+  'yuda@fencecrete.com',
+  'nathan@fencecrete.com',
+  'ryne@fencecrete.com',
+  // PMs
+  'ray@fencecrete.com',
+  'manuel@fencecrete.com',
+  'jr@fencecrete.com',
+  'doug@fencecrete.com',
+]);
+const canEditInstallDate = (email) => {
+  const e = (email||'').toLowerCase().trim();
+  return EDIT_EMAILS.has(e) || STATUS_EDIT_EMAILS.has(e) || REOPEN_EMAILS.has(e) || INSTALL_DATE_EDIT_EMAILS.has(e);
+};
 // Only Amiee can approve/reject change orders
 const AMIEE_EMAILS = new Set([
   'amiee@fencecrete.com',
@@ -865,6 +886,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const canEdit = isNew || canEditProjects(currentUserEmail);
   const canChangeStatus = isNew || canEditStatus(currentUserEmail);
   const canReopenJob = canReopen(currentUserEmail);
+  // Granular install-date carve-out for sales + PMs. Only applies when the user
+  // doesn't otherwise have edit access; if they can edit everything, this is moot.
+  const canEditInstallDateOnly = !canEdit && canEditInstallDate(currentUserEmail);
+  // Per-field editable check. Returns true when the given column should accept user
+  // input. Full editors see everything. Install-date-only users see just est_start_date.
+  const fieldEditable = (f) => canEdit || (canEditInstallDateOnly && f === 'est_start_date');
   const roInput = canEdit ? {} : {pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'};
   const roStyle = (extra={}) => canEdit ? extra : {...extra,pointerEvents:'none',opacity:0.7,cursor:'default'};
   // Phase 4: close the panel on Escape.
@@ -873,7 +900,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
   },[onClose]);
-  const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':'lineitems');const[saving,setSaving]=useState(false);
+  const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':canEditInstallDateOnly?'dates':'lineitems');const[saving,setSaving]=useState(false);
   const[pisTokens,setPisTokens]=useState([]);
   const[pisSheets,setPisSheets]=useState([]);
   const[pisSending,setPisSending]=useState(false);
@@ -930,6 +957,26 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
     setReopening(false);
   };
   const handleSave=async()=>{setSaving(true);setSaveErr(null);try{if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);fireNewProjectEmail(saved[0]);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok&&res.status!==204)throw new Error(`Save failed (${res.status}): ${txt}`);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleSaveInstallDateOnly=async()=>{
+    /* Narrow save path for sales reps and PMs who can edit Install Date but
+       nothing else. Patches est_start_date only -- no other column is sent to
+       the server even if the client tampered with form state. */
+    if(!canEditInstallDateOnly||!job?.id){return;}
+    setSaving(true);setSaveErr(null);
+    try{
+      const iso=form.est_start_date||null;
+      const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{
+        method:'PATCH',
+        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({est_start_date:iso,updated_at:new Date().toISOString()})
+      });
+      if(!res.ok&&res.status!==204){const txt=await res.text();throw new Error(`Save failed (${res.status}): ${txt}`);}
+      fireAlert('job_updated',{id:job.id,est_start_date:iso});
+      logAct(job,'field_update','est_start_date',job.est_start_date||'',iso||'');
+      setSaving(false);
+      onSaved&&onSaved('Install date saved');
+    }catch(e){console.error('[EditPanel] Install date save failed:',e);setSaveErr(e.message);setSaving(false);}
+  };
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);fireNewProjectEmail(saved[0]);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
   const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
@@ -1020,7 +1067,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           >🧪 Test PIS</button>}
           {canEdit
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
-            : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
+            : canEditInstallDateOnly
+              ? <button onClick={handleSaveInstallDateOnly} disabled={saving} style={{...btnP,background:'#1D4ED8'}} title="Save install date only">{saving?'Saving...':'📅 Save Install Date'}</button>
+              : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
           }
           {!isNew&&job.status==='closed'&&canReopenJob&&<div style={{position:'relative'}}>
             <button onClick={()=>setShowReopenPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#065F46',borderColor:'#065F46',fontWeight:700}}>
@@ -1052,12 +1101,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
-      {!canEdit&&!isNew&&<div style={{padding:'8px 20px',background:'#FEF3C7',borderBottom:'1px solid #FDE68A',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-        <span style={{fontSize:16}}>🔒</span>
-        <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
-      </div>}
+      {!canEdit&&!isNew&&(canEditInstallDateOnly
+        ? <div style={{padding:'8px 20px',background:'#DBEAFE',borderBottom:'1px solid #93C5FD',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            <span style={{fontSize:16}}>📅</span>
+            <span style={{fontSize:12,color:'#1E3A8A',fontWeight:600}}>You can update the <b>Install Date</b> on the Dates tab. Contact Amiee (amiee@fencecrete.com) for any other changes.</span>
+          </div>
+        : <div style={{padding:'8px 20px',background:'#FEF3C7',borderBottom:'1px solid #FDE68A',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            <span style={{fontSize:16}}>🔒</span>
+            <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
+          </div>
+      )}
       <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
-      <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:canEdit?'auto':'none'}}>
+      <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:(canEdit||canEditInstallDateOnly)?'auto':'none'}}>
         {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8A261D33',borderLeft:'4px solid #8A261D',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
             <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>🔀 Sales Origin</div>
@@ -1211,7 +1266,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
           }
           return(
             <div key={f} style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
-              {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical'}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={inputS}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600}}>Open →</a>}</div>:<input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={inputS}/>}</>}
+              {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap',...(fieldEditable(f)?{}:{pointerEvents:'none',opacity:0.6})}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical',...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'})}}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600,pointerEvents:'auto'}}>Open →</a>}</div>:<input type={f.endsWith('_date')||f.endsWith('_month')?'date':'text'} value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>}</>}
             </div>);})}
           {sec&&sec.computed&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:8,fontWeight:600,textTransform:'uppercase'}}>Auto-calculated</div>
