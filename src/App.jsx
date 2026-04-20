@@ -612,7 +612,7 @@ const PM_BILL_LF_GROUPS=[
   // but excluded from any LF subtotal or grand total.
   {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Posts'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['gate_controls','Gate Controls'],['remove_existing','Demo']]},
 ];
-const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'history',label:'History',fields:[]},{key:'pis',label:'Info Sheet',fields:[]}];
+const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'dates',label:'Dates',fields:['contract_date','contract_month','est_start_date','start_month','contract_age','active_entry_date','complete_date','complete_month']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'tasks',label:'Tasks',fields:[]},{key:'history',label:'History',fields:[]},{key:'pis',label:'Info Sheet',fields:[]}];
 
 const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#625650',job_created:'#8A261D'};
 
@@ -1050,7 +1050,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
           </div>
         </div>;})()}
-        {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='pis'?<div style={{padding:'4px 0'}}>
+        {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null}/>):tab==='tasks'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add tasks.</div>:<TaskTile scope={{job_id:job?.id}} title="Tasks for this Project"/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='pis'?<div style={{padding:'4px 0'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
             <div><div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Information Sheet</div><div style={{fontSize:11,color:'#625650',marginTop:2}}>Pursuant to Section 53.159 of the Texas Property Code</div></div>
             {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received</span>}
@@ -8727,7 +8727,7 @@ const LEAD_SOURCES=['Inbound Call','Referral','Website','Bid Invitation','Cold O
 const FENCE_TYPES_LEAD=['PC','SW','WI','Mixed','Other'];
 const COMPANY_TYPES=['GC','Developer','MUD','Homeowner','Municipality','Other'];
 
-function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted,onMoveStage}){
+function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,highlighted,onMoveStage,nextTask}){
   const mc=MC[lead.market]||'#625650';
   const mb=MB[lead.market]||'#F4F4F2';
   const stageDate=lead.stage_entered_at||lead.updated_at||lead.created_at;
@@ -8737,9 +8737,22 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
   const acv=linkedJob?n(linkedJob.adj_contract_value||linkedJob.contract_value):0;
   const billed=linkedJob?n(linkedJob.ytd_invoiced):0;
   const pct=acv>0?Math.round(billed/acv*100):0;
+  /* Next open task for this lead — chip below the project description if present. */
+  let taskChip=null;
+  if(nextTask){
+    const fmt=(d)=>{if(!d)return'No date';const today2=new Date();today2.setHours(0,0,0,0);const dt=new Date(d+'T12:00:00');const diff=Math.floor((dt-today2)/86400000);if(diff===0)return'Today';if(diff===1)return'Tomorrow';if(diff===-1)return'Yesterday';if(diff>0&&diff<=7)return`In ${diff}d`;if(diff<0)return`${-diff}d overdue`;return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+    const col=(d)=>{if(!d)return['#9E9B96','#F4F4F2'];const today2=new Date();today2.setHours(0,0,0,0);const dt=new Date(d+'T12:00:00');const diff=Math.floor((dt-today2)/86400000);if(diff<0)return['#991B1B','#FEE2E2'];if(diff===0)return['#B45309','#FEF3C7'];if(diff<=7)return['#1D4ED8','#DBEAFE'];return['#625650','#F4F4F2'];};
+    const[fg,bg]=col(nextTask.due_date);
+    taskChip=<div style={{fontSize:10,color:fg,background:bg,border:`1px solid ${fg}33`,padding:'3px 7px',borderRadius:5,marginBottom:6,display:'flex',alignItems:'center',gap:5,fontWeight:600}}>
+      <span style={{fontSize:9,letterSpacing:0.3,fontWeight:800,textTransform:'uppercase',opacity:0.75}}>NEXT</span>
+      <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nextTask.title}</span>
+      <span style={{flexShrink:0,fontWeight:800}}>{fmt(nextTask.due_date)}</span>
+    </div>;
+  }
   return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',transition:'box-shadow .15s,border-color .15s',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
     <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
     {lead.project_description&&<div style={{fontSize:11,color:'#625650',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
+    {taskChip}
     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6,alignItems:'center'}}>
       {n(lead.estimated_value)>0&&<span style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#8A261D'}}>{$k(lead.estimated_value)}</span>}
       {n(lead.estimated_lf)>0&&<span style={{fontSize:11,color:'#625650'}}>{n(lead.estimated_lf).toLocaleString()} LF</span>}
@@ -8987,6 +9000,8 @@ function LeadEditDrawer({lead,onClose,onSaved,onDeleted,contacts}){
           <button onClick={save} disabled={saving||deleting} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
         </div>
       </div>
+      {/* Tasks for this lead */}
+      {lead&&lead.id&&<TaskTile scope={{deal_id:lead.id}} contacts={contacts||[]} title="Tasks for this Lead"/>}
       {/* Danger zone */}
       <div style={{marginTop:16,padding:16,background:'#FEF2F2',border:'1px solid #FEE2E2',borderRadius:10}}>
         <div style={{fontSize:11,fontWeight:700,color:'#991B1B',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Danger Zone</div>
@@ -9204,6 +9219,16 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   const[editLead,setEditLead]=useState(null);
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
+  // Next open task per lead (soonest due_date wins) -- powers the follow-up chip on each lead card.
+  // Fetched once on mount, refreshed when pipeline refreshes. Refetch when the user returns to this page.
+  const[tasksByLead,setTasksByLead]=useState({});
+  const refetchLeadTasks=useCallback(async()=>{
+    const d=await sbGet('tasks','select=id,deal_id,title,task_type,due_date,status,assigned_to&deal_id=not.is.null&status=eq.open&order=due_date.asc.nullslast');
+    if(!Array.isArray(d))return;
+    const m={};d.forEach(t=>{if(!t.deal_id)return;if(!m[t.deal_id])m[t.deal_id]=t;});/* first = soonest due */
+    setTasksByLead(m);
+  },[]);
+  useEffect(()=>{refetchLeadTasks();},[refetchLeadTasks]);
   useEffect(()=>{try{const h=localStorage.getItem('fc_pipeline_highlight');if(h){setHighlightId(h);localStorage.removeItem('fc_pipeline_highlight');setTimeout(()=>setHighlightId(null),5000);}}catch(e){}},[]);
   // Job lookup by job_number for won cards
   const jobsByNumber=useMemo(()=>{const m={};(jobs||[]).forEach(j=>{if(j.job_number)m[j.job_number]=j;});return m;},[jobs]);
@@ -9367,7 +9392,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     isMobile?<MobileKanban
       columns={LEAD_STAGES.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.accent,items:byStage[col.key]||[]}))}
       emptyMessage="No leads in this stage"
-      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>}
+      renderCard={l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage} nextTask={tasksByLead[l.id]}/>}
     />:
     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,alignItems:'flex-start'}}>
       {LEAD_STAGES.map(col=>{
@@ -9383,7 +9408,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
               {$k(total)}
             </div>
           </div>
-          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage}/>)}</div>}
+          {!collapsed&&<div style={{flex:1,overflow:'auto',minHeight:0}}>{items.length===0?<EmptyState compact icon={col.key==='won'?'🏆':col.key==='lost'?'💤':'📭'} title={`No ${col.label.toLowerCase()}`} subtitle={col.key==='new_lead'?'Click + New Lead to add your first deal':'Drag leads here'}/>:items.map(l=><LeadCard key={l.id} lead={l} onDragStart={onDragStart} onClick={()=>setEditLead(l)} linkedJob={l.job_number?jobsByNumber[l.job_number]:null} onOpenProject={onOpenProject} capacity={capacity} highlighted={highlightId===l.id} onMoveStage={onMoveStage} nextTask={tasksByLead[l.id]}/>)}</div>}
         </div>;
       })}
     </div>}
@@ -9410,6 +9435,341 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
         </div>
       </div>
     </div>}
+  </div>;
+}
+
+/* ═══ TASKS PAGE ═══
+   Task/activity log for sales reps. Shipped to satisfy Nathan's Apr 20 email
+   ("separate section for activities, with a column for next follow-up date").
+   All tasks are visible to all reps (transparent mode per David's decision).
+   Tasks link to any combination of contact_id / deal_id (leads) / job_id.
+*/
+const TASK_TYPES=['Call','Email','Voicemail','Follow-up','Proposal','Meeting','Site Visit','Other'];
+const TASK_PRIORITIES=[['low','Low','#9E9B96'],['medium','Medium','#B45309'],['high','High','#8A261D']];
+function TasksPage({jobs}){
+  const isMobile=useIsMobile();
+  const[tasks,setTasks]=useState([]);
+  const[contacts,setContacts]=useState([]);
+  const[leads,setLeads]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[assigneeF,setAssigneeF]=useState(()=>{try{return localStorage.getItem('fc_tasks_assignee')||null;}catch(e){return null;}});
+  const[typeF,setTypeF]=useState(null);
+  const[statusF,setStatusF]=useState('open');
+  const[bucketF,setBucketF]=useState(null); /* null | 'overdue' | 'today' | 'this_week' | 'upcoming' | 'no_date' */
+  const[search,setSearch]=useState('');
+  const[showAdd,setShowAdd]=useState(false);
+  const[editTask,setEditTask]=useState(null);
+  const[toast,setToast]=useState(null);
+  useEffect(()=>{try{if(assigneeF)localStorage.setItem('fc_tasks_assignee',assigneeF);else localStorage.removeItem('fc_tasks_assignee');}catch(e){}},[assigneeF]);
+  const fetchTasks=useCallback(async()=>{
+    setLoading(true);
+    const[t,c,l]=await Promise.all([
+      sbGet('tasks','select=*&order=due_date.asc.nullslast,created_at.desc'),
+      sbGet('contacts','select=id,company,name'),
+      sbGet('leads','select=id,company_name,project_description'),
+    ]);
+    setTasks(Array.isArray(t)?t:[]);
+    setContacts(Array.isArray(c)?c:[]);
+    setLeads(Array.isArray(l)?l:[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{fetchTasks();},[fetchTasks]);
+  const contactById=useMemo(()=>{const m={};contacts.forEach(c=>{m[c.id]=c;});return m;},[contacts]);
+  const leadById=useMemo(()=>{const m={};leads.forEach(l=>{m[l.id]=l;});return m;},[leads]);
+  const jobById=useMemo(()=>{const m={};(jobs||[]).forEach(j=>{m[j.id]=j;});return m;},[jobs]);
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayStr=today.toISOString().slice(0,10);
+  const weekEnd=new Date(today);weekEnd.setDate(weekEnd.getDate()+7);
+  const weekEndStr=weekEnd.toISOString().slice(0,10);
+  const bucketOf=(t)=>{
+    if(!t.due_date)return'no_date';
+    if(t.due_date<todayStr)return'overdue';
+    if(t.due_date===todayStr)return'today';
+    if(t.due_date<=weekEndStr)return'this_week';
+    return'upcoming';
+  };
+  const filtered=useMemo(()=>{
+    let f=tasks;
+    if(statusF==='open')f=f.filter(t=>t.status!=='completed'&&t.status!=='canceled');
+    else if(statusF==='completed')f=f.filter(t=>t.status==='completed');
+    if(assigneeF)f=f.filter(t=>t.assigned_to===assigneeF);
+    if(typeF)f=f.filter(t=>t.task_type===typeF);
+    if(bucketF)f=f.filter(t=>bucketOf(t)===bucketF);
+    if(search){const q=search.toLowerCase();f=f.filter(t=>{
+      const c=contactById[t.contact_id];const l=leadById[t.deal_id];const j=jobById[t.job_id];
+      const hay=`${t.title||''} ${t.description||''} ${t.notes||''} ${c?.company||''} ${c?.name||''} ${l?.company_name||''} ${l?.project_description||''} ${j?.job_name||''} ${j?.job_number||''}`.toLowerCase();
+      return hay.includes(q);
+    });}
+    return f;
+  },[tasks,statusF,assigneeF,typeF,bucketF,search,contactById,leadById,jobById]);
+  const bucketCounts=useMemo(()=>{
+    const base=tasks.filter(t=>t.status!=='completed'&&t.status!=='canceled');
+    const scoped=assigneeF?base.filter(t=>t.assigned_to===assigneeF):base;
+    return{
+      overdue:scoped.filter(t=>bucketOf(t)==='overdue').length,
+      today:scoped.filter(t=>bucketOf(t)==='today').length,
+      this_week:scoped.filter(t=>bucketOf(t)==='this_week').length,
+      upcoming:scoped.filter(t=>bucketOf(t)==='upcoming').length,
+      no_date:scoped.filter(t=>bucketOf(t)==='no_date').length,
+    };
+  },[tasks,assigneeF]);// eslint-disable-line
+  const toggleComplete=async(t)=>{
+    try{
+      const newStatus=t.status==='completed'?'open':'completed';
+      const patch={status:newStatus,completed_date:newStatus==='completed'?todayStr:null,updated_at:new Date().toISOString()};
+      await sbPatch('tasks',t.id,patch);
+      setTasks(prev=>prev.map(x=>x.id===t.id?{...x,...patch}:x));
+      setToast(newStatus==='completed'?'Task completed':'Task reopened');
+    }catch(e){alert('Update failed: '+e.message);}
+  };
+  const snooze=async(t,days)=>{
+    try{
+      const d=t.due_date?new Date(t.due_date):new Date();
+      d.setDate(d.getDate()+days);
+      const patch={due_date:d.toISOString().slice(0,10),updated_at:new Date().toISOString()};
+      await sbPatch('tasks',t.id,patch);
+      setTasks(prev=>prev.map(x=>x.id===t.id?{...x,...patch}:x));
+      setToast(`Snoozed ${days} day${days===1?'':'s'}`);
+    }catch(e){alert('Update failed: '+e.message);}
+  };
+  const deleteTask=async(t)=>{
+    if(!window.confirm(`Delete task "${t.title}"? This can't be undone.`))return;
+    try{
+      const r=await fetch(`${SB}/rest/v1/tasks?id=eq.${t.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+      if(!r.ok)throw new Error(await r.text());
+      setTasks(prev=>prev.filter(x=>x.id!==t.id));
+      setEditTask(null);
+      setToast('Task deleted');
+    }catch(e){alert('Delete failed: '+e.message);}
+  };
+  const linkChip=(t)=>{
+    const c=contactById[t.contact_id];const l=leadById[t.deal_id];const j=jobById[t.job_id];
+    const chips=[];
+    if(c)chips.push({label:c.company||c.name||'Contact',color:'#8A261D',bg:'#FDF4F4'});
+    if(l)chips.push({label:l.company_name||'Lead',color:'#1D4ED8',bg:'#DBEAFE'});
+    if(j)chips.push({label:`#${j.job_number||'?'}`,color:'#15803D',bg:'#D1FAE5'});
+    return chips;
+  };
+  const bucketColor=(b)=>b==='overdue'?'#991B1B':b==='today'?'#B45309':b==='this_week'?'#1D4ED8':b==='upcoming'?'#625650':'#9E9B96';
+  const bucketLabel=(b)=>b==='overdue'?'OVERDUE':b==='today'?'TODAY':b==='this_week'?'This Week':b==='upcoming'?'Upcoming':'No Date';
+  const fmtDue=(d)=>{if(!d)return'—';const dt=new Date(d+'T12:00:00');const diff=Math.floor((dt-today)/86400000);if(diff===0)return'Today';if(diff===1)return'Tomorrow';if(diff===-1)return'Yesterday';if(diff>0&&diff<=7)return`In ${diff}d`;if(diff<0&&diff>=-30)return`${-diff}d overdue`;return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:dt.getFullYear()!==today.getFullYear()?'numeric':undefined});};
+  return <div>
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Tasks</h1>
+        <div style={{fontSize:12,color:'#625650',marginTop:2}}>Track calls, follow-ups, proposals, and activity across contacts, leads, and projects.</div>
+      </div>
+      <button onClick={()=>setShowAdd(true)} style={btnP}>+ New Task</button>
+    </div>
+    {/* Bucket summary cards */}
+    <div style={{display:'grid',gridTemplateColumns:`repeat(${isMobile?2:5},1fr)`,gap:10,marginBottom:16}}>
+      {[['overdue','Overdue','#991B1B'],['today','Today','#B45309'],['this_week','This Week','#1D4ED8'],['upcoming','Upcoming','#625650'],['no_date','No Date','#9E9B96']].map(([k,lbl,col])=>
+        <div key={k} onClick={()=>setBucketF(bucketF===k?null:k)} style={{...card,padding:14,cursor:'pointer',borderTop:`3px solid ${col}`,background:bucketF===k?'#FDF4F4':'#FFF',borderColor:bucketF===k?'#8A261D':'#E5E3E0'}}>
+          <div style={{fontSize:10,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.4,marginBottom:6}}>{lbl}</div>
+          <div style={{fontSize:24,fontWeight:900,color:col}}>{bucketCounts[k]||0}</div>
+        </div>
+      )}
+    </div>
+    {/* Filter bar */}
+    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search title, company, project..." style={{...inputS,width:260,padding:'6px 10px',fontSize:12}}/>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>STATUS:</span>
+      {[['open','Open'],['completed','Done'],['all','All']].map(([k,l])=><button key={k} onClick={()=>setStatusF(k)} style={fpill(statusF===k)}>{l}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>ASSIGNEE:</span>
+      <button onClick={()=>setAssigneeF(null)} style={fpill(!assigneeF)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setAssigneeF(r)} style={fpill(assigneeF===r)}>{r}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>TYPE:</span>
+      <button onClick={()=>setTypeF(null)} style={fpill(!typeF)}>All</button>
+      {TASK_TYPES.map(t=><button key={t} onClick={()=>setTypeF(typeF===t?null:t)} style={fpill(typeF===t)}>{t}</button>)}
+    </div>
+    {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={6}/></div>:
+    filtered.length===0?<div style={{...card}}><EmptyState icon="✅" title={tasks.length===0?'No tasks yet':'No tasks match your filters'} subtitle={tasks.length===0?'Create a task to track a call, follow-up, or activity.':'Try clearing a filter above.'} cta={tasks.length===0?'+ New Task':null} onCta={()=>setShowAdd(true)}/></div>:
+    isMobile?<MobileCards items={filtered} renderCard={t=>{const chips=linkChip(t);const bk=bucketOf(t);const pri=TASK_PRIORITIES.find(p=>p[0]===t.priority);return <div style={mobileCardStyle(bucketColor(bk))} onClick={()=>setEditTask(t)}>
+      <div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:6}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:10,color:bucketColor(bk),fontWeight:700,textTransform:'uppercase',letterSpacing:0.4,marginBottom:4}}>{bucketLabel(bk)} {t.due_date?`· ${fmtDue(t.due_date)}`:''}</div>
+          <div style={{fontSize:15,fontWeight:700,color:t.status==='completed'?'#9E9B96':'#1A1A1A',textDecoration:t.status==='completed'?'line-through':'none'}}>{t.title}</div>
+        </div>
+        <button onClick={e=>{e.stopPropagation();toggleComplete(t);}} style={{width:32,height:32,borderRadius:6,border:t.status==='completed'?'1px solid #15803D':'1px solid #E5E3E0',background:t.status==='completed'?'#D1FAE5':'#FFF',cursor:'pointer',flexShrink:0,fontSize:16,color:'#15803D'}}>{t.status==='completed'?'✓':''}</button>
+      </div>
+      <div style={{fontSize:12,color:'#625650',marginBottom:6}}>{t.task_type||'—'} · {t.assigned_to||'Unassigned'}{pri?` · `:''}{pri&&<span style={{color:pri[2],fontWeight:700}}>{pri[1]}</span>}</div>
+      {chips.length>0&&<div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{chips.map((ch,i)=><span key={i} style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,background:ch.bg,color:ch.color}}>{ch.label}</span>)}</div>}
+    </div>;}}/>:
+    <div style={{...card,padding:0,overflow:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+          {['','Task','Type','Assignee','Due','Linked to','Priority',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {filtered.map(t=>{const chips=linkChip(t);const bk=bucketOf(t);const pri=TASK_PRIORITIES.find(p=>p[0]===t.priority);return <tr key={t.id} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',background:t.status==='completed'?'#FAFAFA':'#FFF'}} onClick={()=>setEditTask(t)} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=t.status==='completed'?'#FAFAFA':'#FFF'}>
+            <td style={{padding:'10px 12px',width:40}} onClick={e=>{e.stopPropagation();toggleComplete(t);}}><div style={{width:22,height:22,borderRadius:5,border:t.status==='completed'?'1px solid #15803D':'1px solid #CBCAC5',background:t.status==='completed'?'#D1FAE5':'#FFF',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#15803D',fontSize:14,fontWeight:800}}>{t.status==='completed'?'✓':''}</div></td>
+            <td style={{padding:'10px 12px'}}>
+              <div style={{fontWeight:600,color:t.status==='completed'?'#9E9B96':'#1A1A1A',textDecoration:t.status==='completed'?'line-through':'none'}}>{t.title}</div>
+              {t.description&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:260}}>{t.description}</div>}
+            </td>
+            <td style={{padding:'10px 12px',color:'#625650'}}>{t.task_type||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{t.assigned_to?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:'#FDF4F4',color:'#8A261D',border:'1px solid #F5D8D8'}}>{t.assigned_to}</span>:<span style={{color:'#9E9B96',fontStyle:'italic',fontSize:11}}>Unassigned</span>}</td>
+            <td style={{padding:'10px 12px'}}><span style={{fontSize:12,fontWeight:700,color:bucketColor(bk)}}>{fmtDue(t.due_date)}</span></td>
+            <td style={{padding:'10px 12px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{chips.map((ch,i)=><span key={i} style={{display:'inline-block',padding:'2px 7px',borderRadius:5,fontSize:10,fontWeight:700,background:ch.bg,color:ch.color}}>{ch.label}</span>)}{chips.length===0&&<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</div></td>
+            <td style={{padding:'10px 12px'}}>{pri?<span style={{fontSize:11,fontWeight:700,color:pri[2]}}>{pri[1]}</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
+            <td style={{padding:'10px 12px',textAlign:'right'}}>
+              {t.status!=='completed'&&<button onClick={e=>{e.stopPropagation();snooze(t,1);}} title="Snooze 1 day" style={{padding:'3px 8px',border:'1px solid #E5E3E0',borderRadius:5,background:'#FFF',fontSize:11,cursor:'pointer',color:'#625650'}}>+1d</button>}
+            </td>
+          </tr>;})}
+        </tbody>
+      </table>
+    </div>}
+    {showAdd&&<TaskForm onClose={()=>setShowAdd(false)} onSaved={()=>{fetchTasks();setToast('Task created');}} contacts={contacts} leads={leads} jobs={jobs}/>}
+    {editTask&&<TaskForm initial={editTask} onClose={()=>setEditTask(null)} onSaved={()=>{fetchTasks();setEditTask(null);setToast('Task saved');}} onDelete={()=>deleteTask(editTask)} contacts={contacts} leads={leads} jobs={jobs}/>}
+  </div>;
+}
+
+/* Task Create/Edit form drawer */
+function TaskForm({onClose,onSaved,onDelete,initial,contacts,leads,jobs}){
+  const[f,setF]=useState(initial||{title:'',description:'',task_type:'Follow-up',priority:'medium',status:'open',due_date:'',assigned_to:'',contact_id:null,deal_id:null,job_id:null,notes:''});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[saving,setSaving]=useState(false);
+  const save=async()=>{
+    if(!f.title.trim()){alert('Title required');return;}
+    setSaving(true);
+    try{
+      const body={...f};
+      /* empty-strings to null so they don't fail type checks in Postgres */
+      Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
+      body.updated_at=new Date().toISOString();
+      if(initial&&initial.id){
+        await sbPatch('tasks',initial.id,body);
+      }else{
+        delete body.id;
+        await sbPost('tasks',body);
+      }
+      onSaved&&onSaved();
+    }catch(e){alert('Save failed: '+e.message);}
+    setSaving(false);
+  };
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{width:460,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>{initial?'Edit Task':'New Task'}</div>
+        <button onClick={onClose} style={{...btnS,padding:'4px 10px'}}>✕</button>
+      </div>
+      <div style={{...card}}>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Title *</div>
+          <input value={f.title} onChange={e=>set('title',e.target.value)} placeholder="Call Bob about Lawhon pricing" style={inputS} autoFocus/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Type</div>
+            <select value={f.task_type||''} onChange={e=>set('task_type',e.target.value)} style={inputS}>{TASK_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Priority</div>
+            <select value={f.priority||'medium'} onChange={e=>set('priority',e.target.value)} style={inputS}>{TASK_PRIORITIES.map(p=><option key={p[0]} value={p[0]}>{p[1]}</option>)}</select>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Assignee</div>
+            <select value={f.assigned_to||''} onChange={e=>set('assigned_to',e.target.value)} style={inputS}><option value="">— Unassigned —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Due Date</div>
+            <input type="date" value={f.due_date||''} onChange={e=>set('due_date',e.target.value)} style={inputS}/>
+          </div>
+        </div>
+        <div style={{marginTop:14,marginBottom:8,fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.4}}>Link to</div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Contact</div>
+          <select value={f.contact_id||''} onChange={e=>set('contact_id',e.target.value||null)} style={inputS}><option value="">— None —</option>{(contacts||[]).map(c=><option key={c.id} value={c.id}>{c.company||c.name||'Contact'}{c.name&&c.company?` (${c.name})`:''}</option>)}</select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Lead / Deal</div>
+          <select value={f.deal_id||''} onChange={e=>set('deal_id',e.target.value||null)} style={inputS}><option value="">— None —</option>{(leads||[]).map(l=><option key={l.id} value={l.id}>{l.company_name||'Lead'}{l.project_description?` — ${l.project_description.slice(0,40)}`:''}</option>)}</select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Project</div>
+          <select value={f.job_id||''} onChange={e=>set('job_id',e.target.value||null)} style={inputS}><option value="">— None —</option>{(jobs||[]).filter(j=>!CLOSED_SET.has(j.status)).map(j=><option key={j.id} value={j.id}>#{j.job_number} — {j.job_name}</option>)}</select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Notes</div>
+          <textarea value={f.notes||''} onChange={e=>set('notes',e.target.value)} style={{...inputS,minHeight:80,resize:'vertical'}} placeholder="Details, context, follow-up notes..."/>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          {initial&&onDelete&&<button onClick={onDelete} style={{padding:'10px 14px',borderRadius:8,border:'1px solid #FCA5A5',background:'#FFF',color:'#991B1B',fontSize:12,fontWeight:700,cursor:'pointer'}}>Delete</button>}
+          <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':initial?'Save Changes':'Create Task'}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══ TASK TILE ═══
+   Reusable tile embedded in Lead / Contact / Project drawers.
+   Shows open tasks for this entity plus a "+ Add task" button.
+   Props: scope = { contact_id, deal_id, job_id } -- exactly one set.
+*/
+function TaskTile({scope,jobs,contacts,leads,title='Tasks'}){
+  const[tasks,setTasks]=useState([]);
+  const[showForm,setShowForm]=useState(false);
+  const[editing,setEditing]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const filterQ=useMemo(()=>{
+    if(scope.contact_id)return`contact_id=eq.${scope.contact_id}`;
+    if(scope.deal_id)return`deal_id=eq.${scope.deal_id}`;
+    if(scope.job_id)return`job_id=eq.${scope.job_id}`;
+    return null;
+  },[scope]);
+  const load=useCallback(async()=>{
+    if(!filterQ)return;
+    setLoading(true);
+    const d=await sbGet('tasks',`select=*&${filterQ}&order=due_date.asc.nullslast,created_at.desc`);
+    setTasks(Array.isArray(d)?d:[]);
+    setLoading(false);
+  },[filterQ]);
+  useEffect(()=>{load();},[load]);
+  const todayStr=new Date().toISOString().slice(0,10);
+  const toggleComplete=async(t)=>{
+    const newStatus=t.status==='completed'?'open':'completed';
+    const patch={status:newStatus,completed_date:newStatus==='completed'?todayStr:null,updated_at:new Date().toISOString()};
+    await sbPatch('tasks',t.id,patch);
+    setTasks(prev=>prev.map(x=>x.id===t.id?{...x,...patch}:x));
+  };
+  const fmtDue=(d)=>{if(!d)return'—';const today=new Date();today.setHours(0,0,0,0);const dt=new Date(d+'T12:00:00');const diff=Math.floor((dt-today)/86400000);if(diff===0)return'Today';if(diff===1)return'Tomorrow';if(diff===-1)return'Yesterday';if(diff>0&&diff<=7)return`In ${diff}d`;if(diff<0)return`${-diff}d overdue`;return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+  const dueColor=(d)=>{if(!d)return'#9E9B96';const today=new Date();today.setHours(0,0,0,0);const dt=new Date(d+'T12:00:00');const diff=Math.floor((dt-today)/86400000);return diff<0?'#991B1B':diff===0?'#B45309':diff<=7?'#1D4ED8':'#625650';};
+  const open=tasks.filter(t=>t.status!=='completed'&&t.status!=='canceled');
+  const done=tasks.filter(t=>t.status==='completed');
+  return <div style={{marginTop:16,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:14}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>{title} {open.length>0&&<span style={{color:'#625650',fontWeight:700}}>({open.length} open)</span>}</div>
+      <button onClick={()=>setShowForm(true)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid #8A261D',background:'#FDF4F4',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add Task</button>
+    </div>
+    {loading?<div style={{fontSize:12,color:'#9E9B96',padding:'8px 0'}}>Loading...</div>:
+    tasks.length===0?<div style={{fontSize:12,color:'#9E9B96',fontStyle:'italic',padding:'8px 0'}}>No tasks yet. Click "+ Add Task" to create one.</div>:
+    <div>
+      {open.length>0&&open.map(t=><div key={t.id} onClick={()=>setEditing(t)} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid #F4F4F2',cursor:'pointer'}}>
+        <div onClick={e=>{e.stopPropagation();toggleComplete(t);}} style={{width:18,height:18,borderRadius:4,border:'1px solid #CBCAC5',background:'#FFF',cursor:'pointer',flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:600,color:'#1A1A1A',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</div>
+          <div style={{fontSize:10,color:'#625650'}}>{t.task_type||'Task'}{t.assigned_to?` · ${t.assigned_to}`:''}</div>
+        </div>
+        <div style={{fontSize:11,fontWeight:700,color:dueColor(t.due_date),whiteSpace:'nowrap'}}>{fmtDue(t.due_date)}</div>
+      </div>)}
+      {done.length>0&&<details style={{marginTop:6}}>
+        <summary style={{fontSize:11,color:'#625650',cursor:'pointer',padding:'4px 0'}}>Show {done.length} completed</summary>
+        {done.map(t=><div key={t.id} onClick={()=>setEditing(t)} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid #F4F4F2',cursor:'pointer'}}>
+          <div onClick={e=>{e.stopPropagation();toggleComplete(t);}} style={{width:18,height:18,borderRadius:4,border:'1px solid #15803D',background:'#D1FAE5',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',color:'#15803D',fontSize:12,fontWeight:800}}>✓</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,color:'#9E9B96',textDecoration:'line-through',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</div>
+          </div>
+          <div style={{fontSize:11,color:'#9E9B96'}}>{t.completed_date?fmtDue(t.completed_date):''}</div>
+        </div>)}
+      </details>}
+    </div>}
+    {showForm&&<TaskForm onClose={()=>setShowForm(false)} onSaved={()=>{load();setShowForm(false);}} initial={{title:'',task_type:'Follow-up',priority:'medium',status:'open',assigned_to:'',due_date:'',notes:'',...scope}} contacts={contacts||[]} leads={leads||[]} jobs={jobs||[]}/>}
+    {editing&&<TaskForm initial={editing} onClose={()=>setEditing(null)} onSaved={()=>{load();setEditing(null);}} contacts={contacts||[]} leads={leads||[]} jobs={jobs||[]}/>}
   </div>;
 }
 
@@ -9570,7 +9930,7 @@ function ContactForm({onClose,onSaved,initial}){
 }
 
 function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenProject,onOpenLead}){
-  const[f,setF]=useState({company:contact.company||'',type:contact.type||contact.company_type||'',name:contact.name||'',title:contact.title||'',phone:contact.phone||'',email:contact.email||'',market:contact.market||'',notes:contact.notes||''});
+  const[f,setF]=useState({company:contact.company||'',type:contact.type||contact.company_type||'',name:contact.name||'',title:contact.title||'',phone:contact.phone||'',email:contact.email||'',market:contact.market||'',assigned_rep:contact.assigned_rep||'',notes:contact.notes||''});
   const summary=useMemo(()=>{
     const ltv=(linkedJobs||[]).reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
     const activePipeline=(linkedLeads||[]).filter(l=>l.stage==='proposal_sent').reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0);
@@ -9636,12 +9996,15 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
         {fld('Phone','phone')}
         {fld('Email','email','email')}
         {fld('Market','market','text',MKTS)}
+        {fld('Owner','assigned_rep','text',REPS)}
         {fld('Notes','notes','textarea')}
         <div style={{display:'flex',gap:8,marginTop:12}}>
           <button onClick={onClose} style={{...btnS,flex:1}}>Close</button>
           <button onClick={save} disabled={saving} style={{...btnP,flex:2}}>{saving?'Saving...':'Save Changes'}</button>
         </div>
       </div>
+      {/* Tasks for this contact */}
+      <TaskTile scope={{contact_id:contact.id}} jobs={linkedJobs} title="Tasks for this Contact"/>
       <div style={{...card,marginTop:12}}>
         <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',marginBottom:8}}>Active Leads ({activeLeads.length})</div>
         {activeLeads.length===0?<div style={{fontSize:12,color:'#9E9B96'}}>No active leads</div>:
@@ -13406,7 +13769,7 @@ const NAV_GROUPS=[
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
-  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -13436,7 +13799,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:148,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
       :<div style={{width:34,height:34,borderRadius:10,background:'#8A261D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{color:'#FFF',fontFamily:'Syne',fontWeight:900,fontSize:15,letterSpacing:'-0.5px'}}>F</span></div>}
     </div>
-    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','material_requests':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','material_requests':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4"/><path d="M2 13h12"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'10px 8px':'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',background:'rgba(0,0,0,0.15)'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
@@ -13823,6 +14186,7 @@ function AppShell(){
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='pipeline'&&<ErrorBoundary label="Pipeline"><PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/></ErrorBoundary>}
+            {page==='tasks'&&<TasksPage jobs={jobs}/>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
             {page==='sales_dashboard'&&<SalesDashboardPage jobs={jobs} onNav={navigateTo}/>}
             {page==='fleet'&&<ErrorBoundary label="Fleet"><FleetPage jobs={jobs}/></ErrorBoundary>}
