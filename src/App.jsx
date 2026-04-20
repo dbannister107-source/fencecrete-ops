@@ -2236,6 +2236,28 @@ function ProjectCardList({jobs,onTap,emptyMessage='No projects found.'}){
 
 function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   const isMobile = useIsMobile();
+  const auth = useAuth();
+  /* Inline editor permissions (Apr 20 2026 fix): previously ANY logged-in
+     user could toggle "✏ Edit" and overwrite ytd_invoiced, status, pm, etc.
+     Now gated to match the EditPanel drawer:
+       - pageCanEdit:        full-edit users (David, Amiee, contracts@, Alex)
+       - pageCanStatusOnly:  status editors (Max, Luis) — only 'status' col
+       - pageCanInstallOnly: sales + PMs     — only 'est_start_date' col
+     Users with none of the above don't see the edit-mode toggle at all. */
+  const pageEmail = (auth?.user?.email||'').toLowerCase().trim();
+  const pageCanEdit = canEditProjects(pageEmail);
+  const pageCanStatusOnly = !pageCanEdit && canEditStatus(pageEmail);
+  const pageCanInstallOnly = !pageCanEdit && !pageCanStatusOnly && canEditInstallDate(pageEmail);
+  const pageCanAnyEdit = pageCanEdit || pageCanStatusOnly || pageCanInstallOnly;
+  /* Which columns is this user allowed to edit inline? Used both for click-gating
+     (prevent entering edit mode on a locked cell) and as a defense-in-depth check
+     inside saveInline (reject PATCH payloads for disallowed columns). */
+  const cellEditable = (colKey) => {
+    if (pageCanEdit) return true;
+    if (pageCanStatusOnly && colKey === 'status') return true;
+    if (pageCanInstallOnly && colKey === 'est_start_date') return true;
+    return false;
+  };
   const[projTab,setProjTab]=useState('active');
   const[search,setSearch]=useState('');
   const[statusF,setStatusF]=useState(new Set());
@@ -2303,17 +2325,21 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   useEffect(()=>{try{localStorage.setItem('fc_vis_cols_v3',JSON.stringify(visCols));}catch(e){}},[visCols]);
   const[editJob,setEditJob]=useState(openJob||null);const[isNew,setIsNew]=useState(false);const[showNewForm,setShowNewForm]=useState(false);
   const[editMode,setEditMode]=useState(false);const[inlE,setInlE]=useState(null);
+  /* If the user has no edit capability at all, force editMode off. This handles
+     the (unlikely) case where they had editMode=true in local state and then
+     lost permissions. Belt-and-suspenders vs the UI gate. */
+  useEffect(()=>{if(!pageCanAnyEdit&&editMode){setEditMode(false);setInlE(null);}},[pageCanAnyEdit,editMode]);
   const[sel,setSel]=useState(new Set());const[toast,setToast]=useState(null);
   useEffect(()=>{if(openJob)setEditJob(openJob);},[openJob]);
   useEffect(()=>{
     const handler=(e)=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
-      if(e.key==='n'&&!e.metaKey&&!e.ctrlKey){setIsNew(true);setEditJob({});setShowNewForm?.(true);}
+      if(e.key==='n'&&!e.metaKey&&!e.ctrlKey&&pageCanEdit){setIsNew(true);setEditJob({});setShowNewForm?.(true);}
       if(e.key==='Escape'){setEditJob(null);setIsNew(false);}
     };
     window.addEventListener('keydown',handler);
     return()=>window.removeEventListener('keydown',handler);
-  },[]);
+  },[pageCanEdit]);
   useEffect(()=>setSel(new Set()),[search,statusF,mktF,pmF]);
   const toggleSort=k=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('desc');}};
   const closedJobs=useMemo(()=>{let f=augmentedJobs.filter(j=>j.status==='closed');if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(mktF.size>0)f=f.filter(j=>mktF.has(j.market));if(pmF.size>0)f=f.filter(j=>pmF.has(j.pm)||(pmF.has('__blank__')&&!j.pm));if(closedYearF){if(closedYearF==='older')f=f.filter(j=>j.closed_date&&parseInt(j.closed_date.slice(0,4))<=2023);else f=f.filter(j=>j.closed_date&&j.closed_date.startsWith(closedYearF));}return[...f].sort((a,b)=>(b.closed_date||'').localeCompare(a.closed_date||''));},[augmentedJobs,search,mktF,pmF,closedYearF]);
@@ -2333,9 +2359,19 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});
   },[augmentedJobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
   const exportCSV=rows=>{const cols=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
-  const saveInline=async()=>{if(!inlE)return;const u={[inlE.key]:inlE.value};if(inlE.key==='ytd_invoiced'){const adj=n(inlE.job.adj_contract_value||inlE.job.contract_value);const ytd=n(inlE.value);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',inlE.id,u);const j=jobs.find(x=>x.id===inlE.id);if(['ytd_invoiced','last_billed'].includes(inlE.key)){fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',inlE.key,j[inlE.key],inlE.value);}else{fireAlert('job_updated',{...j,...u});logAct(j,'field_update',inlE.key,j[inlE.key],inlE.value);}setInlE(null);setToast('Saved');onRefresh();};
-  const bulkStatus=async s=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();};
-  const bulkRep=async r=>{for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{sales_rep:r});logAct(j,'field_update','sales_rep',j.sales_rep,r);}}setSel(new Set());setToast(`Assigned to ${r}`);onRefresh();};
+  const saveInline=async()=>{if(!inlE)return;
+    // Defense in depth (Apr 20 2026): reject inline edits on columns this user
+    // isn't allowed to change, even if they bypassed the UI gate somehow.
+    if(!cellEditable(inlE.key)){setInlE(null);setToast('Not allowed: you can only edit '+(pageCanStatusOnly?'Status':pageCanInstallOnly?'Install Date':'— contact Amiee'));return;}
+    const u={[inlE.key]:inlE.value};if(inlE.key==='ytd_invoiced'){const adj=n(inlE.job.adj_contract_value||inlE.job.contract_value);const ytd=n(inlE.value);u.pct_billed=adj>0?Math.round(ytd/adj*10000)/10000:0;u.left_to_bill=adj-ytd;}await sbPatch('jobs',inlE.id,u);const j=jobs.find(x=>x.id===inlE.id);if(['ytd_invoiced','last_billed'].includes(inlE.key)){fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update',inlE.key,j[inlE.key],inlE.value);}else{fireAlert('job_updated',{...j,...u});logAct(j,'field_update',inlE.key,j[inlE.key],inlE.value);}setInlE(null);setToast('Saved');onRefresh();};
+  const bulkStatus=async s=>{
+    if(!pageCanEdit&&!pageCanStatusOnly){setToast('Not allowed — contact Amiee');return;}
+    for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{status:s});fireAlert('job_updated',{...j,status:s});logAct(j,'status_change','status',j.status,s);}}setSel(new Set());setToast(`Updated ${sel.size} projects`);onRefresh();
+  };
+  const bulkRep=async r=>{
+    if(!pageCanEdit){setToast('Not allowed — contact Amiee to reassign sales rep');return;}
+    for(const id of sel){const j=jobs.find(x=>x.id===id);if(j){await sbPatch('jobs',id,{sales_rep:r});logAct(j,'field_update','sales_rep',j.sales_rep,r);}}setSel(new Set());setToast(`Assigned to ${r}`);onRefresh();
+  };
   const visCD=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);
   const inlineField=(j,k)=>{
     // For the color column, compose standard palette + the row's current legacy value (if any)
@@ -2363,7 +2399,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
-          {projTab==='active'&&<button onClick={()=>setEditMode(!editMode)} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8A261D':'#625650',border:editMode?'1px solid #8A261D':'1px solid #E5E3E0'}}>{editMode?'✏ Edit':'👁 View'}</button>}
+          {projTab==='active'&&pageCanAnyEdit&&<button onClick={()=>setEditMode(!editMode)} title={pageCanEdit?'Edit any cell inline':pageCanStatusOnly?'You can edit Status inline':pageCanInstallOnly?'You can edit Install Date inline':''} style={{...btnS,background:editMode?'#FDF4F4':'#F4F4F2',color:editMode?'#8A261D':'#625650',border:editMode?'1px solid #8A261D':'1px solid #E5E3E0'}}>{editMode?(pageCanEdit?'✏ Edit':pageCanStatusOnly?'✏ Status only':'📅 Install Date only'):'👁 View'}</button>}
           <div style={{position:'relative'}} ref={colRef}><button onClick={()=>setShowCols(!showCols)} style={btnS}>Columns ({visCols.length})</button>
             {showCols&&<div style={{position:'absolute',right:0,top:36,width:'min(400px,96vw)',maxWidth:'96vw',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.12)',zIndex:100,padding:16,maxHeight:560,overflow:'auto'}}>
               {/* Column picker header */}
@@ -2391,7 +2427,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
               </div>}
             </div>}
           </div>
-          {projTab==='active'&&<button onClick={()=>setShowNewForm(true)} style={{...btnP,background:'#065F46'}}>+ New Project</button>}
+          {projTab==='active'&&pageCanEdit&&<button onClick={()=>setShowNewForm(true)} style={{...btnP,background:'#065F46'}}>+ New Project</button>}
           <button onClick={()=>exportCSV(projTab==='active'?filtered:closedJobs)} style={btnP}>Export</button>
         </div>
       </div>
@@ -2422,12 +2458,12 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
     </div>}
     {/* Active tab bulk actions + table */}
     {projTab==='active'&&<>
-    {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span><select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select><select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select><button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
+    {sel.size>0&&<div style={{background:'#1A1A1A',borderRadius:8,padding:'8px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12,color:'#fff',fontSize:13}}><span style={{fontWeight:700}}>{sel.size} selected</span>{(pageCanEdit||pageCanStatusOnly)&&<select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value='';}} style={{...inputS,width:160,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Change Status...</option>{STS.map(s=><option key={s} value={s}>{SL[s]}</option>)}</select>}{pageCanEdit&&<select onChange={e=>{if(e.target.value)bulkRep(e.target.value);e.target.value='';}} style={{...inputS,width:140,background:'#2A2A2A',color:'#fff',border:'1px solid #444'}}><option value="">Assign Rep...</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select>}<button onClick={()=>exportCSV(filtered.filter(j=>sel.has(j.id)))} style={{...btnP,padding:'4px 12px',fontSize:12}}>Export</button><button onClick={()=>setSel(new Set())} style={{background:'transparent',border:'1px solid #444',borderRadius:6,color:'#fff',padding:'4px 12px',fontSize:12,cursor:'pointer'}}>Clear</button></div>}
     {!isMobile && <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 220px)'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr><th style={{width:40,padding:'10px 8px',borderBottom:'1px solid #E5E3E0'}}><input type="checkbox" checked={sel.size===filtered.length&&filtered.length>0} onChange={()=>{if(sel.size===filtered.length)setSel(new Set());else setSel(new Set(filtered.map(j=>j.id)));}} /></th>{visCD.map(c=><th key={c.key} onClick={()=>toggleSort(c.key)} style={{textAlign:'left',padding:'10px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.5,userSelect:'none',background:c.tintHdr||'#F9F8F6'}}>{c.label} {sortCol===c.key&&(sortDir==='asc'?'↑':'↓')}</th>)}</tr></thead>
         <tbody>{filtered.map((j,i)=><tr key={j.id} onClick={()=>{if(!editMode&&!sel.size){setEditJob(j);setIsNew(false);}}} style={{cursor:editMode?'default':'pointer',borderLeft:`3px solid ${SC[j.status]||'transparent'}`,background:i%2===0?'#FFF':'#FAFAF8'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#FFF':'#FAFAF8'}>
           <td style={{width:40,padding:'8px 8px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(j.id)} onChange={()=>{const s=new Set(sel);if(s.has(j.id))s.delete(j.id);else s.add(j.id);setSel(s);}}/></td>
-          {visCD.map(c=><td key={c.key} onClick={e=>{if(editMode){e.stopPropagation();setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?'cell':'pointer',background:c.tint||'transparent'}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>)}
+          {visCD.map(c=>{const isEditableCell=editMode&&cellEditable(c.key);const lockedTitle=editMode&&!isEditableCell?(pageCanStatusOnly?'You can only edit Status — contact Amiee to change other fields':pageCanInstallOnly?'You can only edit Install Date — contact Amiee to change other fields':''):undefined;return<td key={c.key} title={lockedTitle} onClick={e=>{if(editMode){e.stopPropagation();if(isEditableCell)setInlE({id:j.id,key:c.key,value:j[c.key]??'',job:j});}}} style={{padding:'8px 10px',whiteSpace:'nowrap',maxWidth:c.w,overflow:'hidden',textOverflow:'ellipsis',cursor:editMode?(isEditableCell?'cell':'not-allowed'):'pointer',background:editMode&&!isEditableCell?'#F4F4F2':(c.tint||'transparent'),opacity:editMode&&!isEditableCell?0.55:1}}>{inlE&&inlE.id===j.id&&inlE.key===c.key?inlineField(j,c.key):renderCell(j,c.key)}</td>;})}
         </tr>)}</tbody>{filtered.length===0&&<tr><td colSpan={20} style={{padding:'60px 20px',textAlign:'center'}}><div style={{fontSize:40,marginBottom:12}}>📋</div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:700,color:'#1A1A1A',marginBottom:6}}>No projects found</div><div style={{fontSize:13,color:'#9E9B96'}}>Try adjusting your filters or search</div></td></tr>}</table>
     </div>}
     {/* Phase 3: mobile card view. Inline-edit and bulk select are skipped on mobile —
