@@ -94,7 +94,7 @@ const applyAuthToken = (accessToken) => { H.Authorization = `Bearer ${accessToke
 const AuthContext = React.createContext(null);
 const useAuth = () => React.useContext(AuthContext);
 
-const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ type, job }) }); } catch(e) {} };
+const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ event: type, job }) }); } catch(e) {} };
 const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
 // Keeps fence_addons in sync with a job row's scalar fields. Adds/removes the
 // auto-managed codes G (Gates), WI (Wrought Iron), C (Columns, from Single Wythe)
