@@ -9422,6 +9422,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
   const[search,setSearch]=useState('');
   const[typeF,setTypeF]=useState(null);
   const[mktF,setMktF]=useState(null);
+  const[ownerF,setOwnerF]=useState(null);
   const[showAdd,setShowAdd]=useState(false);
   const[detail,setDetail]=useState(null);
   const[importBanner,setImportBanner]=useState(false);
@@ -9434,9 +9435,10 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
     let f=contacts;
     if(typeF)f=f.filter(c=>(c.type||c.company_type||c.contact_type)===typeF);
     if(mktF)f=f.filter(c=>c.market===mktF);
+    if(ownerF)f=f.filter(c=>ownerF==='__unassigned'?!c.assigned_rep:c.assigned_rep===ownerF);
     if(search){const q=search.toLowerCase();f=f.filter(c=>`${c.company||''} ${c.name||''} ${c.email||''} ${c.phone||''}`.toLowerCase().includes(q));}
     return f;
-  },[contacts,typeF,mktF,search]);
+  },[contacts,typeF,mktF,ownerF,search]);
   const doImport=async()=>{
     const seen=new Set();const rows=[];
     (jobs||[]).forEach(j=>{if(!j.customer_name)return;const k=j.customer_name.toLowerCase();if(seen.has(k))return;seen.add(k);rows.push({company:j.customer_name,market:j.market||null,type:'GC'});});
@@ -9464,6 +9466,10 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
       <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
       {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>OWNER:</span>
+      <button onClick={()=>setOwnerF(null)} style={fpill(!ownerF)}>All</button>
+      {REPS.map(r=><button key={r} onClick={()=>setOwnerF(r)} style={fpill(ownerF===r)}>{r}</button>)}
+      <button onClick={()=>setOwnerF('__unassigned')} style={fpill(ownerF==='__unassigned')}>Unassigned</button>
     </div>
     {loading?<div style={{...card,padding:0}}><SkeletonRows rows={8} cols={8}/></div>:
     filtered.length===0?<div style={{...card}}><EmptyState icon="👤" title="No contacts yet" subtitle={contacts.length===0?'Import from existing projects or add your first contact manually.':'No contacts match your filters.'} cta={contacts.length===0?'+ Add Contact':null} onCta={()=>setShowAdd(true)}/></div>:
@@ -9482,6 +9488,9 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
           {c.name && <span style={{fontWeight:600}}>{c.name}</span>}
           {c.title && <span style={{color:'#625650'}}>{c.name?' · ':''}{c.title}</span>}
         </div>}
+        {c.assigned_rep && <div style={{marginTop:6}}>
+          <span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:'#FDF4F4',color:'#8A261D',border:'1px solid #F5D8D8'}}>👤 {c.assigned_rep}</span>
+        </div>}
         {(c.phone||c.email) && <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC',fontSize:12,color:'#625650',display:'flex',flexDirection:'column',gap:3}}>
           {c.phone && <span>📞 {c.phone}</span>}
           {c.email && <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>✉ {c.email}</span>}
@@ -9491,7 +9500,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
     <div style={{...card,padding:0,overflow:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
-          {['Company','Type','Contact Name','Title','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+          {['Company','Type','Contact Name','Title','Owner','Phone','Email','Market','# Jobs'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
         </tr></thead>
         <tbody>
           {
@@ -9500,6 +9509,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
             <td style={{padding:'10px 12px'}}>{c.type||c.company_type||c.contact_type||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.name||'—'}</td>
             <td style={{padding:'10px 12px',color:'#625650'}}>{c.title||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{c.assigned_rep?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:'#FDF4F4',color:'#8A261D',border:'1px solid #F5D8D8'}}>{c.assigned_rep}</span>:<span style={{color:'#9E9B96',fontStyle:'italic',fontSize:11}}>Unassigned</span>}</td>
             <td style={{padding:'10px 12px',color:'#625650'}}>{c.phone||'—'}</td>
             <td style={{padding:'10px 12px',color:'#625650'}}>{c.email||'—'}</td>
             <td style={{padding:'10px 12px'}}>{c.market?<span style={pill(MC[c.market]||'#625650',MB[c.market]||'#F4F4F2')}>{MS[c.market]||c.market}</span>:'—'}</td>
@@ -9514,7 +9524,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
 }
 
 function ContactForm({onClose,onSaved,initial}){
-  const[f,setF]=useState(initial||{company:'',type:'',name:'',title:'',phone:'',email:'',market:'',notes:''});
+  const[f,setF]=useState(initial||{company:'',type:'',name:'',title:'',phone:'',email:'',market:'',assigned_rep:'',notes:''});
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
   const[saving,setSaving]=useState(false);
   const save=async()=>{
@@ -9548,6 +9558,7 @@ function ContactForm({onClose,onSaved,initial}){
         {fld('Phone','phone')}
         {fld('Email','email','email')}
         {fld('Market','market','text',MKTS)}
+        {fld('Owner','assigned_rep','text',REPS)}
         {fld('Notes','notes','textarea')}
         <div style={{display:'flex',gap:8,marginTop:16}}>
           <button onClick={onClose} style={{...btnS,flex:1}}>Cancel</button>
