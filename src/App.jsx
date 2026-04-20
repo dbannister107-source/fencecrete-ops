@@ -29,8 +29,20 @@ const STATUS_EDIT_EMAILS = new Set([
   'ccontreras@fencecrete.com',
   'luis@fencecrete.com',
 ]);
+// Reopening a closed job has billing/reporting ripple effects, so it's
+// gated more tightly than routine status changes. Apr 20 2026 per David:
+// admin + finance only. Max and Luis can still advance status on active
+// jobs (STATUS_EDIT_EMAILS above) but can't reopen closed ones.
+const REOPEN_EMAILS = new Set([
+  'david@fencecrete.com',
+  'amiee@fencecrete.com',
+  'alex@fencecrete.com',
+  'ccontreras@fencecrete.com',
+  'virginiag@fencecrete.com',
+]);
 const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
 const canEditStatus = (email) => STATUS_EDIT_EMAILS.has((email||'').toLowerCase().trim());
+const canReopen = (email) => REOPEN_EMAILS.has((email||'').toLowerCase().trim());
 // Only Amiee can approve/reject change orders
 const AMIEE_EMAILS = new Set([
   'amiee@fencecrete.com',
@@ -852,6 +864,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
   const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
   const canEdit = isNew || canEditProjects(currentUserEmail);
   const canChangeStatus = isNew || canEditStatus(currentUserEmail);
+  const canReopenJob = canReopen(currentUserEmail);
   const roInput = canEdit ? {} : {pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'};
   const roStyle = (extra={}) => canEdit ? extra : {...extra,pointerEvents:'none',opacity:0.7,cursor:'default'};
   // Phase 4: close the panel on Escape.
@@ -1009,7 +1022,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
             : <span style={{fontSize:11,color:'#B45309',fontWeight:600,padding:'6px 10px',background:'#FEF3C7',borderRadius:6}}>🔒 Contact Amiee to edit</span>
           }
-          {!isNew&&job.status==='closed'&&canChangeStatus&&<div style={{position:'relative'}}>
+          {!isNew&&job.status==='closed'&&canReopenJob&&<div style={{position:'relative'}}>
             <button onClick={()=>setShowReopenPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#065F46',borderColor:'#065F46',fontWeight:700}}>
               {reopening?'Reopening...':'🔓 Reopen Job'}
             </button>
