@@ -12231,9 +12231,18 @@ const PAGE_LABELS={
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
+const BA_STYLE_OVERRIDES = {
+  cmu_block: 'CMU Block',
+  cmu_masonry: 'CMU Masonry',
+  cmu_split_face_masonry: 'CMU Split-Face Masonry',
+  single_wythe_brick: 'Single Wythe Brick',
+  stone_wall: 'Stone Wall',
+  ranch_rail: 'Ranch Rail',
+  vertical_wood: 'Vertical Wood',
+};
 const BA_STYLE_LABEL = (v) => {
   if (!v) return '';
-  if (v === 'cmu_block') return 'CMU Block';
+  if (BA_STYLE_OVERRIDES[v]) return BA_STYLE_OVERRIDES[v];
   return v.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 };
 const BA_FMT_USD = (n) => '$' + Math.round(Number(n)||0).toLocaleString();
@@ -12244,6 +12253,28 @@ const BA_HEIGHT_OPTIONS = [
   { key: 'rr4', label: 'Ranch Rail 4 ft', ft: 4, rail: true },
   { key: 'rr5', label: 'Ranch Rail 5 ft', ft: 5, rail: true },
 ];
+const BA_CATEGORY_LABEL = {
+  precast: 'Precast (published pricing)',
+  masonry: 'Masonry (provisional — historical inference)',
+  specialty: 'Specialty (provisional)',
+};
+const BA_CATEGORY_ORDER = ['precast', 'masonry', 'specialty'];
+const BA_CONFIDENCE_META = {
+  published:   { bg: '#D1FAE5', c: '#065F46', border: '#6EE7B7' },
+  high:        { bg: '#DBEAFE', c: '#1D4ED8', border: '#93C5FD' },
+  medium:      { bg: '#FEF3C7', c: '#B45309', border: '#FCD34D' },
+  low:         { bg: '#FFEDD5', c: '#C2410C', border: '#FDBA74' },
+  provisional: { bg: '#E5E3E0', c: '#525050', border: '#C8C4BF' },
+};
+const BA_CONFIDENCE_TEXT = (conf, n) => {
+  if (conf === 'published') return '✓ Published Aug 2024 pricing';
+  if (conf === 'high') return `Inferred from ${n||0} historical bids (high confidence)`;
+  if (conf === 'medium') return `Inferred from ${n||0} historical bids (medium confidence)`;
+  if (conf === 'low') return `Inferred from only ${n||0} bid${n===1?'':'s'} (low confidence — use caution)`;
+  if (conf === 'provisional') return 'Provisional pricing — pending formal rate card';
+  return conf || 'Unknown confidence';
+};
+const BA_MASONRY_CATEGORIES = new Set(['masonry', 'specialty']);
 function BidAdvisor(){
   const auth = useAuth();
   const userEmail = auth?.user?.email || 'anonymous';
@@ -12258,16 +12289,38 @@ function BidAdvisor(){
   const [siliconeCount, setSiliconeCount] = useState('0');
   const [compressorDays, setCompressorDays] = useState('0');
   const [notes, setNotes] = useState('');
-  const [styleOptions, setStyleOptions] = useState([]);
+  const [styleGroups, setStyleGroups] = useState([]);
+  const [productByStyle, setProductByStyle] = useState({});
   const [effectiveDate, setEffectiveDate] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [probe, setProbe] = useState({ state: 'idle' });
   useEffect(() => {
-    sbGet('pricing_catalog', 'select=style&category=eq.installed_residential&style=not.is.null').then(rows => {
-      const uniq = Array.from(new Set((rows||[]).map(r => r.style).filter(s => s && s !== 'ranch_rail'))).sort();
-      setStyleOptions(uniq);
-      setStyle(prev => prev || uniq.find(s => s === 'wood') || uniq[0] || '');
+    sbGet('pricing_catalog', 'select=style,product_category,confidence,sample_size,confidence_notes&category=eq.installed_residential&style=not.is.null').then(rows => {
+      const byStyle = {};
+      (rows || []).forEach(r => {
+        if (!r.style) return;
+        const prev = byStyle[r.style];
+        if (!prev) {
+          byStyle[r.style] = { style: r.style, product_category: r.product_category || 'precast' };
+        }
+      });
+      const pmap = {};
+      Object.values(byStyle).forEach(s => { pmap[s.style] = s.product_category; });
+      setProductByStyle(pmap);
+      const groups = BA_CATEGORY_ORDER.map(cat => ({
+        category: cat,
+        styles: Object.values(byStyle)
+          .filter(s => s.product_category === cat && s.style !== 'ranch_rail')
+          .map(s => s.style)
+          .sort((a, b) => BA_STYLE_LABEL(a).localeCompare(BA_STYLE_LABEL(b))),
+      })).filter(g => g.styles.length > 0);
+      setStyleGroups(groups);
+      const firstStyle = groups.find(g => g.category === 'precast')?.styles.find(s => s === 'wood')
+        || groups[0]?.styles[0]
+        || '';
+      setStyle(prev => prev || firstStyle);
     }).catch(() => {});
     sbGet('pricing_catalog', 'select=effective_date&order=effective_date.desc&limit=1').then(rows => {
       if (rows && rows[0]) setEffectiveDate(rows[0].effective_date);
@@ -12277,28 +12330,49 @@ function BidAdvisor(){
   const isRanchRail = heightOpt.rail;
   const resolvedStyle = isRanchRail ? 'ranch_rail' : style;
   const resolvedHeight = heightOpt.ft;
+  const productCategory = productByStyle[resolvedStyle] || 'precast';
+  const isMasonry = BA_MASONRY_CATEGORIES.has(productCategory);
   const lfNum = Number(totalLf);
-  const canSubmit = !!market && !!resolvedStyle && resolvedHeight > 0 && lfNum > 0 && !loading;
+  useEffect(() => {
+    if (!market || !resolvedStyle || !resolvedHeight) return;
+    let cancelled = false;
+    setProbe({ state: 'loading' });
+    const mktEnc = encodeURIComponent(market);
+    const today = new Date().toISOString().slice(0, 10);
+    const expiresFilter = `or=(expires_date.is.null,expires_date.gt.${today})`;
+    sbGet('pricing_catalog',
+      `market=eq.${mktEnc}&category=eq.installed_residential&style=eq.${resolvedStyle}&height_feet=eq.${resolvedHeight}&${expiresFilter}&select=unit_price,confidence,sample_size,confidence_notes,product_category&limit=1`
+    ).then(rows => {
+      if (cancelled) return;
+      if (!rows || !rows[0]) { setProbe({ state: 'not_found' }); return; }
+      setProbe({ state: 'found', row: rows[0] });
+    }).catch(() => { if (!cancelled) setProbe({ state: 'error' }); });
+    return () => { cancelled = true; };
+  }, [market, resolvedStyle, resolvedHeight]);
+  const canSubmit = !!market && !!resolvedStyle && resolvedHeight > 0 && lfNum > 0 && !loading && probe.state === 'found';
   const onReset = () => {
-    setStyle(styleOptions.find(s => s === 'wood') || styleOptions[0] || '');
+    const firstStyle = styleGroups.find(g => g.category === 'precast')?.styles.find(s => s === 'wood')
+      || styleGroups[0]?.styles[0]
+      || '';
+    setStyle(firstStyle);
     setHeightKey('6'); setTotalLf(''); setCustomerType(''); setColor('standard');
     setRemovalNeeded(false); setRemovalLf(''); setSiliconeCount('0'); setCompressorDays('0');
     setNotes(''); setResult(null); setError('');
   };
   const calculate = async () => {
     if (!canSubmit) return;
+    if (probe.state !== 'found' || !probe.row) {
+      setError(`No pricing data available for ${market} × ${BA_STYLE_LABEL(resolvedStyle)} × ${resolvedHeight} ft.`);
+      return;
+    }
     setLoading(true); setError(''); setResult(null);
     try {
       const mktEnc = encodeURIComponent(market);
       const today = new Date().toISOString().slice(0, 10);
       const expiresFilter = `or=(expires_date.is.null,expires_date.gt.${today})`;
-      const listRows = await sbGet('pricing_catalog',
-        `market=eq.${mktEnc}&category=eq.installed_residential&style=eq.${resolvedStyle}&height_feet=eq.${resolvedHeight}&${expiresFilter}&select=unit_price&limit=1`);
-      if (!listRows || !listRows[0]) {
-        setError(`No published list price for ${market} × ${BA_STYLE_LABEL(resolvedStyle)} × ${resolvedHeight} ft. This combination may not be in the current price list — please calculate manually.`);
-        setLoading(false); return;
-      }
-      const listPrice = Number(listRows[0].unit_price);
+      const listPrice = Number(probe.row.unit_price);
+      const probeCategory = probe.row.product_category || productCategory;
+      const probeIsMasonry = BA_MASONRY_CATEGORIES.has(probeCategory);
       const addons = await sbGet('pricing_catalog',
         `market=eq.${mktEnc}&category=eq.add_on&${expiresFilter}&select=notes,unit_price,unit`);
       const findAddon = (kw) => (addons||[]).find(r => new RegExp(kw, 'i').test(r.notes || ''));
@@ -12314,7 +12388,8 @@ function BidAdvisor(){
       const lf = lfNum;
       const rlf = removalNeeded ? Number(removalLf || totalLf) || lf : 0;
       const baseFence = listPrice * lf;
-      const colorSurch = color !== 'standard' ? colorPerLf * lf : 0;
+      const colorSurchApplies = color !== 'standard' && !probeIsMasonry;
+      const colorSurch = colorSurchApplies ? colorPerLf * lf : 0;
       const removalPerLf = Number(removalRow?.unit_price || 0);
       const removalTotal = removalNeeded ? removalPerLf * rlf : 0;
       const silPerEach = Number(siliconeRow?.unit_price || 0);
@@ -12335,19 +12410,25 @@ function BidAdvisor(){
       const effLow = Math.round((conservative / lf) * 100) / 100;
       const effHigh = Math.round((aggressive / lf) * 100) / 100;
       const watchouts = [];
-      if (color === 'custom' && lf < 500) watchouts.push('Custom color selected but LF < 500 minimum. Custom colors require 500 LF minimum per final order.');
+      if (probeIsMasonry) watchouts.push('Masonry/specialty pricing is provisional. Confirm rate with Jr. Anaya before submitting to customer.');
+      if (color !== 'standard' && probeIsMasonry) watchouts.push('Color surcharge does not apply to masonry products. Factor color into the base material selection.');
+      if (color === 'custom' && lf < 500 && !probeIsMasonry) watchouts.push('Custom color selected but LF < 500 minimum. Custom colors require 500 LF minimum per final order.');
       if (jobMinimum && subtotal < jobMinimum) watchouts.push(`Job total below market minimum ($${jobMinimum.toLocaleString()} for ${market}).`);
       if (compressorFallback) watchouts.push('Compressor add-on not published for this market. Using SA compressor rate as estimate: $13/LF.');
       if (resolvedStyle === 'smooth') watchouts.push('Smooth style is stain-only. Confirm customer does not want a paint finish.');
       if (lf < 50) watchouts.push(`Very small job (${lf} LF) — confirm scope.`);
       if (isRanchRail) watchouts.push('Ranch Rail height selected but rail count not specified. Default to 3-rail.');
       const computed = {
-        listPrice, baseFence, colorSurch, colorPerLf,
+        listPrice, baseFence, colorSurch, colorPerLf, colorSurchSkippedMasonry: !probeIsMasonry ? false : (color !== 'standard'),
         removalTotal, removalPerLf, removalLfUsed: rlf,
         silTotal, silPerEach, silCount,
         compressorTotal, compPerLf, compressorFallback, compDays,
         subtotal, conservative, median, aggressive, effLow, effHigh,
         jobMinimum, watchouts,
+        confidence: probe.row.confidence,
+        sampleSize: probe.row.sample_size,
+        confidenceNotes: probe.row.confidence_notes,
+        productCategory: probeCategory,
       };
       setResult(computed);
       try {
@@ -12421,10 +12502,26 @@ function BidAdvisor(){
             <div style={{ marginBottom: 10 }}>
               <label style={labelS}>Style *</label>
               <select value={isRanchRail ? 'ranch_rail' : style} onChange={e => setStyle(e.target.value)} disabled={isRanchRail} style={{ ...selectS, opacity: isRanchRail ? 0.6 : 1 }}>
-                {isRanchRail ? <option value="ranch_rail">Ranch Rail (set by height)</option> : styleOptions.map(s => (
-                  <option key={s} value={s}>{BA_STYLE_LABEL(s)}</option>
+                {isRanchRail ? <option value="ranch_rail">Ranch Rail (set by height)</option> : styleGroups.map(g => (
+                  <optgroup key={g.category} label={BA_CATEGORY_LABEL[g.category] || g.category}>
+                    {g.styles.map(s => <option key={s} value={s}>{BA_STYLE_LABEL(s)}</option>)}
+                  </optgroup>
                 ))}
               </select>
+              {probe.state === 'found' && (() => {
+                const conf = probe.row.confidence || 'provisional';
+                const meta = BA_CONFIDENCE_META[conf] || BA_CONFIDENCE_META.provisional;
+                return (
+                  <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 600, background: meta.bg, color: meta.c, border: `1px solid ${meta.border}`, lineHeight: 1.4 }}>
+                    {BA_CONFIDENCE_TEXT(conf, probe.row.sample_size)}
+                  </div>
+                );
+              })()}
+              {probe.state === 'not_found' && (
+                <div style={{ marginTop: 8, background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#991B1B', fontWeight: 600 }}>
+                  No pricing data available for this combination. Consult Jr. Anaya for masonry bids in this market.
+                </div>
+              )}
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={labelS}>Height *</label>
@@ -12614,8 +12711,19 @@ function BidAdvisor(){
               )}
               <div style={{ ...card, background: '#FAFAF8' }}>
                 <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 900, color: '#1A1A1A', marginBottom: 10 }}>Context</div>
+                {result.confidence && result.confidence !== 'published' && (
+                  <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: '#78350F', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>⚠️ Provisional Masonry Pricing</div>
+                    <div style={{ fontSize: 12.5, color: '#78350F', lineHeight: 1.45 }}>
+                      This range is derived from {result.sampleSize || 'a small number of'} historical bid{result.sampleSize === 1 ? '' : 's'}, not a published price list. Jr. Anaya's formal masonry rate card is pending. Use this as a starting point only.
+                    </div>
+                    {result.confidenceNotes && (
+                      <div style={{ fontSize: 11.5, color: '#92400E', marginTop: 6, fontStyle: 'italic' }}>{result.confidenceNotes}</div>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#625650' }}>
-                  <div>Published list price used: <strong style={{ color: '#1A1A1A' }}>${result.listPrice}/LF</strong></div>
+                  <div>{result.confidence === 'published' ? 'Published list price' : 'Inferred list price'} used: <strong style={{ color: '#1A1A1A' }}>${result.listPrice}/LF</strong></div>
                   <div>Pricing effective: <strong style={{ color: '#1A1A1A' }}>{effectiveFull}</strong></div>
                   <div>Based on historical markup band from 269 new-construction proposals (Matt: median +13.4%, Laura: median +8.3%).</div>
                 </div>
