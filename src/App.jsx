@@ -12275,6 +12275,38 @@ const BA_CONFIDENCE_TEXT = (conf, n) => {
   return conf || 'Unknown confidence';
 };
 const BA_MASONRY_CATEGORIES = new Set(['masonry', 'specialty']);
+/* ═══ TAX CONSTANTS — mirrors project line item logic ═══ */
+/* Sales tax (8.25% TX) applies to MATERIAL cost only, not labor or full contract.
+   Basis tables come from edit-panel lines 1181-1227. Style lookup takes priority
+   over height. Masonry and wood are not taxed here (handled by GC / material-only). */
+const BA_TAX_RATE = 0.0825;
+const BA_HEIGHT_BASIS = { 4: 23.00, 5: 24.75, 6: 26.00, 7: 27.50, 8: 29.25, 9: 30.50, 10: 31.75 };
+const BA_STYLE_BASIS = {
+  ranch_rail_2: 13.50,
+  ranch_rail_3: 15.75,
+  ranch_rail_4: 16.50,
+};
+/* Map BidAdvisor height keys to line-item style keys where applicable */
+const BA_RAIL_STYLE_KEY = { rr3: 'ranch_rail_3', rr4: 'ranch_rail_4' /* rr5 falls through to height=5 */ };
+function computeBidTax({ lf, heightFt, heightKey, productCategory, taxExempt }) {
+  if (taxExempt) return { basis: 0, basisSource: 'exempt', taxable: 0, tax: 0 };
+  if (BA_MASONRY_CATEGORIES.has(productCategory)) return { basis: 0, basisSource: 'masonry', taxable: 0, tax: 0 };
+  // Ranch rail: style-specific basis
+  const railKey = BA_RAIL_STYLE_KEY[heightKey];
+  if (railKey && BA_STYLE_BASIS[railKey] != null) {
+    const basis = BA_STYLE_BASIS[railKey];
+    const taxable = lf * basis;
+    return { basis, basisSource: 'style', taxable, tax: taxable * BA_TAX_RATE };
+  }
+  // Standard height basis (6ft, 8ft, etc. — includes rr5 via ft=5)
+  const hb = BA_HEIGHT_BASIS[heightFt];
+  if (hb != null) {
+    const basis = hb;
+    const taxable = lf * basis;
+    return { basis, basisSource: 'height', taxable, tax: taxable * BA_TAX_RATE };
+  }
+  return { basis: 0, basisSource: 'none', taxable: 0, tax: 0 };
+}
 function BidAdvisor(){
   const auth = useAuth();
   const userEmail = auth?.user?.email || 'anonymous';
@@ -12289,6 +12321,7 @@ function BidAdvisor(){
   const [siliconeCount, setSiliconeCount] = useState('0');
   const [compressorDays, setCompressorDays] = useState('0');
   const [notes, setNotes] = useState('');
+  const [taxExempt, setTaxExempt] = useState(false);
   const [styleGroups, setStyleGroups] = useState([]);
   const [productByStyle, setProductByStyle] = useState({});
   const [effectiveDate, setEffectiveDate] = useState(null);
@@ -12357,7 +12390,7 @@ function BidAdvisor(){
     setStyle(firstStyle);
     setHeightKey('6'); setTotalLf(''); setCustomerType(''); setColor('standard');
     setRemovalNeeded(false); setRemovalLf(''); setSiliconeCount('0'); setCompressorDays('0');
-    setNotes(''); setResult(null); setError('');
+    setNotes(''); setResult(null); setError(''); setTaxExempt(false);
   };
   const calculate = async () => {
     if (!canSubmit) return;
@@ -12404,9 +12437,16 @@ function BidAdvisor(){
         compressorTotal = Math.max(compPerLf * lf, 750 * compDays);
       }
       const subtotal = baseFence + colorSurch + removalTotal + silTotal + compressorTotal;
-      const conservative = Math.round(subtotal * 1.05);
-      const median = Math.round(subtotal * 1.12);
-      const aggressive = Math.round(subtotal * 1.25);
+      // Tax: applied to material cost only, added ON TOP of marked-up subtotals
+      // (mirrors project line item behavior: tax is a pass-through, not marked up)
+      const taxCalc = computeBidTax({
+        lf, heightFt: resolvedHeight, heightKey,
+        productCategory: probeCategory, taxExempt,
+      });
+      const salesTax = Math.round(taxCalc.tax * 100) / 100;
+      const conservative = Math.round(subtotal * 1.05 + salesTax);
+      const median = Math.round(subtotal * 1.12 + salesTax);
+      const aggressive = Math.round(subtotal * 1.25 + salesTax);
       const effLow = Math.round((conservative / lf) * 100) / 100;
       const effHigh = Math.round((aggressive / lf) * 100) / 100;
       const watchouts = [];
@@ -12418,6 +12458,9 @@ function BidAdvisor(){
       if (resolvedStyle === 'smooth') watchouts.push('Smooth style is stain-only. Confirm customer does not want a paint finish.');
       if (lf < 50) watchouts.push(`Very small job (${lf} LF) — confirm scope.`);
       if (isRanchRail) watchouts.push('Ranch Rail height selected but rail count not specified. Default to 3-rail.');
+      if (taxExempt) watchouts.push('TAX EXEMPT applied — verify customer has valid exemption certificate on file before sending proposal.');
+      if (!taxExempt && taxCalc.basisSource === 'none') watchouts.push(`No material-tax basis defined for ${resolvedHeight} ft ${BA_STYLE_LABEL(resolvedStyle)}. Tax not included — confirm manually.`);
+      if (!taxExempt && taxCalc.basisSource === 'masonry') watchouts.push('Masonry/specialty product — sales tax not computed here. Handle via GC pass-through or material-only tax on invoice.');
       const computed = {
         listPrice, baseFence, colorSurch, colorPerLf, colorSurchSkippedMasonry: !probeIsMasonry ? false : (color !== 'standard'),
         removalTotal, removalPerLf, removalLfUsed: rlf,
@@ -12425,6 +12468,8 @@ function BidAdvisor(){
         compressorTotal, compPerLf, compressorFallback, compDays,
         subtotal, conservative, median, aggressive, effLow, effHigh,
         jobMinimum, watchouts,
+        taxExempt, taxRate: BA_TAX_RATE, taxBasisPerLf: taxCalc.basis,
+        taxBasisSource: taxCalc.basisSource, materialTaxable: taxCalc.taxable, salesTax,
         confidence: probe.row.confidence,
         sampleSize: probe.row.sample_size,
         confidenceNotes: probe.row.confidence_notes,
@@ -12445,6 +12490,11 @@ function BidAdvisor(){
           recommended_conservative: conservative, recommended_median: median,
           recommended_aggressive: aggressive,
           effective_low_per_lf: effLow, effective_high_per_lf: effHigh,
+          tax_exempt: taxExempt, tax_rate: BA_TAX_RATE,
+          tax_basis_per_lf: taxCalc.basis || null,
+          tax_basis_source: taxCalc.basisSource || null,
+          material_taxable_total: taxCalc.taxable || null,
+          sales_tax_total: salesTax,
           watchouts,
         });
       } catch (e) { console.error('Bid advisor log failed:', e); }
@@ -12588,6 +12638,49 @@ function BidAdvisor(){
             </div>
           </div>
           <div style={groupS}>
+            <div style={groupTitle}>Sales Tax</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: '#F9F8F6', borderRadius: 8, border: '1px solid #E5E3E0', cursor: 'pointer', fontSize: 13, marginBottom: 10 }}>
+              <input type="checkbox" checked={taxExempt} onChange={e => setTaxExempt(e.target.checked)} style={{ width: 16, height: 16, accentColor: '#8A261D' }}/>
+              <span style={{ fontWeight: 600 }}>Tax Exempt</span>
+              {taxExempt && <span style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, background: '#D1FAE5', color: '#065F46', fontSize: 10, fontWeight: 800, letterSpacing: 0.5 }}>TAX EXEMPT</span>}
+            </label>
+            {(() => {
+              if (taxExempt) {
+                return <div style={{ background: '#F9F8F6', border: '1px dashed #D1FAE5', borderRadius: 8, padding: 10, fontSize: 11.5, color: '#065F46' }}>
+                  Tax will be $0.00 on the recommended bid. Verify exemption certificate on file.
+                </div>;
+              }
+              if (lfNum <= 0 || !resolvedHeight) {
+                return <div style={{ fontSize: 11.5, color: '#9E9B96', fontStyle: 'italic', padding: '2px 2px' }}>Enter LF and height to preview tax basis.</div>;
+              }
+              const preview = computeBidTax({ lf: lfNum, heightFt: resolvedHeight, heightKey, productCategory, taxExempt: false });
+              if (preview.basisSource === 'masonry') {
+                return <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 8, padding: 10, fontSize: 11.5, color: '#78350F' }}>
+                  Masonry/specialty — tax handled separately by GC or material invoice. Not included here.
+                </div>;
+              }
+              if (preview.basisSource === 'none') {
+                return <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: 10, fontSize: 11.5, color: '#991B1B' }}>
+                  No material-tax basis for this style + height. Confirm manually before sending.
+                </div>;
+              }
+              return <div style={{ background: '#F9F8F6', border: '1px solid #E5E3E0', borderRadius: 8, padding: 10, fontSize: 11.5, color: '#1A1A1A' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ color: '#625650' }}>Material basis</span>
+                  <span style={{ fontWeight: 700 }}>${preview.basis.toFixed(2)}/LF ({preview.basisSource})</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ color: '#625650' }}>Taxable material</span>
+                  <span style={{ fontWeight: 700 }}>{BA_FMT_USD(preview.taxable)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #E5E3E0', paddingTop: 4, marginTop: 4 }}>
+                  <span style={{ color: '#625650' }}>Sales tax (8.25%)</span>
+                  <span style={{ fontWeight: 800, color: '#8A261D' }}>{BA_FMT_USD(preview.tax)}</span>
+                </div>
+              </div>;
+            })()}
+          </div>
+          <div style={groupS}>
             <div style={groupTitle}>Notes</div>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional context, site conditions, customer quirks…" style={{ ...inputS, resize: 'vertical', minHeight: 72 }}/>
           </div>
@@ -12669,6 +12762,19 @@ function BidAdvisor(){
                       <td></td>
                       <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: 900, fontSize: 15 }}>{BA_FMT_USD(result.subtotal)}</td>
                     </tr>
+                    {result.taxExempt ? (
+                      <tr>
+                        <td style={{ padding: '6px 0', color: '#065F46', fontSize: 12, fontStyle: 'italic' }}>Sales Tax</td>
+                        <td style={{ padding: '6px 0', color: '#625650', fontSize: 11 }}>Exempt</td>
+                        <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#065F46' }}>$0</td>
+                      </tr>
+                    ) : result.salesTax > 0 ? (
+                      <tr>
+                        <td style={{ padding: '6px 0', fontSize: 12 }}>Sales Tax (8.25%)</td>
+                        <td style={{ padding: '6px 0', color: '#625650', fontSize: 11 }}>${Number(result.taxBasisPerLf).toFixed(2)}/LF material × {lfNum} LF × 8.25%</td>
+                        <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700 }}>{BA_FMT_USD(result.salesTax)}</td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
                 <div style={{ border: '1px solid #E5E3E0', borderRadius: 10, padding: 16, background: '#FAFAF8' }}>
@@ -12693,6 +12799,8 @@ function BidAdvisor(){
                   </div>
                   <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: '#625650' }}>
                     Effective <strong>${result.effLow.toFixed(2)}</strong> – <strong>${result.effHigh.toFixed(2)}</strong> per LF
+                    {!result.taxExempt && result.salesTax > 0 && <span style={{ color: '#9E9B96' }}> · includes {BA_FMT_USD(result.salesTax)} sales tax</span>}
+                    {result.taxExempt && <span style={{ color: '#065F46', fontWeight: 700 }}> · tax exempt</span>}
                   </div>
                 </div>
               </div>
