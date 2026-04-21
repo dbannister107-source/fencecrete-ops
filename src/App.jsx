@@ -536,7 +536,21 @@ function EmptyState({icon='📭',title,subtitle,cta,onCta,compact}){return <div 
   {subtitle&&<div style={{fontSize:12,color:'#9E9B96',marginBottom:cta?14:0,maxWidth:280,margin:'0 auto 14px'}}>{subtitle}</div>}
   {cta&&<button onClick={onCta} style={{...btnP,fontSize:12}}>{cta}</button>}
 </div>;}
-function KPI({label,value,color='#8A261D',sub,trend,trendDir}){const tC=trendDir==='up'?'#065F46':trendDir==='down'?'#A32D2D':'#9E9B96';const tA=trendDir==='up'?'↑':trendDir==='down'?'↓':'→';return<div style={{...card,position:'relative',overflow:'hidden',paddingTop:18}}><div style={{position:'absolute',top:0,left:0,right:0,height:3,background:color}}/><div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600,marginBottom:5}}>{label}</div><div style={{fontFamily:'Syne',fontSize:26,fontWeight:800,color,letterSpacing:'-0.5px',lineHeight:1}}>{value}</div>{(trend||sub)&&<div style={{marginTop:6,fontSize:11,color:trend?tC:'#9E9B96',fontWeight:trend?600:400,display:'flex',alignItems:'center',gap:3}}>{trend&&<span>{tA}</span>}{trend||sub}</div>}</div>;}
+function KPI({label,value,color='#8A261D',sub,trend,trendDir}){
+  const isMobile = useIsMobile();
+  const tC=trendDir==='up'?'#065F46':trendDir==='down'?'#A32D2D':'#9E9B96';
+  const tA=trendDir==='up'?'↑':trendDir==='down'?'↓':'→';
+  /* Mobile density fix (Apr 20 2026): desktop KPI card uses 26px Syne values + large
+     padding, which on a 390px iPhone column makes each card take nearly a full screen.
+     Half the font + tighter padding + smaller label. The card is still scannable and
+     a 2-col grid shows 4 KPIs per screen instead of 1. */
+  return<div style={{...card,position:'relative',overflow:'hidden',paddingTop:isMobile?12:18,padding:isMobile?'12px 12px 10px':undefined}}>
+    <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:color}}/>
+    <div style={{fontSize:isMobile?9:10,color:'#9E9B96',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600,marginBottom:isMobile?3:5}}>{label}</div>
+    <div style={{fontFamily:'Syne',fontSize:isMobile?20:26,fontWeight:800,color,letterSpacing:'-0.5px',lineHeight:1}}>{value}</div>
+    {(trend||sub)&&<div style={{marginTop:isMobile?4:6,fontSize:isMobile?10:11,color:trend?tC:'#9E9B96',fontWeight:trend?600:400,display:'flex',alignItems:'center',gap:3}}>{trend&&<span>{tA}</span>}{trend||sub}</div>}
+  </div>;
+}
 function PBar({pct:p,color='#8A261D',h=6,showLabel=false}){const pct=Math.min(100,Math.max(0,p||0));const bC=pct>=90?'#065F46':pct>=50?color:pct>0?'#D97706':'#E5E3E0';return<div style={{display:'flex',alignItems:'center',gap:6}}><div style={{flex:1,height:h,background:'#E5E3E0',borderRadius:h/2,overflow:'hidden'}}><div style={{height:'100%',width:pct+'%',background:bC,borderRadius:h/2,transition:'width .4s ease'}}/></div>{showLabel&&<span style={{fontSize:10,fontWeight:700,color:bC,minWidth:28,textAlign:'right'}}>{Math.round(pct)}%</span>}</div>;}
 // Multi-select dropdown with checkbox options, "All" clear row, and click-outside close.
 // `selected` is a Set; `onChange` receives a new Set.
@@ -1996,12 +2010,12 @@ function WeeklyDigest({jobs,active}){
 function Dashboard({jobs,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
   const isTablet = useIsMobile(1024); // true below 1024px → tablet or mobile
-  // Responsive KPI grid: <900→1, 900–1200→2, 1200–1600→3, ≥1600→4.
-  // Caps column count so $-values like "$12.7M" fit without truncation.
+  // Responsive KPI grid: mobile→2 cols, <900 non-mobile→1, 900–1200→2, 1200–1600→3, ≥1600→4.
+  // Mobile gets 2 cols because $-values like "$12.7M" fit at the reduced KPI font size.
   const kpiMobile = useIsMobile(900);
   const kpiNarrow = useIsMobile(1200);
   const kpiMid = useIsMobile(1600);
-  const kpiCols = kpiMobile ? '1fr' : kpiNarrow ? 'repeat(2,1fr)' : kpiMid ? 'repeat(3,1fr)' : 'repeat(4,1fr)';
+  const kpiCols = isMobile ? 'repeat(2,1fr)' : kpiMobile ? '1fr' : kpiNarrow ? 'repeat(2,1fr)' : kpiMid ? 'repeat(3,1fr)' : 'repeat(4,1fr)';
   const pairCols = isMobile ? '1fr' : 'repeat(2,1fr)';
   const[showRemindConfirm,setShowRemindConfirm]=useState(false);
   const[lastRefreshed,setLastRefreshed]=useState(new Date());
@@ -2071,11 +2085,11 @@ function Dashboard({jobs,onNav,refreshKey=0}){
 
   return(<div>
     {dashToast&&<Toast message={dashToast.msg} isError={!dashToast.ok} onDone={()=>setDashToast(null)}/>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:20}}>
-      <h1 style={{fontFamily:'Syne',fontSize:isMobile?20:22,fontWeight:800,margin:0}}>Dashboard</h1>
-      <span style={{fontSize:11,color:'#9E9B96'}}>Updated {lastRefreshed.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:isMobile?'center':'baseline',marginBottom:isMobile?12:20,gap:8}}>
+      <h1 style={{fontFamily:'Syne',fontSize:isMobile?22:22,fontWeight:800,margin:0}}>Dashboard</h1>
+      <span style={{fontSize:isMobile?10:11,color:'#9E9B96'}}>Updated {lastRefreshed.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>
     </div>
-    <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:16,marginBottom:16}}>
+    <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:isMobile?10:16,marginBottom:isMobile?10:16}}>
       <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
       <KPI label="2026 YTD Billed" value={$k(ty2026)} color="#065F46" sub={`${ty2026count} jobs billed in 2026`}/>
       <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="All jobs incl. closed"/>
@@ -8745,6 +8759,7 @@ const CHAT_QUICK_PROMPTS = {
   _default: ["What can I do here?","How do I find a project?","What do the add-on badges mean?"],
 };
 function ChatWidget({currentPage}){
+  const v = useViewport();
   const[open,setOpen]=useState(false);
   const[messages,setMessages]=useState([]);// array of {role:'user'|'assistant',content}
   const[input,setInput]=useState('');
@@ -8806,7 +8821,7 @@ function ChatWidget({currentPage}){
   const onInputKey=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input);}};
   // Chat button (closed state)
   if(!open){
-    return<button onClick={()=>setOpen(true)} title="Ask Chorizo 🌶️" style={{position:'fixed',bottom:24,right:24,width:56,height:56,borderRadius:28,background:'#8A261D',border:'none',color:'#FFF',fontSize:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
+    return<button onClick={()=>setOpen(true)} title="Ask Chorizo 🌶️" style={{position:'fixed',bottom:v.mobile?'calc(72px + env(safe-area-inset-bottom))':24,right:v.mobile?16:24,width:v.mobile?48:56,height:v.mobile?48:56,borderRadius:28,background:'#8A261D',border:'none',color:'#FFF',fontSize:v.mobile?20:24,cursor:'pointer',boxShadow:'0 4px 16px rgba(139,32,32,0.35)',zIndex:800,display:'flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s, box-shadow 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.08)';e.currentTarget.style.boxShadow='0 6px 22px rgba(139,32,32,0.45)';}} onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 16px rgba(139,32,32,0.35)';}}>💬</button>;
   }
   // Typing indicator (3 animated dots)
   const typingDots=<div style={{display:'inline-flex',gap:4,padding:'10px 14px',background:'#E8E8E6',borderRadius:14,alignSelf:'flex-start',maxWidth:'80%'}}>
@@ -8814,7 +8829,7 @@ function ChatWidget({currentPage}){
     <span style={{width:6,height:6,borderRadius:3,background:'#9E9B96',animation:'fcDot 1.2s infinite ease-in-out',animationDelay:'0.2s'}}/>
     <span style={{width:6,height:6,borderRadius:3,background:'#9E9B96',animation:'fcDot 1.2s infinite ease-in-out',animationDelay:'0.4s'}}/>
   </div>;
-  return<div style={{position:'fixed',bottom:24,right:24,width:380,maxWidth:'calc(100vw - 32px)',height:520,maxHeight:'calc(100vh - 48px)',background:'#F4F4F2',borderRadius:14,boxShadow:'0 8px 40px rgba(0,0,0,0.22)',display:'flex',flexDirection:'column',overflow:'hidden',zIndex:800,border:'1px solid #E5E3E0'}}>
+  return<div style={{position:'fixed',bottom:v.mobile?'calc(56px + env(safe-area-inset-bottom))':24,right:v.mobile?0:24,left:v.mobile?0:'auto',width:v.mobile?'100vw':380,maxWidth:v.mobile?'100vw':'calc(100vw - 32px)',height:v.mobile?'calc(100vh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))':520,maxHeight:v.mobile?'calc(100vh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))':'calc(100vh - 48px)',background:'#F4F4F2',borderRadius:v.mobile?0:14,boxShadow:'0 8px 40px rgba(0,0,0,0.22)',display:'flex',flexDirection:'column',overflow:'hidden',zIndex:800,border:'1px solid #E5E3E0'}}>
     <style>{`@keyframes fcDot{0%,80%,100%{opacity:0.3;transform:scale(0.8);}40%{opacity:1;transform:scale(1);}}`}</style>
     {/* Header */}
     <div style={{padding:'12px 16px',background:'#8A261D',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
@@ -8845,6 +8860,7 @@ function ChatWidget({currentPage}){
 
 /* ═══ TOPBAR ═══ */
 function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBack,canGoBack,pageLabel}){
+  const v = useViewport();
   const alerts=jobs.filter(j=>!CLOSED_SET.has(j.status)&&n(j.contract_age)>30&&n(j.ytd_invoiced)===0);
   const[showBell,setShowBell]=useState(false);const[showHelp,setShowHelp]=useState(false);
   const[refreshState,setRefreshState]=useState('idle'); // 'idle' | 'spinning' | 'done'
@@ -8857,7 +8873,10 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBa
     setRefreshState('done');
     setTimeout(()=>setRefreshState('idle'),1000);
   };
-  return(<div style={{height:48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}}>
+  /* Mobile layout (Apr 20 2026 fix): iOS notch was overlapping the topbar because
+     the app didn't account for safe-area-inset-top. Also dropped the search button
+     (no ⌘K on a phone), help icon, and date label to reclaim header real estate. */
+  return(<div style={{height:v.mobile?('calc(48px + env(safe-area-inset-top))'):48,borderBottom:'1px solid #E5E3E0',background:'#FFF',display:'flex',alignItems:'center',padding:v.mobile?'env(safe-area-inset-top) 12px 0 12px':'0 16px',gap:v.mobile?8:12,flexShrink:0}}>
     <style>{`
       @keyframes fcSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
       @keyframes fcShimmerRow{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -8884,15 +8903,16 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBa
     {canGoBack&&<button onClick={onBack} aria-label="Go back" title="Go back" style={{background:'none',border:'none',borderRadius:8,height:32,padding:'0 8px',cursor:'pointer',color:'#625650',fontSize:14,display:'inline-flex',alignItems:'center',gap:4,fontWeight:600,flexShrink:0,transition:'color .15s'}} onMouseEnter={e=>e.currentTarget.style.color='#8A261D'} onMouseLeave={e=>e.currentTarget.style.color='#625650'}>&#8592; Back</button>}
     {pageLabel&&!canGoBack&&<span style={{fontSize:13,fontWeight:700,color:'#1A1A1A',letterSpacing:'-0.01em',fontFamily:'Syne, sans-serif'}}>{pageLabel}</span>}
     <div style={{flex:1}}/>
-    <div style={{display:'flex',alignItems:'center',gap:12}}>
-      <button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>
+    <div style={{display:'flex',alignItems:'center',gap:v.mobile?8:12}}>
+      {!v.mobile&&<button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>}
+      {v.mobile&&<button onClick={onSearch} title="Search" style={{background:'none',border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:'#625650',fontSize:18,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>⌕</button>}
       <button onClick={handleRefresh} title="Refresh data" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
         <span style={{display:'inline-block',animation:refreshState==='spinning'?'fcSpin 0.8s linear infinite':'none'}}>{refreshState==='done'?'✓':'↻'}</span>
       </button>
       <div style={{width:8,height:8,borderRadius:4,background:live?'#10B981':'#9E9B96'}} title={live?'Live':'Disconnected'}/>
-      <span style={{fontSize:12,color:'#625650'}}>{today}</span>
+      {!v.mobile&&<span style={{fontSize:12,color:'#625650'}}>{today}</span>}
       <div style={{position:'relative'}}><button onClick={()=>setShowBell(!showBell)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',position:'relative'}}>🔔{alerts.length>0&&<span style={{position:'absolute',top:-4,right:-6,background:'#991B1B',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 4px',minWidth:14,textAlign:'center'}}>{alerts.length}</span>}</button>{showBell&&<div style={{position:'absolute',right:0,top:32,width:300,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12}}><div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,marginBottom:8}}>Billing Alerts</div>{alerts.slice(0,5).map(j=><div key={j.id} style={{padding:'4px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>{j.job_name} <span style={{color:'#B45309'}}>{j.contract_age}d</span></div>)}{alerts.length===0&&<div style={{color:'#9E9B96',fontSize:12}}>No alerts</div>}</div>}</div>
-      <div style={{position:'relative'}}><button onClick={()=>setShowHelp(!showHelp)} style={{background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#9E9B96'}}>?</button>{showHelp&&<div style={{position:'absolute',right:0,top:32,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12,fontSize:12,color:'#625650'}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:6}}>Shortcuts</div><div>⌘K — Global search</div><div>Esc — Close panel</div></div>}</div>
+      {!v.mobile&&<div style={{position:'relative'}}><button onClick={()=>setShowHelp(!showHelp)} style={{background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#9E9B96'}}>?</button>{showHelp&&<div style={{position:'absolute',right:0,top:32,width:220,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,boxShadow:'0 8px 30px rgba(0,0,0,.1)',zIndex:100,padding:12,fontSize:12,color:'#625650'}}><div style={{fontFamily:'Inter',fontWeight:700,marginBottom:6}}>Shortcuts</div><div>⌘K — Global search</div><div>Esc — Close panel</div></div>}</div>}
       {onOpenProfile&&<UserMenu onOpenProfile={onOpenProfile}/>}
     </div>
   </div>);
@@ -14071,7 +14091,10 @@ function MoreMenuSheet({page,setPage,onClose,jobs}){
 }
 
 function MobileBottomNav({page,setPage,onMore}){
-  return <div style={{position:'fixed',left:0,right:0,bottom:0,height:56,background:'#1A1A1A',borderTop:'1px solid #2A2A2A',display:'flex',zIndex:600,boxShadow:'0 -2px 12px rgba(0,0,0,0.2)'}}>
+  /* Apr 20 2026 fix: added paddingBottom for iOS home-indicator safe area,
+     and increased overall height so touch targets are still 56px above it.
+     Without this, the home indicator overlaps the icons on notched iPhones. */
+  return <div style={{position:'fixed',left:0,right:0,bottom:0,minHeight:56,paddingBottom:'env(safe-area-inset-bottom)',background:'#1A1A1A',borderTop:'1px solid #2A2A2A',display:'flex',zIndex:600,boxShadow:'0 -2px 12px rgba(0,0,0,0.2)'}}>
     {MOBILE_NAV.map(item=>{
       const isMore=item.key==='__more';
       const active=!isMore&&page===item.key;
@@ -14397,7 +14420,7 @@ function AppShell(){
       </div>}
       <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column',maxWidth:'100%'}}>
         <Topbar jobs={jobs} live={live} onSearch={()=>setShowSearch(true)} onRefresh={handleGlobalRefresh} onMenu={v.tablet?(()=>setTabletOverlay(true)):null} showMenu={v.tablet||v.mobile} onOpenProfile={()=>setShowProfile(true)} onBack={navigateBack} canGoBack={pageHistory.length>0} pageLabel={PAGE_LABELS[page]||'Fencecrete'}/>
-        <div style={{flex:1,overflowY:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:contentBottomPad+(v.mobile?16:24)}}>
+        <div style={{flex:1,overflowY:'auto',overflowX:'hidden',padding:v.mobile?'12px':v.tablet?'20px 24px':'24px 32px',paddingBottom:v.mobile?'calc(72px + env(safe-area-inset-bottom) + 16px)':(contentBottomPad+24)}}>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
