@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import BUILD_INFO from './build-info.json';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
@@ -7987,8 +7987,10 @@ function MapPage({ jobs, onNav }) {
   const [sizeF, setSizeF] = useState('All');
   const [weekF, setWeekF] = useState('All Active');
   const [selected, setSelected] = useState(null);
+  const [prospectForm, setProspectForm] = useState(null); // null | {market, fenceType, height, lf}
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [colorBy, setColorBy] = useState('status'); // 'status' | 'rate'
+  const [showHeatZones, setShowHeatZones] = useState(false);
   const [marketRates, setMarketRates] = useState([]); // from proposal_market_rates view
   useEffect(() => { setFiltersOpen(!isMobile); }, [isMobile]);
 
@@ -8063,6 +8065,52 @@ function MapPage({ jobs, onNav }) {
     else if (above75) tier = 'above';
     return { rate, myRate, tier };
   };
+
+  // Look up a comparable bucket for an arbitrary prospect spec (used by the
+  // New Prospect on Map form — no job row required).
+  const lookupForProspect = ({ market, fenceType, heightFt }) => {
+    if (!market || !fenceType) return null;
+    let height_bucket = 'unknown';
+    const h = n(heightFt);
+    if (h) {
+      if (h < 5) height_bucket = '4ft';
+      else if (h < 6) height_bucket = '5ft';
+      else if (h < 7) height_bucket = '6ft';
+      else if (h < 8) height_bucket = '7ft';
+      else if (h < 9) height_bucket = '8ft';
+      else if (h < 10) height_bucket = '9ft';
+      else height_bucket = '10ft+';
+    }
+    const exact = rateLookup.get(`${market}|${fenceType}|${height_bucket}`);
+    if (exact && (exact.won_count || 0) >= 3) return { ...exact, matchType: 'exact' };
+    const fam = rateLookup.get(`${market}|${fenceType}|*`);
+    if (fam && (fam.won_count || 0) >= 3) return { ...fam, matchType: 'family' };
+    return null;
+  };
+
+  // Heat-zone data: for each market, pick the most-signal bucket (highest won_count)
+  // and surface its median_won_rate + context for the map overlay.
+  const heatZones = useMemo(() => {
+    if (!marketRates.length) return [];
+    const byMarket = {};
+    marketRates.forEach(r => {
+      if (!r.market || !MKT_COORDS[r.market]) return;
+      if (!byMarket[r.market] || (r.won_count || 0) > (byMarket[r.market].won_count || 0)) {
+        byMarket[r.market] = r;
+      }
+    });
+    return Object.entries(byMarket)
+      .filter(([, r]) => (r.won_count || 0) >= 3)
+      .map(([market, r]) => ({
+        market,
+        center: MKT_COORDS[market],
+        rate: r.median_won_rate || r.median_rate,
+        won_count: r.won_count,
+        total_count: r.proposal_count,
+        fence_type: r.fence_type,
+        height: r.height_bucket,
+      }));
+  }, [marketRates]);
 
   const mapJobs = useMemo(() => jobs.filter(j => MAP_LAYER_STATUSES.includes(j.status)), [jobs]);
 
@@ -8252,6 +8300,13 @@ function MapPage({ jobs, onNav }) {
             background: colorBy==='rate' ? '#ECFDF5' : '#FFF',
             color: colorBy==='rate' ? '#065F46' : '#9E9B96',
           }}>$/LF vs market</button>
+          <button onClick={() => setShowHeatZones(v => !v)} style={{
+            marginLeft: 6,
+            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${showHeatZones ? '#1E3A8A' : '#E5E3E0'}`,
+            background: showHeatZones ? '#DBEAFE' : '#FFF',
+            color: showHeatZones ? '#1E3A8A' : '#9E9B96',
+          }}>{showHeatZones ? '🔥 Heat zones on' : 'Heat zones'}</button>
         </div>
       </div>
 
@@ -8278,6 +8333,28 @@ function MapPage({ jobs, onNav }) {
           <MapContainer center={[31.0, -99.0]} zoom={6} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
             {positions.length > 1 && <FitBounds positions={positions} />}
+            {/* Market heat zones (Phase C, Apr 20 2026):
+                Translucent circles centered on each market's coordinates,
+                sized by won_count, colored by median won $/LF. Rendered
+                BELOW job pins so pins stay clickable. Always uses a muted
+                palette so pins still pop visually. */}
+            {showHeatZones && heatZones.map(z => {
+              const radius = Math.min(80000, 20000 + z.won_count * 2000); // meters
+              const color = z.rate < 80 ? '#DC2626' : z.rate > 140 ? '#2563EB' : '#65A30D';
+              return (
+                <Circle key={z.market} center={z.center} radius={radius}
+                  pathOptions={{ fillColor: color, color: color, weight: 1, fillOpacity: 0.12, opacity: 0.35 }}>
+                  <LeafletTooltip permanent direction="center" className="fc-heat-tooltip">
+                    <div style={{ textAlign: 'center', fontFamily: 'Inter', lineHeight: 1.2 }}>
+                      <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase' }}>{z.market}</div>
+                      <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800, color }}>${Math.round(z.rate)}/LF</div>
+                      <div style={{ fontSize: 9, color: '#6B6056' }}>{z.fence_type} · {z.height}</div>
+                      <div style={{ fontSize: 9, color: '#9E9B96' }}>n = {z.won_count} won</div>
+                    </div>
+                  </LeafletTooltip>
+                </Circle>
+              );
+            })}
             {pmRoute.length > 1 && (
               <Polyline positions={pmRoute} pathOptions={{ color: '#8B2020', weight: 3, opacity: 0.75, dashArray: '6 6' }} />
             )}
@@ -8294,6 +8371,128 @@ function MapPage({ jobs, onNav }) {
               );
             })}
           </MapContainer>
+          {/* New Prospect on Map — instant bid-range tool (Phase C).
+              Click the button at top-right of the map to open a mini form;
+              get a recommended $/LF range from proposal_market_rates the
+              moment you fill in (Market, Product, Height, LF). */}
+          <button
+            onClick={() => setProspectForm(prospectForm ? null : { market: 'San Antonio', fenceType: 'Precast Concrete', heightFt: 6, lf: 500 })}
+            style={{
+              position: 'absolute', top: 12, right: 12, zIndex: 1000,
+              padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: 9999,
+              background: prospectForm ? '#FFF' : '#8A261D',
+              color: prospectForm ? '#8A261D' : '#FFF',
+              border: '1px solid #8A261D',
+              fontSize: isMobile ? 11 : 12, fontWeight: 700, cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            }}
+          >
+            {prospectForm ? '✕ Close' : (isMobile ? '+ Prospect' : '+ New Prospect')}
+          </button>
+
+          {prospectForm && (() => {
+            const rate = lookupForProspect(prospectForm);
+            const lf = n(prospectForm.lf);
+            const rangeLow = rate ? rate.p25_rate * lf : null;
+            const rangeMid = rate ? (rate.median_won_rate || rate.median_rate) * lf : null;
+            const rangeHigh = rate ? rate.p75_rate * lf : null;
+            return (
+              <div style={{
+                position: 'absolute',
+                top: isMobile ? 56 : 52,
+                right: isMobile ? 8 : 12,
+                left: isMobile ? 8 : 'auto',
+                zIndex: 1000,
+                width: isMobile ? 'auto' : 320,
+                maxHeight: isMobile ? 'calc(100% - 72px)' : 'none',
+                overflowY: isMobile ? 'auto' : 'visible',
+                background: '#FFF', borderRadius: 12,
+                border: '1px solid #E5E3E0', boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+                padding: 16, fontSize: 12,
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#6B6056', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                  New Prospect — Instant Bid Range
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <label>
+                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Market</div>
+                    <select value={prospectForm.market} onChange={e => setProspectForm(f => ({ ...f, market: e.target.value }))}
+                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }}>
+                      {['San Antonio','Houston','Austin','Dallas-Fort Worth','College Station'].map(m => <option key={m}>{m}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Product</div>
+                    <select value={prospectForm.fenceType} onChange={e => setProspectForm(f => ({ ...f, fenceType: e.target.value }))}
+                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }}>
+                      <option>Precast Concrete</option>
+                      <option>Masonry</option>
+                      <option>Precast + Wrought Iron</option>
+                      <option>Mixed/Other</option>
+                      <option>Wood</option>
+                    </select>
+                  </label>
+                  <label>
+                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Height (ft)</div>
+                    <input type="number" min="4" max="12" step="0.5" value={prospectForm.heightFt}
+                      onChange={e => setProspectForm(f => ({ ...f, heightFt: parseFloat(e.target.value) || 0 }))}
+                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }} />
+                  </label>
+                  <label>
+                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Total LF</div>
+                    <input type="number" min="0" step="10" value={prospectForm.lf}
+                      onChange={e => setProspectForm(f => ({ ...f, lf: parseFloat(e.target.value) || 0 }))}
+                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }} />
+                  </label>
+                </div>
+
+                {rate ? (
+                  <div style={{ background: '#FAF9F6', border: '1px solid #E5E3E0', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 10, color: '#6B6056', marginBottom: 6 }}>
+                      Based on <b>{rate.won_count}</b> won / {rate.proposal_count} proposals
+                      {rate.matchType === 'family' && <span style={{ color: '#B45309' }}> (height fallback)</span>}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 8 }}>
+                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
+                        <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>P25</div>
+                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800 }}>${Math.round(rate.p25_rate)}/LF</div>
+                      </div>
+                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 6 }}>
+                        <div style={{ fontSize: 9, color: '#065F46', fontWeight: 700 }}>MEDIAN WON</div>
+                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800, color: '#065F46' }}>${Math.round(rate.median_won_rate || rate.median_rate)}/LF</div>
+                      </div>
+                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
+                        <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>P75</div>
+                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800 }}>${Math.round(rate.p75_rate)}/LF</div>
+                      </div>
+                    </div>
+                    {lf > 0 && (
+                      <div style={{ paddingTop: 8, borderTop: '1px solid #E5E3E0' }}>
+                        <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Total Bid Range ({lf.toLocaleString()} LF)</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Syne', fontWeight: 800 }}>
+                          <span style={{ fontSize: 13 }}>${(rangeLow/1000).toFixed(0)}K</span>
+                          <span style={{ fontSize: 16, color: '#065F46' }}>${(rangeMid/1000).toFixed(0)}K</span>
+                          <span style={{ fontSize: 13 }}>${(rangeHigh/1000).toFixed(0)}K</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#9E9B96', marginTop: 2 }}>
+                          <span>competitive low</span>
+                          <span>target</span>
+                          <span>premium high</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ padding: 10, background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 11, color: '#78350F' }}>
+                    No comparable won data for {prospectForm.market} + {prospectForm.fenceType} at {prospectForm.heightFt}ft yet.
+                    Need 3+ won tagged proposals in that bucket to get a recommendation.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Legend */}
           <div style={{ position: 'absolute', bottom: 14, right: 12, background: 'rgba(255,255,255,0.95)', borderRadius: 8, padding: '8px 12px', zIndex: 1000, border: '1px solid #E5E3E0', fontSize: 11 }}>
             <div style={{ fontWeight: 700, marginBottom: 4, color: '#6B6056', textTransform: 'uppercase', fontSize: 10 }}>
@@ -14553,6 +14752,17 @@ function AppShell(){
           50%{box-shadow:0 0 0 6px rgba(59,130,246,0);}
         }
         .fc-refresh-pulse{animation:fcRefreshPulse 2s ease-in-out infinite;}
+        /* ── Map heat-zone center tooltips ── */
+        .leaflet-tooltip.fc-heat-tooltip{
+          background: rgba(255,255,255,0.96);
+          border: 1px solid rgba(0,0,0,0.1);
+          border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          padding: 6px 10px;
+          color: #1A1A1A;
+          font-family: 'Inter', sans-serif;
+        }
+        .leaflet-tooltip.fc-heat-tooltip::before{display:none;}
         /* ── Nav item hover ── */
         .fc-nav-item:hover { background: rgba(255,255,255,0.06) !important; color: rgba(255,255,255,0.85) !important; }
         /* ── Sidebar nav scrollbar (dark) ── */
