@@ -886,12 +886,15 @@ function LineItemsEditor({job,onChange,registerSave}){
   // project header. Fixes a UX trap where Amiee added extra line items,
   // clicked the top Save, saw "Project saved", and assumed lines were
   // saved — they weren't, because only "Save Lines" commits line edits.
+  // Keep a ref to saveAll so the useEffect can call it without needing saveAll
+  // in the dep array (which would re-run the effect every render).
+  const saveAllRef=useRef(null);
+  saveAllRef.current=saveAll;
   useEffect(()=>{
     if(typeof registerSave!=='function')return;
-    registerSave(async()=>{if(dirty)await saveAll();});
+    registerSave(async()=>{if(dirty&&saveAllRef.current)await saveAllRef.current();});
     return ()=>{registerSave(null);};
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[dirty,lines]);
+  },[dirty,registerSave]);
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
