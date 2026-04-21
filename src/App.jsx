@@ -414,9 +414,12 @@ function useViewport(){
    Silently no-ops when build-info.json is the "dev-initial" stub (local
    dev, no real SHA) so the banner doesn't spam in dev. */
 const POLL_INTERVAL_MS = 3 * 60 * 1000;  // 3 minutes
-function VersionChecker(){
+
+/* Shared hook. Used by both the top-center banner (VersionChecker) and
+   the sidebar refresh button (SidebarRefreshButton) so they stay in sync
+   without duplicating the poll timer. */
+function useVersionCheck(){
   const [latestSha, setLatestSha] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
   const builtSha = BUILD_INFO?.sha || '';
   const isDevStub = !builtSha || builtSha.startsWith('dev-');
 
@@ -425,7 +428,6 @@ function VersionChecker(){
     let cancelled = false;
     const check = async () => {
       try {
-        // Cache-bust with a query param so we always hit the edge fresh
         const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
@@ -437,14 +439,25 @@ function VersionChecker(){
     return () => { cancelled = true; clearInterval(id); };
   }, [isDevStub]);
 
-  if (isDevStub) return null;
-  if (!latestSha) return null;
-  if (latestSha === builtSha) return null;
-  if (dismissed) return null;
+  const hasUpdate = !isDevStub && latestSha && latestSha !== builtSha;
+  const reload = () => { try { window.location.reload(); } catch (e) {} };
+  return { hasUpdate, builtSha, latestSha, isDevStub, reload };
+}
 
-  const reload = () => {
-    try { window.location.reload(); } catch (e) {}
-  };
+function VersionChecker(){
+  const { hasUpdate, latestSha, reload } = useVersionCheck();
+  const [dismissed, setDismissed] = useState(false);
+  /* Reset dismissed when a NEW update arrives (re-surface banner for the
+     next deploy after the user clicked "Later" on this one). */
+  const [dismissedForSha, setDismissedForSha] = useState(null);
+  useEffect(() => {
+    if (dismissed && dismissedForSha && latestSha && latestSha !== dismissedForSha) {
+      setDismissed(false);
+      setDismissedForSha(null);
+    }
+  }, [latestSha, dismissed, dismissedForSha]);
+
+  if (!hasUpdate || dismissed) return null;
 
   return (
     <div style={{
@@ -466,7 +479,7 @@ function VersionChecker(){
         padding:'5px 12px', fontSize:12, fontWeight:700,
         cursor:'pointer',
       }}>Reload</button>
-      <button onClick={()=>setDismissed(true)} title="Dismiss until next update" style={{
+      <button onClick={()=>{setDismissed(true);setDismissedForSha(latestSha);}} title="Dismiss until next update" style={{
         background:'transparent', color:'#FFF',
         border:'1px solid rgba(255,255,255,0.4)', borderRadius:6,
         padding:'5px 10px', fontSize:12, fontWeight:600,
@@ -14000,9 +14013,40 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
           <button onClick={()=>{setUserMenuOpen(false);auth.signOut();}} style={{display:'block',width:'100%',padding:'10px 12px',border:'none',background:'transparent',textAlign:'left',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}>Sign Out</button>
         </div>}
       </div>}
-      <button onClick={()=>setCollapsed(!collapsed)} title={collapsed?'Expand sidebar':'Collapse sidebar'} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'6px 10px',width:'100%',fontWeight:600}}>{collapsed?'→':'Go Back'}</button>
+      <button onClick={()=>setCollapsed(!collapsed)} title={collapsed?'Expand sidebar':'Collapse sidebar'} style={{background:'#2A2A2A',border:'none',borderRadius:6,color:'#9E9B96',fontSize:11,cursor:'pointer',padding:'6px 10px',width:'100%',fontWeight:600,marginBottom:6}}>{collapsed?'→':'Go Back'}</button>
+      <SidebarRefreshButton collapsed={collapsed}/>
     </div>
   </>;
+}
+
+/* Refresh button for the bottom of the sidebar. Always clickable (forces a
+   hard reload), but visually pulses when a new deploy has shipped. Uses the
+   same useVersionCheck hook as the top-center banner so they stay in sync. */
+function SidebarRefreshButton({collapsed}){
+  const { hasUpdate, reload } = useVersionCheck();
+  const bg = hasUpdate ? '#1D4ED8' : '#2A2A2A';
+  const color = hasUpdate ? '#FFFFFF' : '#9E9B96';
+  const border = hasUpdate ? '1px solid #3B82F6' : '1px solid transparent';
+  const title = hasUpdate
+    ? 'A new version is available — click to reload'
+    : 'Reload to check for updates';
+  return (
+    <button
+      onClick={reload}
+      title={title}
+      className={hasUpdate ? 'fc-refresh-pulse' : ''}
+      style={{
+        background: bg, border, borderRadius: 6, color,
+        fontSize: 11, cursor: 'pointer',
+        padding: '6px 10px', width: '100%', fontWeight: 600,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 6, transition: 'all 0.15s',
+      }}
+    >
+      <span style={{fontSize: 13}}>🔄</span>
+      {!collapsed && (hasUpdate ? 'Update available' : 'Check for update')}
+    </button>
+  );
 }
 
 function MoreMenuSheet({page,setPage,onClose,jobs}){
@@ -14303,6 +14347,12 @@ function AppShell(){
         html,body{max-width:100%;position:relative;}
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
         @keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        /* ── Refresh button pulse when a new deploy is live ── */
+        @keyframes fcRefreshPulse{
+          0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.55);}
+          50%{box-shadow:0 0 0 6px rgba(59,130,246,0);}
+        }
+        .fc-refresh-pulse{animation:fcRefreshPulse 2s ease-in-out infinite;}
         /* ── Nav item hover ── */
         .fc-nav-item:hover { background: rgba(255,255,255,0.06) !important; color: rgba(255,255,255,0.85) !important; }
         /* ── Sidebar nav scrollbar (dark) ── */
