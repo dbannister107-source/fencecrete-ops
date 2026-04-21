@@ -2982,19 +2982,71 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
             </table>
           </div>}
           <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:8,padding:'8px 12px',marginBottom:14,display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Adj Contract</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.adj_contract_value)}</div></div>
-            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>YTD Invoiced</div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.ytd_invoiced)}</div></div>
-            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Left to Bill</div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{$(arJob.left_to_bill)}</div></div>
-            <div><div style={{fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>% Billed</div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{fmtPct1(arJob.pct_billed)}</div></div>
+            <div><div style={{display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Adj Contract<span title="Original contract value plus any approved change orders. This is the total revenue we expect to bill on this job." style={{cursor:'help',color:'#065F46'}}>ⓘ</span></div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.adj_contract_value)}</div></div>
+            <div><div style={{display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>YTD Invoiced<span title="Sum of ALL invoice entries on this job (including Opening Balance migrations). Automatically recalculated whenever an invoice is added, deleted, or edited." style={{cursor:'help',color:'#065F46'}}>ⓘ</span></div><div style={{fontWeight:700,fontSize:13}}>{$(arJob.ytd_invoiced)}</div></div>
+            <div><div style={{display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>Left to Bill<span title="Adj Contract minus YTD Invoiced. The remaining dollars you can invoice on this job before going over contract." style={{cursor:'help',color:'#065F46'}}>ⓘ</span></div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{$(arJob.left_to_bill)}</div></div>
+            <div><div style={{display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#625650',textTransform:'uppercase',fontWeight:600,marginBottom:2}}>% Billed<span title="YTD Invoiced ÷ Adj Contract. Should land at 100% when the job is billed complete. Values over 100% indicate overbilling — likely a double-entered invoice or missing change order." style={{cursor:'help',color:'#065F46'}}>ⓘ</span></div><div style={{fontWeight:800,fontSize:13,color:'#8A261D'}}>{fmtPct1(arJob.pct_billed)}</div></div>
           </div>
           <div style={{fontSize:11,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,paddingTop:10,borderTop:'1px solid #E5E3E0'}}>Add Invoice Entry</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
-            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Amount ($) *</label><input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS}/></div>
-            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Date</label><input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS}/></div>
-            <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Invoice Number</label><input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS}/></div>
+          {/* Tooltip legend for the form fields — Virginia hit a YTD double-count
+              because the "Invoice Amount" field looks ambiguous. Every invoice
+              entry gets SUMMED into YTD via the recalc_ytd_invoiced trigger, so
+              entering the target YTD here double-counts on top of prior entries. */}
+          <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'8px 12px',marginBottom:10,fontSize:11,color:'#1E40AF',lineHeight:1.5}}>
+            <b>ⓘ How this form works:</b> Each entry you add is a <b>single invoice</b>. The system adds it to any prior invoices to calculate YTD. Enter <b>only this invoice's amount</b>, not the running total.
           </div>
-          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Invoice notes..." style={{...inputS,resize:'vertical'}}/></div>
-          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Entered By</label><input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div>
+              <label style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+                Invoice Amount ($) *
+                <span title="The dollar amount of THIS specific invoice (not YTD, not the contract total). The app adds this to prior invoices to calculate YTD automatically. Example: if YTD is $651,941 and you want to bring the job to $816,483 complete, enter $164,542 — the remainder." style={{cursor:'help',color:'#1D4ED8',fontWeight:700}}>ⓘ</span>
+              </label>
+              <input type="number" value={arForm.invoiced_amount} onChange={e=>setArForm(p=>({...p,invoiced_amount:e.target.value}))} placeholder="0" style={inputS}/>
+              {/* Live preview of what YTD will become if they submit this value.
+                  Helps catch the YTD-as-invoice mistake before it persists. */}
+              {n(arForm.invoiced_amount)>0&&(()=>{
+                const curYTD=n(arJob.ytd_invoiced);
+                const adj=n(arJob.adj_contract_value||arJob.contract_value);
+                const newYTD=curYTD+n(arForm.invoiced_amount);
+                const newPct=adj>0?(newYTD/adj)*100:0;
+                const overbilled=newPct>105;
+                const color=overbilled?'#991B1B':newPct>=99?'#065F46':'#1D4ED8';
+                const bg=overbilled?'#FEE2E2':newPct>=99?'#D1FAE5':'#EFF6FF';
+                return <div style={{marginTop:6,padding:'6px 10px',background:bg,border:`1px solid ${color}40`,borderRadius:6,fontSize:11,color}}>
+                  {overbilled&&'⚠️ '}New YTD: <b>{$(newYTD)}</b> ({newPct.toFixed(1)}% of {$(adj)})
+                  {overbilled&&<div style={{marginTop:3,fontSize:10,fontWeight:600}}>This entry would overbill by {$(newYTD-adj)}. Did you mean to enter just the remainder ({$(Math.max(0,adj-curYTD))})?</div>}
+                </div>;
+              })()}
+            </div>
+            <div>
+              <label style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+                Invoice Date
+                <span title="Date the invoice was (or will be) sent to the customer. Defaults to today." style={{cursor:'help',color:'#1D4ED8',fontWeight:700}}>ⓘ</span>
+              </label>
+              <input type="date" value={arForm.invoice_date} onChange={e=>setArForm(p=>({...p,invoice_date:e.target.value}))} style={inputS}/>
+            </div>
+            <div>
+              <label style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+                Invoice Number
+                <span title="The invoice number from your accounting system (QuickBooks, etc). Optional but helps reconcile later." style={{cursor:'help',color:'#1D4ED8',fontWeight:700}}>ⓘ</span>
+              </label>
+              <input value={arForm.invoice_number} onChange={e=>setArForm(p=>({...p,invoice_number:e.target.value}))} placeholder="Optional" style={inputS}/>
+            </div>
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+              Notes
+              <span title="Optional notes that will attach to this invoice entry (e.g., 'retainage released', 'change order work', etc)." style={{cursor:'help',color:'#1D4ED8',fontWeight:700}}>ⓘ</span>
+            </label>
+            <textarea value={arForm.ar_notes} onChange={e=>setArForm(p=>({...p,ar_notes:e.target.value}))} rows={2} placeholder="Invoice notes..." style={{...inputS,resize:'vertical'}}/>
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#625650',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+              Entered By
+              <span title="Your name (for audit trail). Defaults to 'Accounting'." style={{cursor:'help',color:'#1D4ED8',fontWeight:700}}>ⓘ</span>
+            </label>
+            <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/>
+          </div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
           <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice</button></div>
           {invEntries.filter(e=>!e.notes?.includes('Opening Balance')).length>0&&!s.ar_reviewed&&(
