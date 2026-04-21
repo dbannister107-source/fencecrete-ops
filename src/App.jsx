@@ -8088,12 +8088,45 @@ function MapPage({ jobs, onNav }) {
     return null;
   };
 
-  // Heat-zone data: for each market, pick the most-signal bucket (highest won_count)
-  // and surface its median_won_rate + context for the map overlay.
+  // Heat-zone data: for each market, surface a representative won $/LF.
+  //
+  // When Product filter is "All", we pick the bucket with the highest
+  // won_count per market as the "headline" rate (same as v1 behavior).
+  //
+  // When Product filter is Precast / Masonry / Hybrid, we restrict to rows
+  // whose fence_type maps to that product family, then within the filtered
+  // set still pick each market's highest-won bucket. That way, switching the
+  // Product pill updates every heat zone to reflect the rate for THAT
+  // product family in that market -- instead of always showing whichever
+  // product happens to have the most deals overall.
+  //
+  // Gate: proposals_clean doesn't have a "Gate" fence_type (gates are priced
+  // per-piece, not per-LF, so they're excluded from the rate analytics).
+  // When Product = Gate is selected, no heat zones render.
   const heatZones = useMemo(() => {
     if (!marketRates.length) return [];
+
+    // Maps the app's Product filter values to proposal fence_type families.
+    // Multiple proposal types can map to one Product (e.g. Precast covers
+    // both pure Precast Concrete and Precast + Wrought Iron blends).
+    const fenceTypesFor = (p) => {
+      if (p === 'Precast') return ['Precast Concrete', 'Precast + Wrought Iron'];
+      if (p === 'Masonry') return ['Masonry'];
+      if (p === 'Hybrid')  return ['Mixed/Other', 'Precast + Wrought Iron'];
+      if (p === 'Gate')    return []; // no gate rates in proposals_clean
+      return null; // 'All' -> no restriction
+    };
+    const allowed = fenceTypesFor(productF);
+
+    // If Product = Gate (no comparables), hide all zones.
+    if (allowed && allowed.length === 0) return [];
+
+    const filtered = allowed
+      ? marketRates.filter(r => allowed.includes(r.fence_type))
+      : marketRates;
+
     const byMarket = {};
-    marketRates.forEach(r => {
+    filtered.forEach(r => {
       if (!r.market || !MKT_COORDS[r.market]) return;
       if (!byMarket[r.market] || (r.won_count || 0) > (byMarket[r.market].won_count || 0)) {
         byMarket[r.market] = r;
@@ -8110,7 +8143,7 @@ function MapPage({ jobs, onNav }) {
         fence_type: r.fence_type,
         height: r.height_bucket,
       }));
-  }, [marketRates]);
+  }, [marketRates, productF]);
 
   const mapJobs = useMemo(() => jobs.filter(j => MAP_LAYER_STATUSES.includes(j.status)), [jobs]);
 
@@ -8307,6 +8340,19 @@ function MapPage({ jobs, onNav }) {
             background: showHeatZones ? '#DBEAFE' : '#FFF',
             color: showHeatZones ? '#1E3A8A' : '#9E9B96',
           }}>{showHeatZones ? '🔥 Heat zones on' : 'Heat zones'}</button>
+          {/* Show which product family the zones are anchored to, so the
+              user can tell at a glance whether they're looking at Precast
+              rates vs. Masonry vs. the headline (All). */}
+          {showHeatZones && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: '#1E3A8A', background: '#EFF6FF',
+              border: '1px solid #BFDBFE', borderRadius: 9999, padding: '3px 8px',
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              {productF === 'All' ? 'Top product / market' : `${productF} rates`}
+              {heatZones.length === 0 && ' · no data'}
+            </span>
+          )}
         </div>
       </div>
 
