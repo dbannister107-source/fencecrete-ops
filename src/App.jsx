@@ -13517,6 +13517,376 @@ function ProposalsPage({ jobs }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PROPOSAL TRIAGE PAGE (Amiee's Tagging Sprint UI — built Apr 20 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   One-at-a-time review queue for the ~1,013 pending/needs-review proposals
+   that came out of the April 17 ingest. Designed for focused high-speed
+   triage with keyboard shortcuts:
+     W → mark Won
+     L → mark Lost (opens loss-reason modal)
+     E → mark Expired
+     P → mark Still Pending (sets reviewed_at so it hides from queue)
+     U → Undo last decision
+     ← / → → navigate without tagging
+
+   Queue filters:
+     - Q1 2026 pending     (newest, most recent memory, best ROI first)
+     - All pending
+     - Needs review        (68 flagged by extractor)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function ProposalTriagePage(){
+  const auth = useAuth();
+  const userEmail = auth?.user?.email || 'unknown';
+  const [queue, setQueue] = useState([]);
+  const [index, setIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('q1_2026'); // 'q1_2026' | 'all_pending' | 'needs_review'
+  const [counts, setCounts] = useState({ won: 0, lost: 0, expired: 0, still_pending: 0 });
+  const [history, setHistory] = useState([]); // for undo
+  const [lossModal, setLossModal] = useState(null); // { proposalId } when open
+  const [toast, setToast] = useState(null);
+
+  const LOSS_REASONS = ['Price', 'Timing', 'Relationship', 'Scope Change', 'Competitor', 'Other'];
+
+  // Build the Supabase query string for the active filter.
+  const queryFor = (f) => {
+    const base = "source_type=eq.outgoing_proposal&order=proposal_date.desc.nullslast&limit=500";
+    if (f === 'q1_2026') {
+      return `${base}&status=eq.pending&proposal_date=gte.2026-01-01&proposal_date=lt.2026-04-01&reviewed_at=is.null`;
+    }
+    if (f === 'needs_review') {
+      return `${base}&needs_review=eq.true`;
+    }
+    // all_pending
+    return `${base}&status=eq.pending&reviewed_at=is.null`;
+  };
+
+  const loadQueue = useCallback(async () => {
+    setLoading(true);
+    const data = await sbGet('proposals', `select=id,proposal_number,proposal_date,customer_name,project_name_display,title,market,fence_type,fence_height_ft,total_lf,grand_total,computed_price_per_lf,assigned_rep,needs_review,review_reasons,source_file_name,notes,status,matched_job_id&${queryFor(filter)}`);
+    setQueue(Array.isArray(data) ? data : []);
+    setIndex(0);
+    setLoading(false);
+  }, [filter]);
+
+  useEffect(() => { loadQueue(); }, [loadQueue]);
+
+  const current = queue[index] || null;
+
+  // --- Tagging actions ----------------------------------------------------
+  const applyTag = async (newStatus, extraFields = {}) => {
+    if (!current) return;
+    const patch = {
+      status: newStatus === 'still_pending' ? 'pending' : newStatus,
+      tagged_at: new Date().toISOString(),
+      tagged_by: userEmail,
+      ...(newStatus === 'still_pending' ? { reviewed_at: new Date().toISOString() } : {}),
+      ...extraFields,
+    };
+    // Stash for undo BEFORE the patch so we can revert
+    setHistory(h => [...h, {
+      id: current.id,
+      before: {
+        status: current.status,
+        loss_reason: current.loss_reason || null,
+        notes: current.notes || null,
+        tagged_at: null,
+        tagged_by: null,
+        reviewed_at: null,
+      },
+      at: Date.now(),
+    }]);
+    try {
+      await sbPatch('proposals', current.id, patch);
+      setCounts(c => ({ ...c, [newStatus]: (c[newStatus] || 0) + 1 }));
+      setQueue(q => q.filter(p => p.id !== current.id));
+      // index stays pointing at the same slot which now contains the next item
+      setToast({ msg: `Tagged as ${newStatus.replace('_', ' ')}`, ok: true });
+    } catch (e) {
+      console.error('[Triage] tag failed', e);
+      setToast({ msg: 'Save failed. Try again.', ok: false });
+    }
+  };
+
+  const undo = async () => {
+    const last = history[history.length - 1];
+    if (!last) return;
+    try {
+      await sbPatch('proposals', last.id, last.before);
+      setHistory(h => h.slice(0, -1));
+      setToast({ msg: 'Reverted last tag', ok: true });
+      loadQueue(); // reload so the record comes back
+    } catch (e) {
+      setToast({ msg: 'Undo failed', ok: false });
+    }
+  };
+
+  // --- Keyboard shortcuts -------------------------------------------------
+  useEffect(() => {
+    const onKey = (e) => {
+      // Ignore when typing in an input/textarea/modal
+      if (lossModal) return;
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'w' || e.key === 'W') { e.preventDefault(); applyTag('won'); }
+      else if (e.key === 'l' || e.key === 'L') { e.preventDefault(); setLossModal({ proposalId: current?.id, reason: '', notes: '' }); }
+      else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); applyTag('expired'); }
+      else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); applyTag('still_pending'); }
+      else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); undo(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); setIndex(i => Math.min(i + 1, queue.length - 1)); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); setIndex(i => Math.max(i - 1, 0)); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [current, queue.length, lossModal, history]); // eslint-disable-line
+
+  // --- Render -------------------------------------------------------------
+  const totalDone = counts.won + counts.lost + counts.expired + counts.still_pending;
+  const progressPct = queue.length + totalDone > 0 ? (totalDone / (queue.length + totalDone)) * 100 : 0;
+
+  if (loading) {
+    return <div>
+      <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, marginBottom: 16 }}>Proposal Triage</h1>
+      <SkeletonKpis n={4}/>
+      <div style={{ height: 16 }}/>
+      <div style={{ ...card, padding: 24 }}><Skeleton h={400} r={10}/></div>
+    </div>;
+  }
+
+  return (
+    <div>
+      {toast && <Toast message={toast.msg} isError={!toast.ok} onDone={() => setToast(null)}/>}
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Proposal Triage</h1>
+        <div style={{ fontSize: 11, color: '#9E9B96' }}>
+          Keyboard: <b>W</b>on · <b>L</b>ost · <b>E</b>xpired · <b>P</b>ending · <b>U</b>ndo
+        </div>
+      </div>
+
+      {/* Queue selector + progress */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#6B6056', textTransform: 'uppercase' }}>Queue:</span>
+        {[
+          { key: 'q1_2026', label: 'Q1 2026 pending' },
+          { key: 'all_pending', label: 'All pending' },
+          { key: 'needs_review', label: 'Needs review' },
+        ].map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)} style={{
+            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${filter === f.key ? '#8A261D' : '#E5E3E0'}`,
+            background: filter === f.key ? '#FDEEED' : '#FFF',
+            color: filter === f.key ? '#8A261D' : '#9E9B96',
+          }}>{f.label}</button>
+        ))}
+        <div style={{ flex: 1 }}/>
+        <span style={{ fontSize: 12, color: '#625650' }}>
+          <b style={{ color: '#065F46' }}>{counts.won}</b> won ·
+          <b style={{ color: '#991B1B' }}> {counts.lost}</b> lost ·
+          <b style={{ color: '#B45309' }}> {counts.expired}</b> expired ·
+          <b style={{ color: '#6B6056' }}> {counts.still_pending}</b> kept pending
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 6, background: '#F1EFEC', borderRadius: 3, overflow: 'hidden', marginBottom: 20 }}>
+        <div style={{ height: '100%', width: `${progressPct}%`, background: '#8A261D', transition: 'width .2s' }}/>
+      </div>
+
+      {/* Empty state */}
+      {queue.length === 0 && (
+        <div style={{ ...card, padding: 60, textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+          <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
+            Queue complete
+          </div>
+          <div style={{ fontSize: 13, color: '#625650', maxWidth: 420, margin: '0 auto' }}>
+            No more proposals in this queue. You've tagged <b>{totalDone}</b> this session.
+            Switch queues above to keep going, or take a well-earned break.
+          </div>
+        </div>
+      )}
+
+      {/* Active review card */}
+      {current && (
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          {/* Position indicator */}
+          <div style={{ padding: '10px 20px', background: '#FAFAF9', borderBottom: '1px solid #E5E3E0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: '#6B6056' }}>
+              Record <b style={{ color: '#1A1A1A' }}>{index + 1}</b> of <b>{queue.length}</b> in queue
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => setIndex(i => Math.max(i - 1, 0))} disabled={index === 0} style={{ ...btnS, padding: '4px 10px', fontSize: 11, opacity: index === 0 ? 0.4 : 1 }}>← Prev</button>
+              <button onClick={() => setIndex(i => Math.min(i + 1, queue.length - 1))} disabled={index >= queue.length - 1} style={{ ...btnS, padding: '4px 10px', fontSize: 11, opacity: index >= queue.length - 1 ? 0.4 : 1 }}>Skip →</button>
+            </div>
+          </div>
+
+          {/* Main content: proposal details */}
+          <div style={{ padding: 20 }}>
+            {/* Title row */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: '#1A1A1A', marginBottom: 4 }}>
+                {current.customer_name || '(no customer name)'}
+              </div>
+              <div style={{ fontSize: 13, color: '#6B6056' }}>
+                {current.project_name_display || current.title || '(no project description)'}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {current.proposal_number && (
+                  <span style={{ ...pill('#6B6056', '#F4F4F2', '#6B6056'), fontSize: 11 }}>#{current.proposal_number}</span>
+                )}
+                {current.proposal_date && (
+                  <span style={{ ...pill('#6B6056', '#F4F4F2', '#6B6056'), fontSize: 11 }}>{fD(current.proposal_date)}</span>
+                )}
+                {current.assigned_rep && (
+                  <span style={{ ...pill('#1D4ED8', '#DBEAFE', '#1D4ED8'), fontSize: 11 }}>{current.assigned_rep}</span>
+                )}
+                {current.market && (
+                  <span style={{ ...pill(MC[current.market] || '#6B6056', MB[current.market] || '#F4F4F2'), fontSize: 11 }}>{MS[current.market] || current.market}</span>
+                )}
+                {current.needs_review && (
+                  <span style={{ ...pill('#B45309', '#FEF3C7', '#B45309'), fontSize: 11 }}>⚠ needs review</span>
+                )}
+                {current.matched_job_id && (
+                  <span style={{ ...pill('#065F46', '#D1FAE5', '#065F46'), fontSize: 11 }}>↔ Matched to job (likely won)</span>
+                )}
+              </div>
+            </div>
+
+            {/* Grid of key facts */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+              {[
+                ['Fence type', current.fence_type || '—'],
+                ['Height', current.fence_height_ft ? `${current.fence_height_ft} ft` : '—'],
+                ['Total LF', n(current.total_lf) ? n(current.total_lf).toLocaleString() : '—'],
+                ['Grand total', n(current.grand_total) ? `$${n(current.grand_total).toLocaleString()}` : '—'],
+                ['$/LF', current.computed_price_per_lf ? `$${Number(current.computed_price_per_lf).toFixed(0)}` : '—'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ background: '#FAFAF9', border: '1px solid #E5E3E0', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k}</div>
+                  <div style={{ fontFamily: 'Syne', fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginTop: 2 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Review reasons callout if needs_review */}
+            {current.needs_review && current.review_reasons?.length > 0 && (
+              <div style={{ padding: '10px 14px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 12, color: '#78350F', marginBottom: 14 }}>
+                <b>Extractor flags:</b> {current.review_reasons.join(', ')}
+              </div>
+            )}
+
+            {/* Source file reference */}
+            {current.source_file_name && (
+              <div style={{ fontSize: 11, color: '#9E9B96', marginBottom: 16, fontFamily: 'ui-monospace, monospace' }}>
+                📄 {current.source_file_name}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              <button onClick={() => applyTag('won')} style={{
+                background: '#065F46', color: '#FFF', border: 'none', borderRadius: 10,
+                padding: '16px 0', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 20 }}>✓</span>
+                <span>Won <span style={{ opacity: 0.7, fontWeight: 500 }}>(W)</span></span>
+              </button>
+              <button onClick={() => setLossModal({ proposalId: current.id, reason: '', notes: '' })} style={{
+                background: '#991B1B', color: '#FFF', border: 'none', borderRadius: 10,
+                padding: '16px 0', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 20 }}>✕</span>
+                <span>Lost <span style={{ opacity: 0.7, fontWeight: 500 }}>(L)</span></span>
+              </button>
+              <button onClick={() => applyTag('expired')} style={{
+                background: '#B45309', color: '#FFF', border: 'none', borderRadius: 10,
+                padding: '16px 0', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 20 }}>⧗</span>
+                <span>Expired <span style={{ opacity: 0.7, fontWeight: 500 }}>(E)</span></span>
+              </button>
+              <button onClick={() => applyTag('still_pending')} style={{
+                background: '#6B6056', color: '#FFF', border: 'none', borderRadius: 10,
+                padding: '16px 0', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 20 }}>⊙</span>
+                <span>Still Pending <span style={{ opacity: 0.7, fontWeight: 500 }}>(P)</span></span>
+              </button>
+            </div>
+
+            {/* Undo footer */}
+            {history.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #F1EFEC', textAlign: 'center' }}>
+                <button onClick={undo} style={{ ...btnS, padding: '6px 14px', fontSize: 12 }}>
+                  ↶ Undo last ({history.length} in session)
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Loss reason modal */}
+      {lossModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#FFF', borderRadius: 12, padding: 24, width: '100%', maxWidth: 460 }}>
+            <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800, marginBottom: 4 }}>
+              Mark as Lost
+            </div>
+            <div style={{ fontSize: 12, color: '#6B6056', marginBottom: 16 }}>
+              Why didn't we win this deal? (required)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
+              {LOSS_REASONS.map(r => (
+                <button key={r} onClick={() => setLossModal(m => ({ ...m, reason: r }))} style={{
+                  padding: '10px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  border: `1px solid ${lossModal.reason === r ? '#991B1B' : '#E5E3E0'}`,
+                  background: lossModal.reason === r ? '#FEE2E2' : '#FFF',
+                  color: lossModal.reason === r ? '#991B1B' : '#1A1A1A',
+                }}>{r}</button>
+              ))}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#6B6056', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
+                Notes (optional — competitor name, price quoted, etc.)
+              </label>
+              <textarea
+                value={lossModal.notes || ''}
+                onChange={e => setLossModal(m => ({ ...m, notes: e.target.value }))}
+                placeholder="Lost to ABC Fence at $85/LF..."
+                style={{ width: '100%', minHeight: 70, border: '1.5px solid #E5E3E0', borderRadius: 8, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setLossModal(null)} style={{ ...btnS, padding: '8px 16px' }}>Cancel</button>
+              <button
+                disabled={!lossModal.reason}
+                onClick={() => {
+                  applyTag('lost', { loss_reason: lossModal.reason, notes: lossModal.notes || null });
+                  setLossModal(null);
+                }}
+                style={{
+                  background: lossModal.reason ? '#991B1B' : '#E5E3E0',
+                  color: '#FFF', border: 'none', borderRadius: 8,
+                  padding: '8px 18px', fontSize: 13, fontWeight: 700,
+                  cursor: lossModal.reason ? 'pointer' : 'not-allowed',
+                }}
+              >Save as Lost</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function SalesDashboardPage({jobs,onNav}){
   const v=useViewport();
   const[leads,setLeads]=useState([]);const[allLeads,setAllLeads]=useState([]);
@@ -13781,6 +14151,7 @@ const PAGE_LABELS={
   pipeline:'Sales Pipeline',
   prospecting:'Prospecting',
   proposals:'Proposals',
+  proposal_triage:'Proposal Triage',
   bid_advisor:'Bid Advisor',
   contacts:'Contacts',
   fleet:'Fleet',
@@ -14409,7 +14780,7 @@ const NAV_GROUPS=[
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
-  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -14885,6 +15256,7 @@ function AppShell(){
             {page==='fleet_wo'&&<ErrorBoundary label="Fleet Work Orders"><FleetPage jobs={jobs}/></ErrorBoundary>}
             {page==='prospecting'&&<ErrorBoundary label="Prospecting"><ProspectingPage jobs={jobs}/></ErrorBoundary>}
             {page==='proposals'&&<ErrorBoundary label="Proposals"><ProposalsPage jobs={jobs}/></ErrorBoundary>}
+            {page==='proposal_triage'&&<ErrorBoundary label="Proposal Triage"><ProposalTriagePage/></ErrorBoundary>}
             {page==='bid_advisor'&&<ErrorBoundary label="Bid Advisor"><BidAdvisor/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
           </>}
