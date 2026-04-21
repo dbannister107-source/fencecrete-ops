@@ -7988,7 +7988,81 @@ function MapPage({ jobs, onNav }) {
   const [weekF, setWeekF] = useState('All Active');
   const [selected, setSelected] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(true);
+  const [colorBy, setColorBy] = useState('status'); // 'status' | 'rate'
+  const [marketRates, setMarketRates] = useState([]); // from proposal_market_rates view
   useEffect(() => { setFiltersOpen(!isMobile); }, [isMobile]);
+
+  // Load market pricing analytics (from proposal_market_rates view)
+  useEffect(() => {
+    sbGet('proposal_market_rates', 'select=*').then(d => setMarketRates(d || [])).catch(()=>{});
+  }, []);
+
+  // Build lookup: bucket key -> percentile row. Key is "market|fence_type|height_bucket".
+  // When a job doesn't match exactly, we fall back to market+fence_type alone.
+  const rateLookup = useMemo(() => {
+    const m = new Map();
+    marketRates.forEach(r => {
+      m.set(`${r.market}|${r.fence_type}|${r.height_bucket}`, r);
+      const fam = `${r.market}|${r.fence_type}|*`;
+      // Aggregate fallback per (market, fence_type): take the row with most won_count
+      const existing = m.get(fam);
+      if (!existing || (r.won_count || 0) > (existing.won_count || 0)) m.set(fam, r);
+    });
+    return m;
+  }, [marketRates]);
+
+  // Map a Fencecrete job to the proposal taxonomy used in proposals_enriched:
+  //   - market comes straight from j.market (we use the same enum)
+  //   - fence_type is a lightweight mapping from productOfJob/style
+  //   - height_bucket matches the CASE in the proposal_market_rates view
+  const bucketForJob = (j) => {
+    const market = j.market || null;
+    const prod = productOfJob(j);
+    let fence_type = 'Precast Concrete';
+    if (prod === 'Masonry') fence_type = 'Masonry';
+    else if (prod === 'Hybrid') fence_type = 'Mixed/Other';
+    else if (prod === 'Gate') fence_type = 'unknown';
+    const h = n(j.height_precast) || n(j.height) || null;
+    let height_bucket = 'unknown';
+    if (h) {
+      if (h < 5) height_bucket = '4ft';
+      else if (h < 6) height_bucket = '5ft';
+      else if (h < 7) height_bucket = '6ft';
+      else if (h < 8) height_bucket = '7ft';
+      else if (h < 9) height_bucket = '8ft';
+      else if (h < 10) height_bucket = '9ft';
+      else height_bucket = '10ft+';
+    }
+    return { market, fence_type, height_bucket };
+  };
+
+  // For a job, look up the relevant market-rate row. Prefer exact (market+ft+height),
+  // fall back to (market+ft+*) if the exact bucket is empty.
+  const getRateFor = (j) => {
+    const { market, fence_type, height_bucket } = bucketForJob(j);
+    if (!market || !fence_type) return null;
+    const exact = rateLookup.get(`${market}|${fence_type}|${height_bucket}`);
+    if (exact && (exact.won_count || 0) >= 3) return { ...exact, matchType: 'exact' };
+    const fallback = rateLookup.get(`${market}|${fence_type}|*`);
+    if (fallback && (fallback.won_count || 0) >= 3) return { ...fallback, matchType: 'family' };
+    return null;
+  };
+
+  // Compute this job's actual $/LF and its tier vs. market
+  const pricingFor = (j) => {
+    const rate = getRateFor(j);
+    const cv = n(j.adj_contract_value || j.contract_value);
+    const lf = n(j.total_lf);
+    if (!cv || !lf) return { rate, myRate: null, tier: 'unknown' };
+    const myRate = cv / lf;
+    if (!rate) return { rate, myRate, tier: 'unknown' };
+    const below25 = myRate < rate.p25_rate;
+    const above75 = myRate > rate.p75_rate;
+    let tier = 'at';
+    if (below25) tier = 'below';
+    else if (above75) tier = 'above';
+    return { rate, myRate, tier };
+  };
 
   const mapJobs = useMemo(() => jobs.filter(j => MAP_LAYER_STATUSES.includes(j.status)), [jobs]);
 
@@ -8141,7 +8215,7 @@ function MapPage({ jobs, onNav }) {
         </div>
       )}
 
-      {/* Layer toggles */}
+      {/* Layer toggles + color-by */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         {MAP_LAYER_STATUSES.map(s => {
           const on = layers[s];
@@ -8160,6 +8234,25 @@ function MapPage({ jobs, onNav }) {
           );
         })}
         {geocoding && <span style={{ fontSize: 11, color: '#625650', marginLeft: 8 }}>{geoProgress}</span>}
+        {/* Color-by toggle — Phase B of Map Pricing Intelligence (Apr 20 2026).
+            Switches pin coloring between "status" (default) and "$/LF vs market"
+            which uses proposal_market_rates view to classify each pin as
+            below-market (<p25), at-market, or above-market (>p75). */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#6B6056', textTransform: 'uppercase' }}>Color:</span>
+          <button onClick={() => setColorBy('status')} style={{
+            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${colorBy==='status' ? '#8A261D' : '#E5E3E0'}`,
+            background: colorBy==='status' ? '#FDEEED' : '#FFF',
+            color: colorBy==='status' ? '#8A261D' : '#9E9B96',
+          }}>Status</button>
+          <button onClick={() => setColorBy('rate')} style={{
+            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${colorBy==='rate' ? '#065F46' : '#E5E3E0'}`,
+            background: colorBy==='rate' ? '#ECFDF5' : '#FFF',
+            color: colorBy==='rate' ? '#065F46' : '#9E9B96',
+          }}>$/LF vs market</button>
+        </div>
       </div>
 
       {/* Callouts */}
@@ -8188,23 +8281,52 @@ function MapPage({ jobs, onNav }) {
             {pmRoute.length > 1 && (
               <Polyline positions={pmRoute} pathOptions={{ color: '#8B2020', weight: 3, opacity: 0.75, dashArray: '6 6' }} />
             )}
-            {filtered.filter(j => j.lat && j.lng).map(j => (
-              <CircleMarker key={j.id}
-                center={[j.lat, j.lng]} radius={selected && selected.id === j.id ? 13 : 9}
-                pathOptions={{ fillColor: MAP_LAYER_COLOR[j.status] || '#8A261D', color: '#1A1A1A', weight: 2, fillOpacity: 0.9 }}
-                eventHandlers={{ click: () => setSelected(j) }} />
-            ))}
+            {filtered.filter(j => j.lat && j.lng).map(j => {
+              const tierColors = { below: '#DC2626', at: '#65A30D', above: '#2563EB', unknown: '#9E9B96' };
+              const color = colorBy === 'rate'
+                ? tierColors[pricingFor(j).tier]
+                : (MAP_LAYER_COLOR[j.status] || '#8A261D');
+              return (
+                <CircleMarker key={j.id}
+                  center={[j.lat, j.lng]} radius={selected && selected.id === j.id ? 13 : 9}
+                  pathOptions={{ fillColor: color, color: '#1A1A1A', weight: 2, fillOpacity: 0.9 }}
+                  eventHandlers={{ click: () => setSelected(j) }} />
+              );
+            })}
           </MapContainer>
           {/* Legend */}
           <div style={{ position: 'absolute', bottom: 14, right: 12, background: 'rgba(255,255,255,0.95)', borderRadius: 8, padding: '8px 12px', zIndex: 1000, border: '1px solid #E5E3E0', fontSize: 11 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4, color: '#6B6056', textTransform: 'uppercase', fontSize: 10 }}>Layers</div>
-            {MAP_LAYER_STATUSES.filter(s => layers[s]).map(s => (
-              <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1.5px solid #1A1A1A' }} />
-                <span>{MAP_LAYER_LABEL[s]}</span>
-              </div>
-            ))}
-            {pmRoute.length > 1 && (
+            <div style={{ fontWeight: 700, marginBottom: 4, color: '#6B6056', textTransform: 'uppercase', fontSize: 10 }}>
+              {colorBy === 'rate' ? '$/LF vs market' : 'Layers'}
+            </div>
+            {colorBy === 'rate' ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#DC2626', border: '1.5px solid #1A1A1A' }} />
+                  <span>Below market (&lt;25th %ile)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#65A30D', border: '1.5px solid #1A1A1A' }} />
+                  <span>At market (25–75th %ile)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#2563EB', border: '1.5px solid #1A1A1A' }} />
+                  <span>Above market (&gt;75th %ile)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#9E9B96', border: '1.5px solid #1A1A1A' }} />
+                  <span>No comparable data</span>
+                </div>
+              </>
+            ) : (
+              MAP_LAYER_STATUSES.filter(s => layers[s]).map(s => (
+                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1.5px solid #1A1A1A' }} />
+                  <span>{MAP_LAYER_LABEL[s]}</span>
+                </div>
+              ))
+            )}
+            {pmRoute.length > 1 && colorBy !== 'rate' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingTop: 4, borderTop: '1px solid #F1EFEC' }}>
                 <span style={{ width: 16, height: 2, background: '#8B2020', borderRadius: 1, borderTop: '1px dashed #8B2020' }} />
                 <span>{pmF} route</span>
@@ -8247,6 +8369,61 @@ function MapPage({ jobs, onNav }) {
                 </div>
               ))}
             </div>
+
+            {/* ═══ Pricing Intelligence (Map Pricing v1, Apr 20 2026) ═══
+                Shows how this job's $/LF compares to market comparables from
+                proposals_clean, stratified by market + fence_type + height. */}
+            {(() => {
+              const { rate, myRate, tier } = pricingFor(selected);
+              const tierMeta = {
+                below:   { label: 'BELOW MARKET', fg: '#7F1D1D', bg: '#FEE2E2', hint: 'Priced under 25th percentile of comparables — may be leaving money on the table' },
+                at:      { label: 'AT MARKET',    fg: '#065F46', bg: '#ECFDF5', hint: 'Within typical range (25–75th percentile) for this product & market' },
+                above:   { label: 'ABOVE MARKET', fg: '#1E3A8A', bg: '#DBEAFE', hint: 'Priced over 75th percentile — premium/challenging territory' },
+                unknown: { label: 'NO DATA',      fg: '#6B6056', bg: '#F4F4F2', hint: 'Not enough won comparables to benchmark — need more tagged proposals' },
+              }[tier];
+              return (
+                <div style={{ marginTop: 14, padding: 12, background: '#FAF9F6', border: '1px solid #E5E3E0', borderRadius: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#6B6056', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                    Pricing Intelligence
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: '#1A1A1A' }}>
+                      {myRate ? `$${myRate.toFixed(0)}/LF` : '—'}
+                    </span>
+                    <span style={{ padding: '2px 8px', borderRadius: 9999, fontSize: 10, fontWeight: 700, color: tierMeta.fg, background: tierMeta.bg }}>
+                      {tierMeta.label}
+                    </span>
+                  </div>
+                  {rate ? (
+                    <>
+                      <div style={{ fontSize: 11, color: '#6B6056', marginBottom: 8 }}>
+                        Compared to <b>{rate.won_count || 0} won</b> / {rate.proposal_count} proposals · {rate.market} · {rate.fence_type} · {rate.height_bucket}
+                        {rate.matchType === 'family' && <span style={{ color: '#B45309' }}> (height fallback)</span>}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 8 }}>
+                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
+                          <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>25th %</div>
+                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800 }}>${Math.round(rate.p25_rate)}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 6 }}>
+                          <div style={{ fontSize: 9, color: '#065F46', fontWeight: 700 }}>MEDIAN WON</div>
+                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800, color: '#065F46' }}>
+                            ${Math.round(rate.median_won_rate || rate.median_rate)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
+                          <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>75th %</div>
+                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800 }}>${Math.round(rate.p75_rate)}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 10, color: tierMeta.fg, lineHeight: 1.4 }}>{tierMeta.hint}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#6B6056' }}>{tierMeta.hint}</div>
+                  )}
+                </div>
+              );
+            })()}
             <button onClick={() => onNav && onNav('projects', selected)}
               style={{ marginTop: 14, padding: '8px 14px', background: '#8B2020', color: '#FFF', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
               Open Job Detail →
