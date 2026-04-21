@@ -3254,12 +3254,57 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_accent_columns:parseFloat(formVals.sw_accent_columns)||0,sw_large_columns:parseFloat(formVals.sw_large_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,sw_other_lf:parseFloat(formVals.sw_other_lf)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,wood_fencing:parseFloat(formVals.wood_fencing)||0,mow_strip:parseFloat(formVals.mow_strip)||0,lf_panels_washed:0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};
   };
 
-  const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload=buildPayload(job,form);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Submitted: ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));setEditingRow(null);setExpandedRow(null);}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
+  // Save path splits by whether a submission already exists for this job+month.
+  // Bug fix (2026-04-21): merge-duplicates header on POST was causing 409
+  // duplicate key violations on the UNIQUE(job_id, billing_month) constraint
+  // because PostgREST's conflict resolution doesn't reliably detect the target
+  // when the payload lacks an id. For edits we now use PATCH?id=eq.<existing.id>
+  // which is both more correct and avoids the race condition entirely.
+  const submitEntry=async(job)=>{
+    const form=getForm(job.id);
+    setSaving(job.id);
+    try{
+      const payload=buildPayload(job,form);
+      const existing=subByJob[job.id];
+      let res;
+      if(existing&&existing.id){
+        // EDIT path — PATCH the existing row by id.
+        res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{
+          method:'PATCH',
+          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
+          body:JSON.stringify(payload)
+        });
+      } else {
+        // NEW submission — plain INSERT.
+        res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{
+          method:'POST',
+          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
+          body:JSON.stringify(payload)
+        });
+      }
+      const resTxt=await res.text();
+      if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);
+      const saved=resTxt?JSON.parse(resTxt):[];
+      const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
+      if(existing){
+        setSubs(prev=>prev.map(s=>s.id===existing.id?{...rec,id:existing.id}:s));
+      }else{
+        setSubs(prev=>[rec,...prev]);
+      }
+      setToast(`Submitted: ${job.job_name}`);
+      fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));
+      setEditingRow(null);
+      setExpandedRow(null);
+    }catch(e){
+      setToast({message:e.message||'Submit failed',isError:true});
+    }
+    setSaving(null);
+  };
 
   const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
   const toggleSelect=(jobId)=>setSelected(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
   const toggleSelectAll=()=>{if(selected.size===missingJobs.length)setSelected(new Set());else setSelected(new Set(missingJobs.map(j=>j.id)));};
-  const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});if(res.ok){const txt=await res.text();const saved=JSON.parse(txt);newRecs.push(saved[0]||saved);success++;}}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
+  const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});if(res.ok){const txt=await res.text();const saved=JSON.parse(txt);newRecs.push(saved[0]||saved);success++;}}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
 
   if(!selPM)return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:24}}>PM Bill Sheet</h1>
