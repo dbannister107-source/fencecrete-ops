@@ -8906,7 +8906,7 @@ function Topbar({jobs,live,onSearch,onRefresh,onMenu,showMenu,onOpenProfile,onBa
     <div style={{display:'flex',alignItems:'center',gap:v.mobile?8:12}}>
       {!v.mobile&&<button onClick={onSearch} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,padding:'6px 16px',color:'#9E9B96',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>⌕ Search... <span style={{fontSize:10,color:'#D1CEC9'}}>⌘K</span></button>}
       {v.mobile&&<button onClick={onSearch} title="Search" style={{background:'none',border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:'#625650',fontSize:18,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>⌕</button>}
-      <button onClick={handleRefresh} title="Refresh data" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
+      <button onClick={handleRefresh} title="Refresh data — reloads jobs from database without restarting the app" disabled={refreshState==='spinning'} style={{background:refreshState==='done'?'#D1FAE5':'none',border:'none',borderRadius:20,width:32,height:32,cursor:refreshState==='spinning'?'wait':'pointer',color:refreshState==='done'?'#065F46':'#625650',fontSize:16,display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s'}}>
         <span style={{display:'inline-block',animation:refreshState==='spinning'?'fcSpin 0.8s linear infinite':'none'}}>{refreshState==='done'?'✓':'↻'}</span>
       </button>
       <div style={{width:8,height:8,borderRadius:4,background:live?'#10B981':'#9E9B96'}} title={live?'Live':'Disconnected'}/>
@@ -14048,8 +14048,8 @@ function SidebarRefreshButton({collapsed}){
   const color = hasUpdate ? '#FFFFFF' : '#9E9B96';
   const border = hasUpdate ? '1px solid #3B82F6' : '1px solid transparent';
   const title = hasUpdate
-    ? 'A new version is available — click to reload'
-    : 'Reload to check for updates';
+    ? 'A new version is available — click to reload the app'
+    : 'Reload the entire app (use this if buttons or pages seem stuck). Different from the ↻ in the header, which only refreshes data.';
   return (
     <button
       onClick={reload}
