@@ -3117,8 +3117,12 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   // Controls, Bonds, Permits) are tracked separately and never roll into
   // the LF grand total. Demo is always excluded.
   const calcSectionLFs=(form,job)=>{
+    // All Precast labor fields are stored and entered as LF directly.
+    // (Previous logic interpreted them as post counts and multiplied by
+    //  material_posts ratio or 6 ft -- that was a latent bug; the UI
+    //  labels the inputs as "(LF)" and PMs have been entering LF values.)
     const precast=['labor_post_only','labor_post_panels','labor_complete']
-      .reduce((s,f)=>s+calcPrecastLF(form[f],job),0);
+      .reduce((s,f)=>s+n(form[f]),0);
     const sw=['sw_foundation','sw_columns','sw_accent_columns','sw_large_columns','sw_panels','sw_complete','sw_other_lf']
       .reduce((s,f)=>s+n(form[f]),0);
     const oneLine=['wi_fencing','wi_columns'].reduce((s,f)=>s+n(form[f]),0);
@@ -3172,15 +3176,12 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     return Math.round(v/lfPerPost);
   };
   const openEdit=(job,sub)=>{
+    // All LF fields including Precast labor are stored as LF directly;
+    // load the raw stored value into the form. No reverse-conversion needed.
     const form={notes:sub.notes||''};
     LF_FIELDS.forEach(f=>{
       const stored=n(sub[f]);
-      if(PRECAST_POST_FIELDS.has(f)){
-        const posts=lfToPosts(stored,job);
-        form[f]=posts>0?String(posts):'';
-      }else{
-        form[f]=stored!==0?String(stored):'';
-      }
+      form[f]=stored!==0?String(stored):'';
     });
     setForms(prev=>({...prev,[job.id]:form}));
     setEditingRow(job.id);
@@ -3198,7 +3199,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   // former contracted-total value.
   const buildPayload=(job,formVals)=>{
     const totals=calcSectionLFs(formVals,job);
-    return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:calcPrecastLF(formVals.labor_post_only,job),labor_post_panels:calcPrecastLF(formVals.labor_post_panels,job),labor_complete:calcPrecastLF(formVals.labor_complete,job),sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_accent_columns:parseFloat(formVals.sw_accent_columns)||0,sw_large_columns:parseFloat(formVals.sw_large_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,sw_other_lf:parseFloat(formVals.sw_other_lf)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,wood_fencing:parseFloat(formVals.wood_fencing)||0,mow_strip:parseFloat(formVals.mow_strip)||0,lf_panels_washed:0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};
+    return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_accent_columns:parseFloat(formVals.sw_accent_columns)||0,sw_large_columns:parseFloat(formVals.sw_large_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,sw_other_lf:parseFloat(formVals.sw_other_lf)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,wood_fencing:parseFloat(formVals.wood_fencing)||0,mow_strip:parseFloat(formVals.mow_strip)||0,lf_panels_washed:0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};
   };
 
   const submitEntry=async(job)=>{const form=getForm(job.id);setSaving(job.id);try{const payload=buildPayload(job,form);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)});const resTxt=await res.text();if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);const saved=resTxt?JSON.parse(resTxt):[];const rec=saved[0]||saved;const existing=subByJob[job.id];if(existing){setSubs(prev=>prev.map(s=>s.id===existing.id?rec:s));}else{setSubs(prev=>[rec,...prev]);}setToast(`Submitted: ${job.job_name}`);fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));setEditingRow(null);setExpandedRow(null);}catch(e){setToast({message:e.message||'Submit failed',isError:true});}setSaving(null);};
