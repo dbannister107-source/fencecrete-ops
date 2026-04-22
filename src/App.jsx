@@ -196,11 +196,12 @@ const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_producti
 const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
 const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
 const CLOSED_SET=new Set(['fully_complete','closed','canceled','cancelled']);
-const MKTS = ['Austin','College Station','Dallas-Fort Worth','Houston','San Antonio'];
-const MC = { Austin:'#854F0B', 'College Station':'#5B21B6', 'Dallas-Fort Worth':'#185FA5', Houston:'#0F6E56', 'San Antonio':'#8A261D' };
-const MB = { Austin:'#FAEEDA', 'College Station':'#EDE9FE', 'Dallas-Fort Worth':'#E6F1FB', Houston:'#E1F5EE', 'San Antonio':'#FDF4F4' };
-const MS = { Austin:'Austin', 'College Station':'CS', 'Dallas-Fort Worth':'DFW', Houston:'Houston', 'San Antonio':'SA' };
-const MKT_CODE={Austin:'A','College Station':'CS','Dallas-Fort Worth':'D',Houston:'H','San Antonio':'S'};
+const MKTS = ['SA','HOU','AUS','DFW','CS','OOS'];
+const MARKET_FULL = { SA:'San Antonio', HOU:'Houston', AUS:'Austin', DFW:'Dallas-Fort Worth', CS:'College Station', OOS:'Out-of-State' };
+const MC = { SA:'#8A261D', HOU:'#0F6E56', AUS:'#854F0B', DFW:'#185FA5', CS:'#7C3AED', OOS:'#6B7280' };
+const MB = { SA:'#FDF4F4', HOU:'#E1F5EE', AUS:'#FAEEDA', DFW:'#E6F1FB', CS:'#EDE9FE', OOS:'#F3F4F6' };
+const MS = { SA:'SA', HOU:'HOU', AUS:'AUS', DFW:'DFW', CS:'CS', OOS:'OOS' };
+const MKT_CODE={ SA:'S', HOU:'H', AUS:'A', DFW:'D', CS:'CS', OOS:'O' };
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
@@ -1503,7 +1504,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
 /* ═══ NEW PROJECT FORM ═══ */
 const NP_SECS=['info','fence','contract','requirements','schedule','review'];
 const NP_LABELS={info:'Job Info',fence:'Fence & Dimensions',contract:'Contract & Billing',requirements:'Requirements',schedule:'Schedule',review:'Review & Submit'};
-const AUTO_PM=(mkt,ft)=>{if(mkt==='Austin'||mkt==='Dallas-Fort Worth')return'Doug Monroe';if(mkt==='San Antonio')return'Ray Garcia';if(mkt==='Houston'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
+const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt==='SA')return'Ray Garcia';if(mkt==='HOU'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
 const LINE_TYPES=['Precast','Single Wythe','Wrought Iron','Wood','Gate','Removal','Lump Sum / Other'];
 const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:''});
 const lineSubtotal=(li)=>{
@@ -1732,7 +1733,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Cust #')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Status')}<select value={f.status} onChange={e=>set('status',e.target.value)} style={inputS}>{STS.map(v=><option key={v} value={v}>{SL[v]}</option>)}</select></div>
-        <div>{fLbl('Market',true)}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div>{fLbl('Market',true)}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}</select></div>
         <div>{fLbl('Job Type')}<select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         <div>{fLbl('Sales Rep')}<select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
         <div>{fLbl('Project Manager')}<select value={f.pm} onChange={e=>set('pm',e.target.value)} style={inputS}><option value="">— Auto-assigned —</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>{f.pm&&<div style={{fontSize:10,color:'#065F46',marginTop:2}}>Assigned: {f.pm}</div>}</div>
@@ -2788,7 +2789,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
         <span style={{color:'#E5E3E0'}}>|</span>
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
         <button onClick={()=>setArMktF(null)} style={fpill(!arMktF)}>All</button>
-        {MKTS.map(m=><button key={m} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
+        {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
         <span style={{color:'#E5E3E0'}}>|</span>
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>View:</span>
         {[['all','All Jobs'],['missing','Missing Only'],['submitted','Submitted'],['reviewed','Reviewed']].map(([k,l])=><button key={k} onClick={()=>setArViewF(k)} style={fpill(arViewF===k)}>{l}</button>)}
@@ -2836,7 +2837,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
       <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={bSearch} onChange={e=>setBSearch(e.target.value)} placeholder="Search by job name, number, or customer..." style={{...inputS,width:280}}/>
         <button onClick={()=>setBMktF(null)} style={fpill(!bMktF)}>All</button>
-        {MKTS.map(m=><button key={m} onClick={()=>setBMktF(m)} style={fpill(bMktF===m)}>{MS[m]}</button>)}
+        {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setBMktF(m)} style={fpill(bMktF===m)}>{MS[m]}</button>)}
         <select value={bPmF} onChange={e=>setBPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
         <button onClick={()=>setBStatusF(null)} style={fpill(!bStatusF)}>All</button>
         <button onClick={()=>setBStatusF('zero')} style={fpill(bStatusF==='zero')}>0% Billed</button>
@@ -4170,7 +4171,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           {[{k:'month',l:'This Month'},{k:'quarter',l:'This Quarter'},{k:'ytd',l:'YTD'},{k:'all',l:'All Time'}].map(o=><button key={o.k} onClick={()=>setWfPeriod(o.k)} style={fpill(wfPeriod===o.k)}>{o.l}</button>)}
           <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:8}}>MKT:</span>
           <button onClick={()=>setWfMkt(null)} style={fpill(!wfMkt)}>All</button>
-          {MKTS.map(m=><button key={m} onClick={()=>setWfMkt(m)} style={fpill(wfMkt===m)}>{MS[m]}</button>)}
+          {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setWfMkt(m)} style={fpill(wfMkt===m)}>{MS[m]}</button>)}
         </div>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={stages} layout="vertical" margin={{top:4,right:80,bottom:4,left:40}}>
@@ -4516,7 +4517,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>MKT:</span>
           <button onClick={()=>setAgingMkt(null)} style={fpill(!agingMkt)}>All</button>
-          {MKTS.map(m=><button key={m} onClick={()=>setAgingMkt(m)} style={fpill(agingMkt===m)}>{MS[m]}</button>)}
+          {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setAgingMkt(m)} style={fpill(agingMkt===m)}>{MS[m]}</button>)}
           <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:8}}>PM:</span>
           <button onClick={()=>setAgingPm(null)} style={fpill(!agingPm)}>All</button>
           {PM_LIST.map(p=><button key={p.id} onClick={()=>setAgingPm(p.id)} style={fpill(agingPm===p.id)}>{p.short}</button>)}
@@ -4771,7 +4772,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>MKT:</span>
           <button onClick={()=>setStyleMkt(null)} style={fpill(!styleMkt)}>All</button>
-          {MKTS.map(m=><button key={m} onClick={()=>setStyleMkt(m)} style={fpill(styleMkt===m)}>{MS[m]}</button>)}
+          {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setStyleMkt(m)} style={fpill(styleMkt===m)}>{MS[m]}</button>)}
         </div>
         <ResponsiveContainer width="100%" height={Math.max(260,rows.length*28+60)}>
           <BarChart data={chartData} layout="vertical" margin={{top:4,right:16,bottom:4,left:40}}>
@@ -5229,7 +5230,7 @@ function SchedulePage({jobs}){
     {view==='weather'&&<WeatherDaysPage jobs={jobs}/>}
     {view==='changeorders'&&<ChangeOrdersPage jobs={jobs}/>}
     {view!=='weather'&&view!=='changeorders'&&<><div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-      <div style={{display:'flex',gap:6}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
+      <div style={{display:'flex',gap:6}}><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}</div>
       <div style={{display:'flex',gap:6,alignItems:'center'}}><label style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>PM</label><select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:180}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}{pmJobCounts[p.id]?` (${pmJobCounts[p.id]})`:''}</option>)}</select></div>
     </div>
     <div style={{display:'flex',gap:20}}>
@@ -5240,7 +5241,7 @@ function SchedulePage({jobs}){
         </>}
         {view==='list'&&<div style={card}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}><thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Date','Project','Market','Type','LF','Assigned','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead><tbody>{filteredEvents.map(e=><tr key={e.id} onClick={()=>openEdit(e)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onMouseEnter={ev=>ev.currentTarget.style.background='#FDF9F6'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}><td style={{padding:'6px 8px'}}>{fD(e.scheduled_date)}</td><td style={{padding:'6px 8px',fontWeight:500}}>{e.job_name}</td><td style={{padding:'6px 8px'}}><span style={pill(MC[e.market]||'#625650',MB[e.market]||'#F4F4F2')}>{MS[e.market]||'—'}</span></td><td style={{padding:'6px 8px'}}>{(e.event_type||'').replace(/_/g,' ')}</td><td style={{padding:'6px 8px'}}>{n(e.lf_scheduled).toLocaleString()}</td><td style={{padding:'6px 8px'}}>{e.assigned_to||'—'}</td><td style={{padding:'6px 8px',color:'#9E9B96',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.notes||'—'}</td></tr>)}</tbody></table></div>}
         {view==='gantt'&&(()=>{
-          const GANTT_MKT_C={Austin:'#FB923C','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
+          const GANTT_MKT_C={AUS:'#FB923C',DFW:'#60A5FA',HOU:'#34D399',SA:'#F472B6',CS:'#A78BFA',OOS:'#9CA3AF'};
           let ganttJobs=jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.est_start_date).sort((a,b)=>a.est_start_date.localeCompare(b.est_start_date));
           if(mktF)ganttJobs=ganttJobs.filter(j=>j.market===mktF);
           if(pmF)ganttJobs=ganttJobs.filter(j=>j.pm===pmF);
@@ -7126,7 +7127,7 @@ function WeatherDaysPage({jobs}){
       <KPI label="Total Weather Days" value={filtered.length}/><KPI label="Total Hours Lost" value={totalHours} color="#B45309"/><KPI label="This Month" value={thisMonth.length} color="#1D4ED8"/><KPI label="This Year" value={thisYear.length} color="#065F46"/>
     </div>
     <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select>
+      <select value={mktF||''} onChange={e=>setMktF(e.target.value||null)} style={{...inputS,width:160}}><option value="">All Markets</option>{MKTS.map(m=><option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}</select>
       <select value={pmF} onChange={e=>setPmF(e.target.value)} style={{...inputS,width:160}}><option value="">All PMs</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
     </div>
     {loading?<SkeletonRows rows={6} cols={4}/>:isMobile?<MobileCards
@@ -7574,7 +7575,7 @@ function EstimatingPage(){
       <div style={card}>
         <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Customer Name</label><input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
-          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Market</label><select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Market</label><select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}</select></div>
           <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Sales Rep</label><select value={f.sales_rep} onChange={e=>set('sales_rep',e.target.value)} style={inputS}><option value="">— Select —</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
           <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Job Type</label><select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         </div>
@@ -7680,7 +7681,7 @@ const IMPORT_STATUS_MAP={
 };
 const IMPORT_STATUS_DEFAULT='contract_review';
 const mapImportStatus=(raw)=>{if(raw==null||raw==='')return{mapped:IMPORT_STATUS_DEFAULT,matched:false,raw:''};const s=String(raw).trim();return{mapped:IMPORT_STATUS_MAP[s]||IMPORT_STATUS_DEFAULT,matched:!!IMPORT_STATUS_MAP[s],raw:s};};
-const IMPORT_MARKET_MAP={'San Antonio':'San Antonio','Houston':'Houston','Austin':'Austin','Dallas':'Dallas-Fort Worth','DFW':'Dallas-Fort Worth','Dallas-Fort Worth':'Dallas-Fort Worth','College Station':'College Station','Bryan':'College Station','CS':'College Station','Bryan/College Station':'College Station'};
+const IMPORT_MARKET_MAP={'San Antonio':'SA','SA':'SA','Houston':'HOU','HOU':'HOU','Austin':'AUS','AUS':'AUS','Dallas':'DFW','DFW':'DFW','Dallas-Fort Worth':'DFW','College Station':'CS','Bryan':'CS','CS':'CS','Bryan/College Station':'CS','Out-of-State':'OOS','OOS':'OOS'};
 // Fields protected from UPDATES on existing jobs (kanban/AR/material calc own these — never overwritten from Excel)
 const PROTECTED_FIELDS=new Set(['ytd_invoiced','amount_billed','pct_billed','left_to_bill','status','material_posts_line','material_posts_corner','material_posts_stop','material_panels_regular','material_panels_half','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_post_height','material_calc_date','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date']);
 // Fields stripped on INSERT of new jobs (derived/computed fields only — status IS set on insert so it's NOT here)
@@ -7839,10 +7840,10 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
         }
         // Auto-assign PM from market if not set
         if(!mapped.pm&&mapped.market){
-          if(mapped.market==='San Antonio')mapped.pm='Ray Garcia';
-          else if(mapped.market==='College Station')mapped.pm='Doug Monroe';
-          else if(mapped.market==='Austin'||mapped.market==='Dallas-Fort Worth')mapped.pm='Doug Monroe';
-          else if(mapped.market==='Houston'){
+          if(mapped.market==='SA')mapped.pm='Ray Garcia';
+          else if(mapped.market==='CS')mapped.pm='Doug Monroe';
+          else if(mapped.market==='AUS'||mapped.market==='DFW')mapped.pm='Doug Monroe';
+          else if(mapped.market==='HOU'){
             const ft=(mapped.fence_type||'').toUpperCase();
             mapped.pm=(ft.includes('SW')||ft.includes('MASONRY')||ft.includes('SINGLE WYTHE'))?'Rafael Anaya Jr.':'Manuel Salazar';
           }
@@ -8071,8 +8072,8 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 }
 
 /* ═══ MAP PAGE ═══ */
-const MKT_COORDS={Austin:[30.2672,-97.7431],'College Station':[30.6280,-96.3344],'Dallas-Fort Worth':[32.7767,-96.7970],Houston:[29.7604,-95.3698],'San Antonio':[29.4241,-98.4936]};
-const MKT_PIN={Austin:'#FB923C','College Station':'#A78BFA','Dallas-Fort Worth':'#60A5FA',Houston:'#34D399','San Antonio':'#F472B6'};
+const MKT_COORDS={AUS:[30.2672,-97.7431],CS:[30.6280,-96.3344],DFW:[32.7767,-96.7970],HOU:[29.7604,-95.3698],SA:[29.4241,-98.4936]};
+const MKT_PIN={AUS:'#FB923C',CS:'#A78BFA',DFW:'#60A5FA',HOU:'#34D399',SA:'#F472B6',OOS:'#9CA3AF'};
 function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.length>0){const b=L.latLngBounds(positions);map.fitBounds(b,{padding:[40,40]});}},[positions,map]);return null;}
 const MAP_LAYER_STATUSES = ['active_install','material_ready','contract_review','in_production'];
 const MAP_LAYER_COLOR = { active_install:'#DC2626', material_ready:'#EAB308', contract_review:'#6B7280', in_production:'#2563EB' };
@@ -8393,7 +8394,7 @@ function MapPage({ jobs, onNav }) {
           <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Market:
             <select value={mktF} onChange={e => setMktF(e.target.value)} style={{ ...inputS, width: 140, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
               <option value="All">All</option>
-              {MKTS.map(m => <option key={m} value={m}>{MS[m] || m}</option>)}
+              {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
             </select>
           </label>
           <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Product:
@@ -8547,7 +8548,7 @@ function MapPage({ jobs, onNav }) {
               get a recommended $/LF range from proposal_market_rates the
               moment you fill in (Market, Product, Height, LF). */}
           <button
-            onClick={() => setProspectForm(prospectForm ? null : { market: 'San Antonio', fenceType: 'Precast Concrete', heightFt: 6, lf: 500 })}
+            onClick={() => setProspectForm(prospectForm ? null : { market: 'SA', fenceType: 'Precast Concrete', heightFt: 6, lf: 500 })}
             style={{
               position: 'absolute', top: 12, right: 12, zIndex: 1000,
               padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: 9999,
@@ -8590,7 +8591,7 @@ function MapPage({ jobs, onNav }) {
                     <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Market</div>
                     <select value={prospectForm.market} onChange={e => setProspectForm(f => ({ ...f, market: e.target.value }))}
                       style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }}>
-                      {['San Antonio','Houston','Austin','Dallas-Fort Worth','College Station'].map(m => <option key={m}>{m}</option>)}
+                      {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
                     </select>
                   </label>
                   <label>
@@ -9896,7 +9897,7 @@ function WonModal({lead,onClose,onCreate}){
       <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Customer Name</div><input value={customer} onChange={e=>setCustomer(e.target.value)} style={inputS}/></div>
       <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Job Name</div><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputS}/></div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Market</div><select value={market} onChange={e=>setMarket(e.target.value)} style={inputS}><option value="">—</option>{MKTS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Market</div><select value={market} onChange={e=>setMarket(e.target.value)} style={inputS}><option value="">—</option>{MKTS.map(m=><option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}</select></div>
         <div><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Sales Rep</div><select value={rep} onChange={e=>setRep(e.target.value)} style={inputS}><option value="">—</option>{REPS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
@@ -9937,10 +9938,12 @@ const normalizeLeadMarket=(v)=>{
   if(!v)return null;
   const s=String(v).trim();
   const l=s.toLowerCase();
-  if(l==='dallas'||l==='dfw'||l==='dallas-fort worth'||l==='dallas/fort worth')return 'Dallas-Fort Worth';
-  if(l==='sa'||l==='san antonio')return 'San Antonio';
-  if(l==='houston')return 'Houston';
-  if(l==='austin')return 'Austin';
+  if(l==='dallas'||l==='dfw'||l==='dallas-fort worth'||l==='dallas/fort worth')return 'DFW';
+  if(l==='sa'||l==='san antonio')return 'SA';
+  if(l==='houston'||l==='hou')return 'HOU';
+  if(l==='austin'||l==='aus')return 'AUS';
+  if(l==='cs'||l==='college station'||l==='bryan'||l==='bryan/college station')return 'CS';
+  if(l==='oos'||l==='out-of-state'||l==='out of state')return 'OOS';
   return s;
 };
 const normalizeFenceType=(v)=>{
@@ -10155,7 +10158,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
       {REPS.map(r=><button key={r} onClick={()=>setRepF(prev=>{const s=new Set(prev);s.has(r)?s.delete(r):s.add(r);return s;})} style={fpill(repF.has(r))}>{r}</button>)}
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
       <button onClick={()=>setMktF(new Set())} style={fpill(mktF.size===0)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
+      {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
     </div>
     {loading?<SkeletonKanban cols={5} cards={3}/>:
     isMobile?<MobileKanban
@@ -10594,7 +10597,7 @@ function ContactsPage({jobs,onOpenProject,onOpenLead}){
       {COMPANY_TYPES.map(t=><button key={t} onClick={()=>setTypeF(t)} style={fpill(typeF===t)}>{t}</button>)}
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>MKT:</span>
       <button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>
-      {MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
+      {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>OWNER:</span>
       <button onClick={()=>setOwnerF(null)} style={fpill(!ownerF)}>All</button>
       {REPS.map(r=><button key={r} onClick={()=>setOwnerF(r)} style={fpill(ownerF===r)}>{r}</button>)}
@@ -12906,7 +12909,7 @@ function ProposalsPage({ jobs }) {
             {REPS.map(r => <button key={r} onClick={() => setRepF(repF === r ? null : r)} style={fpill(repF === r)}>{r}</button>)}
             <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>MKT:</span>
             <button onClick={() => setMktF(null)} style={fpill(!mktF)}>All</button>
-            {MKTS.map(m => <button key={m} onClick={() => setMktF(mktF === m ? null : m)} style={fpill(mktF === m)}>{MS[m] || m}</button>)}
+            {MKTS.map(m => <button key={m} title={MARKET_FULL[m]} onClick={() => setMktF(mktF === m ? null : m)} style={fpill(mktF === m)}>{MS[m] || m}</button>)}
             <span style={{ fontSize: 11, color: "#9E9B96", fontWeight: 600, marginLeft: 6 }}>STATUS:</span>
             <button onClick={() => setStatusF(null)} style={fpill(!statusF)}>All</button>
             {STATUSES.map(s => <button key={s} onClick={() => setStatusF(statusF === s ? null : s)} style={fpill(statusF === s)}>{s.replace(/_/g," ")}</button>)}
@@ -13553,7 +13556,7 @@ function ProposalsPage({ jobs }) {
                     <select value={cmpMarket} onChange={e => setCmpMarket(e.target.value)}
                       style={{ ...inputS, padding: "6px 8px", fontSize: 12 }}>
                       <option value="All">All</option>
-                      {MKTS.map(m => <option key={m} value={m}>{MS[m] || m}</option>)}
+                      {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
                     </select>
                   </div>
                   <div>
@@ -14367,7 +14370,7 @@ function computeBidTax({ lf, heightFt, heightKey, productCategory, taxExempt }) 
 function BidAdvisor(){
   const auth = useAuth();
   const userEmail = auth?.user?.email || 'anonymous';
-  const [market, setMarket] = useState('San Antonio');
+  const [market, setMarket] = useState('SA');
   const [style, setStyle] = useState('');
   const [heightKey, setHeightKey] = useState('6');
   const [totalLf, setTotalLf] = useState('');
@@ -14600,10 +14603,7 @@ function BidAdvisor(){
             <div style={{ marginBottom: 10 }}>
               <label style={labelS}>Market *</label>
               <select value={market} onChange={e => setMarket(e.target.value)} style={selectS}>
-                <option value="San Antonio">San Antonio</option>
-                <option value="Houston">Houston</option>
-                <option value="Austin">Austin</option>
-                <option value="Dallas-Fort Worth">Dallas-Fort Worth</option>
+                {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 10 }}>
