@@ -209,7 +209,10 @@ const PMS=PM_LIST.map(p=>p.id);
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
-const _STYLE_LIST = ['Rock Style','Boxwood','Vertical Wood','Smooth Style','Ledgestone','Ranch Style','Stucco Style','Used Brick Style','Vertical Board & Batten'];
+// Fallback style list used until the runtime fetch of mold_inventory.style_name
+// completes (see the DD.style hydration effect in App). Kept deliberately close
+// to the canonical mold_inventory set so fallbacks don't miss common styles.
+const _STYLE_LIST = ["Rock Style","Wood Style","Vertical Wood 6'","Vertical Wood 8'","Split Faced CMU Block Style","Used Brick Style","Ledgestone","Smooth Style","Stucco Style","Boxed Wood","Board & Batten Fence Style 6'"];
 // Canonical 6-color palette used for NEW jobs and line items.
 // Existing jobs may hold legacy colors (Painted, Adobe, 860, etc.) — those are preserved via colorOptionsFor().
 const STANDARD_COLORS=['LAC','Silversmoke #860','Café','Outback #677','Regular Brown','Buff Green'];
@@ -878,7 +881,18 @@ function LineItemsEditor({job,onChange,registerSave}){
       const pcLines=all.filter(x=>x.fence_type==='PC');
       // Also count gates (line items with description starting with "GATE:")
       const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
-      const firstPCLine=pcLines.find(x=>x.style)||pcLines[0];
+      /* Primary PC line drives the jobs-table style/color/height snapshot.
+         Definition: fence_type='PC' AND is_produced=true, ordered by
+         line_value DESC NULLS LAST. If no such line exists, leave the
+         jobs.style/color/height_precast values alone (don't blank them). */
+      const primaryPC = pcLines
+        .filter(x => x.is_produced !== false)
+        .slice()
+        .sort((a, b) => {
+          const av = a.line_value == null ? -Infinity : n(a.line_value);
+          const bv = b.line_value == null ? -Infinity : n(b.line_value);
+          return bv - av;
+        })[0];
       // Bucket line items by fence_type into the correct header LF columns.
       // These values overwrite the jobs-table columns on every Line Items save,
       // so line items are the source of truth for LF totals.
@@ -899,8 +913,9 @@ function LineItemsEditor({job,onChange,registerSave}){
         lf_other:woodLF+otherLF,
         number_of_gates:gateLines.reduce((s,x)=>s+n(x.lf),0),
         total_lf:all.reduce((s,x)=>s+n(x.lf),0),
-        ...(firstPCLine?.style?{style:firstPCLine.style}:{}),
-        ...(firstPCLine?.color?{color:firstPCLine.color}:{}),
+        ...(primaryPC?.style?{style:primaryPC.style}:{}),
+        ...(primaryPC?.color?{color:primaryPC.color}:{}),
+        ...(primaryPC?.height?{height_precast:String(primaryPC.height)}:{}),
       };
       // Auto-sync fence_addons (G/WI/C) to reflect the new summary data
       summary.fence_addons=syncFenceAddons({...job,...summary});
@@ -15671,7 +15686,16 @@ function AppShell(){
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
-  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name&order=style_name').then(d=>{if(d&&d.length){const opts=d.map(s=>({v:s.style_name,l:STYLE_LABEL(s.style_name)}));DD.style=opts;DD.style_single_wythe=opts;}});},[]);
+  // Hydrate DD.style from mold_inventory (the canonical style master list —
+  // includes Ledgestone and other styles that were missing from the older
+  // material_calc_styles-based list). Dedup and drop the aggregate sentinel
+  // "All Styles". On fetch failure the hardcoded _STYLE_LIST fallback stands.
+  useEffect(()=>{sbGet('mold_inventory','select=style_name&order=style_name').then(d=>{
+    if(!Array.isArray(d)||!d.length)return;
+    const seen=new Set();const opts=[];
+    d.forEach(r=>{const s=(r.style_name||'').trim();if(!s||s==='All Styles'||seen.has(s))return;seen.add(s);opts.push({v:s,l:STYLE_LABEL(s)});});
+    if(opts.length){DD.style=opts;DD.style_single_wythe=opts;}
+  }).catch(()=>{});},[]);
   const live=useRealtime(setJobs);
   useEffect(()=>{try{localStorage.setItem('fc_side_collapsed',sideCollapsed?'1':'0');}catch(e){}},[sideCollapsed]);
   // Global Cmd+K / Ctrl+K
