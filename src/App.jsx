@@ -4982,8 +4982,12 @@ function MaterialCalcPage({jobs,preJob}){
   const[autoFilled,setAutoFilled]=useState({style:false,height:false,lf:false});
   const[autoCalculated,setAutoCalculated]=useState(false);
   const[loadedSaved,setLoadedSaved]=useState(false);
-  // v2 additions — drainage panel type, gate fields, plant config for fallbacks
-  const[drainageType,setDrainageType]=useState('Regular Panels');
+  // v2.1 — drainage panels are MIXED with regular panels. PM specifies how many
+  // drainage panels go at the bottom and at the top; remaining panels are regular.
+  const[drainageNeeded,setDrainageNeeded]=useState(false);
+  const[drainageStyle,setDrainageStyle]=useState('');
+  const[drainageBottom,setDrainageBottom]=useState('');
+  const[drainageTop,setDrainageTop]=useState('');
   const[numGates,setNumGates]=useState('');
   const[gateHeight,setGateHeight]=useState('');
   const[gateSize,setGateSize]=useState('');
@@ -5001,7 +5005,10 @@ function MaterialCalcPage({jobs,preJob}){
     setHeight(hasHeight?j.height_precast:'');
     setLf(hasLf?j.lf_precast:'');
     setAutoFilled({style:hasStyle,height:hasHeight,lf:hasLf});
-    setDrainageType(j.drainage_panel_type||'Regular Panels');
+    setDrainageNeeded(!!j.drainage_needed);
+    setDrainageStyle(j.drainage_style||'');
+    setDrainageBottom(j.drainage_bottom_count!=null&&n(j.drainage_bottom_count)>0?String(j.drainage_bottom_count):'');
+    setDrainageTop(j.drainage_top_count!=null&&n(j.drainage_top_count)>0?String(j.drainage_top_count):'');
     setNumGates(j.number_of_gates!=null?String(j.number_of_gates):'');
     setGateHeight(j.gate_height||'');
     setGateSize(j.gate_size||'');
@@ -5061,11 +5068,9 @@ function MaterialCalcPage({jobs,preJob}){
     // v2: Ranch Rail now has variants "Ranch Rail - 2 Rail / 3 Rail / 4 Rail".
     // Match by prefix so legacy "Ranch Rail" and all variants route through the same path.
     const isRanch=selStyle.startsWith('Ranch Rail');
-    // v2: drainage override — when style is drainage-eligible AND the PM selected Diamond
-    // or Bottled AND the style's drainage_panels_match_height flag is set, panel count
-    // per section equals the fence height in feet (integer).
-    const isDrainageSel=drainageType==='Diamond Drainage'||drainageType==='Bottled Drainage';
-    const drainageOverride=!!cfg.drainage_eligible&&isDrainageSel&&!!cfg.drainage_panels_match_height;
+    // Drainage panels are a subset of the total panel count — the PM replaces N panels
+    // at the bottom and M panels at the top with drainage panels. Total panel count
+    // (and therefore sections × panels/section) is unchanged by drainage choice.
 
     const hasVertPanels=cfg.panel_multiplier===0&&(n(cfg.bottom_panels)>0||n(cfg.top_panels)>0);
     if(isCMU){
@@ -5082,11 +5087,6 @@ function MaterialCalcPage({jobs,preJob}){
       specialLabel='Vertical';
     }else if(!isRanch){
       regularPanels=sectCeil*h*cfg.panel_multiplier;
-    }
-    if(drainageOverride&&!isRanch){
-      // spec: 6ft fence = 6 panels per section, 8ft = 8
-      regularPanels=sectCeil*Math.round(h);
-      specialLabel=drainageType;
     }
     const totalPanels=regularPanels+halfPanels+bottomPanels+topPanels;
 
@@ -5158,32 +5158,50 @@ function MaterialCalcPage({jobs,preJob}){
           <button onClick={()=>{calculate();setLoadedSaved(false);setAutoCalculated(false);}} disabled={!selStyle||!n(height)||!n(lf)} style={{...btnP,padding:'10px 24px',fontSize:14,opacity:!selStyle||!n(height)||!n(lf)?0.4:1}}>Calculate</button>
         </div>
       </div>
-      {/* v2: secondary row — drainage dropdown (only for drainage-eligible styles) + gate fields */}
-      {(()=>{const cfg=styles.find(s=>s.style_name===selStyle);const drainageEligible=!!cfg?.drainage_eligible;const gateN=n(numGates);return<div style={{marginTop:14,paddingTop:14,borderTop:'1px dashed #E5E3E0',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
-        {drainageEligible&&<div>
-          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Drainage Panel Type</label>
-          <select value={drainageType} onChange={e=>setDrainageType(e.target.value)} style={inputS}>
-            <option value="Regular Panels">Regular Panels</option>
-            <option value="Diamond Drainage">Diamond Drainage</option>
-            <option value="Bottled Drainage">Bottled Drainage</option>
-          </select>
-          {cfg?.drainage_panels_match_height&&(drainageType==='Diamond Drainage'||drainageType==='Bottled Drainage')&&n(height)>0&&<div style={{marginTop:4,fontSize:10,color:'#1D4ED8',fontWeight:600}}>Panels/section = {Math.round(n(height))} (matches height)</div>}
+      {/* v2.1: secondary row — drainage (checkbox + radio + counts, drainage-eligible styles only) + gate fields */}
+      {(()=>{const cfg=styles.find(s=>s.style_name===selStyle);const drainageEligible=!!cfg?.drainage_eligible;const gateN=n(numGates);return<div style={{marginTop:14,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
+        {drainageEligible&&<div style={{marginBottom:12,padding:'10px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
+          <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#1A1A1A',cursor:'pointer'}}>
+            <input type="checkbox" checked={drainageNeeded} onChange={e=>{const c=e.target.checked;setDrainageNeeded(c);if(!c){setDrainageStyle('');setDrainageBottom('');setDrainageTop('');}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+            This fence needs drainage panels
+          </label>
+          {drainageNeeded&&<div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Drainage Style</label>
+              <div style={{display:'flex',gap:12,alignItems:'center',minHeight:36}}>
+                {['Diamond','Bottled'].map(opt=><label key={opt} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,cursor:'pointer'}}>
+                  <input type="radio" name="drainage_style" value={opt} checked={drainageStyle===opt} onChange={()=>setDrainageStyle(opt)} style={{accentColor:'#8A261D'}}/>
+                  {opt}
+                </label>)}
+              </div>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Bottom of Fence (panels)</label>
+              <input type="number" min="0" value={drainageBottom} onChange={e=>{const v=e.target.value;if(v===''){setDrainageBottom('');return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainageBottom(String(nn));}} placeholder="0" style={inputS}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Top of Fence (panels)</label>
+              <input type="number" min="0" value={drainageTop} onChange={e=>{const v=e.target.value;if(v===''){setDrainageTop('');return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainageTop(String(nn));}} placeholder="0" style={inputS}/>
+            </div>
+          </div>}
         </div>}
-        <div>
-          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Number of Gates</label>
-          <input type="number" min="0" max="20" value={numGates} onChange={e=>{const v=e.target.value;if(v===''){setNumGates('');return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0&&nn<=20)setNumGates(String(nn));}} placeholder="0" style={inputS}/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Number of Gates</label>
+            <input type="number" min="0" max="20" value={numGates} onChange={e=>{const v=e.target.value;if(v===''){setNumGates('');return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0&&nn<=20)setNumGates(String(nn));}} placeholder="0" style={inputS}/>
+          </div>
+          {gateN>0&&<>
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Gate Height <span style={{color:'#991B1B'}}>*</span></label>
+              <input value={gateHeight} onChange={e=>setGateHeight(e.target.value)} placeholder={`e.g. 6 ft`} style={inputS}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Gate Size <span style={{color:'#991B1B'}}>*</span></label>
+              <input value={gateSize} onChange={e=>setGateSize(e.target.value)} placeholder={`e.g. 8 ft or double-gate 16'`} style={inputS}/>
+            </div>
+            {(!gateHeight||!gateSize)&&<div style={{gridColumn:'1/-1',fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Gate Height and Gate Size are required when Number of Gates &gt; 0</div>}
+          </>}
         </div>
-        {gateN>0&&<>
-          <div>
-            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Gate Height <span style={{color:'#991B1B'}}>*</span></label>
-            <input value={gateHeight} onChange={e=>setGateHeight(e.target.value)} placeholder={`e.g. 6 ft`} style={inputS}/>
-          </div>
-          <div>
-            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Gate Size <span style={{color:'#991B1B'}}>*</span></label>
-            <input value={gateSize} onChange={e=>setGateSize(e.target.value)} placeholder={`e.g. 8 ft or double-gate 16'`} style={inputS}/>
-          </div>
-          {(!gateHeight||!gateSize)&&<div style={{gridColumn:'1/-1',fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Gate Height and Gate Size are required when Number of Gates &gt; 0</div>}
-        </>}
       </div>;})()}
       {selJob&&selJob.material_calc_date&&<div style={{marginTop:12,padding:'10px 14px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
         <div style={{fontSize:12,color:'#78350F'}}>
@@ -5209,7 +5227,7 @@ function MaterialCalcPage({jobs,preJob}){
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Linear Feet</span><div style={{fontWeight:700,fontSize:14}}>{n(lf).toLocaleString()}</div></div>
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Sections</span><div style={{fontWeight:700,fontSize:14}}>{result.sections}</div></div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          {selJob&&<button onClick={async()=>{try{const shouldAdvance=selJob.status==='contract_review';const matBody={material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString(),drainage_panel_type:drainageType||null,number_of_gates:n(numGates)||0,gate_height:gateHeight||null,gate_size:gateSize||null,...(shouldAdvance&&{status:'production_queue'})};await sbPatch('jobs',selJob.id,matBody);setToast(shouldAdvance?'Materials saved + job moved to Production Queue':'Materials saved to '+selJob.job_name);fetch(`${SB}/functions/v1/production-order-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{...selJob,...matBody}})}).catch(e=>console.error('Production order notification failed:',e));if(shouldAdvance){fetch(`${SB}/functions/v1/job-stage-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{job_name:selJob.job_name,job_number:selJob.job_number,market:selJob.market,pm:selJob.pm,sales_rep:selJob.sales_rep,style:selJob.style,color:selJob.color,height_precast:selJob.height_precast,total_lf:selJob.total_lf,adj_contract_value:selJob.adj_contract_value},from_status:'contract_review',to_status:'production_queue'})}).catch(e=>console.error('Stage notification failed:',e));}}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save & Send to Production</button>}
+          {selJob&&<button onClick={async()=>{try{const shouldAdvance=selJob.status==='contract_review';const matBody={material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString(),drainage_needed:!!drainageNeeded,drainage_style:drainageNeeded?(drainageStyle||null):null,drainage_bottom_count:drainageNeeded?n(drainageBottom)||0:0,drainage_top_count:drainageNeeded?n(drainageTop)||0:0,number_of_gates:n(numGates)||0,gate_height:gateHeight||null,gate_size:gateSize||null,...(shouldAdvance&&{status:'production_queue'})};await sbPatch('jobs',selJob.id,matBody);setToast(shouldAdvance?'Materials saved + job moved to Production Queue':'Materials saved to '+selJob.job_name);fetch(`${SB}/functions/v1/production-order-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{...selJob,...matBody}})}).catch(e=>console.error('Production order notification failed:',e));if(shouldAdvance){fetch(`${SB}/functions/v1/job-stage-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{job_name:selJob.job_name,job_number:selJob.job_number,market:selJob.market,pm:selJob.pm,sales_rep:selJob.sales_rep,style:selJob.style,color:selJob.color,height_precast:selJob.height_precast,total_lf:selJob.total_lf,adj_contract_value:selJob.adj_contract_value},from_status:'contract_review',to_status:'production_queue'})}).catch(e=>console.error('Stage notification failed:',e));}}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save & Send to Production</button>}
           <button onClick={()=>setShowPrint(true)} style={{...btnP,padding:'6px 16px',fontSize:12}}>Print Production Order</button>
         </div>
       </div>
@@ -5261,7 +5279,7 @@ function MaterialCalcPage({jobs,preJob}){
           </div>
         </div>
       </div>
-      {/* v2: Materials Required — concrete totals, rebar/PVC/silicone, gate hardware */}
+      {/* v2.1: Materials Required — concrete totals with Regular + Drainage panel split, rebar/PVC/silicone, gate hardware */}
       {(()=>{
         const cfg=styles.find(s=>s.style_name===selStyle)||{};
         const h=n(height);
@@ -5270,16 +5288,22 @@ function MaterialCalcPage({jobs,preJob}){
         const sectCount=result.sectCeil;
         const totalPanels=result.totalPanels;
         const isRanch=selStyle.startsWith('Ranch Rail');
-        const isDrainageSel=drainageType==='Diamond Drainage'||drainageType==='Bottled Drainage';
-        const drainageActive=!!cfg.drainage_eligible&&isDrainageSel;
+        // v2.1: drainage totals come from explicit top/bottom counts, not a whole-fence toggle.
+        const drainageActive=!!cfg.drainage_eligible&&drainageNeeded;
+        const drainageTotalRaw=drainageActive?(n(drainageBottom)+n(drainageTop)):0;
+        const drainageOverCount=drainageActive&&!isRanch&&drainageTotalRaw>totalPanels;
+        const drainageTotal=Math.min(drainageTotalRaw,isRanch?0:totalPanels);
+        const regularPanelCount=isRanch?0:Math.max(0,totalPanels-drainageTotal);
         const postCyFallbackKey=postHeight<=8?'cy_post_8ft':postHeight<=10?'cy_post_10ft':'cy_post_12ft';
         const postCyRaw=n(cfg.cy_per_post);
         const postCy=postCyRaw>0?postCyRaw:n(plantCfg[postCyFallbackKey]);
         const postCyIsFallback=postCyRaw<=0;
         const cyPosts=postCount*postCy;
-        const panelCyRaw=drainageActive?n(cfg.cy_per_drainage_panel):n(cfg.cy_per_panel);
-        const panelCyMissing=!isRanch&&panelCyRaw<=0;
-        const cyPanels=isRanch?0:totalPanels*panelCyRaw;
+        const regularPanelCyRaw=n(cfg.cy_per_panel);
+        const drainagePanelCyRaw=n(cfg.cy_per_drainage_panel);
+        const regularCyMissing=!isRanch&&regularPanelCyRaw<=0&&regularPanelCount>0;
+        const cyRegularPanels=isRanch?0:regularPanelCount*regularPanelCyRaw;
+        const cyDrainagePanels=isRanch?0:drainageTotal*drainagePanelCyRaw;
         const capRailCyRaw=n(cfg.cy_per_cap_rail);
         const capRailCy=capRailCyRaw>0?capRailCyRaw:n(plantCfg.cy_cap_rail_standard);
         const capRailCyIsFallback=!isRanch&&capRailCyRaw<=0;
@@ -5287,7 +5311,8 @@ function MaterialCalcPage({jobs,preJob}){
         const railCount=isRanch?(n(cfg.rail_count)||(h<=6?2:h<=8?3:4)):0;
         const railCyRaw=n(cfg.cy_per_rail);
         const cyRails=isRanch?sectCount*railCount*railCyRaw:0;
-        const cyTotal=(panelCyMissing?0:cyPanels)+cyPosts+cyCapRails+cyRails;
+        const cyPanelsSum=(regularCyMissing?0:cyRegularPanels)+cyDrainagePanels;
+        const cyTotal=cyPanelsSum+cyPosts+cyCapRails+cyRails;
         const rebarPieces=postCount*(n(plantCfg.rebar_pieces_per_post)||2);
         const pvcLF=n(lf)*(n(plantCfg.pvc_lf_per_60lf_fence)||20)/60;
         const siliconeTubes=Math.ceil(n(lf)/50)*(n(plantCfg.silicone_tubes_per_50lf_fence)||1);
@@ -5296,14 +5321,19 @@ function MaterialCalcPage({jobs,preJob}){
         return <div style={{...card,marginTop:16,padding:0,overflow:'hidden'}}>
           <div style={{background:'#1A1A1A',color:'#FFF',padding:'10px 16px',fontFamily:'Inter',fontWeight:800,fontSize:13,textTransform:'uppercase',letterSpacing:0.5}}>Materials Required</div>
           <div style={{padding:'14px 18px'}}>
+            {drainageOverCount&&<div style={{marginBottom:10,padding:'8px 12px',background:'#FEF3C7',border:'1px solid #F59E0B40',borderRadius:6,fontSize:12,color:'#92400E',fontWeight:600}}>⚠ Drainage count ({drainageTotalRaw}) exceeds total panel count ({totalPanels}) — check your inputs. Regular panel count is clamped to 0 below.</div>}
             <div style={{display:'flex',justifyContent:'space-between',fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A',marginBottom:8}}>
               <span>Concrete Total</span><span style={{color:'#8A261D'}}>{fmt(cyTotal)} CY</span>
             </div>
             {!isRanch&&<>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0 3px 18px',color:'#625650'}}>
-                <span>Panels</span>
-                <span style={{color:panelCyMissing?'#991B1B':'#1A1A1A',fontWeight:600}}>{panelCyMissing?'N/A — missing panel data':`${fmt(cyPanels)} CY  (${totalPanels} × ${fmt(panelCyRaw)} CY)`}</span>
+                <span>Panels (Regular)</span>
+                <span style={{color:regularCyMissing?'#991B1B':'#1A1A1A',fontWeight:600}}>{regularCyMissing?'N/A — missing panel data':`${fmt(cyRegularPanels)} CY  (${regularPanelCount} × ${fmt(regularPanelCyRaw)} CY)`}</span>
               </div>
+              {drainageTotal>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0 3px 18px',color:'#625650'}}>
+                <span>Panels (Drainage{drainageStyle?` · ${drainageStyle}`:''})</span>
+                <span style={{color:'#1A1A1A',fontWeight:600}}>{fmt(cyDrainagePanels)} CY  ({drainageTotal} × {fmt(drainagePanelCyRaw)} CY)</span>
+              </div>}
               <div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0 3px 18px',color:'#625650'}}>
                 <span>Posts</span>
                 <span style={{color:'#1A1A1A',fontWeight:600}}>{fmt(cyPosts)} CY  ({postCount} × {fmt(postCy)} CY)</span>
