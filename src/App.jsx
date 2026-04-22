@@ -5226,6 +5226,25 @@ function MaterialCalcPage({jobs,preJob}){
         </div>
         {/* Production Order Form */}
         <div id="production-order" style={{padding:'32px 40px',fontFamily:'Arial,sans-serif',color:'#000'}}>
+          {/* Page-repeating header: table <thead> repeats on every printed page
+              (display:table-header-group is the default for thead in all major browsers). */}
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                <td>
+                  <div className="po-page-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,paddingBottom:12,marginBottom:20,borderBottom:'1px solid #000'}}>
+                    <div style={{fontFamily:'Arial,sans-serif',color:'#000'}}>
+                      <div style={{fontSize:14,marginBottom:4}}><b>Job Code:</b> {selJob?.job_number||'—'}</div>
+                      <div style={{fontSize:14}}><b>Project Name:</b> {selJob?.job_name||'—'}</div>
+                    </div>
+                    <img src="/fc-logo.png" alt="Fencecrete" style={{height:45,width:'auto',display:'block',objectFit:'contain'}}/>
+                  </div>
+                </td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
           {/* Header */}
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:24}}>
             <div>
@@ -5296,6 +5315,10 @@ function MaterialCalcPage({jobs,preJob}){
             </div>
             <div style={{marginTop:8,fontSize:14}}>PROJECT: <b style={{fontSize:16}}>{selJob?.job_name||'______________________________'}</b></div>
           </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>;})()}
