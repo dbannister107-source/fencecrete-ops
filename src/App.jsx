@@ -5232,12 +5232,9 @@ function MaterialCalcPage({jobs,preJob}){
             <thead>
               <tr>
                 <td>
-                  <div className="po-page-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,paddingBottom:12,marginBottom:20,borderBottom:'1px solid #000'}}>
-                    <div style={{fontFamily:'Arial,sans-serif',color:'#000'}}>
-                      <div style={{fontSize:14,marginBottom:4}}><b>Job Code:</b> {selJob?.job_number||'—'}</div>
-                      <div style={{fontSize:14}}><b>Project Name:</b> {selJob?.job_name||'—'}</div>
-                    </div>
-                    <img src="/fc-logo.png" alt="Fencecrete" style={{height:45,width:'auto',display:'block',objectFit:'contain'}}/>
+                  <div className="po-page-header" style={{paddingBottom:12,marginBottom:20,borderBottom:'1px solid #000',fontFamily:'Arial,sans-serif',color:'#000'}}>
+                    <div style={{fontSize:14,marginBottom:4}}><b>Job Code:</b> {selJob?.job_number||'—'}</div>
+                    <div style={{fontSize:14}}><b>Project Name:</b> {selJob?.job_name||'—'}</div>
                   </div>
                 </td>
               </tr>
