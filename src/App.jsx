@@ -9326,8 +9326,9 @@ function ChatWidget({currentPage}){
     const now=Date.now();
     if(now-lastSentRef.current<2000){setErr('Please wait a moment before sending another message.');setTimeout(()=>setErr(null),2000);return;}
     lastSentRef.current=now;
-    const nextMessages=[...messages,{role:'user',content:trimmed}];
-    setMessages(nextMessages);
+    const priorConvo=messages.filter(m=>m.role==='user'||m.role==='assistant');
+    const nextMessages=[...priorConvo,{role:'user',content:trimmed}];
+    setMessages(m=>[...m,{role:'user',content:trimmed}]);
     setInput('');
     setSending(true);
     setErr(null);
@@ -9339,14 +9340,10 @@ function ChatWidget({currentPage}){
         headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},
         body:JSON.stringify(payload)
       });
+      // Function always returns HTTP 200 — parse regardless of status.
       const rawText=await res.text();
       let data={};
-      try{data=rawText?JSON.parse(rawText):{};}catch(parseErr){
-        console.error('[ChatWidget] JSON parse failed:',parseErr);
-        throw new Error(`Invalid JSON response: ${rawText.slice(0,120)}`);
-      }
-      // Edge function returns {message: "..."} on success.
-      // Also accept legacy {text} and raw Anthropic {content:[{text}]} shapes defensively.
+      try{data=rawText?JSON.parse(rawText):{};}catch(parseErr){console.error('[ChatWidget] JSON parse failed:',parseErr);data={};}
       let reply=null;
       if(typeof data?.message==='string')reply=data.message;
       else if(typeof data?.text==='string')reply=data.text;
@@ -9355,13 +9352,14 @@ function ChatWidget({currentPage}){
       const replyText=(reply||'').trim();
       if(replyText){
         setMessages(m=>[...m,{role:'assistant',content:replyText}]);
+      }else if(typeof data?.error==='string'&&data.error.trim()){
+        setMessages(m=>[...m,{role:'error',content:data.error.trim(),details:typeof data?.details==='string'?data.details.trim():null}]);
       }else{
-        const errMsg=data?.error||data?.details||`No message field in response (status ${res.status})`;
-        throw new Error(errMsg);
+        setMessages(m=>[...m,{role:'error',content:"Chorizo didn't return a valid response. Try again.",details:null}]);
       }
     }catch(e){
       console.error('[ChatWidget] send failed:',e);
-      setErr(`Sorry, I couldn't connect: ${e.message||'unknown error'}`);
+      setMessages(m=>[...m,{role:'error',content:`Couldn't reach Chorizo: ${e.message||'network error'}`,details:null}]);
     }
     setSending(false);
   };
@@ -9389,7 +9387,13 @@ function ChatWidget({currentPage}){
     {/* Messages area */}
     <div ref={scrollRef} style={{flex:1,overflow:'auto',padding:'14px',display:'flex',flexDirection:'column',gap:10,background:'#F4F4F2'}}>
       {messages.length===0&&<div style={{alignSelf:'flex-start',background:'#E8E8E6',color:'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5}}>{CHAT_WELCOME}</div>}
-      {messages.map((m,i)=><div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'#8A261D':'#E8E8E6',color:m.role==='user'?'#FFF':'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{m.content}</div>)}
+      {messages.map((m,i)=>{
+        if(m.role==='error')return<div key={i} style={{alignSelf:'flex-start',background:'#F4F4F2',border:'1px solid #FECACA',color:'#991B1B',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+          <div style={{fontWeight:600}}>⚠️ {m.content}</div>
+          {m.details&&<div style={{marginTop:4,fontSize:11,color:'#9E9B96'}}>{m.details}</div>}
+        </div>;
+        return<div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'#8A261D':'#E8E8E6',color:m.role==='user'?'#FFF':'#1A1A1A',padding:'10px 14px',borderRadius:14,maxWidth:'85%',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{m.content}</div>;
+      })}
       {sending&&typingDots}
       {err&&<div style={{alignSelf:'center',background:'#FEE2E2',color:'#991B1B',padding:'8px 12px',borderRadius:10,fontSize:11,fontWeight:600,textAlign:'center',maxWidth:'85%'}}>{err}</div>}
     </div>
