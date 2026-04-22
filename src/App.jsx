@@ -12222,7 +12222,7 @@ function ProposalsPage({ jobs }) {
   const fetchProposals = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await sbGet("proposals_enriched", "select=*&order=proposal_date.desc.nullsfirst&limit=500");
+      const d = await sbGet("proposals_enriched", "select=*&order=proposal_date.desc.nullsfirst&limit=5000");
       setProposals(Array.isArray(d) ? d : []);
     } catch (e) {
       toast.error("Failed to load proposals");
@@ -12258,7 +12258,7 @@ function ProposalsPage({ jobs }) {
     setPricingLoading(true);
     (async () => {
       try {
-        const d = await sbGet("proposals", "source=eq.ingested&source_type=eq.outgoing_proposal&select=*&order=proposal_date.desc.nullsfirst&limit=500");
+        const d = await sbGet("proposals", "source=eq.ingested&source_type=eq.outgoing_proposal&select=*&order=proposal_date.desc.nullsfirst&limit=5000");
         setPricingData(Array.isArray(d) ? d : []);
         setPricingLoaded(true);
       } catch (e) {
@@ -12324,7 +12324,10 @@ function ProposalsPage({ jobs }) {
     const totalValue = proposals.reduce((s, p) => s + n(p.grand_total), 0);
     const needsReview = proposals.filter(p => p.needs_review).length;
     const ingested = proposals.filter(p => p.source === "ingested").length;
-    const tagged = proposals.filter(p => p.source === "ingested" && p.status !== "pending").length;
+    // "Tagged" = a human has reviewed the proposal (reviewed_at stamped).
+    // Not the same as status !== 'pending' — ingested status often arrives
+    // populated from the source doc before any human review.
+    const tagged = proposals.filter(p => p.reviewed_at != null).length;
     return { total, totalValue, needsReview, ingested, tagged };
   }, [proposals]);
 
@@ -13133,8 +13136,8 @@ function ProposalsPage({ jobs }) {
         </div>
         <div style={{ ...card }}>
           <div style={{ fontSize: 11, color: "#6B6056", fontWeight: 700, textTransform: "uppercase" }}>Tagged</div>
-          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: "#065F46", marginTop: 4 }}>{kpis.tagged} / {kpis.ingested}</div>
-          <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>win/loss tagged</div>
+          <div style={{ fontFamily: "Syne", fontSize: 28, fontWeight: 800, color: "#065F46", marginTop: 4 }}>{kpis.tagged} / {kpis.total}</div>
+          <div style={{ fontSize: 11, color: "#9E9B96", marginTop: 2 }}>Win/loss tagged by human review</div>
         </div>
       </div>
       {/* Mode tabs */}
