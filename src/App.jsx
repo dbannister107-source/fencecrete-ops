@@ -12161,6 +12161,8 @@ function ProspectingPage({jobs}){
 
 function ProposalsPage({ jobs }) {
   const isMobile = useIsMobile();
+  const auth = useAuth();
+  const currentUserEmail = (auth?.user?.email || '').toLowerCase().trim();
   /* ── state ── */
   const [mode, setMode] = useState("list"); // list | analytics | review | tagging | quality
   const [proposals, setProposals] = useState([]);
@@ -12193,6 +12195,14 @@ function ProposalsPage({ jobs }) {
   // review mode
   const [reviewBulk, setReviewBulk] = useState(new Set());
   const [reviewBulkMode, setReviewBulkMode] = useState(false);
+  // bulk tagging on the list view
+  const [bulkSel, setBulkSel] = useState(() => new Set());
+  const lastClickedIdRef = useRef(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkLostModal, setBulkLostModal] = useState(null); // null | { ids: string[] }
+  const [bulkConfirm, setBulkConfirm] = useState(null); // null | { message, confirmLabel, onConfirm }
+  const [undoTag, setUndoTag] = useState(null); // null | { prior: {id: snapshot}, label, count, expiresAt }
+  const undoTimerRef = useRef(null);
   // pricing intelligence mode
   const [pricingLoaded, setPricingLoaded] = useState(false);
   const [pricingData, setPricingData] = useState([]);
@@ -12433,6 +12443,211 @@ function ProposalsPage({ jobs }) {
     setReviewBulk(new Set());
     toast.success(`${ids.length} item(s) marked as reviewed`);
   };
+
+  /* ── bulk tagging ── */
+  const BULK_TAG_FIELDS = ["status", "reviewed_at", "tagged_by", "tagged_at", "loss_reason", "competitor_won", "notes"];
+  const clearBulk = () => { setBulkSel(new Set()); lastClickedIdRef.current = null; };
+
+  const toggleBulk = (id, shiftKey) => {
+    setBulkSel(prev => {
+      const next = new Set(prev);
+      if (shiftKey && lastClickedIdRef.current && lastClickedIdRef.current !== id) {
+        // range select over the CURRENT sorted view
+        const ids = sorted.map(p => p.id);
+        const a = ids.indexOf(lastClickedIdRef.current);
+        const b = ids.indexOf(id);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const shouldAdd = !prev.has(id);
+          for (let i = lo; i <= hi; i++) {
+            if (shouldAdd) next.add(ids[i]); else next.delete(ids[i]);
+          }
+          lastClickedIdRef.current = id;
+          return next;
+        }
+      }
+      if (next.has(id)) next.delete(id); else next.add(id);
+      lastClickedIdRef.current = id;
+      return next;
+    });
+  };
+
+  const patchBulk = async (ids, patch) => {
+    if (!ids.length) return;
+    const idList = ids.join(",");
+    const res = await fetch(`${SB}/rest/v1/proposals?id=in.(${idList})`, {
+      method: "PATCH",
+      headers: { ...H, Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok && res.status !== 204) {
+      const txt = await res.text();
+      throw new Error(`Bulk PATCH failed (${res.status}): ${txt}`);
+    }
+  };
+
+  const scheduleUndoClear = () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => setUndoTag(null), 30000);
+  };
+
+  const runBulkTag = async (label, patchFor, ids) => {
+    if (!ids.length) return;
+    setBulkSaving(true);
+    try {
+      // snapshot prior values for undo
+      const prior = {};
+      const idSet = new Set(ids);
+      proposals.forEach(p => {
+        if (!idSet.has(p.id)) return;
+        const snap = {};
+        BULK_TAG_FIELDS.forEach(f => { snap[f] = p[f] ?? null; });
+        prior[p.id] = snap;
+      });
+      const patch = typeof patchFor === "function" ? patchFor() : patchFor;
+      await patchBulk(ids, patch);
+      // optimistic update
+      setProposals(prev => prev.map(p => idSet.has(p.id) ? { ...p, ...patch } : p));
+      clearBulk();
+      const count = ids.length;
+      setUndoTag({ prior, label, count, expiresAt: Date.now() + 30000 });
+      scheduleUndoClear();
+    } catch (e) {
+      toast.error(e.message || "Bulk update failed");
+    }
+    setBulkSaving(false);
+  };
+
+  const undoBulk = async () => {
+    if (!undoTag) return;
+    const entries = Object.entries(undoTag.prior);
+    if (!entries.length) { setUndoTag(null); return; }
+    setBulkSaving(true);
+    try {
+      // restore per-row to exact prior snapshot (different rows may differ)
+      for (const [id, snap] of entries) {
+        try { await sbPatch("proposals", id, { ...snap, updated_at: new Date().toISOString() }); } catch {}
+      }
+      setProposals(prev => prev.map(p => undoTag.prior[p.id] ? { ...p, ...undoTag.prior[p.id] } : p));
+      toast.success(`Reverted ${entries.length} proposal${entries.length !== 1 ? "s" : ""}`);
+    } catch (e) {
+      toast.error("Undo failed");
+    }
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoTag(null);
+    setBulkSaving(false);
+  };
+
+  const BULK_CONFIRM_THRESHOLD = 25;
+
+  const bulkMark = (action) => {
+    const ids = [...bulkSel];
+    if (!ids.length) return;
+    const now = new Date().toISOString();
+    const by = currentUserEmail || null;
+
+    if (action === "won") {
+      const run = () => runBulkTag("Won", { status: "won", reviewed_at: now, tagged_by: by, tagged_at: now, updated_at: now }, ids);
+      if (ids.length > BULK_CONFIRM_THRESHOLD) {
+        setBulkConfirm({ message: `You're about to mark ${ids.length} proposals as Won. Continue?`, confirmLabel: `Mark ${ids.length} Won`, onConfirm: () => { setBulkConfirm(null); run(); } });
+      } else run();
+      return;
+    }
+    if (action === "expired") {
+      const run = () => runBulkTag("Expired", { status: "expired", reviewed_at: now, tagged_by: by, tagged_at: now, updated_at: now }, ids);
+      if (ids.length > BULK_CONFIRM_THRESHOLD) {
+        setBulkConfirm({ message: `You're about to mark ${ids.length} proposals as Expired. Continue?`, confirmLabel: `Mark ${ids.length} Expired`, onConfirm: () => { setBulkConfirm(null); run(); } });
+      } else run();
+      return;
+    }
+    if (action === "pending") {
+      setBulkConfirm({
+        message: `Reset tagging on ${ids.length} proposal${ids.length !== 1 ? "s" : ""}? This removes win/loss data.`,
+        confirmLabel: `Reset ${ids.length}`,
+        onConfirm: () => {
+          setBulkConfirm(null);
+          runBulkTag("Pending", { status: "pending", reviewed_at: null, loss_reason: null, competitor_won: null, tagged_by: null, tagged_at: null, updated_at: now }, ids);
+        },
+      });
+      return;
+    }
+    if (action === "lost") {
+      setBulkLostModal({ ids });
+      return;
+    }
+  };
+
+  const applyBulkLost = ({ reason, competitor, notes }) => {
+    const ids = bulkLostModal?.ids || [];
+    if (!ids.length) { setBulkLostModal(null); return; }
+    const now = new Date().toISOString();
+    const by = currentUserEmail || null;
+    const idSet = new Set(ids);
+    const notesByRow = {};
+    if (notes && notes.trim()) {
+      proposals.forEach(p => {
+        if (!idSet.has(p.id)) return;
+        const existing = (p.notes || "").trim();
+        notesByRow[p.id] = existing ? `${existing}\n${notes.trim()}` : notes.trim();
+      });
+    }
+    const run = async () => {
+      setBulkSaving(true);
+      try {
+        const prior = {};
+        proposals.forEach(p => {
+          if (!idSet.has(p.id)) return;
+          const snap = {};
+          BULK_TAG_FIELDS.forEach(f => { snap[f] = p[f] ?? null; });
+          prior[p.id] = snap;
+        });
+        const basePatch = {
+          status: "lost",
+          loss_reason: reason,
+          competitor_won: competitor || null,
+          reviewed_at: now,
+          tagged_by: by,
+          tagged_at: now,
+          updated_at: now,
+        };
+        if (Object.keys(notesByRow).length === 0) {
+          await patchBulk(ids, basePatch);
+        } else {
+          // Need per-row notes (append). Issue one bulk without notes, then update notes per-row.
+          await patchBulk(ids, basePatch);
+          for (const id of ids) {
+            if (notesByRow[id] != null) {
+              try { await sbPatch("proposals", id, { notes: notesByRow[id] }); } catch {}
+            }
+          }
+        }
+        setProposals(prev => prev.map(p => {
+          if (!idSet.has(p.id)) return p;
+          const merged = { ...p, ...basePatch };
+          if (notesByRow[p.id] != null) merged.notes = notesByRow[p.id];
+          return merged;
+        }));
+        clearBulk();
+        setUndoTag({ prior, label: "Lost", count: ids.length, expiresAt: Date.now() + 30000 });
+        scheduleUndoClear();
+      } catch (e) {
+        toast.error(e.message || "Bulk update failed");
+      }
+      setBulkSaving(false);
+    };
+    setBulkLostModal(null);
+    run();
+  };
+
+  // Esc clears bulk selection (when in list mode with items selected)
+  useEffect(() => {
+    if (mode !== "list" || bulkSel.size === 0) return;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !bulkLostModal && !bulkConfirm) clearBulk();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, bulkSel.size, bulkLostModal, bulkConfirm]); // eslint-disable-line
 
   /* ── analytics data ── */
   const analytics = useMemo(() => {
@@ -12966,9 +13181,53 @@ function ProposalsPage({ jobs }) {
             <div style={{ ...card }}><EmptyState icon="📋" title="No proposals found" subtitle="Adjust your filters to see proposals." /></div>
           ) : (
             <>
+              {/* Bulk action toolbar — sticky, shown when 1+ selected */}
+              {bulkSel.size > 0 && (
+                <div style={{
+                  position: "sticky", top: 0, zIndex: 10,
+                  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  padding: "10px 14px", marginBottom: 8,
+                  background: "#FFF", border: "1px solid #E5E3E0", borderLeft: "4px solid #8B2020",
+                  borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1A1A1A" }}>
+                    {bulkSaving ? (
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 5, background: "#8B2020", animation: "fcSpin 0.9s linear infinite", marginRight: 6, verticalAlign: "middle" }}/>Saving…</span>
+                    ) : (
+                      <><span style={{ color: "#8B2020" }}>✓</span> {bulkSel.size} selected</>
+                    )}
+                  </span>
+                  <button onClick={clearBulk} disabled={bulkSaving} style={{ ...btnS, padding: "4px 10px", fontSize: 11 }}>Clear</button>
+                  <span style={{ color: "#E5E3E0" }}>|</span>
+                  <button onClick={() => bulkMark("won")} disabled={bulkSaving} style={{ ...btnP, padding: "5px 12px", fontSize: 12, background: "#065F46" }}>Mark Won</button>
+                  <button onClick={() => bulkMark("lost")} disabled={bulkSaving} style={{ ...btnP, padding: "5px 12px", fontSize: 12, background: "#991B1B" }}>Mark Lost</button>
+                  <button onClick={() => bulkMark("expired")} disabled={bulkSaving} style={{ ...btnP, padding: "5px 12px", fontSize: 12, background: "#92400E" }}>Mark Expired</button>
+                  <button onClick={() => bulkMark("pending")} disabled={bulkSaving} style={{ ...btnS, padding: "5px 12px", fontSize: 12 }}>Mark Pending</button>
+                  <span style={{ fontSize: 11, color: "#9E9B96", marginLeft: 4 }}>Esc to clear</span>
+                </div>
+              )}
               <div style={{ ...card, padding: 0, overflow: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead><tr style={{ borderBottom: "2px solid #E5E3E0" }}>
+                    <th style={{ padding: "10px 8px 10px 12px", width: 32 }}>
+                      {(() => {
+                        const filteredIds = filtered.map(p => p.id);
+                        const allSelected = filteredIds.length > 0 && filteredIds.every(id => bulkSel.has(id));
+                        return (
+                          <input type="checkbox" checked={allSelected} aria-label={allSelected ? "Deselect all filtered" : "Select all filtered"}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              setBulkSel(prev => {
+                                const next = new Set(prev);
+                                filteredIds.forEach(id => { if (checked) next.add(id); else next.delete(id); });
+                                return next;
+                              });
+                              lastClickedIdRef.current = null;
+                            }}
+                            style={{ cursor: "pointer" }}/>
+                        );
+                      })()}
+                    </th>
                     {hdr("proposal_date", "Date")}
                     {hdr("customer_name", "Customer")}
                     {hdr("title", "Project")}
@@ -12982,11 +13241,19 @@ function ProposalsPage({ jobs }) {
                     <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6B6056", textTransform: "uppercase" }}>Flags</th>
                   </tr></thead>
                   <tbody>
-                    {paged.map(p => (
+                    {paged.map(p => {
+                      const isSelected = bulkSel.has(p.id);
+                      const baseBg = isSelected ? "#FDF4F4" : "transparent";
+                      const hoverBg = isSelected ? "#FCEBEB" : "#FAFAF8";
+                      return (
                       <tr key={p.id} onClick={() => openDetail(p)}
-                        style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer", transition: "background 0.1s" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#FAFAF8"}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        style={{ borderBottom: "1px solid #F1EFEC", cursor: "pointer", transition: "background 0.1s", background: baseBg }}
+                        onMouseEnter={e => e.currentTarget.style.background = hoverBg}
+                        onMouseLeave={e => e.currentTarget.style.background = baseBg}>
+                        <td onClick={e => { e.stopPropagation(); toggleBulk(p.id, e.shiftKey); }}
+                          style={{ padding: "10px 8px 10px 12px", width: 32 }}>
+                          <input type="checkbox" checked={isSelected} readOnly aria-label={`Select ${p.customer_name || "proposal"}`} style={{ cursor: "pointer" }}/>
+                        </td>
                         <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{fD(p.proposal_date)}</td>
                         <td style={{ padding: "10px 12px", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.customer_name || "—"}</td>
                         <td style={{ padding: "10px 12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.title || "—"}</td>
@@ -13005,7 +13272,8 @@ function ProposalsPage({ jobs }) {
                           {n(p.extraction_confidence) > 0 && n(p.extraction_confidence) < 0.7 && <span title="Low confidence" style={{ cursor: "help", marginLeft: 4 }}>❓</span>}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -13680,6 +13948,88 @@ function ProposalsPage({ jobs }) {
           )}
         </div>
       )}
+
+      {/* Bulk confirm modal (>25 rows, or pending reset) */}
+      {bulkConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setBulkConfirm(null)}>
+          <div style={{ background: "#FFF", borderRadius: 14, maxWidth: 440, width: "100%", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontFamily: "Syne", fontSize: 18, fontWeight: 800, margin: 0, marginBottom: 10 }}>Confirm bulk action</h3>
+            <p style={{ fontSize: 13, color: "#1A1A1A", margin: 0, marginBottom: 20, lineHeight: 1.5 }}>{bulkConfirm.message}</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setBulkConfirm(null)} style={{ ...btnS }}>Cancel</button>
+              <button onClick={() => bulkConfirm.onConfirm && bulkConfirm.onConfirm()} style={{ ...btnP }}>{bulkConfirm.confirmLabel || "Confirm"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk "Mark Lost" modal — reason required, competitor/notes optional */}
+      {bulkLostModal && (
+        <BulkLostModal count={bulkLostModal.ids.length} onCancel={() => setBulkLostModal(null)} onApply={applyBulkLost}/>
+      )}
+
+      {/* Undo toast for recent bulk action */}
+      {undoTag && (
+        <div style={{
+          position: "fixed", bottom: 20, right: 20, zIndex: 9997,
+          background: "#065F46", color: "#FFF",
+          padding: "12px 16px", borderRadius: 10, boxShadow: "0 8px 28px rgba(0,0,0,0.25)",
+          display: "flex", alignItems: "center", gap: 12,
+          fontSize: 13, fontWeight: 600, maxWidth: 420,
+        }}>
+          <span>✓ Marked {undoTag.count} proposal{undoTag.count !== 1 ? "s" : ""} as {undoTag.label}</span>
+          <button onClick={undoBulk} disabled={bulkSaving}
+            style={{ background: "rgba(255,255,255,0.18)", color: "#FFF", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Undo
+          </button>
+          <button onClick={() => setUndoTag(null)} aria-label="Dismiss"
+            style={{ background: "transparent", border: "none", color: "#FFF", fontSize: 16, cursor: "pointer", padding: "0 4px", opacity: 0.8 }}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BulkLostModal({ count, onCancel, onApply }) {
+  const [reason, setReason] = useState("");
+  const [competitor, setCompetitor] = useState("");
+  const [notes, setNotes] = useState("");
+  const REASONS = ["Price", "Timing", "Relationship", "Scope Change", "Competitor", "Other"];
+  const canApply = !!reason;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={onCancel}>
+      <div style={{ background: "#FFF", borderRadius: 14, maxWidth: 480, width: "100%", padding: 24 }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontFamily: "Syne", fontSize: 18, fontWeight: 800, margin: 0, marginBottom: 4 }}>Mark {count} proposal{count !== 1 ? "s" : ""} as Lost</h3>
+        <div style={{ fontSize: 12, color: "#6B6056", marginBottom: 14 }}>The same reason, competitor, and notes will apply to every selected row.</div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#1A1A1A", marginBottom: 6, textTransform: "uppercase" }}>Loss Reason *</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {REASONS.map(r => (
+              <label key={r} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", border: `1px solid ${reason === r ? "#8B2020" : "#D1CEC9"}`, background: reason === r ? "#FDF4F4" : "#FFF", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600, color: reason === r ? "#8B2020" : "#625650" }}>
+                <input type="radio" name="bulk-loss-reason" value={r} checked={reason === r} onChange={() => setReason(r)} style={{ margin: 0 }}/>
+                {r}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#1A1A1A", marginBottom: 6, textTransform: "uppercase" }}>Competitor Won (optional)</div>
+          <input value={competitor} onChange={e => setCompetitor(e.target.value)} placeholder="Competitor name" style={{ ...inputS, width: "100%" }}/>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#1A1A1A", marginBottom: 6, textTransform: "uppercase" }}>Notes (optional, appended)</div>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Context that applies to all selected proposals..." style={{ ...inputS, width: "100%", resize: "vertical", fontFamily: "inherit" }}/>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onCancel} style={{ ...btnS }}>Cancel</button>
+          <button onClick={() => canApply && onApply({ reason, competitor, notes })} disabled={!canApply}
+            style={{ ...btnP, background: "#991B1B", opacity: canApply ? 1 : 0.5 }}>
+            Apply to {count} proposal{count !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
