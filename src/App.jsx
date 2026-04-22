@@ -1261,10 +1261,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
           {saveErr&&!isMobile&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
-          {!isNew&&onNav&&!isMobile&&<button onClick={()=>{
-            try{localStorage.setItem('fc_matreq_prejob',JSON.stringify({job_number:form.job_number||'',job_name:form.job_name||'',address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',style:form.style||'',color:form.color||'',height_precast:form.height_precast||'',lf_precast:form.total_lf_precast||form.lf_precast||'',height_other:form.height_other||'',lf_other:form.lf_other||''}));}catch(e){}
-            onNav('material_requests');
-          }} title="Request materials from plant for this job" style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:13,cursor:'pointer'}}>📦 Request Material</button>}
           {!isNew&&(currentUserEmail==='david@fencecrete.com'||currentUserEmail==='amiee@fencecrete.com'||currentUserEmail==='contracts@fencecrete.com')&&<button
             title="TEST ONLY: Generate a PIS form link for this job"
             onClick={async()=>{
