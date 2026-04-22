@@ -13198,6 +13198,18 @@ function ProposalsPage({ jobs }) {
                     )}
                   </span>
                   <button onClick={clearBulk} disabled={bulkSaving} style={{ ...btnS, padding: "4px 10px", fontSize: 11 }}>Clear</button>
+                  {(() => {
+                    const visibleSelected = filtered.reduce((s, p) => s + (bulkSel.has(p.id) ? 1 : 0), 0);
+                    const hiddenCount = bulkSel.size - visibleSelected;
+                    if (hiddenCount <= 0) return null;
+                    return (
+                      <span title="These rows are selected but not visible under the current filters. They will still be included in bulk actions."
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#D97706", userSelect: "none" }}>
+                        <span aria-hidden="true">⚠</span>
+                        {hiddenCount} hidden by current filter
+                      </span>
+                    );
+                  })()}
                   <span style={{ color: "#E5E3E0" }}>|</span>
                   <button onClick={() => bulkMark("won")} disabled={bulkSaving} style={{ ...btnP, padding: "5px 12px", fontSize: 12, background: "#065F46" }}>Mark Won</button>
                   <button onClick={() => bulkMark("lost")} disabled={bulkSaving} style={{ ...btnP, padding: "5px 12px", fontSize: 12, background: "#991B1B" }}>Mark Lost</button>
