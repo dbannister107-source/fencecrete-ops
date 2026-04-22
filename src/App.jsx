@@ -380,6 +380,36 @@ const useIsMobile = (bp = 768) => {
 const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#625650' });
 const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#9E9B96' });
 
+// Context-aware back button for detail views.
+// Desktop: window.history.back(); mobile: clears the drill-in state via onMobileBack.
+function BackButton({ onMobileBack, style, label='Back' }) {
+  const isMobile = useIsMobile();
+  const handleClick = () => {
+    if (isMobile && onMobileBack) onMobileBack();
+    else window.history.back();
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={label}
+      style={{
+        display:'inline-flex',alignItems:'center',gap:6,
+        background:'transparent',border:'none',cursor:'pointer',
+        padding:'6px 10px',borderRadius:8,
+        fontSize:13,fontWeight:600,color:'#625650',
+        transition:'color .12s, background .12s',
+        ...style,
+      }}
+      onMouseEnter={e=>{e.currentTarget.style.color='#8A261D';e.currentTarget.style.background='#F4F4F2';}}
+      onMouseLeave={e=>{e.currentTarget.style.color='#625650';e.currentTarget.style.background='transparent';}}
+    >
+      <span style={{fontSize:16,lineHeight:1}} aria-hidden="true">&#8592;</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 /* ═══ SHARED ═══ */
 /* ═══ ERROR BOUNDARY ═══ */
 class ErrorBoundary extends React.Component {
@@ -1166,7 +1196,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       : {position:'fixed',top:0,right:0,bottom:0,width:Math.min(Math.max(window.innerWidth*0.65,680),window.innerWidth),background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-12px 0 40px rgba(0,0,0,.12)'}}>
       <div style={{padding:isMobile?'12px 14px':'16px 20px',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexShrink:0,background:'#F9F8F6'}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
-          {isMobile && <button onClick={onClose} aria-label="Back" style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#1A1A1A',padding:'4px 6px',lineHeight:1}}>←</button>}
+          <BackButton onMobileBack={onClose} style={{marginLeft:-6}}/>
           <div style={{minWidth:0,flex:1}}>
             <div style={{fontFamily:'Inter',fontSize:isMobile?15:16,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'New Project':(form.job_name||'Untitled')}</div>
             <div style={{fontSize:12,color:'#625650',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div>
@@ -4834,7 +4864,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   if(activeRpt){
     const meta=byId[activeRpt];
     return(<div>
-      <button onClick={closeReport} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:700,cursor:'pointer',padding:'4px 0',marginBottom:10,display:'inline-flex',alignItems:'center',gap:4}}>← Back to Reports</button>
+      <BackButton onMobileBack={closeReport} label="Back to Reports" style={{marginBottom:10,marginLeft:-6}}/>
       {meta&&<div style={{marginBottom:6}}>
         <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:4}}>{meta.icon?<span style={{marginRight:8}}>{meta.icon}</span>:null}{meta.title}</h1>
         {meta.desc&&<div style={{fontSize:13,color:'#625650',marginBottom:16}}>{meta.desc}</div>}
@@ -7571,7 +7601,7 @@ function EstimatingPage(){
       </div>}
     </div>}
     {view==='form'&&<div style={{maxWidth:600}}>
-      <button onClick={()=>setView('list')} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← All Estimates</button>
+      <BackButton onMobileBack={()=>setView('list')} label="All Estimates" style={{marginBottom:12,marginLeft:-6}}/>
       <div style={card}>
         <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Customer Name</label><input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
@@ -8709,6 +8739,7 @@ function MapPage({ jobs, onNav }) {
         {/* Side panel */}
         {selected && (
           <div style={{ ...card, width: isMobile ? '100%' : 340, padding: 16, overflow: 'auto', flexShrink: 0 }}>
+            <BackButton onMobileBack={() => setSelected(null)} style={{ marginBottom: 6, marginLeft: -6 }}/>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
               <div>
                 <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800, color: '#1A1A1A' }}>{selected.job_name || 'Untitled'}</div>
@@ -9731,6 +9762,7 @@ function LeadEditDrawer({lead,onClose,onSaved,onDeleted,contacts}){
   </div>);
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{width:460,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24,boxShadow:'-4px 0 20px rgba(0,0,0,0.15)'}}>
+      <BackButton onMobileBack={onClose} style={{marginBottom:4,marginLeft:-6}}/>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
         <div>
           <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,color:'#1A1A1A'}}>Edit Lead</div>
@@ -10729,6 +10761,7 @@ function ContactDetail({contact,onClose,onSaved,linkedJobs,linkedLeads,onOpenPro
   </div>);
   return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:500,display:'flex',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{width:520,maxWidth:'94vw',background:'#F4F4F2',height:'100vh',overflow:'auto',padding:24}}>
+      <BackButton onMobileBack={onClose} style={{marginBottom:4,marginLeft:-6}}/>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -12660,6 +12693,7 @@ function ProposalsPage({ jobs }) {
         onClick={() => { setDetail(null); setDetailEdit(null); }}>
         <div style={{ background: "#FFF", borderRadius: 16, maxWidth: 1000, width: "100%", maxHeight: "90vh", overflow: "auto", padding: 28 }}
           onClick={e => e.stopPropagation()}>
+          <BackButton onMobileBack={() => { setDetail(null); setDetailEdit(null); }} style={{ marginBottom: 8, marginLeft: -6 }}/>
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
             <div>
