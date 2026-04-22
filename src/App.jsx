@@ -1033,7 +1033,7 @@ function LineItemsEditor({job,onChange,registerSave}){
 function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setLd]=useState(true);useEffect(()=>{sbGet('activity_log',`job_id=eq.${jobId}&order=created_at.desc&limit=50`).then(d=>{setLogs(d||[]);setLd(false);});},[jobId]);if(ld)return<div style={{padding:20,color:'#9E9B96'}}>Loading...</div>;if(!logs.length)return<div style={{padding:20,color:'#9E9B96'}}>No activity yet</div>;return<div>{logs.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #E5E3E0',display:'flex',gap:10,alignItems:'flex-start'}}><span style={{...pill(ACT_C[l.action]||'#625650',(ACT_C[l.action]||'#625650')+'18'),fontSize:10,whiteSpace:'nowrap',marginTop:2}}>{(l.action||'').replace(/_/g,' ')}</span><div style={{flex:1}}><div style={{fontSize:12}}>{l.field_name==='status'?`Status: ${l.old_value} → ${l.new_value}`:l.action==='job_created'?`Created: ${l.new_value}`:l.field_name==='notes'?'Notes updated':`${l.field_name}: updated`}</div><div style={{fontSize:10,color:'#9E9B96'}} title={new Date(l.created_at).toLocaleString()}>{relT(l.created_at)} · {l.changed_by}</div></div></div>)}</div>;}
 
 /* ═══ EDIT PANEL ═══ */
-function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
+function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const isMobile = useIsMobile();
   const auth = useAuth();
   const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
@@ -1159,7 +1159,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       await sbPatch('change_orders',c.id,{status:'approved',approved_by:currentUser,date_approved:today});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
       setCOList(fresh||[]);
-      onRefresh && onRefresh();
+      if (typeof onRefresh === 'function') onRefresh();
       logAct(job,'field_update','co_approved',c.co_number||'—',`Approved ${$(n(c.amount))}`);
       setCOToast({msg:`CO #${c.co_number||'—'} approved — contract updated`,kind:'success'});
     }catch(e){console.error('[CO approve] failed:',e);setCOToast({msg:'Approve failed: '+e.message,kind:'error'});}
@@ -1171,7 +1171,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       await sbPatch('change_orders',c.id,{status:'rejected'});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
       setCOList(fresh||[]);
-      onRefresh && onRefresh();
+      if (typeof onRefresh === 'function') onRefresh();
       logAct(job,'field_update','co_rejected',c.co_number||'—','Rejected');
       setCOToast({msg:`CO #${c.co_number||'—'} rejected`,kind:'gray'});
     }catch(e){console.error('[CO reject] failed:',e);setCOToast({msg:'Reject failed: '+e.message,kind:'error'});}
@@ -1182,7 +1182,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav}){
       await fetch(`${SB}/rest/v1/change_orders?id=eq.${c.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
       const fresh=await sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`);
       setCOList(fresh||[]);
-      onRefresh && onRefresh();
+      if (typeof onRefresh === 'function') onRefresh();
       setCOToast({msg:'CO deleted',kind:'gray'});
     }catch(e){setCOToast({msg:'Delete failed: '+e.message,kind:'error'});}
   };
@@ -2652,7 +2652,7 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
       </tr>)}</tbody></table>
       {closedJobs.length===0&&<div style={{padding:40,textAlign:'center',color:'#9E9B96'}}>No closed projects found</div>}
     </div>}
-    {editJob&&<EditPanel job={editJob} isNew={false} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}} onNav={onNav}/>}
+    {editJob&&<EditPanel job={editJob} isNew={false} onClose={()=>{setEditJob(null);setIsNew(false);}} onSaved={msg=>{setEditJob(null);setIsNew(false);if(msg)setToast(msg);onRefresh();}} onRefresh={onRefresh} onNav={onNav}/>}
     {showNewForm&&<NewProjectForm jobs={jobs} onClose={()=>setShowNewForm(false)} onSaved={msg=>{setShowNewForm(false);if(msg)setToast(msg);onRefresh();}}/>}
   </div>);
 }
