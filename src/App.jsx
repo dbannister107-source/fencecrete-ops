@@ -209,22 +209,73 @@ const PMS=PM_LIST.map(p=>p.id);
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
-// Fallback style list used until the runtime fetch of mold_inventory.style_name
-// completes (see the DD.style hydration effect in App). Kept deliberately close
-// to the canonical mold_inventory set so fallbacks don't miss common styles.
-const _STYLE_LIST = ["Rock Style","Wood Style","Vertical Wood 6'","Vertical Wood 8'","Split Faced CMU Block Style","Used Brick Style","Ledgestone","Smooth Style","Stucco Style","Boxed Wood","Board & Batten Fence Style 6'"];
-// Canonical 6-color palette used for NEW jobs and line items.
-// Existing jobs may hold legacy colors (Painted, Adobe, 860, etc.) — those are preserved via colorOptionsFor().
-const STANDARD_COLORS=['LAC','Silversmoke #860','Café','Outback #677','Regular Brown','Buff Green'];
-const isLegacyColor=(c)=>!!c&&!STANDARD_COLORS.includes(c);
-// Builds the color dropdown options for an EXISTING job: 6 standard colors + the job's current
-// legacy color (tagged " (legacy)") if present, so users don't accidentally lose it.
-const colorOptionsFor=(current)=>{
-  const opts=STANDARD_COLORS.map(c=>({v:c,l:c}));
-  if(isLegacyColor(current))opts.push({v:current,l:`${current} (legacy)`});
+
+// ═══ CANONICAL STYLE / COLOR CATALOG ═══
+// Source of truth lives in the `styles` and `colors` tables (hydrated at
+// app mount by the <CatalogContext.Provider> in App). The arrays below are
+// the fallback catalog used until the fetch completes, and the module-level
+// mirror kept so non-React helpers (option renderers, legacy detection) can
+// be called from anywhere.
+const _STYLE_FALLBACK = [
+  {name:"Rock Style",                    display_order:10,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:false},
+  {name:"Smooth Style",                  display_order:20,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:false},
+  {name:"Stucco Style",                  display_order:30,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:false},
+  {name:"Ledgestone",                    display_order:40,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:false},
+  {name:"Used Brick Style",              display_order:50,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:false},
+  {name:"Vertical Wood 6'",              display_order:60,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:true},
+  {name:"Vertical Wood 8'",              display_order:70,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:true},
+  {name:"Boxed Wood",                    display_order:80,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:true},
+  {name:"Board & Batten Fence Style 6'", display_order:90,  active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:true},
+  {name:"Wood Style",                    display_order:100, active:true, applies_to_pc:true,  applies_to_sw:false, applies_to_wi:false, applies_to_wood_addon:true},
+  {name:"Split Faced CMU Block Style",   display_order:110, active:true, applies_to_pc:false, applies_to_sw:true,  applies_to_wi:false, applies_to_wood_addon:false},
+];
+const _COLOR_FALLBACK = [
+  {name:'LAC',              display_order:10, active:true},
+  {name:'Silversmoke #860', display_order:20, active:true},
+  {name:'Café',             display_order:30, active:true},
+  {name:'Outback #677',     display_order:40, active:true},
+  {name:'Regular Brown',    display_order:50, active:true},
+  {name:'Buff Green',       display_order:60, active:true},
+];
+let STYLE_CATALOG = _STYLE_FALLBACK.slice();
+let COLOR_CATALOG = _COLOR_FALLBACK.slice();
+// Back-compat alias used by a handful of older callsites.
+const STANDARD_COLORS = _COLOR_FALLBACK.map(c => c.name);
+
+// 'PC/Gates' → 'PC'; null/empty → null. Matches the spec's compound-value rule.
+const stripFenceTypeSlash = (ft) => {
+  if (!ft) return null;
+  const base = String(ft).split('/')[0].trim();
+  return base || null;
+};
+const stylesForFenceType = (ft) => {
+  const base = stripFenceTypeSlash(ft);
+  if (!base) return STYLE_CATALOG;
+  if (base === 'PC')   return STYLE_CATALOG.filter(s => s.applies_to_pc);
+  if (base === 'SW')   return STYLE_CATALOG.filter(s => s.applies_to_sw);
+  if (base === 'WI')   return STYLE_CATALOG.filter(s => s.applies_to_wi);
+  if (base === 'Wood') return STYLE_CATALOG.filter(s => s.applies_to_wood_addon);
+  return STYLE_CATALOG; // unknown fence_type — don't over-filter
+};
+const isCanonicalStyle = (name) => !!name && STYLE_CATALOG.some(s => s.name === name);
+const isCanonicalColor = (name) => !!name && COLOR_CATALOG.some(c => c.name === name);
+const isLegacyColor = (c) => !!c && !isCanonicalColor(c);
+// Builds the style dropdown options: canonical (filtered by fence_type) + the
+// row's current legacy value (tagged "(legacy)") if present, so users never
+// silently lose a historical tag. `legacy:true` lets the renderer italicize.
+const styleOptionsFor = (current, fenceType) => {
+  const opts = stylesForFenceType(fenceType).map(s => ({ v: s.name, l: s.name }));
+  if (current && !isCanonicalStyle(current)) opts.push({ v: current, l: `${current} (legacy)`, legacy: true });
   return opts;
 };
-const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), style_single_wythe:_STYLE_LIST.map(v=>({v,l:STYLE_LABEL(v)})), color:STANDARD_COLORS.map(v=>({v,l:v})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
+const colorOptionsFor = (current) => {
+  const opts = COLOR_CATALOG.map(c => ({ v: c.name, l: c.name }));
+  if (current && isLegacyColor(current)) opts.push({ v: current, l: `${current} (legacy)`, legacy: true });
+  return opts;
+};
+// Map NewProjectForm line-type labels → fence_type keys understood by the filter.
+const NP_LINE_TYPE_TO_FT = { 'Precast':'PC', 'Single Wythe':'SW', 'Wrought Iron':'WI', 'Wood':'Wood' };
+const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:STYLE_CATALOG.map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), style_single_wythe:STYLE_CATALOG.filter(s=>s.applies_to_sw).map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), color:COLOR_CATALOG.map(c=>({v:c.name,l:c.name})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
 const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'material_ready', material_ready:'active_install', active_install:'fence_complete', fence_complete:'fully_complete', fully_complete:'closed' };
 
 // ═══ MOLD SHARING ═══
@@ -370,6 +421,12 @@ function MobileKanban({columns, renderCard, emptyMessage='No items'}) {
 
 // Phase 3: viewport breakpoint hook. Returns true below `bp` px wide.
 // Used by pages that render a card stack on mobile instead of a table.
+// CatalogContext — carries the canonical styles/colors loaded from the
+// `styles` / `colors` tables. App hydrates at mount; consumers subscribe via
+// useCatalog() so they re-render when the hydration lands.
+const CatalogContext = React.createContext({ styles: STYLE_CATALOG, colors: COLOR_CATALOG, version: 0 });
+const useCatalog = () => React.useContext(CatalogContext);
+
 const useIsMobile = (bp = 768) => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
   useEffect(() => {
@@ -817,6 +874,7 @@ function useRealtime(setJobs) {
 const LINE_FENCE_TYPES=['PC','SW','WI','Wood','Other'];
 const LINE_HEIGHT_OPTIONS=["4'","5'","6'","7'","8'","9'","10'","Ranch - 2 Rail","Ranch - 3 Rail","Ranch - 4 Rail"];
 function LineItemsEditor({job,onChange,registerSave}){
+  useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
   const[lines,setLines]=useState([]);
   const[loading,setLoading]=useState(true);
   const[dirty,setDirty]=useState(false);
@@ -824,26 +882,10 @@ function LineItemsEditor({job,onChange,registerSave}){
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
   const[confirmDel,setConfirmDel]=useState(null);
-  /* Style options come from DD.style (overridden at runtime from
-     material_calc_styles.is_active=true — see line ~14101). This keeps the
-     Line Items dropdown consistent with the main project Style dropdown.
-     The sbGet('jobs') was previously fetched here to union legacy styles into
-     the list — no longer needed because render falls back to showing the
-     current value as an option if it's not in DD.style (line 804 pattern). */
-  const[colorOpts,setColorOpts]=useState(STANDARD_COLORS);
-  useEffect(()=>{
-    (async()=>{
-      try{
-        const[jColors,liColors]=await Promise.all([
-          sbGet('jobs','select=color&limit=5000'),
-          sbGet('job_line_items','select=color&limit=5000')
-        ]);
-        const cs=new Set(STANDARD_COLORS);
-        [...(jColors||[]),...(liColors||[])].forEach(r=>{if(r.color&&typeof r.color==='string')cs.add(r.color.trim());});
-        setColorOpts([...cs].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
-      }catch(e){}
-    })();
-  },[]);
+  /* Style and color options come from the canonical `styles` / `colors`
+     lookup tables via the CatalogContext. Options are filtered by the line's
+     fence_type; if the row carries a legacy value not in the canonical list
+     it's surfaced as a "(legacy)" option so users don't silently lose it. */
   const loadLines=useCallback(async()=>{
     if(!job?.job_number){setLines([]);setLoading(false);return;}
     setLoading(true);
@@ -1004,17 +1046,17 @@ function LineItemsEditor({job,onChange,registerSave}){
             {/* Row 2: Style, Color, Produced */}
             <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
               <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
-                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)} style={{...inp,width:'100%',minWidth:180}}>
+                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)}
+                  style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
                   <option value="">—</option>
-                  {DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-                  {l.style&&!DD.style.some(o=>o.v===l.style)&&<option value={l.style}>{STYLE_LABEL(l.style)}</option>}
+                  {styleOptionsFor(l.style,l.fence_type).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
                 </select>
               </div>
               <div style={{flex:'2 1 200px',minWidth:180}}><label style={fieldLabel}>Color</label>
-                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)} style={{...inp,width:'100%',minWidth:160}}>
+                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)}
+                  style={{...inp,width:'100%',minWidth:160,...(l.color&&isLegacyColor(l.color)?{fontStyle:'italic'}:{})}}>
                   <option value="">—</option>
-                  {colorOpts.map(c=><option key={c} value={c}>{c}</option>)}
-                  {l.color&&!colorOpts.includes(l.color)&&<option value={l.color}>{l.color}</option>}
+                  {colorOptionsFor(l.color).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
                 </select>
               </div>
               {isPC&&<div style={{flex:'1 1 140px',minWidth:140,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -1559,6 +1601,7 @@ const lineSubtotal=(li)=>{
   return n(li.lf)*n(li.rate);
 };
 function NewProjectForm({jobs,onClose,onSaved}){
+  useCatalog(); // subscribe so style/color dropdowns re-render on hydration
   const todayISO=new Date().toISOString().split('T')[0];
   const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
   const[leadMatch,setLeadMatch]=useState(null);
@@ -1811,14 +1854,14 @@ function NewProjectForm({jobs,onClose,onSaved}){
               {(lt==='Precast'||lt==='Single Wythe')&&<>
                 <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
-                <div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>
-                <div>{fLbl('Color')}<select value={li.color||''} onChange={e=>u('color',e.target.value)} style={inputS}><option value="">— Select —</option>{STANDARD_COLORS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                <div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{stylesForFenceType(NP_LINE_TYPE_TO_FT[lt]).map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select></div>
+                <div>{fLbl('Color')}<select value={li.color||''} onChange={e=>u('color',e.target.value)} style={inputS}><option value="">— Select —</option>{COLOR_CATALOG.map(c=><option key={c.name} value={c.name}>{c.name}</option>)}</select></div>
                 <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Precast'?rateHint('contract_rate_precast'):rateHint('contract_rate_single_wythe')} style={inputS}/></div>
               </>}
               {(lt==='Wrought Iron'||lt==='Wood')&&<>
                 <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
-                <div>{fLbl('Style')}<input value={li.style} onChange={e=>u('style',e.target.value)} style={inputS}/></div>
+                <div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{stylesForFenceType(NP_LINE_TYPE_TO_FT[lt]).map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select></div>
                 <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Wrought Iron'?rateHint('contract_rate_wrought_iron'):''} style={inputS}/></div>
               </>}
               {lt==='Gate'&&<>
@@ -2409,6 +2452,7 @@ function ProjectCardList({jobs,onTap,emptyMessage='No projects found.'}){
 function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   const isMobile = useIsMobile();
   const auth = useAuth();
+  useCatalog(); // subscribe so inline style/color dropdowns re-render on hydration
   /* Inline editor permissions (Apr 20 2026 fix): previously ANY logged-in
      user could toggle "✏ Edit" and overwrite ytd_invoiced, status, pm, etc.
      Now gated to match the EditPanel drawer:
@@ -2546,11 +2590,17 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   };
   const visCD=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);
   const inlineField=(j,k)=>{
-    // For the color column, compose standard palette + the row's current legacy value (if any)
-    // so editing an existing job never silently drops the legacy color.
+    // Style: canonical list filtered by this job's fence_type, with the row's
+    // current legacy value preserved as a "(legacy)" option so editing never
+    // silently drops it.
+    if(k==='style'){
+      const opts=styleOptionsFor(j?.style,j?.fence_type);
+      return<select autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,...(inlE?.value&&!isCanonicalStyle(inlE.value)?{fontStyle:'italic'}:{})}}><option value="">—</option>{opts.map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}</select>;
+    }
+    // Color: canonical palette + row's current legacy color if present.
     if(k==='color'){
       const opts=colorOptionsFor(j?.color);
-      return<select autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;
+      return<select autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,...(inlE?.value&&isLegacyColor(inlE.value)?{fontStyle:'italic'}:{})}}><option value="">—</option>{opts.map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}</select>;
     }
     const dd=DD[k];if(dd)return<select autoFocus value={inlE?.value||''} onChange={e=>{setInlE({...inlE,value:e.target.value});}} onBlur={saveInline} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12}}><option value="">—</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>;if(k==='est_start_date'||k==='last_billed')return<input autoFocus type="date" value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;return<input autoFocus value={inlE?.value||''} onChange={e=>setInlE({...inlE,value:e.target.value})} onBlur={saveInline} onKeyDown={e=>{if(e.key==='Enter')saveInline();if(e.key==='Escape')setInlE(null);}} onClick={e=>e.stopPropagation()} style={{...inputS,padding:'4px 6px',fontSize:12,width:'100%'}}/>;
   };
@@ -7343,6 +7393,7 @@ function PMReportSection({sk,title,filled,isOpen,onToggle,children}){
   </div>;
 }
 function PMDailyReportPage({jobs}){
+  useCatalog(); // subscribe for canonical style/color catalog re-render
   const isMobile=useIsMobile();
   const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('selected_pm')||'');
@@ -7528,7 +7579,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Precast Style at Time of Visit</label><select value={form.precast_style_onsite} onChange={e=>set('precast_style_onsite',e.target.value)} style={mSel}><option value="">— Select Style —</option>{DD.style.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}{form.precast_style_onsite&&!DD.style.some(o=>o.v===form.precast_style_onsite)&&<option value={form.precast_style_onsite}>{form.precast_style_onsite}</option>}</select></div>
+          <div><label style={lblStyle}>Precast Style at Time of Visit</label><select value={form.precast_style_onsite||''} onChange={e=>set('precast_style_onsite',e.target.value)} style={{...mSel,...(form.precast_style_onsite&&!isCanonicalStyle(form.precast_style_onsite)?{fontStyle:'italic'}:{})}}><option value="">— Select Style —</option>{styleOptionsFor(form.precast_style_onsite,'PC').map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}</select></div>
         </div>
       </PMReportSection>
       <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
@@ -15686,16 +15737,28 @@ function AppShell(){
   const fetchJobs=useCallback(async()=>{try{const d=await sbGet('jobs','select=*&order=created_at.desc');setJobs(d||[]);}catch(e){console.error(e);}setLoading(false);},[]);
   useEffect(()=>{fetchJobs();},[fetchJobs]);
   const handleGlobalRefresh=useCallback(async()=>{await fetchJobs();setRefreshKey(k=>k+1);},[fetchJobs]);
-  // Hydrate DD.style from mold_inventory (the canonical style master list —
-  // includes Ledgestone and other styles that were missing from the older
-  // material_calc_styles-based list). Dedup and drop the aggregate sentinel
-  // "All Styles". On fetch failure the hardcoded _STYLE_LIST fallback stands.
-  useEffect(()=>{sbGet('mold_inventory','select=style_name&order=style_name').then(d=>{
-    if(!Array.isArray(d)||!d.length)return;
-    const seen=new Set();const opts=[];
-    d.forEach(r=>{const s=(r.style_name||'').trim();if(!s||s==='All Styles'||seen.has(s))return;seen.add(s);opts.push({v:s,l:STYLE_LABEL(s)});});
-    if(opts.length){DD.style=opts;DD.style_single_wythe=opts;}
-  }).catch(()=>{});},[]);
+  // Hydrate canonical style + color catalogs from the `styles` / `colors`
+  // tables (see the CatalogContext). Keeps the module-level STYLE_CATALOG /
+  // COLOR_CATALOG mirrors in sync so non-React helpers (stylesForFenceType,
+  // colorOptionsFor, isCanonicalStyle/Color) work from anywhere. Also keeps
+  // DD.style / DD.style_single_wythe / DD.color updated for back-compat.
+  const [catalog, setCatalog] = useState({ styles: STYLE_CATALOG, colors: COLOR_CATALOG, version: 0 });
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      sbGet('styles', 'active=eq.true&select=*&order=display_order').catch(() => null),
+      sbGet('colors', 'active=eq.true&select=*&order=display_order').catch(() => null),
+    ]).then(([s, c]) => {
+      if (!mounted) return;
+      if (Array.isArray(s) && s.length) STYLE_CATALOG = s;
+      if (Array.isArray(c) && c.length) COLOR_CATALOG = c;
+      DD.style = STYLE_CATALOG.map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
+      DD.style_single_wythe = STYLE_CATALOG.filter(r => r.applies_to_sw).map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
+      DD.color = COLOR_CATALOG.map(r => ({ v: r.name, l: r.name }));
+      setCatalog({ styles: STYLE_CATALOG, colors: COLOR_CATALOG, version: Date.now() });
+    });
+    return () => { mounted = false; };
+  }, []);
   const live=useRealtime(setJobs);
   useEffect(()=>{try{localStorage.setItem('fc_side_collapsed',sideCollapsed?'1':'0');}catch(e){}},[sideCollapsed]);
   // Global Cmd+K / Ctrl+K
@@ -15708,6 +15771,7 @@ function AppShell(){
   const inlineW=v.desktop?desktopSideW:64;
   const contentBottomPad=v.mobile?72:0;
   return(
+    <CatalogContext.Provider value={catalog}>
     <div style={{display:'flex',height:'100vh',overflow:'hidden',width:'100%'}}>
       <VersionChecker/>
       <style>{`
@@ -15821,6 +15885,7 @@ function AppShell(){
       <ChatWidget currentPage={page}/>
       {showProfile&&<ProfileModal onClose={()=>setShowProfile(false)}/>}
     </div>
+    </CatalogContext.Provider>
   );
 }
 
