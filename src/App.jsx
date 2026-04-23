@@ -5493,6 +5493,27 @@ function MaterialCalcPage({jobs,preJob}){
         const rebarPieces=postCount*(n(plantCfg.rebar_pieces_per_post)||2);
         const pvcLF=n(lf)*(n(plantCfg.pvc_lf_per_60lf_fence)||20)/60;
         const siliconeTubes=Math.ceil(n(lf)/50)*(n(plantCfg.silicone_tubes_per_50lf_fence)||1);
+        // Production Estimates — batches needed + adaptive pour time. Hidden
+        // when cyTotal rounds to 0 or any of the three plant_config keys is
+        // missing/zero (defensive — these keys should always be seeded).
+        const cydPerBatch=n(plantCfg.cyd_per_batch);
+        const dailyCyCap=n(plantCfg.daily_cy_capacity);
+        const shiftHours=n(plantCfg.shift_length_hours);
+        const hasPlantCap=cydPerBatch>0&&dailyCyCap>0&&shiftHours>0;
+        const showProdEst=cyTotal>0&&hasPlantCap;
+        if(cyTotal>0&&!hasPlantCap)console.warn('[MaterialCalc] plant_config missing cyd_per_batch / daily_cy_capacity / shift_length_hours — hiding Production Estimates');
+        let batches=0,pourDisplay='';
+        if(showProdEst){
+          batches=Math.ceil(cyTotal/cydPerBatch);
+          const pourHours=(cyTotal/dailyCyCap)*shiftHours;
+          if(pourHours<1){
+            // Adaptive floor: round to nearest 5 min, never display less than 5.
+            const rounded5=Math.round((pourHours*60)/5)*5;
+            pourDisplay=`~${Math.max(rounded5,5)} min`;
+          }else{
+            pourDisplay=`~${(Math.round(pourHours*10)/10).toFixed(1)} hr`;
+          }
+        }
         const fmt=v=>(Math.round((v||0)*100)/100).toFixed(2);
         const gateN=n(numGates);
         return <div style={{...card,marginTop:16,padding:0,overflow:'hidden'}}>
@@ -5533,6 +5554,17 @@ function MaterialCalcPage({jobs,preJob}){
                 <span style={{color:railCyRaw>0?'#1A1A1A':'#991B1B',fontWeight:600}}>{railCyRaw>0?`${fmt(cyRails)} CY  (${sectCount} × ${railCount} × ${fmt(railCyRaw)} CY)`:'N/A — missing rail CY'}</span>
               </div>
             </>}
+            {showProdEst&&<div style={{borderTop:'1px solid #E5E3E0',marginTop:10,paddingTop:10}}>
+              <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700,marginBottom:6,letterSpacing:0.5}}>Production Estimates</div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4}}>
+                <span style={{color:'#625650'}}>Batches</span>
+                <span style={{fontFamily:'Inter',fontWeight:700}}>{batches} batches (@ {fmt(cydPerBatch)} CY each)</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                <span style={{color:'#625650'}}>Pour Time</span>
+                <span style={{fontFamily:'Inter',fontWeight:700}}>{pourDisplay}</span>
+              </div>
+            </div>}
             <div style={{borderTop:'1px solid #E5E3E0',marginTop:10,paddingTop:10}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4}}>
                 <span style={{color:'#625650'}}>Rebar</span>
