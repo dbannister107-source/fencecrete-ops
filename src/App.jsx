@@ -239,6 +239,10 @@ const _COLOR_FALLBACK = [
 ];
 let STYLE_CATALOG = _STYLE_FALLBACK.slice();
 let COLOR_CATALOG = _COLOR_FALLBACK.slice();
+// Maps legacy/pricing-code color values (e.g. "8#860", "Silversmoke #860")
+// to their canonical color name ("Silversmoke"). Hydrated at app mount from
+// the `color_aliases` table joined to `colors`. Empty until that resolves.
+let COLOR_ALIAS_MAP = new Map();
 // Back-compat alias used by a handful of older callsites.
 const STANDARD_COLORS = _COLOR_FALLBACK.map(c => c.name);
 
@@ -260,6 +264,15 @@ const stylesForFenceType = (ft) => {
 const isCanonicalStyle = (name) => !!name && STYLE_CATALOG.some(s => s.name === name);
 const isCanonicalColor = (name) => !!name && COLOR_CATALOG.some(c => c.name === name);
 const isLegacyColor = (c) => !!c && !isCanonicalColor(c);
+// If `val` matches a known color_aliases row, return the canonical color name;
+// otherwise return `val` unchanged. Canonical values pass through untouched.
+// Safe to call before COLOR_ALIAS_MAP hydrates — just no-ops until then.
+const resolveColorAlias = (val) => {
+  if (!val) return val;
+  if (isCanonicalColor(val)) return val;
+  const hit = COLOR_ALIAS_MAP.get(val);
+  return hit || val;
+};
 // Builds the style dropdown options: canonical (filtered by fence_type) + the
 // row's current legacy value (tagged "(legacy)") if present, so users never
 // silently lose a historical tag. `legacy:true` lets the renderer italicize.
@@ -275,6 +288,33 @@ const colorOptionsFor = (current) => {
 };
 // Map NewProjectForm line-type labels → fence_type keys understood by the filter.
 const NP_LINE_TYPE_TO_FT = { 'Precast':'PC', 'Single Wythe':'SW', 'Wrought Iron':'WI', 'Wood':'Wood' };
+// Canonical style name (from `styles` table) → legacy name in `material_calc_styles`.
+// `null` means the canonical style has no material_calc row on purpose — the
+// Material Calculator should fall back to plant_config defaults and annotate.
+// `undefined` (key absent) means an unmapped canonical; treated the same as null
+// at lookup time but logged to the console so we notice gaps.
+const CANONICAL_TO_MATERIAL_CALC = {
+  'Rock': 'Rock Style',
+  'Rock Style Z': 'Rock Style Z Panels',
+  'Used Brick': 'Used Brick Style',
+  'Smooth': 'Smooth Style',
+  'Stucco': 'Stucco Style',
+  'Ledgestone': 'Ledgestone',
+  'CMU Block': 'Split Faced CMU Block Style',
+  'CMU Block Long': 'Long Split Faced CMU Block Style',
+  'Brick': null,
+  'Horizontal Wood': 'Horizontal Wood',
+  "Vertical Wood": "Vertical Wood 8'",
+  'Boxwood': 'Boxed Wood',
+  'Board & Batt': "Board & Batten Fence Style 6'",
+  'Wood Style': 'Wood Style',
+  'Wood Style Security': 'Wood Style Security',
+  'Ranch Rail - 2 Rail': 'Ranch Rail - 2 Rail',
+  'Ranch Rail - 3 Rail': 'Ranch Rail - 3 Rail',
+  'Ranch Rail - 4 Rail': 'Ranch Rail - 4 Rail',
+  'Wrought Iron': null,
+  'Customer Choice': null,
+};
 const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:STYLE_CATALOG.map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), style_single_wythe:STYLE_CATALOG.filter(s=>s.applies_to_sw).map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), color:COLOR_CATALOG.map(c=>({v:c.name,l:c.name})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
 const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'material_ready', material_ready:'active_install', active_install:'fence_complete', fence_complete:'fully_complete', fully_complete:'closed' };
 
@@ -4968,7 +5008,13 @@ function ReportsPage(props){return <ErrorBoundary label="Reports Page"><ReportsP
 
 /* ═══ MATERIAL CALCULATOR PAGE ═══ */
 function MaterialCalcPage({jobs,preJob}){
-  const[styles,setStyles]=useState([]);
+  // Subscribe so dropdowns re-render when STYLE_CATALOG / COLOR_CATALOG /
+  // COLOR_ALIAS_MAP hydrate; `version` also drives the color-alias retry effect.
+  const catalog=useCatalog();
+  // `calcStyles` holds the legacy material_calc_styles rows (math/CY per style).
+  // Dropdown options come from canonical STYLE_CATALOG; calcStyles is only used
+  // for the per-style CY/section/panel math via CANONICAL_TO_MATERIAL_CALC.
+  const[calcStyles,setCalcStyles]=useState([]);
   const[selJob,setSelJob]=useState(preJob||null);
   const[jobSearch,setJobSearch]=useState(preJob?preJob.job_name:'');
   const[selStyle,setSelStyle]=useState('');
@@ -4993,15 +5039,40 @@ function MaterialCalcPage({jobs,preJob}){
   const[gateSize,setGateSize]=useState('');
   const[plantCfg,setPlantCfg]=useState({});
 
-  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setStyles(d||[]));},[]);
+  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setCalcStyles(d||[]));},[]);
+  // Resolve the selected canonical style to a material_calc_styles row.
+  // Order of preference:
+  //   1. canonical → CANONICAL_TO_MATERIAL_CALC[canonical] → exact match on style_name
+  //   2. selStyle itself matches a style_name (legacy/manual selection)
+  //   3. null → caller uses plant_config defaults and renders a "no data" notice
+  const calcCfg=useMemo(()=>{
+    if(!selStyle)return null;
+    const legacy=CANONICAL_TO_MATERIAL_CALC[selStyle];
+    if(legacy)return calcStyles.find(s=>s.style_name===legacy)||null;
+    if(legacy===null)return null;
+    return calcStyles.find(s=>s.style_name===selStyle)||null;
+  },[calcStyles,selStyle]);
+  // Canonical style chosen but no matching calc row → show the defaults notice
+  const usingDefaultCfg=!!selStyle&&!calcCfg;
   // Fetch plant_config once for fallback CY values and global ratios (rebar/PVC/silicone).
   useEffect(()=>{sbGet('plant_config','select=key,value').then(rows=>{const m={};(rows||[]).forEach(r=>{m[r.key]=r.value;});setPlantCfg(m);}).catch(()=>{});},[]);
 
   const applyJob=useCallback((j)=>{
     setSelJob(j);setJobSearch(j.job_name);
-    const hasStyle=!!j.style,hasHeight=n(j.height_precast)>0,hasLf=n(j.lf_precast)>0;
-    setSelStyle(j.style||'');
-    setColor(j.color||'');
+    // Trim leading/trailing whitespace on style/color; a single stray space
+    // silently breaks the CANONICAL_TO_MATERIAL_CALC key lookup, which shows
+    // up as the "not in calculator" warning for values that really are
+    // canonical.
+    const rawStyle=(j.style||'').trim();
+    const rawColor=(j.color||'').trim();
+    const hasStyle=!!rawStyle,hasHeight=n(j.height_precast)>0,hasLf=n(j.lf_precast)>0;
+    setSelStyle(rawStyle);
+    // Jobs can be stored with raw pricing codes ("8#860") that don't match any
+    // canonical color name. Resolve through COLOR_ALIAS_MAP so the dropdown
+    // auto-selects the canonical value ("Silversmoke"). If the map hasn't
+    // hydrated yet, resolveColorAlias no-ops; the catalog-version effect below
+    // retries once it lands.
+    setColor(resolveColorAlias(rawColor));
     setHeight(hasHeight?j.height_precast:'');
     setLf(hasLf?j.lf_precast:'');
     setAutoFilled({style:hasStyle,height:hasHeight,lf:hasLf});
@@ -5015,11 +5086,25 @@ function MaterialCalcPage({jobs,preJob}){
     setResult(null);setOverrides({});setAutoCalculated(false);setLoadedSaved(false);
   },[]);
 
-  useEffect(()=>{if(preJob){applyJob(preJob);}else{try{const preId=localStorage.getItem('fc_matcalc_prejob');if(preId){const j=jobs.find(x=>x.id===preId);if(j)applyJob(j);localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}}},[preJob,jobs,applyJob]);
+  // Only clear the preJob handoff key after the target job is actually found
+  // and applied. If jobs[] hasn't hydrated on first run this effect fires
+  // again when it does, and we apply then.
+  useEffect(()=>{if(preJob){applyJob(preJob);return;}try{const preId=localStorage.getItem('fc_matcalc_prejob');if(!preId)return;const j=jobs.find(x=>x.id===preId);if(j){applyJob(j);localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}},[preJob,jobs,applyJob]);
+  // When COLOR_ALIAS_MAP hydrates after a job is already loaded, re-resolve
+  // the color so "8#860" → "Silversmoke" lands even in the race case. Noop
+  // if the value is already canonical or not aliased.
+  useEffect(()=>{if(!color)return;const resolved=resolveColorAlias(color);if(resolved!==color)setColor(resolved);},[catalog.version,color]);
 
   const[autoCalcPending,setAutoCalcPending]=useState(false);
-  const styleInCalc=useMemo(()=>!!styles.find(s=>s.style_name===selStyle),[styles,selStyle]);
-  useEffect(()=>{if(selJob&&selStyle&&styleInCalc&&n(height)>0&&n(lf)>0&&!result&&styles.length>0&&!loadedSaved){setAutoCalcPending(true);}},[selJob,selStyle,styleInCalc,height,lf,styles.length,result,loadedSaved]);
+  // A canonical style is considered "in-calc" if it either resolves via the
+  // mapping (calcCfg != null) or was explicitly marked null in the map (Brick,
+  // Wrought Iron, Customer Choice) — those run with plant_config defaults.
+  const styleInCalc=useMemo(()=>{
+    if(!selStyle)return false;
+    if(calcCfg)return true;
+    return Object.prototype.hasOwnProperty.call(CANONICAL_TO_MATERIAL_CALC,selStyle);
+  },[calcCfg,selStyle]);
+  useEffect(()=>{if(selJob&&selStyle&&styleInCalc&&n(height)>0&&n(lf)>0&&!result&&calcStyles.length>0&&!loadedSaved){setAutoCalcPending(true);}},[selJob,selStyle,styleInCalc,height,lf,calcStyles.length,result,loadedSaved]);
 
   const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
   const searchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
@@ -5051,8 +5136,12 @@ function MaterialCalcPage({jobs,preJob}){
   };
 
   const calculate=()=>{
-    const cfg=styles.find(s=>s.style_name===selStyle);
-    if(!cfg||!n(height)||!n(lf))return;
+    if(!selStyle||!n(height)||!n(lf))return;
+    // cfg may be null for canonical styles without a material_calc row (Brick,
+    // Wrought Iron, Customer Choice). In that case we substitute a minimal default
+    // so post/section/panel math still runs; the Materials Required section shows
+    // the "Using default CY values" notice and falls back to plant_config CY.
+    const cfg=calcCfg||{column_spacing:8,panel_multiplier:1,bottom_panels:0,top_panels:0,cap_rails_per_section:1,bottom_rails:0,middle_rails:0,top_rails:0,line_cap_ratio:0,stop_cap_ratio:0};
     const h=n(height);const linearFt=n(lf);
     const postHeight=Math.ceil((h+2)/2)*2;
     const sections=linearFt/cfg.column_spacing;
@@ -5063,8 +5152,12 @@ function MaterialCalcPage({jobs,preJob}){
 
     // Panels
     let regularPanels=0,halfPanels=0,bottomPanels=0,topPanels=0,middlePanels=0,specialLabel='';
-    const isCMU=selStyle.includes('CMU')||selStyle.includes('Split Faced');
-    const isZPanel=selStyle.includes('Z Panel');
+    // v2.2: style-flag checks use canonical selStyle OR resolved legacy name.
+    // "CMU Block"/"CMU Block Long" canonical → legacy "Split Faced CMU Block Style"
+    // contains "CMU" in both forms. "Rock Style Z" canonical → legacy "Rock Style Z Panels".
+    const legacyName=cfg.style_name||'';
+    const isCMU=selStyle.includes('CMU')||selStyle.includes('Split Faced')||legacyName.includes('CMU')||legacyName.includes('Split Faced');
+    const isZPanel=selStyle==='Rock Style Z'||legacyName.includes('Z Panel');
     // v2: Ranch Rail now has variants "Ranch Rail - 2 Rail / 3 Rail / 4 Rail".
     // Match by prefix so legacy "Ranch Rail" and all variants route through the same path.
     const isRanch=selStyle.startsWith('Ranch Rail');
@@ -5113,7 +5206,7 @@ function MaterialCalcPage({jobs,preJob}){
     setResult({postHeight,sections:Math.round(sections*10)/10,sectCeil,totalPosts,linePosts,cornerPosts,stopPosts,regularPanels:Math.round(regularPanels),halfPanels,bottomPanels,topPanels,middlePanels,totalPanels:Math.round(totalPanels),capRails,bottomRails,middleRails,topRails,totalRails,lineCaps,stopCaps,totalCaps,isCMU,isZPanel,isRanch,hasVertPanels,specialLabel});
     setOverrides({});
   };
-  useEffect(()=>{if(autoCalcPending&&styles.length>0&&selStyle&&n(height)>0&&n(lf)>0){setAutoCalcPending(false);calculate();setAutoCalculated(true);}},[autoCalcPending,styles,selStyle,height,lf]);
+  useEffect(()=>{if(autoCalcPending&&calcStyles.length>0&&selStyle&&n(height)>0&&n(lf)>0){setAutoCalcPending(false);calculate();setAutoCalculated(true);}},[autoCalcPending,calcStyles,selStyle,height,lf]);
 
   const ov=(key,def)=>overrides[key]!=null?overrides[key]:def;
   const setOv=(key,val)=>setOverrides(p=>({...p,[key]:val===''?undefined:parseInt(val)}));
@@ -5139,9 +5232,23 @@ function MaterialCalcPage({jobs,preJob}){
         </div>
         <div>
           <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style {autoFilled.style&&styleInCalc&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
-          <select value={selStyle} onChange={e=>{setSelStyle(e.target.value);setAutoFilled(a=>({...a,style:false}));}} style={{...inputS,background:autoFilled.style&&styleInCalc?'#EFF6FF':'#FFF'}}><option value="">— Select Style —</option>{styles.map(s=><option key={s.id} value={s.style_name}>{s.style_name}</option>)}</select>
+          {/* v2.2: options source is canonical STYLE_CATALOG (via styleOptionsFor),
+              matching Project Details. Legacy values on a job still render with
+              italic "(legacy)" so historical data isn't silently dropped. */}
+          {(()=>{const opts=styleOptionsFor(selStyle,undefined);const isLegacySel=!!selStyle&&!isCanonicalStyle(selStyle);return<select value={selStyle} onChange={e=>{setSelStyle(e.target.value);setAutoFilled(a=>({...a,style:false}));}} style={{...inputS,background:autoFilled.style&&styleInCalc?'#EFF6FF':'#FFF',...(isLegacySel?{fontStyle:'italic'}:{})}}>
+            <option value="">— Select Style —</option>
+            {opts.map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
+          </select>;})()}
           {selJob&&selJob.style&&!styleInCalc&&<div style={{marginTop:4,fontSize:10,color:'#B45309',fontWeight:600}}>⚠ "{selJob.style}" not in calculator — select manually</div>}
-          {selJob&&<div style={{marginTop:4,fontSize:11,color:'#625650'}}>Color: <span style={{fontWeight:700,color:'#1A1A1A'}}>{color||'—'}</span></div>}
+          {usingDefaultCfg&&<div style={{marginTop:4,fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Using default CY values — no style-specific data for {selStyle} yet.</div>}
+          {/* Color dropdown — canonical COLOR_CATALOG, legacy value rendered italic */}
+          {(()=>{const opts=colorOptionsFor(color);const isLegacySel=!!color&&isLegacyColor(color);return<>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginTop:8,marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Color</label>
+            <select value={color||''} onChange={e=>setColor(e.target.value)} style={{...inputS,...(isLegacySel?{fontStyle:'italic'}:{})}}>
+              <option value="">— Select Color —</option>
+              {opts.map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
+            </select>
+          </>;})()}
         </div>
         <div>
           <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height (ft) {autoFilled.height&&<span style={{color:'#1D4ED8',fontWeight:700,textTransform:'none'}}>(from project)</span>}</label>
@@ -5159,7 +5266,7 @@ function MaterialCalcPage({jobs,preJob}){
         </div>
       </div>
       {/* v2.1: secondary row — drainage (checkbox + radio + counts, drainage-eligible styles only) + gate fields */}
-      {(()=>{const cfg=styles.find(s=>s.style_name===selStyle);const drainageEligible=!!cfg?.drainage_eligible;const gateN=n(numGates);return<div style={{marginTop:14,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
+      {(()=>{const drainageEligible=!!calcCfg?.drainage_eligible;const gateN=n(numGates);return<div style={{marginTop:14,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
         {drainageEligible&&<div style={{marginBottom:12,padding:'10px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
           <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#1A1A1A',cursor:'pointer'}}>
             <input type="checkbox" checked={drainageNeeded} onChange={e=>{const c=e.target.checked;setDrainageNeeded(c);if(!c){setDrainageStyle('');setDrainageBottom('');setDrainageTop('');}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
@@ -5281,7 +5388,7 @@ function MaterialCalcPage({jobs,preJob}){
       </div>
       {/* v2.1: Materials Required — concrete totals with Regular + Drainage panel split, rebar/PVC/silicone, gate hardware */}
       {(()=>{
-        const cfg=styles.find(s=>s.style_name===selStyle)||{};
+        const cfg=calcCfg||{};
         const h=n(height);
         const postHeight=result.postHeight;
         const postCount=result.totalPosts;
@@ -15442,10 +15549,18 @@ function AppShell(){
     Promise.all([
       sbGet('styles', 'active=eq.true&select=*&order=display_order').catch(() => null),
       sbGet('colors', 'active=eq.true&select=*&order=display_order').catch(() => null),
-    ]).then(([s, c]) => {
+      // PostgREST embeds the related `colors` row via the color_id FK, giving
+      // us the canonical name for each alias in a single round-trip.
+      sbGet('color_aliases', 'select=alias,colors(name)').catch(() => null),
+    ]).then(([s, c, aliases]) => {
       if (!mounted) return;
       if (Array.isArray(s) && s.length) STYLE_CATALOG = s;
       if (Array.isArray(c) && c.length) COLOR_CATALOG = c;
+      if (Array.isArray(aliases) && aliases.length) {
+        const m = new Map();
+        aliases.forEach(a => { const canon = a?.colors?.name; if (a?.alias && canon) m.set(a.alias, canon); });
+        COLOR_ALIAS_MAP = m;
+      }
       DD.style = STYLE_CATALOG.map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
       DD.style_single_wythe = STYLE_CATALOG.filter(r => r.applies_to_sw).map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
       DD.color = COLOR_CATALOG.map(r => ({ v: r.name, l: r.name }));
