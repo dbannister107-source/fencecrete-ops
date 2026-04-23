@@ -239,6 +239,10 @@ const _COLOR_FALLBACK = [
 ];
 let STYLE_CATALOG = _STYLE_FALLBACK.slice();
 let COLOR_CATALOG = _COLOR_FALLBACK.slice();
+// Maps legacy/pricing-code color values (e.g. "8#860", "Silversmoke #860")
+// to their canonical color name ("Silversmoke"). Hydrated at app mount from
+// the `color_aliases` table joined to `colors`. Empty until that resolves.
+let COLOR_ALIAS_MAP = new Map();
 // Back-compat alias used by a handful of older callsites.
 const STANDARD_COLORS = _COLOR_FALLBACK.map(c => c.name);
 
@@ -260,6 +264,15 @@ const stylesForFenceType = (ft) => {
 const isCanonicalStyle = (name) => !!name && STYLE_CATALOG.some(s => s.name === name);
 const isCanonicalColor = (name) => !!name && COLOR_CATALOG.some(c => c.name === name);
 const isLegacyColor = (c) => !!c && !isCanonicalColor(c);
+// If `val` matches a known color_aliases row, return the canonical color name;
+// otherwise return `val` unchanged. Canonical values pass through untouched.
+// Safe to call before COLOR_ALIAS_MAP hydrates — just no-ops until then.
+const resolveColorAlias = (val) => {
+  if (!val) return val;
+  if (isCanonicalColor(val)) return val;
+  const hit = COLOR_ALIAS_MAP.get(val);
+  return hit || val;
+};
 // Builds the style dropdown options: canonical (filtered by fence_type) + the
 // row's current legacy value (tagged "(legacy)") if present, so users never
 // silently lose a historical tag. `legacy:true` lets the renderer italicize.
@@ -4995,7 +5008,9 @@ function ReportsPage(props){return <ErrorBoundary label="Reports Page"><ReportsP
 
 /* ═══ MATERIAL CALCULATOR PAGE ═══ */
 function MaterialCalcPage({jobs,preJob}){
-  useCatalog(); // subscribe so dropdowns re-render when STYLE_CATALOG/COLOR_CATALOG hydrate
+  // Subscribe so dropdowns re-render when STYLE_CATALOG / COLOR_CATALOG /
+  // COLOR_ALIAS_MAP hydrate; `version` also drives the color-alias retry effect.
+  const catalog=useCatalog();
   // `calcStyles` holds the legacy material_calc_styles rows (math/CY per style).
   // Dropdown options come from canonical STYLE_CATALOG; calcStyles is only used
   // for the per-style CY/section/panel math via CANONICAL_TO_MATERIAL_CALC.
@@ -5044,9 +5059,20 @@ function MaterialCalcPage({jobs,preJob}){
 
   const applyJob=useCallback((j)=>{
     setSelJob(j);setJobSearch(j.job_name);
-    const hasStyle=!!j.style,hasHeight=n(j.height_precast)>0,hasLf=n(j.lf_precast)>0;
-    setSelStyle(j.style||'');
-    setColor(j.color||'');
+    // Trim leading/trailing whitespace on style/color; a single stray space
+    // silently breaks the CANONICAL_TO_MATERIAL_CALC key lookup, which shows
+    // up as the "not in calculator" warning for values that really are
+    // canonical.
+    const rawStyle=(j.style||'').trim();
+    const rawColor=(j.color||'').trim();
+    const hasStyle=!!rawStyle,hasHeight=n(j.height_precast)>0,hasLf=n(j.lf_precast)>0;
+    setSelStyle(rawStyle);
+    // Jobs can be stored with raw pricing codes ("8#860") that don't match any
+    // canonical color name. Resolve through COLOR_ALIAS_MAP so the dropdown
+    // auto-selects the canonical value ("Silversmoke"). If the map hasn't
+    // hydrated yet, resolveColorAlias no-ops; the catalog-version effect below
+    // retries once it lands.
+    setColor(resolveColorAlias(rawColor));
     setHeight(hasHeight?j.height_precast:'');
     setLf(hasLf?j.lf_precast:'');
     setAutoFilled({style:hasStyle,height:hasHeight,lf:hasLf});
@@ -5060,7 +5086,14 @@ function MaterialCalcPage({jobs,preJob}){
     setResult(null);setOverrides({});setAutoCalculated(false);setLoadedSaved(false);
   },[]);
 
-  useEffect(()=>{if(preJob){applyJob(preJob);}else{try{const preId=localStorage.getItem('fc_matcalc_prejob');if(preId){const j=jobs.find(x=>x.id===preId);if(j)applyJob(j);localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}}},[preJob,jobs,applyJob]);
+  // Only clear the preJob handoff key after the target job is actually found
+  // and applied. If jobs[] hasn't hydrated on first run this effect fires
+  // again when it does, and we apply then.
+  useEffect(()=>{if(preJob){applyJob(preJob);return;}try{const preId=localStorage.getItem('fc_matcalc_prejob');if(!preId)return;const j=jobs.find(x=>x.id===preId);if(j){applyJob(j);localStorage.removeItem('fc_matcalc_prejob');}}catch(e){}},[preJob,jobs,applyJob]);
+  // When COLOR_ALIAS_MAP hydrates after a job is already loaded, re-resolve
+  // the color so "8#860" → "Silversmoke" lands even in the race case. Noop
+  // if the value is already canonical or not aliased.
+  useEffect(()=>{if(!color)return;const resolved=resolveColorAlias(color);if(resolved!==color)setColor(resolved);},[catalog.version,color]);
 
   const[autoCalcPending,setAutoCalcPending]=useState(false);
   // A canonical style is considered "in-calc" if it either resolves via the
@@ -15516,10 +15549,18 @@ function AppShell(){
     Promise.all([
       sbGet('styles', 'active=eq.true&select=*&order=display_order').catch(() => null),
       sbGet('colors', 'active=eq.true&select=*&order=display_order').catch(() => null),
-    ]).then(([s, c]) => {
+      // PostgREST embeds the related `colors` row via the color_id FK, giving
+      // us the canonical name for each alias in a single round-trip.
+      sbGet('color_aliases', 'select=alias,colors(name)').catch(() => null),
+    ]).then(([s, c, aliases]) => {
       if (!mounted) return;
       if (Array.isArray(s) && s.length) STYLE_CATALOG = s;
       if (Array.isArray(c) && c.length) COLOR_CATALOG = c;
+      if (Array.isArray(aliases) && aliases.length) {
+        const m = new Map();
+        aliases.forEach(a => { const canon = a?.colors?.name; if (a?.alias && canon) m.set(a.alias, canon); });
+        COLOR_ALIAS_MAP = m;
+      }
       DD.style = STYLE_CATALOG.map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
       DD.style_single_wythe = STYLE_CATALOG.filter(r => r.applies_to_sw).map(r => ({ v: r.name, l: STYLE_LABEL(r.name) }));
       DD.color = COLOR_CATALOG.map(r => ({ v: r.name, l: r.name }));
