@@ -2326,7 +2326,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
         <div style={{borderTop:'1px solid #E5E3E0',marginTop:10,paddingTop:10}}>
           <div style={{display:'flex',alignItems:'baseline',gap:6}}>
             <span style={{fontFamily:'Inter',fontSize:20,fontWeight:800,color:blColor}}>{blMonths.toFixed(1)}</span>
-            <span style={{fontSize:11,fontWeight:700,color:blColor}}>months backlog</span>
+            <span style={{fontSize:11,fontWeight:700,color:blColor}}>months precast backlog</span>
           </div>
           <div style={{fontSize:10,color:'#9E9B96',marginBottom:6}}>at {$k(blRunRate)}/mo run rate</div>
           {blMktTotal>0&&<div style={{display:'flex',height:8,borderRadius:4,overflow:'hidden',background:'#E5E3E0',marginBottom:4}}>
@@ -10140,7 +10140,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     let c='#065F46',bg='#D1FAE5';
     if(months>4){c='#991B1B';bg='#FEE2E2';}
     else if(months>=2){c='#B45309';bg='#FEF3C7';}
-    return{backlog,months,label:`${months.toFixed(1)} mo backlog`,c,bg};
+    return{backlog,months,label:`${months.toFixed(1)} mo precast backlog`,c,bg};
   },[jobs]);
   const filtered=useMemo(()=>{
     let f=leads;
