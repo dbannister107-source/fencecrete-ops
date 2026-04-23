@@ -2876,7 +2876,9 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const arActiveJobs=useMemo(()=>jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status)),[jobs]);
   const arSubByJob=useMemo(()=>{const m={};arSubs.forEach(s=>{m[s.job_id]=s;});return m;},[arSubs]);
   const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
-  const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed};},[arFilteredJobs,arSubByJob]);
+  // No-bill submissions are acknowledged but excluded from the AR pending-review
+  // bucket (they have no dollars to invoice). Tracked in their own counter.
+  const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0,noBill=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed,noBill};},[arFilteredJobs,arSubByJob]);
   const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}. YTD invoiced updated.`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
@@ -2997,7 +2999,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
       {/* Summary stats */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#625650'}}>Total Active Jobs</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#625650'}}>Submitted</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#625650'}}>Submitted{arStats.noBill>0?<span style={{marginLeft:6,fontStyle:'italic',color:'#9E9B96'}}>(+{arStats.noBill} no bill required)</span>:null}</div></div>
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing</div></div>
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arStats.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Reviewed by AR</div></div>
       </div>
@@ -3008,8 +3010,10 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
             <tr>{['Job #','Job Name','PM','Market','Style','Color','Height','Bill Sheet','Submitted Date','AR Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
           </thead>
           <tbody>{arTableData.map(({job:j,sub,status})=>{
-            const borderColor=status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
-            return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:status==='reviewed'?0.75:1}}>
+            const isNoBill=!!(sub&&sub.no_bill_required);
+            const borderColor=isNoBill?'#9E9B96':status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
+            const reasonLabel=isNoBill?(NO_BILL_REASON_LABELS[sub.no_bill_reason]||sub.no_bill_reason||''):'';
+            return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:isNoBill?0.7:status==='reviewed'?0.75:1,fontStyle:isNoBill?'italic':'normal',color:isNoBill?'#625650':undefined}}>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
@@ -3017,9 +3021,9 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.style||'—'}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.color||'—'}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.height_precast||'—'}</td>
-              <td style={{padding:'8px 10px'}}>{status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
+              <td style={{padding:'8px 10px'}}>{isNoBill?<span title={sub.no_bill_notes||''} style={{...pill('#625650','#E5E3E0'),fontStyle:'italic'}}>🚫 No bill required{reasonLabel?` (${reasonLabel})`:''}</span>:status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
-              <td style={{padding:'8px 10px'}}>{sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
+              <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
                 {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
                 {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
@@ -3134,12 +3138,18 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
     </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
-    {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
+    {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};const arIsNoBill=!!s.no_bill_required;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:'min(600px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
-          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{s.job_name}</div>
-          {s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
+          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',fontStyle:arIsNoBill?'italic':'normal'}}>{s.job_name}</div>
+          {arIsNoBill?<span style={pill('#625650','#E5E3E0')}>🚫 No bill required</span>:s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
         </div>
+        {arIsNoBill&&<div style={{marginTop:8,marginBottom:12,padding:'10px 14px',background:'#F4F4F2',border:'1px dashed #C8C4BD',borderRadius:8,color:'#625650',fontStyle:'italic'}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:4,color:'#1A1A1A',fontStyle:'normal'}}>🚫 PM marked this job as No Bill Required for {monthLabel(s.billing_month)}</div>
+          <div style={{fontSize:12}}>Reason: <b style={{fontStyle:'normal',color:'#1A1A1A'}}>{NO_BILL_REASON_LABELS[s.no_bill_reason]||s.no_bill_reason||'—'}</b></div>
+          {s.no_bill_notes&&<div style={{fontSize:12,marginTop:4}}>Notes: {s.no_bill_notes}</div>}
+          <div style={{fontSize:11,marginTop:6,color:'#9E9B96'}}>This submission is excluded from YTD totals and AR pending review.</div>
+        </div>}
         <div style={{fontSize:12,color:'#625650',marginBottom:4}}>#{s.job_number} · {s.pm} · {MS[s.market]||s.market||'—'}</div>
         <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
           {s.style&&<span>Style: <b style={{color:'#1A1A1A'}}>{s.style}</b></span>}
@@ -3185,8 +3195,9 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
           </div>;})()}
         </div>
         <div style={{background:'#F9F8F6',borderRadius:8,padding:12,marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:4}}>PM Notes</div><div style={{fontSize:13,color:s.notes?'#1A1A1A':'#9E9B96',whiteSpace:'pre-wrap',fontStyle:s.notes?'normal':'italic'}}>{s.notes||'No notes submitted by PM.'}</div></div>
-        {/* Invoice History */}
-        <div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
+        {/* Invoice History — hidden for No Bill Required submissions
+            (no dollars to invoice; row is excluded from YTD totals). */}
+        {!arIsNoBill&&<div style={{border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Invoice History</div>
           {invLoading?<div style={{color:'#9E9B96',fontSize:12,padding:'8px 0'}}>Loading...</div>:invEntries.length===0?<div style={{color:'#9E9B96',fontSize:12,fontStyle:'italic',padding:'8px 0',textAlign:'center'}}>No invoices entered yet.</div>:<div style={{marginBottom:12}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -3294,9 +3305,9 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
               </div>
             </div>
           )}
-        </div>
+        </div>}
         {/* Billing Summary */}
-        {renderBillDetail(s)}
+        {!arIsNoBill&&renderBillDetail(s)}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
           <button onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}} style={btnS}>Close</button>
         </div>
@@ -3331,6 +3342,10 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
 
 /* ═══ PM BILLING PAGE ═══ */
 const ACTIVE_BILL_STATUSES=['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
+// No Bill Required — structured reasons used by the PM Bill Sheet "No Bill"
+// modal and rendered back as labels on the AR review view.
+const NO_BILL_REASONS=[['waiting_customer','Waiting on customer'],['weather_delay','Weather delay'],['permit_delay','Permit delay'],['project_paused','Project paused'],['other','Other (describe below)']];
+const NO_BILL_REASON_LABELS=Object.fromEntries(NO_BILL_REASONS);
 
 function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const v=useViewport();
@@ -3366,6 +3381,15 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const[batchSubmitting,setBatchSubmitting]=useState(false);
   const[confirmReset,setConfirmReset]=useState(null);
   const[adminPinJob,setAdminPinJob]=useState(null);const[adminPin,setAdminPin]=useState('');const[adminPinErr,setAdminPinErr]=useState(false);
+  // No Bill Required modal — PM marks a job-month as having no billable activity.
+  // Saved row carries no_bill_required=true with all dollar/LF fields zeroed,
+  // ytd_applied=false, and a structured reason. AR sees it but excludes it from
+  // pending-review and YTD totals.
+  const[noBillModal,setNoBillModal]=useState(null);
+  const[noBillForm,setNoBillForm]=useState({reason:'',notes:''});
+  const[noBillSaving,setNoBillSaving]=useState(false);
+  // Columns to defensively zero on a No Bill submission (must exist in pm_bill_submissions).
+  const NO_BILL_ZERO_FIELDS=['labor_post_only','labor_post_panels','labor_complete','precast_other_lf','sw_foundation','sw_columns','sw_accent_columns','sw_large_columns','sw_panels','sw_complete','sw_other_lf','wi_gates','wi_fencing','wi_columns','one_line_other_lf','line_bonds','line_permits','remove_existing','gate_controls','lf_panels_washed','wood_fencing','mow_strip','pct_complete_pm','invoiced_amount'];
 
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_accent_columns','sw_large_columns','sw_panels','sw_complete','sw_other_lf','wi_gates','wi_fencing','wi_columns','wood_fencing','line_bonds','line_permits','remove_existing','gate_controls'];
   // Precast fields are entered as NUMBER OF POSTS and converted to LF
@@ -3527,6 +3551,73 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       setToast({message:e.message||'Submit failed',isError:true});
     }
     setSaving(null);
+  };
+
+  // Open the No Bill Required modal for a specific job. Resets the form.
+  const openNoBill=(job)=>{setNoBillModal({job});setNoBillForm({reason:'',notes:''});};
+  const closeNoBill=()=>{if(noBillSaving)return;setNoBillModal(null);setNoBillForm({reason:'',notes:''});};
+  const noBillCanConfirm=(()=>{if(!noBillForm.reason)return false;if(noBillForm.reason==='other'&&noBillForm.notes.trim().length<3)return false;return true;})();
+
+  // Save a No Bill submission. UPDATEs an existing row for the (job, month) pair
+  // if present, otherwise INSERTs a fresh row with all dollar/LF fields zeroed.
+  const submitNoBill=async()=>{
+    if(!noBillModal||!noBillCanConfirm||noBillSaving)return;
+    const job=noBillModal.job;
+    setNoBillSaving(true);
+    const reason=noBillForm.reason;
+    const notes=noBillForm.notes.trim();
+    const zeroed=Object.fromEntries(NO_BILL_ZERO_FIELDS.map(f=>[f,0]));
+    const nowIso=new Date().toISOString();
+    try{
+      const existing=subByJob[job.id];
+      let res,saved;
+      if(existing&&existing.id){
+        const patch={...zeroed,total_lf:0,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,ytd_applied:false,submitted_by:selPM,submitted_at:nowIso};
+        res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(patch)});
+        const txt=await res.text();
+        if(!res.ok)throw new Error(`Save failed (${res.status}): ${txt}`);
+        saved=txt?JSON.parse(txt):[];
+        const rec=(Array.isArray(saved)?saved[0]:saved)||{...existing,...patch};
+        setSubs(prev=>prev.map(s=>s.id===existing.id?{...rec,id:existing.id}:s));
+      }else{
+        const payload={billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:0,...zeroed,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,notes:'No bill required',ytd_applied:false,submitted_by:selPM,submitted_at:nowIso,ar_reviewed:false};
+        res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});
+        const txt=await res.text();
+        if(!res.ok)throw new Error(`Save failed (${res.status}): ${txt}`);
+        saved=txt?JSON.parse(txt):[];
+        const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
+        setSubs(prev=>[rec,...prev]);
+      }
+      setToast(`No Bill Required marked for ${job.job_name}`);
+      setNoBillModal(null);
+      setNoBillForm({reason:'',notes:''});
+      setExpandedRow(null);
+      setEditingRow(null);
+    }catch(e){
+      setToast({message:e.message||'Save failed',isError:true});
+    }
+    setNoBillSaving(false);
+  };
+
+  // Undo a No Bill submission so the PM can submit a real bill sheet. Clears
+  // the no_bill flags on the existing row and opens the editable LF form
+  // (with cleared values) so the PM can enter actual numbers.
+  const undoNoBill=async(job,sub)=>{
+    if(!sub||!sub.id)return;
+    try{
+      const res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({no_bill_required:false,no_bill_reason:null,no_bill_notes:null})});
+      const txt=await res.text();
+      if(!res.ok)throw new Error(`Undo failed (${res.status}): ${txt}`);
+      const saved=txt?JSON.parse(txt):[];
+      const rec=(Array.isArray(saved)?saved[0]:saved)||{...sub,no_bill_required:false,no_bill_reason:null,no_bill_notes:null};
+      setSubs(prev=>prev.map(s=>s.id===sub.id?{...rec,id:sub.id}:s));
+      setForms(prev=>({...prev,[job.id]:emptyForm()}));
+      setEditingRow(job.id);
+      setExpandedRow(job.id);
+      setToast(`Undone — enter actual bill sheet for ${job.job_name}`);
+    }catch(e){
+      setToast({message:e.message||'Undo failed',isError:true});
+    }
   };
 
   const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
@@ -3802,7 +3893,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     </div>}
     {/* Job list — compact rows */}
     {filteredJobs.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No jobs in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:6}}>
-      {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const rowBg=status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const borderColor=status==='reviewed'?'#3B82F6':status==='submitted'?'#10B981':'#EF4444';const icon=status==='reviewed'?'✅':status==='submitted'?'✓':'✗';const iconColor=status==='reviewed'?'#1D4ED8':status==='submitted'?'#10B981':'#EF4444';
+      {filteredJobs.map(j=>{const sub=subByJob[j.id];const status=getStatus(j);const isExp=expandedRow===j.id;const isEditing=editingRow===j.id;const form=getForm(j.id);const subDate=sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';const isNoBill=!!(sub&&sub.no_bill_required);const rowBg=isNoBill?'#F4F4F2':status==='reviewed'?'#EFF6FF':status==='submitted'?'#ECFDF5':'#FFF';const borderColor=isNoBill?'#9E9B96':status==='reviewed'?'#3B82F6':status==='submitted'?'#10B981':'#EF4444';const icon=isNoBill?'🚫':status==='reviewed'?'✅':status==='submitted'?'✓':'✗';const iconColor=isNoBill?'#625650':status==='reviewed'?'#1D4ED8':status==='submitted'?'#10B981':'#EF4444';
         return<div key={j.id} style={{background:rowBg,borderLeft:`3px solid ${borderColor}`,borderRadius:6,border:'1px solid #E5E3E0',overflow:'hidden'}}>
           {/* Compact row */}
           <div onClick={()=>status!=='reviewed'&&expandRow(j.id)} style={{display:'flex',alignItems:'center',gap:v?.ipad?14:10,padding:v?.ipad?'14px 16px':'10px 12px',cursor:status==='reviewed'?'default':'pointer',minHeight:v?.ipad?64:48}}>
@@ -3827,8 +3918,9 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
                   submission.total_lf (Precast LF + SW LF + One-Line-Items LF, Demo excluded). */}
               {sub&&n(sub.total_lf)>0&&<span title="Grand Total LF submitted this period (Demo excluded)" style={{fontSize:11,fontWeight:800,color:'#8A261D',background:'#FDF4F4',border:'1px solid #8A261D30',padding:'2px 8px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>{n(sub.total_lf).toLocaleString()} LF</span>}
               {sub&&n(sub.remove_existing)>0&&<span title="Demo LF (tracked separately, not in total)" style={{fontSize:10,fontWeight:700,color:'#B45309',background:'#FEF2F2',border:'1px dashed #FCA5A5',padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0}}>Demo {n(sub.remove_existing).toLocaleString()}</span>}
-              {status==='missing'&&<button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button>}
-              {status==='submitted'&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
+              {status==='missing'&&<><button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button><button onClick={e=>{e.stopPropagation();openNoBill(j);}} title="No billable activity for this month" style={{padding:'5px 10px',fontSize:11,fontWeight:700,borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#625650',cursor:'pointer'}}>🚫 No Bill</button></>}
+              {status==='submitted'&&isNoBill&&<><span title={sub.no_bill_notes||''} style={{fontSize:11,fontWeight:700,color:'#625650',fontStyle:'italic',padding:'2px 8px',background:'#E5E3E0',borderRadius:6,whiteSpace:'nowrap'}}>🚫 No bill required{sub.no_bill_reason?` — ${NO_BILL_REASON_LABELS[sub.no_bill_reason]||sub.no_bill_reason}`:''}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
+              {status==='submitted'&&!isNoBill&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
               {status==='reviewed'&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>}
             </div>
           </div>
@@ -3836,10 +3928,21 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
           {isExp&&status!=='reviewed'&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#FFF'}}>
             {(pmLineItemsByJob[j.job_number]||[]).length>0&&(()=>{const lis=pmLineItemsByJob[j.job_number];const lineTotal=lis.reduce((s,x)=>s+n(x.line_value),0);const contractTotal=lineTotal+n(j.lump_sum_amount)+n(j.change_orders);return<div style={{marginBottom:10,padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Contract Line Items ({lis.length})</div><div style={{display:'flex',flexDirection:'column',gap:3,marginBottom:6}}>{lis.map(li=><div key={li.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#1A1A1A'}}><span>#{li.line_number} · <b>{li.fence_type}</b> · {n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`} {li.style||''} {li.color?'· '+li.color:''}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</span></div>)}</div><div style={{borderTop:'1px solid #E5E3E0',paddingTop:6,display:'flex',flexDirection:'column',gap:2,fontSize:11}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Line items subtotal</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(lineTotal)}</span></div>{n(j.lump_sum_amount)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Lump sum</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.lump_sum_amount)}</span></div>}{n(j.change_orders)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Change orders</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</span></div>}<div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:4,marginTop:2}}><span style={{fontWeight:700,color:'#8A261D'}}>Total contract value</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#8A261D'}}>{$(contractTotal)}</span></div></div></div>;})()}
             {status==='submitted'&&!isEditing?<>
-              {renderLFReadOnly(sub)}
-              <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#625650'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}</div>
-              {sub.notes&&<div style={{fontSize:12,color:'#625650',marginTop:4}}>Notes: {sub.notes}</div>}
-              <div style={{marginTop:10,display:'flex',gap:8}}><button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button><button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button></div>
+              {isNoBill?<div style={{padding:'10px 14px',background:'#F4F4F2',border:'1px dashed #C8C4BD',borderRadius:8,fontStyle:'italic',color:'#625650'}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🚫 No bill required for {selMonthLabel}</div>
+                <div style={{fontSize:12}}>Reason: <b style={{fontStyle:'normal',color:'#1A1A1A'}}>{NO_BILL_REASON_LABELS[sub.no_bill_reason]||sub.no_bill_reason||'—'}</b></div>
+                {sub.no_bill_notes&&<div style={{fontSize:12,marginTop:4}}>Notes: {sub.no_bill_notes}</div>}
+              </div>:<>
+                {renderLFReadOnly(sub)}
+                <div style={{display:'flex',gap:12,marginTop:8,fontSize:12,color:'#625650'}}>{n(sub.total_lf)>0&&<span>Total LF: <b style={{color:'#1A1A1A'}}>{n(sub.total_lf).toLocaleString()}</b></span>}</div>
+                {sub.notes&&<div style={{fontSize:12,color:'#625650',marginTop:4}}>Notes: {sub.notes}</div>}
+              </>}
+              <div style={{marginTop:10,display:'flex',gap:8}}>
+                {isNoBill
+                  ?<button onClick={e=>{e.stopPropagation();undoNoBill(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>↺ Undo No Bill — Submit actual bill instead</button>
+                  :<button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button>}
+                <button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button>
+              </div>
             </>:<>
               {(n(j.lf_installed_to_date)>0||lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||n(j.lf_other)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=lfPC(j)+lfSW(j)+lfWI(j)+n(j.lf_other)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
                 📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#625650'}}> · last {fD(j.lf_last_billed_date)}</span>}
@@ -3880,6 +3983,30 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
       </div>
     </div>}
+    {noBillModal&&(()=>{const job=noBillModal.job;const otherInvalid=noBillForm.reason==='other'&&noBillForm.notes.trim().length>0&&noBillForm.notes.trim().length<3;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeNoBill}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(520px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4}}>Mark as No Bill Sheet Required — {selMonthLabel}</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:18}}>Job: <b style={{color:'#1A1A1A'}}>#{job.job_number||'—'} {job.job_name}</b></div>
+        <div style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.4,marginBottom:8}}>Why no bill this month? *</div>
+        <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:16}}>
+          {NO_BILL_REASONS.map(([val,label])=><label key={val} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',border:`1px solid ${noBillForm.reason===val?'#8A261D':'#E5E3E0'}`,borderRadius:8,background:noBillForm.reason===val?'#FDF4F4':'#FFF',cursor:'pointer',fontSize:13,fontWeight:noBillForm.reason===val?700:500,color:'#1A1A1A'}}>
+            <input type="radio" name="no_bill_reason" value={val} checked={noBillForm.reason===val} onChange={()=>setNoBillForm(p=>({...p,reason:val}))} style={{accentColor:'#8A261D'}}/>
+            {label}
+          </label>)}
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4,marginBottom:6}}>
+            Additional notes {noBillForm.reason==='other'?<span style={{color:'#DC2626'}}>(required for "Other" — min 3 chars)</span>:<span style={{color:'#9E9B96'}}>(optional)</span>}
+          </label>
+          <textarea value={noBillForm.notes} onChange={e=>setNoBillForm(p=>({...p,notes:e.target.value}))} rows={3} placeholder={noBillForm.reason==='other'?'Describe the reason...':'Any context for AR/PM team...'} style={{...inputS,padding:'8px 10px',fontSize:13,resize:'vertical',width:'100%',borderColor:otherInvalid?'#DC2626':'#E5E3E0'}}/>
+          {otherInvalid&&<div style={{color:'#DC2626',fontSize:11,marginTop:4,fontWeight:600}}>Notes must be at least 3 characters when "Other" is selected.</div>}
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={closeNoBill} disabled={noBillSaving} style={btnS}>Cancel</button>
+          <button onClick={submitNoBill} disabled={!noBillCanConfirm||noBillSaving} style={{...btnP,opacity:noBillCanConfirm&&!noBillSaving?1:0.5,cursor:noBillCanConfirm&&!noBillSaving?'pointer':'not-allowed'}}>{noBillSaving?'Saving...':'Confirm No Bill'}</button>
+        </div>
+      </div>
+    </div>;})()}
   </div>);
 }
 
