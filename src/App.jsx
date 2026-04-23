@@ -1652,7 +1652,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
     const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);
   };
   const skipLeadMatch=()=>{const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);};
-  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO});
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO,drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
@@ -1672,6 +1672,35 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const updateLineItem=(idx,key,val)=>setF(p=>({...p,lineItems:p.lineItems.map((l,i)=>i===idx?{...l,[key]:val}:l)}));
   // Fetch avg rates when market changes
   useEffect(()=>{if(!f.market)return;const mj=jobs.filter(j=>j.market===f.market);const avg=(field)=>{const valid=mj.filter(j=>n(j[field])>0);return valid.length?Math.round(valid.reduce((s,j)=>s+n(j[field]),0)/valid.length*100)/100:0;};setAvgRates({contract_rate_precast:avg('contract_rate_precast'),contract_rate_single_wythe:avg('contract_rate_single_wythe'),contract_rate_wrought_iron:avg('contract_rate_wrought_iron'),gate_rate:avg('gate_rate')});},[f.market,jobs]);
+  // Drainage eligibility — canonical line-item style resolves via
+  // CANONICAL_TO_MATERIAL_CALC to a legacy row in material_calc_styles; if
+  // that row has drainage_eligible=true, the line qualifies. We surface the
+  // drainage UI below the first qualifying precast/single-wythe line item
+  // (matches spec: "inline next to the style dropdown"). Legacy/manual values
+  // that already are a row name fall through to a direct lookup.
+  const[drainageEligibleSet,setDrainageEligibleSet]=useState(null); // null = not yet loaded
+  useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&select=style_name,drainage_eligible').then(rows=>{const s=new Set();(rows||[]).forEach(r=>{if(r.drainage_eligible)s.add(r.style_name);});setDrainageEligibleSet(s);}).catch(()=>setDrainageEligibleSet(new Set()));},[]);
+  const isStyleDrainageEligible=useCallback((canonical)=>{
+    if(!canonical||!drainageEligibleSet)return false;
+    const legacy=CANONICAL_TO_MATERIAL_CALC[canonical];
+    if(legacy)return drainageEligibleSet.has(legacy);
+    // canonical-absent-from-map but may itself be a legacy row name
+    return drainageEligibleSet.has(canonical);
+  },[drainageEligibleSet]);
+  const drainageEligibleLineIdx=useMemo(()=>{
+    for(let i=0;i<f.lineItems.length;i++){const li=f.lineItems[i];if((li.line_type==='Precast'||li.line_type==='Single Wythe')&&isStyleDrainageEligible(li.style))return i;}
+    return -1;
+  },[f.lineItems,isStyleDrainageEligible]);
+  // When no line qualifies (user switched from "Rock" to "Vertical Wood", or
+  // cleared the style) drop any drainage values so the saved job never carries
+  // stale drainage specs for a non-eligible fence.
+  useEffect(()=>{
+    if(drainageEligibleSet===null)return; // wait for hydration
+    if(drainageEligibleLineIdx!==-1)return;
+    if(!f.drainage_needed&&!f.drainage_style&&!f.drainage_bottom_count&&!f.drainage_top_count)return;
+    setF(p=>({...p,drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''}));
+  },[drainageEligibleLineIdx,drainageEligibleSet,f.drainage_needed,f.drainage_style,f.drainage_bottom_count,f.drainage_top_count]);
+  const setDrainagePatch=useCallback((patch)=>{setF(p=>({...p,...patch}));},[]);
   const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
   // Auto-calc from line items
   const ncv=f.lineItems.reduce((s,li)=>s+lineSubtotal(li),0);
@@ -1728,6 +1757,14 @@ function NewProjectForm({jobs,onClose,onSaved}){
     try{
       // Build the job row body
       const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
+      // Drainage: if the checkbox is off or the fence is no longer drainage-
+      // eligible, force the other 3 columns to canonical "off" values
+      // regardless of what was typed before unchecking.
+      const drainageOn=!!f.drainage_needed&&drainageEligibleLineIdx!==-1;
+      body.drainage_needed=drainageOn;
+      body.drainage_style=drainageOn?(f.drainage_style||null):null;
+      body.drainage_bottom_count=drainageOn?(n(f.drainage_bottom_count)||0):0;
+      body.drainage_top_count=drainageOn?(n(f.drainage_top_count)||0):0;
       delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
       // Sanitize empty-string date fields — PostgREST rejects '' for date columns
       ['contract_date','est_start_date','active_entry_date','billing_date','complete_date','last_billed'].forEach(k=>{if(body[k]==='')body[k]=null;});
@@ -1919,6 +1956,39 @@ function NewProjectForm({jobs,onClose,onSaved}){
                 <div>{fLbl('Rate ($/LF) (optional)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} style={inputS}/></div>
               </>}
             </div>
+            {/* Drainage panels block — renders inline on the first precast/SW
+                line whose style is drainage-eligible. Single job-level record
+                (one set of drainage_* columns on `jobs`), so only one line
+                shows the UI even if multiple eligible lines exist. */}
+            {idx===drainageEligibleLineIdx&&<div style={{marginTop:10,padding:'10px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#1A1A1A',cursor:'pointer'}}>
+                <input type="checkbox" checked={!!f.drainage_needed} onChange={e=>{const c=e.target.checked;setDrainagePatch(c?{drainage_needed:true}:{drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+                This fence needs drainage panels
+              </label>
+              {f.drainage_needed&&<>
+                <div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+                  <div>
+                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Drainage Style</label>
+                    <div style={{display:'flex',gap:12,alignItems:'center',minHeight:36}}>
+                      {['Diamond','Bottled'].map(opt=><label key={opt} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,cursor:'pointer'}}>
+                        <input type="radio" name="np_drainage_style" value={opt} checked={f.drainage_style===opt} onChange={()=>setDrainagePatch({drainage_style:opt})} style={{accentColor:'#8A261D'}}/>
+                        {opt}
+                      </label>)}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Bottom of Fence (panels)</label>
+                    <input type="number" min="0" value={f.drainage_bottom_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_bottom_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_bottom_count:String(nn)});}} placeholder="0" style={inputS}/>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Top of Fence (panels)</label>
+                    <input type="number" min="0" value={f.drainage_top_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_top_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_top_count:String(nn)});}} placeholder="0" style={inputS}/>
+                  </div>
+                </div>
+                {!f.drainage_style&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Pick Diamond or Bottled</div>}
+                {f.drainage_style&&!n(f.drainage_bottom_count)&&!n(f.drainage_top_count)&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Enter at least one count</div>}
+              </>}
+            </div>}
             {isLFType&&n(li.lf)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.lf).toLocaleString()} LF × ${n(li.rate)}/LF = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
             {lt==='Gate'&&n(li.quantity)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.quantity)} × {$(n(li.rate))} = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
           </div>;
