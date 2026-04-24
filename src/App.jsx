@@ -4148,7 +4148,7 @@ function ProdCard({j,move,locked,compact,billSub,onViewBill,onQuickView,onPrintO
 // meaningful to Max while Amiee's handoff is in play. The DB flag persists
 // as audit trail after the job leaves this column (Req 3).
 const contractExecutedSignal=j.status==='contract_review'&&!!j.contract_executed;
-return<div style={{...card,padding:12,marginBottom:6,position:'relative',...(contractExecutedSignal?{border:'2px solid #10B981',boxShadow:'0 0 0 1px rgba(16,185,129,0.18)'}:{})}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#854F0B','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#625650',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#625650',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}{contractExecutedSignal&&<span title="Amiee marked this contract executed — ready for material calc" style={{fontSize:10,color:'#065F46',background:'#D1FAE5',border:'1px solid #10B98140',padding:'1px 6px',borderRadius:4,fontWeight:700}}>✓ Contract Executed</span>}</div>{/* Reconciliation warning — material calc ran before Amiee marked the contract executed (or she reverted afterward). Soft signal that the job needs either Amiee to sign off retroactively or Max to re-confirm his numbers. */}{j.status==='contract_review'&&!j.contract_executed&&j.material_calc_date&&<div title="Material calc ran without contract executed — Amiee and Max should reconcile" style={{marginTop:4,padding:'4px 8px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:4,fontSize:10,fontWeight:700,color:'#B45309',textAlign:'center'}}>⚠ Material calc ran but contract not executed — reconcile</div>}{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{!compact&&(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();/* Soft guard — calc before Amiee marks contract executed is allowed (plant idle-time reality) but warned + logged so David can audit the pattern. */if(!j.contract_executed){const proceed=window.confirm('⚠ Contract Not Yet Executed\n\nAmiee has not marked this contract as executed. Calculating materials before the contract is finalized is possible but increases risk if the deal changes.\n\nClick OK to proceed anyway (this will be logged).\nClick Cancel to go back.');if(!proceed)return;logAct(j,'workflow_override','contract_executed_bypass',false,'material_calc_run_before_contract_executed');}onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#FAEEDA',border:'1px solid #854F0B40',borderRadius:6,fontSize:10,color:'#185FA5'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#625650',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
+return<div style={{...card,padding:12,marginBottom:6,position:'relative',...(contractExecutedSignal?{border:'2px solid #10B981',boxShadow:'0 0 0 1px rgba(16,185,129,0.18)',background:'#ECFDF5'}:{})}}>{Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<div style={{position:'absolute',top:8,right:8,display:'flex',flexDirection:'column',gap:3,zIndex:1}}>{j.fence_addons.map(a=>{const ac={G:['#B45309','G'],C:['#854F0B','C'],WI:['#374151','WI']};const[bg,lbl]=ac[a]||['#625650',a];return<span key={a} style={{display:'block',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:bg,color:'#FFF',textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}>{lbl}</span>;})}</div>}<div style={{fontSize:10,color:'#9E9B96',marginBottom:1}}>#{j.job_number}</div><div style={{fontWeight:600,fontSize:13,marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',paddingRight:Array.isArray(j.fence_addons)&&j.fence_addons.length>0?36:0}}><span onClick={e=>{e.stopPropagation();if(onQuickView)onQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name}</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>{j.pm&&<span style={{fontSize:10,color:'#625650',background:'#F4F4F2',padding:'1px 5px',borderRadius:4}}>{j.pm}</span>}{contractExecutedSignal&&<span title="Amiee marked this contract executed — ready for material calc" style={{fontSize:10,color:'#065F46',background:'#A7F3D0',border:'1px solid #10B98140',padding:'1px 6px',borderRadius:4,fontWeight:700}}>✓ Contract Executed</span>}</div>{/* Reconciliation warning — material calc ran before Amiee marked the contract executed (or she reverted afterward). Soft signal that the job needs either Amiee to sign off retroactively or Max to re-confirm his numbers. */}{j.status==='contract_review'&&!j.contract_executed&&j.material_calc_date&&<div title="Material calc ran without contract executed — Amiee and Max should reconcile" style={{marginTop:4,padding:'4px 8px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:4,fontSize:10,fontWeight:700,color:'#B45309',textAlign:'center'}}>⚠ Material calc ran but contract not executed — reconcile</div>}{lineItems&&lineItems.length>0?<div style={{marginBottom:2}}>{lineItems.map((li,idx)=><div key={li.id||idx} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',lineHeight:1.35}}><span>{n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`}{li.style&&` ${li.style}`}{li.color&&` · ${li.color}`}</span>{idx===0&&<span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span>}</div>)}</div>:<><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#625650',marginBottom:2}}><span>{lfPC(j)>0?lfPC(j).toLocaleString()+' PC LF':lfTotal(j).toLocaleString()+' LF'}</span><span style={{fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{$(j.adj_contract_value||j.contract_value)}</span></div>{!compact&&(j.style||j.color||j.height_precast)&&<div style={{fontSize:10,color:'#9E9B96',marginBottom:2}}>{[j.style,j.color,j.height_precast?j.height_precast+'ft':null].filter(Boolean).join(' | ')}</div>}</>}{j.est_start_date&&<div style={{marginBottom:2}}><StartDateBadge date={j.est_start_date} status={j.status}/></div>}{j.status==='contract_review'&&!j.material_calc_date&&onCalcMaterials&&<div onClick={e=>{e.stopPropagation();/* Soft guard — calc before Amiee marks contract executed is allowed (plant idle-time reality) but warned + logged so David can audit the pattern. */if(!j.contract_executed){const proceed=window.confirm('⚠ Contract Not Yet Executed\n\nAmiee has not marked this contract as executed. Calculating materials before the contract is finalized is possible but increases risk if the deal changes.\n\nClick OK to proceed anyway (this will be logged).\nClick Cancel to go back.');if(!proceed)return;logAct(j,'workflow_override','contract_executed_bypass',false,'material_calc_run_before_contract_executed');}onCalcMaterials(j);}} style={{marginTop:4,padding:'6px 8px',background:'#FEF3C7',border:'1px solid #B4530940',borderRadius:6,fontSize:10,fontWeight:700,color:'#B45309',cursor:'pointer',textAlign:'center'}}>📋 Calculate materials to schedule →</div>}{j.status==='contract_review'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #065F4640',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✓ Materials calculated {new Date(j.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}{j.status==='production_queue'&&j.material_calc_date&&<div style={{marginTop:4,padding:'6px 8px',background:'#FAEEDA',border:'1px solid #854F0B40',borderRadius:6,fontSize:10,color:'#185FA5'}}>{totalPieces>0&&<div style={{fontWeight:700}}>📦 {totalPieces} pcs | {n(j.total_lf).toLocaleString()} LF</div>}{inPlanDate?<div style={{marginTop:2,fontWeight:600}}>✓ In plan for {inPlanDate}</div>:onAddToPlan&&<div onClick={e=>{e.stopPropagation();onAddToPlan(j);}} style={{marginTop:2,cursor:'pointer',fontWeight:700,textAlign:'center'}}>📅 Add to Plan →</div>}</div>}{j.status==='in_production'&&progressInfo&&<div style={{marginTop:4,padding:'6px 8px',background:'#DBEAFE',border:'1px solid #1D4ED840',borderRadius:6,fontSize:10,color:'#1D4ED8'}}><div style={{display:'flex',justifyContent:'space-between',fontWeight:700,marginBottom:3}}><span>{progressInfo.pct}%</span><span>{progressInfo.actual} of {progressInfo.planned} pcs</span></div><div style={{height:4,background:'#E5E3E0',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progressInfo.pct,100)}%`,background:'#1D4ED8'}}/></div><div style={{fontSize:9,marginTop:3,color:progressInfo.loggedToday?'#065F46':'#B45309'}}>{progressInfo.loggedToday?'✓ Logged today':'⚠ Not logged today'}</div></div>}{j.status==='material_ready'&&<div style={{marginTop:4,padding:'6px 8px',background:'#D1FAE5',border:'1px solid #10B98140',borderRadius:6,fontSize:10,fontWeight:700,color:'#065F46',textAlign:'center'}}>✅ Production complete{totalPieces>0?` — ${totalPieces} pcs ready`:''}</div>}<div style={{marginTop:4,paddingTop:4,borderTop:'1px solid #F4F4F2',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div>{ageSev&&<span style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:10,fontWeight:700,marginRight:4,background:ageSev==='critical'?'#FEE2E2':'#FEF3C7',color:ageSev==='critical'?'#991B1B':'#B45309'}}>{ageSev==='critical'?'🔴':'⏱'} {daysIn}d</span>}</div><div style={{display:'flex',gap:6,alignItems:'center'}}>{j.material_calc_date?<span onClick={e=>{e.stopPropagation();if(onPrintOrder)onPrintOrder(j);}} title={`Production order saved ${new Date(j.material_calc_date).toLocaleDateString()}`} style={{cursor:onPrintOrder?'pointer':'default',fontSize:12}}>📋</span>:<span title="No production order" style={{fontSize:9,color:'#C8C4BD'}}>📋</span>}{(()=>{const hasStyle=!!(j.style&&j.style.trim());const hasColor=!!(j.color&&j.color.trim());let bg,fg,label;if(hasStyle&&hasColor){bg='#DCFCE7';fg='#15803D';label='✓ Style & Color';}else if(hasStyle&&!hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Color';}else if(!hasStyle&&hasColor){bg='#FEF3C7';fg='#B45309';label='⚠ No Style';}else{bg='#FEE2E2';fg='#DC2626';label='✗ Style & Color';}const missing=!hasStyle||!hasColor;return<span onClick={e=>{if(missing&&onQuickView){e.stopPropagation();onQuickView(j);}}} title={missing?'Click to fix missing info':'Style and color confirmed'} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:bg,color:fg,cursor:missing?'pointer':'default',whiteSpace:'nowrap'}}>{label}</span>;})()}</div></div>{!locked&&<div style={{display:'flex',gap:4,marginTop:6}}>{ns&&<button onClick={()=>move(j,ns)} style={{flex:2,padding:'5px 4px',borderRadius:6,border:`1px solid ${SC[ns]}40`,background:SB_[ns],color:SC[ns],fontSize:10,fontWeight:700,cursor:'pointer'}}>→ {SS[ns]}</button>}<select onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{flex:1,padding:'4px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:10,color:'#625650',cursor:'pointer',background:'#FFF'}}><option value="">More...</option>{STS.filter(s=>s!==j.status&&s!==ns).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select></div>}</div>;}
 
 function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const isMobile = useIsMobile();
@@ -10245,6 +10245,14 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   const[lostExpanded,setLostExpanded]=useState(false);
   const[highlightId,setHighlightId]=useState(null);
   const[editLead,setEditLead]=useState(null);
+  // Table-view state. Kanban is the historical default; Sales Director workflows
+  // drop into Table for cross-stage sort/filter/export. Preference persists so
+  // David lands back in his last view on refresh.
+  const[viewMode,setViewMode]=useState(()=>{try{return localStorage.getItem('fencecrete_sales_pipeline_view')||'kanban';}catch(e){return'kanban';}});
+  useEffect(()=>{try{localStorage.setItem('fencecrete_sales_pipeline_view',viewMode);}catch(e){}},[viewMode]);
+  const[stageF,setStageF]=useState(new Set());
+  const[sortCol,setSortCol]=useState('expected_close_date');
+  const[sortDir,setSortDir]=useState('asc');
   const fetchLeads=useCallback(async()=>{setLoading(true);const d=await sbGet('leads','select=*&order=updated_at.desc');setLeads(Array.isArray(d)?d:[]);setLoading(false);},[]);
   useEffect(()=>{fetchLeads();sbGet('contacts','select=id,name,company,phone,email,market').then(d=>setContacts(Array.isArray(d)?d:[]));},[fetchLeads]);
   // Next open task per lead (soonest due_date wins) -- powers the follow-up chip on each lead card.
@@ -10276,6 +10284,67 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     if(search){const q=search.toLowerCase();f=f.filter(l=>`${l.company_name||''} ${l.project_description||''}`.toLowerCase().includes(q));}
     return f;
   },[leads,repF.size,mktF.size,search]);
+  // Table view: applies the existing filters + the stage filter, then sorts.
+  // Days-in-stage computed client-side from stage_entered_at (fallback to
+  // updated_at / created_at) so the column works even on older rows where
+  // stage_entered_at was never backfilled.
+  const daysInStage=useCallback((l)=>{const base=l.stage_entered_at||l.updated_at||l.created_at;return base?Math.floor((Date.now()-new Date(base).getTime())/86400000):null;},[]);
+  const dealValue=useCallback((l)=>n(l.estimated_value||l.proposal_value),[]);
+  const tableRows=useMemo(()=>{
+    let f=filtered;
+    if(stageF.size>0)f=f.filter(l=>stageF.has(l.stage));
+    const dir=sortDir==='asc'?1:-1;
+    const getV=(l)=>{
+      switch(sortCol){
+        case 'company_name':return(l.company_name||'').toLowerCase();
+        case 'project_description':return(l.project_description||'').toLowerCase();
+        case 'stage':{const idx=LEAD_STAGES.findIndex(s=>s.key===l.stage);return idx<0?99:idx;}
+        case 'deal_value':return dealValue(l);
+        case 'expected_close_date':return l.expected_close_date||'9999-12-31';
+        case 'sales_rep':return(l.sales_rep||'').toLowerCase();
+        case 'market':return(l.market||'').toLowerCase();
+        case 'fence_type':return(l.fence_type||'').toLowerCase();
+        case 'last_activity':return l.updated_at||l.created_at||'';
+        case 'days_in_stage':return daysInStage(l)??-1;
+        default:return'';
+      }
+    };
+    return[...f].sort((a,b)=>{const va=getV(a),vb=getV(b);if(va<vb)return-1*dir;if(va>vb)return 1*dir;return 0;});
+  },[filtered,stageF,sortCol,sortDir,dealValue,daysInStage]);
+  // Summary bar metrics — count, LF sum, value sum across the currently
+  // visible (filtered) rows. Recomputes only when tableRows changes.
+  // LF precedence: estimated_lf (the actual column on leads), falling back
+  // to lf if a future migration adds one. Value precedence: estimated_value,
+  // then proposal_value, then a generic value field.
+  const tableMetrics=useMemo(()=>{
+    let lf=0,val=0;
+    tableRows.forEach(l=>{lf+=n(l.estimated_lf||l.lf||0);val+=n(l.estimated_value||l.proposal_value||l.value||0);});
+    return{count:tableRows.length,lf,val};
+  },[tableRows]);
+  const clickSort=(col)=>{if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(col);setSortDir(col==='deal_value'||col==='days_in_stage'||col==='last_activity'?'desc':'asc');}};
+  const sortArrow=(col)=>sortCol!==col?'':sortDir==='asc'?' ▲':' ▼';
+  const clearAllFilters=()=>{setSearch('');setRepF(new Set());setMktF(new Set());setStageF(new Set());};
+  const exportPipelineCSV=()=>{
+    const today=new Date().toISOString().slice(0,10);
+    const rows=tableRows.map(l=>{
+      const stage=LEAD_STAGES.find(s=>s.key===l.stage)?.label||l.stage||'';
+      const days=daysInStage(l);
+      return{
+        'Lead/Deal':l.project_description||'',
+        'Company':l.company_name||'',
+        'Stage':stage,
+        'Deal Value':dealValue(l),
+        'Expected Close':l.expected_close_date||'',
+        'Owner':l.sales_rep||'',
+        'Market':MS[l.market]||l.market||'',
+        'Product':l.fence_type||'',
+        'Last Activity':(l.updated_at||l.created_at||'').slice(0,10),
+        'Days in Stage':days==null?'':days,
+      };
+    });
+    if(rows.length===0){setToast('Nothing to export for current filters');return;}
+    downloadCSV(`fencecrete-sales-pipeline-${today}.csv`,rows);
+  };
   const byStage=useMemo(()=>{
     const m={};LEAD_STAGES.forEach(s=>m[s.key]=[]);
     filtered.forEach(l=>{if(m[l.stage])m[l.stage].push(l);});
@@ -10401,12 +10470,39 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
       <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Sales Pipeline</h1>
-      <div style={{display:'flex',gap:8}}>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        {/* Kanban / Table segmented toggle — mirrors the existing fpill shape
+            so the component doesn't introduce a new control style. */}
+        <div role="group" aria-label="View mode" style={{display:'inline-flex',border:'1px solid #E5E3E0',borderRadius:8,overflow:'hidden'}}>
+          {[['kanban','Kanban'],['table','Table']].map(([k,l])=>{const active=viewMode===k;return(
+            <button key={k} onClick={()=>setViewMode(k)} style={{padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',border:'none',background:active?'#8A261D':'#FFF',color:active?'#FFF':'#625650'}}>{l}</button>
+          );})}
+        </div>
         <input ref={importInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:'none'}}/>
         {leads.length<10&&<button onClick={()=>importInputRef.current?.click()} disabled={importing} style={btnS} title="Available until pipeline has 10+ leads">{importing?'Parsing...':'Import Leads from Excel'}</button>}
         <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
       </div>
     </div>
+    {/* Summary bar — Table view only. Metrics react to search/rep/mkt/stage
+        filters via the tableRows memo. Hidden in Kanban since the per-column
+        footers already aggregate per stage. */}
+    {viewMode==='table'&&!loading&&(()=>{const cellStyle={flex:1,textAlign:'center',minWidth:120,padding:'4px 8px'};const numStyle={fontFamily:'Inter',fontSize:24,fontWeight:800,lineHeight:1.1};const labelStyle={fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:600,letterSpacing:0.5,marginTop:4};const divider={width:1,alignSelf:'stretch',background:'#E5E3E0',margin:'0 8px'};return(
+    <div style={{...card,padding:'14px 20px',marginBottom:12,display:'flex',alignItems:'center',flexWrap:'wrap'}}>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#1A1A1A'}}>{tableMetrics.count.toLocaleString()}</div>
+        <div style={labelStyle}>Opportunities</div>
+      </div>
+      <div style={divider}/>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#065F46'}}>{tableMetrics.lf.toLocaleString()}</div>
+        <div style={labelStyle}>LF</div>
+      </div>
+      <div style={divider}/>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#8A261D'}}>{$k(tableMetrics.val)}</div>
+        <div style={labelStyle}>Total Value</div>
+      </div>
+    </div>);})()}
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
@@ -10416,7 +10512,68 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
       <button onClick={()=>setMktF(new Set())} style={fpill(mktF.size===0)}>All</button>
       {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setMktF(prev=>{const s=new Set(prev);s.has(m)?s.delete(m):s.add(m);return s;})} style={fpill(mktF.has(m))}>{MS[m]}</button>)}
     </div>
+    {/* Table-only filter row: stage multi-select + CSV export. Hidden in
+        kanban since the stages are already columns. Owner filtering reuses
+        the REP pills above so we don't duplicate that control. */}
+    {viewMode==='table'&&!loading&&<div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>STAGE:</span>
+      <button onClick={()=>setStageF(new Set())} style={fpill(stageF.size===0)}>All</button>
+      {LEAD_STAGES.map(s=><button key={s.key} onClick={()=>setStageF(prev=>{const x=new Set(prev);x.has(s.key)?x.delete(s.key):x.add(s.key);return x;})} style={fpill(stageF.has(s.key))}>{s.label}</button>)}
+      <span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>{tableRows.length} lead{tableRows.length!==1?'s':''}</span>
+      <button onClick={exportPipelineCSV} style={{...btnS,marginLeft:'auto',fontSize:12}} title="Download visible rows as CSV">⬇ Export CSV</button>
+    </div>}
     {loading?<SkeletonKanban cols={5} cards={3}/>:
+    viewMode==='table'?(()=>{
+      // Column definitions. Mobile shows a subset; the rest stay reachable via
+      // horizontal scroll on the table container. Sort keys match tableRows.
+      const COLS=[
+        {key:'project_description',label:'Lead / Deal',mobile:true,align:'left'},
+        {key:'company_name',label:'Company',mobile:false,align:'left'},
+        {key:'stage',label:'Stage',mobile:true,align:'left'},
+        {key:'deal_value',label:'Deal Value',mobile:true,align:'right'},
+        {key:'expected_close_date',label:'Expected Close',mobile:false,align:'left'},
+        {key:'sales_rep',label:'Owner',mobile:true,align:'left'},
+        {key:'market',label:'Market',mobile:false,align:'left'},
+        {key:'fence_type',label:'Product',mobile:false,align:'left'},
+        {key:'last_activity',label:'Last Activity',mobile:false,align:'left'},
+        {key:'days_in_stage',label:'Days in Stage',mobile:false,align:'right'},
+      ];
+      const visibleCols=isMobile?COLS.filter(c=>c.mobile):COLS;
+      const thS={textAlign:'left',padding:'10px 12px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',cursor:'pointer',whiteSpace:'nowrap',letterSpacing:0.5,userSelect:'none',background:'#F9F8F6',position:'sticky',top:0,zIndex:2};
+      const tdS={padding:'10px 12px',fontSize:12,borderBottom:'1px solid #F4F4F2'};
+      if(tableRows.length===0){return <div style={{...card,padding:40,textAlign:'center'}}>
+        <div style={{color:'#9E9B96',fontSize:14,marginBottom:10}}>No leads match the current filters.</div>
+        <button onClick={clearAllFilters} style={btnS}>Clear filters</button>
+      </div>;}
+      return <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:isMobile?'auto':900}}>
+          <thead>
+            <tr>{visibleCols.map(c=><th key={c.key} onClick={()=>clickSort(c.key)} style={{...thS,textAlign:c.align}}>{c.label}{sortArrow(c.key)}</th>)}</tr>
+          </thead>
+          <tbody>{tableRows.map((l,i)=>{
+            const stageObj=LEAD_STAGES.find(s=>s.key===l.stage)||{label:l.stage||'—',color:'#625650',accent:'#F4F4F2'};
+            const dv=dealValue(l);
+            const days=daysInStage(l);
+            const rowBg=i%2===0?'#FFF':'#FAFAFA';
+            return <tr key={l.id} onClick={()=>setEditLead(l)} style={{cursor:'pointer',background:rowBg}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
+              {visibleCols.map(c=>{
+                if(c.key==='project_description')return <td key={c.key} style={{...tdS,fontWeight:600,maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.project_description||''}>{l.project_description||'—'}</td>;
+                if(c.key==='company_name')return <td key={c.key} style={{...tdS,color:'#625650',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.company_name||''}>{l.company_name||'—'}</td>;
+                if(c.key==='stage')return <td key={c.key} style={tdS}><span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:4,background:stageObj.accent,color:stageObj.color,letterSpacing:0.3,whiteSpace:'nowrap'}}>{stageObj.label}</span></td>;
+                if(c.key==='deal_value')return <td key={c.key} style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#8A261D'}}>{dv>0?$(dv):'—'}</td>;
+                if(c.key==='expected_close_date')return <td key={c.key} style={{...tdS,color:'#625650'}}>{fD(l.expected_close_date)}</td>;
+                if(c.key==='sales_rep')return <td key={c.key} style={tdS}>{l.sales_rep||'—'}</td>;
+                if(c.key==='market'){const m=l.market;return <td key={c.key} style={tdS}>{m?<span style={pill(MC[m]||'#625650',MB[m]||'#F4F4F2')}>{MS[m]||m}</span>:'—'}</td>;}
+                if(c.key==='fence_type')return <td key={c.key} style={{...tdS,color:'#625650'}}>{l.fence_type||'—'}</td>;
+                if(c.key==='last_activity'){const d=l.updated_at||l.created_at;return <td key={c.key} style={{...tdS,color:'#625650'}}>{fD(d)}</td>;}
+                if(c.key==='days_in_stage')return <td key={c.key} style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:600,color:days!=null&&days>=60?'#991B1B':days!=null&&days>=30?'#B45309':'#625650'}}>{days==null?'—':days+'d'}</td>;
+                return <td key={c.key} style={tdS}>—</td>;
+              })}
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>;
+    })():
     isMobile?<MobileKanban
       columns={LEAD_STAGES.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.accent,items:byStage[col.key]||[]}))}
       emptyMessage="No leads in this stage"
