@@ -2853,12 +2853,19 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);
     if(bStatusF==='never_billed')f=f.filter(j=>n(j.ytd_invoiced)===0&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));
     if(bStatusF==='stale')f=f.filter(j=>n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01'&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF]);
+  const auth=useAuth();
+  const currentUserEmail=(auth?.user?.email||'').trim();
   // ─── PM Submissions (AR Exception Dashboard) ───
   const[arMonth,setArMonth]=useState(curBillingMonth);
   const[arSubs,setArSubs]=useState([]);
   const[arPmF,setArPmF]=useState('');
   const[arMktF,setArMktF]=useState(null);
-  const[arViewF,setArViewF]=useState('submitted'); // Default to show submitted-not-yet-reviewed
+  // ar_reviewed=false, no_bill=false ⇒ "pending"; ar_reviewed=true ⇒ "reviewed"; no_bill_required=true ⇒ "no_bill".
+  const[arTab,setArTab]=useState('pending');
+  // Per-job invoice_entries aggregates for the current arMonth. Powers the
+  // "X invoices entered" hint on pending rows and the invoiced_amount sum
+  // written when Mark Reviewed is clicked inline.
+  const[arInvByJob,setArInvByJob]=useState({});
   const[arDetail,setArDetail]=useState(null);
   const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});
   const[invEntries,setInvEntries]=useState([]);
@@ -2872,14 +2879,57 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
-  useEffect(()=>{if(billingTab==='submissions')fetchArSubs();},[fetchArSubs,billingTab]);
+  const fetchArInvCounts=useCallback(async()=>{try{const d=await sbGet('invoice_entries',`billing_month=eq.${arMonth}&select=job_id,invoice_amount`);const m={};(d||[]).forEach(e=>{if(!m[e.job_id])m[e.job_id]={count:0,total:0};m[e.job_id].count++;m[e.job_id].total+=n(e.invoice_amount);});setArInvByJob(m);}catch(err){setArInvByJob({});}},[arMonth]);
+  useEffect(()=>{if(billingTab==='submissions'){fetchArSubs();fetchArInvCounts();}},[fetchArSubs,fetchArInvCounts,billingTab]);
   const arActiveJobs=useMemo(()=>jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status)),[jobs]);
   const arSubByJob=useMemo(()=>{const m={};arSubs.forEach(s=>{m[s.job_id]=s;});return m;},[arSubs]);
   const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
   // No-bill submissions are acknowledged but excluded from the AR pending-review
   // bucket (they have no dollars to invoice). Tracked in their own counter.
-  const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0,noBill=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,missing,reviewed,noBill};},[arFilteredJobs,arSubByJob]);
-  const arTableData=useMemo(()=>{let data=arFilteredJobs.map(j=>{const sub=arSubByJob[j.id];const status=sub?(sub.ar_reviewed?'reviewed':'submitted'):'missing';return{job:j,sub,status};});if(arViewF!=='all')data=data.filter(d=>d.status===arViewF);const order={missing:0,submitted:1,reviewed:2};data.sort((a,b)=>order[a.status]-order[b.status]||(a.job.job_name||'').localeCompare(b.job.job_name||''));return data;},[arFilteredJobs,arSubByJob,arViewF]);
+  const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0,noBill=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,pending:submitted,missing,reviewed,noBill};},[arFilteredJobs,arSubByJob]);
+  // Tab counts are computed from submissions (not jobs), honoring the active
+  // PM/Market filter so counts always match what the current tab will render.
+  const arTabCounts=useMemo(()=>{let subs=arSubs;if(arPmF)subs=subs.filter(s=>s.pm===arPmF);if(arMktF)subs=subs.filter(s=>s.market===arMktF);let pending=0,reviewed=0,noBill=0;subs.forEach(s=>{if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else pending++;});return{pending,reviewed,noBill,total:pending+reviewed+noBill};},[arSubs,arPmF,arMktF]);
+  const arTableData=useMemo(()=>{
+    let filtered=arSubs;
+    if(arPmF)filtered=filtered.filter(s=>s.pm===arPmF);
+    if(arMktF)filtered=filtered.filter(s=>s.market===arMktF);
+    if(arTab==='pending')filtered=filtered.filter(s=>!s.ar_reviewed&&!s.no_bill_required);
+    else if(arTab==='reviewed')filtered=filtered.filter(s=>!!s.ar_reviewed);
+    else if(arTab==='no_bill')filtered=filtered.filter(s=>!!s.no_bill_required);
+    return [...filtered].map(s=>{
+      // Fall back to submission-stored fields when the job is no longer active
+      // (e.g. viewing a historical month after the job closed) so the row still
+      // renders with Project Name / PM / Market rather than dashes.
+      const job=jobs.find(j=>j.id===s.job_id)||{id:s.job_id,job_name:s.job_name,job_number:s.job_number,pm:s.pm,market:s.market,style:s.style,color:s.color,height_precast:s.height};
+      const status=s.no_bill_required?'no_bill':s.ar_reviewed?'reviewed':'pending';
+      return{job,sub:s,status};
+    }).sort((a,b)=>(a.job.job_name||'').localeCompare(b.job.job_name||''));
+  },[arSubs,arPmF,arMktF,arTab,jobs]);
+  // Inline Mark Reviewed from the Pending tab: flips the flags and stamps
+  // invoiced_amount with SUM(invoice_entries). Distinct from the detail
+  // modal's "Mark Submission Complete" which also accepts a form amount —
+  // Virginia/Mary enter invoices via Add Invoice first, then hit this.
+  const markReviewedInline=async(sub)=>{
+    const info=arInvByJob[sub.job_id]||{count:0,total:0};
+    const reviewer=currentUserEmail||'AR';
+    try{
+      await sbPatch('pm_bill_submissions',sub.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:reviewer,ytd_applied:true,invoiced_amount:info.total||n(sub.invoiced_amount)||0});
+      fetchArSubs();
+      if(bumpRefresh)bumpRefresh();
+      setToast(`✓ ${sub.job_name||'Submission'} marked reviewed`);
+    }catch(err){setToast({message:err.message||'Mark reviewed failed',isError:true});}
+  };
+  // Revert is current-month only (enforced at render time). Leaves invoice
+  // entries and invoiced_amount alone so the data is preserved for re-review.
+  const revertToPending=async(sub)=>{
+    try{
+      await sbPatch('pm_bill_submissions',sub.id,{ar_reviewed:false,ar_reviewed_at:null,ar_reviewed_by:null});
+      fetchArSubs();
+      if(bumpRefresh)bumpRefresh();
+      setToast(`↺ ${sub.job_name||'Submission'} moved back to Pending`);
+    }catch(err){setToast({message:err.message||'Revert failed',isError:true});}
+  };
   const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}. YTD invoiced updated.`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
@@ -2992,17 +3042,28 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
         <button onClick={()=>setArMktF(null)} style={fpill(!arMktF)}>All</button>
         {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
-        <span style={{color:'#E5E3E0'}}>|</span>
-        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>View:</span>
-        {[['all','All Jobs'],['missing','Missing Only'],['submitted','Submitted'],['reviewed','Reviewed']].map(([k,l])=><button key={k} onClick={()=>setArViewF(k)} style={fpill(arViewF===k)}>{l}</button>)}
       </div>
-      {/* Summary stats */}
+      {/* Summary stats — mirrors the three review-status buckets so Virginia/Mary
+          can eyeball the month's progress regardless of which tab is active. */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#625650'}}>Total Active Jobs</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #10B981'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#10B981'}}>{arStats.submitted}</div><div style={{fontSize:11,color:'#625650'}}>Submitted{arStats.noBill>0?<span style={{marginLeft:6,fontStyle:'italic',color:'#9E9B96'}}>(+{arStats.noBill} no bill required)</span>:null}</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arStats.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Reviewed by AR</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{arTabCounts.pending}</div><div style={{fontSize:11,color:'#625650'}}>Pending Review</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arTabCounts.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Reviewed</div></div>
+        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing Submissions</div></div>
       </div>
+      {/* Sub-tabs — Pending / Reviewed / No Bill. Virginia's workflow is to
+          drain Pending → zero each month, so it is the default on page load. */}
+      {(()=>{const tabs=[['pending','⚠ Pending',arTabCounts.pending,'#B45309','#FEF3C7'],['reviewed','✓ Reviewed',arTabCounts.reviewed,'#1D4ED8','#DBEAFE'],['no_bill','🚫 No Bill',arTabCounts.noBill,'#625650','#E5E3E0']];return(
+      <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        {tabs.map(([k,label,count,fg,bg])=>{const active=arTab===k;return(
+          <button key={k} onClick={()=>setArTab(k)} style={{background:active?fg:'#FFF',border:`1.5px solid ${active?fg:'#E5E3E0'}`,borderRadius:8,padding:'8px 14px',fontSize:13,fontWeight:active?800:600,color:active?'#FFF':fg,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,transition:'all .15s'}}>
+            <span>{label}</span>
+            <span style={{background:active?'rgba(255,255,255,0.22)':bg,color:active?'#FFF':fg,borderRadius:10,padding:'1px 8px',fontSize:11,fontWeight:800,fontFamily:'Inter'}}>{count}</span>
+          </button>
+        );})}
+        <span style={{marginLeft:'auto',fontSize:11,color:'#9E9B96',fontWeight:600}}>{arTabCounts.total} total submission{arTabCounts.total!==1?'s':''}{arStats.missing>0?` · ${arStats.missing} job${arStats.missing!==1?'s':''} still missing`:''}</span>
+      </div>
+      );})()}
       {/* Main table */}
       <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 480px)'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -3010,28 +3071,45 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
             <tr>{['Job #','Job Name','PM','Market','Style','Color','Height','Bill Sheet','Submitted Date','AR Status','Actions'].map(h=><th key={h} style={thS}>{h}</th>)}</tr>
           </thead>
           <tbody>{arTableData.map(({job:j,sub,status})=>{
-            const isNoBill=!!(sub&&sub.no_bill_required);
-            const borderColor=isNoBill?'#9E9B96':status==='missing'?'#EF4444':status==='reviewed'?'#3B82F6':'#10B981';
+            const isNoBill=status==='no_bill';
+            const isReviewed=status==='reviewed';
+            const isPending=status==='pending';
+            const borderColor=isNoBill?'#9E9B96':isReviewed?'#3B82F6':'#B45309';
             const reasonLabel=isNoBill?(NO_BILL_REASON_LABELS[sub.no_bill_reason]||sub.no_bill_reason||''):'';
-            return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:isNoBill?0.7:status==='reviewed'?0.75:1,fontStyle:isNoBill?'italic':'normal',color:isNoBill?'#625650':undefined}}>
-              <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||'—'}</td>
-              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||'—'}</span></td>
-              <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||'—'}</td>
-              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.style||'—'}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.color||'—'}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.height_precast||'—'}</td>
-              <td style={{padding:'8px 10px'}}>{isNoBill?<span title={sub.no_bill_notes||''} style={{...pill('#625650','#E5E3E0'),fontStyle:'italic'}}>🚫 No bill required{reasonLabel?` (${reasonLabel})`:''}</span>:status==='missing'?<span style={pill('#991B1B','#FEE2E2')}>✗ Missing</span>:status==='reviewed'?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
-              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub&&sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
-              <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:sub&&sub.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:sub?<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>:<span style={{color:'#9E9B96',fontSize:11}}>—</span>}</td>
-              <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4}}>
-                {status==='missing'&&<button onClick={()=>setToast('Reminder noted for '+(j.pm||'PM'))} style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:6,color:'#B45309',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>Send Reminder</button>}
-                {sub&&<button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>}
+            const inv=arInvByJob[j.id]||{count:0,total:0};
+            const hasInv=inv.count>0;
+            // Background cue: pending-with-invoices gets a soft blue tint so
+            // Virginia can instantly spot "ready to review" rows. Reviewed
+            // rows are subdued. No Bill stays grey + italic.
+            const rowBg=isPending&&hasInv?'#F5F9FF':isReviewed?'#FAFBFC':undefined;
+            return<tr key={sub.id} style={{borderBottom:'1px solid #F4F4F2',borderLeft:`3px solid ${borderColor}`,opacity:isNoBill?0.75:1,fontStyle:isNoBill?'italic':'normal',color:isNoBill?'#625650':undefined,background:rowBg}}>
+              <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||sub.job_number||'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                <span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||sub.job_name||'—'}</span>
+                {isPending&&hasInv&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginTop:3,fontStyle:'normal'}}>ℹ {inv.count} invoice{inv.count!==1?'s':''} entered — click Mark Reviewed when verified</div>}
+                {isReviewed&&<div style={{fontSize:10,color:'#065F46',fontWeight:600,marginTop:3,fontStyle:'normal'}}>✓ Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}{sub.ar_reviewed_by?' by '+sub.ar_reviewed_by:''}</div>}
+              </td>
+              <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||sub.pm||'—'}</td>
+              <td style={{padding:'8px 10px'}}><span style={pill(MC[j.market||sub.market]||'#625650',MB[j.market||sub.market]||'#F4F4F2')}>{MS[j.market||sub.market]||'—'}</span></td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.style||sub.style||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.color||sub.color||'—'}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.height_precast||sub.height||'—'}</td>
+              <td style={{padding:'8px 10px'}}>{isNoBill?<span title={sub.no_bill_notes||''} style={{...pill('#625650','#E5E3E0'),fontStyle:'italic'}}>🚫 No bill required{reasonLabel?` (${reasonLabel})`:''}</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
+              <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
+              <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}</td>
+              <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                <button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>
+                {isPending&&<button onClick={()=>markReviewedInline(sub)} title="Mark this submission as reviewed" style={{background:'#065F46',border:'1px solid #065F46',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>✓ Mark Reviewed</button>}
+                {isReviewed&&arIsCurrent&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
               </div></td>
             </tr>;})}
           </tbody>
         </table>
-        {arTableData.length===0&&<div style={{padding:40,textAlign:'center'}}><div style={{color:'#9E9B96',fontSize:14}}>No jobs match current filters</div></div>}
+        {arTableData.length===0&&<div style={{padding:40,textAlign:'center'}}>
+          <div style={{color:'#9E9B96',fontSize:14}}>
+            {arTab==='pending'?(arTabCounts.total===0?'No submissions for this month yet.':'🎉 Inbox zero — no submissions pending review.'):arTab==='reviewed'?'No reviewed submissions yet.':'No "no bill required" submissions this month.'}
+          </div>
+        </div>}
       </div>
     </div>}
 
