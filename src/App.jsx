@@ -10289,6 +10289,16 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     };
     return[...f].sort((a,b)=>{const va=getV(a),vb=getV(b);if(va<vb)return-1*dir;if(va>vb)return 1*dir;return 0;});
   },[filtered,stageF,sortCol,sortDir,dealValue,daysInStage]);
+  // Summary bar metrics — count, LF sum, value sum across the currently
+  // visible (filtered) rows. Recomputes only when tableRows changes.
+  // LF precedence: estimated_lf (the actual column on leads), falling back
+  // to lf if a future migration adds one. Value precedence: estimated_value,
+  // then proposal_value, then a generic value field.
+  const tableMetrics=useMemo(()=>{
+    let lf=0,val=0;
+    tableRows.forEach(l=>{lf+=n(l.estimated_lf||l.lf||0);val+=n(l.estimated_value||l.proposal_value||l.value||0);});
+    return{count:tableRows.length,lf,val};
+  },[tableRows]);
   const clickSort=(col)=>{if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(col);setSortDir(col==='deal_value'||col==='days_in_stage'||col==='last_activity'?'desc':'asc');}};
   const sortArrow=(col)=>sortCol!==col?'':sortDir==='asc'?' ▲':' ▼';
   const clearAllFilters=()=>{setSearch('');setRepF(new Set());setMktF(new Set());setStageF(new Set());};
@@ -10451,6 +10461,26 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
         <button onClick={()=>setShowNewForm(true)} style={btnP}>+ New Lead</button>
       </div>
     </div>
+    {/* Summary bar — Table view only. Metrics react to search/rep/mkt/stage
+        filters via the tableRows memo. Hidden in Kanban since the per-column
+        footers already aggregate per stage. */}
+    {viewMode==='table'&&!loading&&(()=>{const cellStyle={flex:1,textAlign:'center',minWidth:120,padding:'4px 8px'};const numStyle={fontFamily:'Inter',fontSize:24,fontWeight:800,lineHeight:1.1};const labelStyle={fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:600,letterSpacing:0.5,marginTop:4};const divider={width:1,alignSelf:'stretch',background:'#E5E3E0',margin:'0 8px'};return(
+    <div style={{...card,padding:'14px 20px',marginBottom:12,display:'flex',alignItems:'center',flexWrap:'wrap'}}>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#1A1A1A'}}>{tableMetrics.count.toLocaleString()}</div>
+        <div style={labelStyle}>Opportunities</div>
+      </div>
+      <div style={divider}/>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#065F46'}}>{tableMetrics.lf.toLocaleString()}</div>
+        <div style={labelStyle}>LF</div>
+      </div>
+      <div style={divider}/>
+      <div style={cellStyle}>
+        <div style={{...numStyle,color:'#8A261D'}}>{$k(tableMetrics.val)}</div>
+        <div style={labelStyle}>Total Value</div>
+      </div>
+    </div>);})()}
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company or project..." style={{...inputS,width:220,padding:'6px 10px',fontSize:12}}/>
       <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,marginLeft:6}}>REP:</span>
