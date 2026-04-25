@@ -202,6 +202,17 @@ const MC = { SA:'#8A261D', HOU:'#0F6E56', AUS:'#854F0B', DFW:'#185FA5', CS:'#7C3
 const MB = { SA:'#FDF4F4', HOU:'#E1F5EE', AUS:'#FAEEDA', DFW:'#E6F1FB', CS:'#EDE9FE', OOS:'#F3F4F6' };
 const MS = { SA:'SA', HOU:'HOU', AUS:'AUS', DFW:'DFW', CS:'CS', OOS:'OOS' };
 const MKT_CODE={ SA:'S', HOU:'H', AUS:'A', DFW:'D', CS:'CS', OOS:'O' };
+// Parses a SharePoint Active Jobs URL into a "Market / Folder" label for
+// the Open button tooltip. Falls back to a generic label if the URL doesn't
+// match the expected /Active%20Jobs/<market>/<folder> shape.
+const getSharePointTooltip=(url)=>{
+  if(!url)return'Open in SharePoint';
+  try{
+    const m=url.match(/Active%20Jobs\/([^/]+)\/(.+?)(?:\?|$)/);
+    if(!m)return'Open in SharePoint';
+    return`Open: ${decodeURIComponent(m[1])} / ${decodeURIComponent(m[2])}`;
+  }catch{return'Open in SharePoint';}
+};
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
@@ -1414,7 +1425,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             const folderUrl=form.sharepoint_folder_url;
             if(folderUrl){
               return <button
-                title="Open the SharePoint folder for this project"
+                title={getSharePointTooltip(folderUrl)}
                 onClick={()=>window.open(folderUrl,'_blank','noopener')}
                 style={{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
               >📁 Open SharePoint Folder</button>;
