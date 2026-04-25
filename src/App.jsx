@@ -1164,6 +1164,14 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[reopening,setReopening]=useState(false);
   const[showReopenPicker,setShowReopenPicker]=useState(false);
   const[showStatusPicker,setShowStatusPicker]=useState(false);
+  // SharePoint folder automation. Options list is fetched lazily when the
+  // modal opens so we don't hit the jobs table on every panel mount.
+  const[showSharepointModal,setShowSharepointModal]=useState(false);
+  const[sharepointSubmitting,setSharepointSubmitting]=useState(false);
+  const[sharepointError,setSharepointError]=useState(null);
+  const[sharepointSource,setSharepointSource]=useState('template');
+  const[sharepointSourceUrl,setSharepointSourceUrl]=useState('');
+  const[sharepointFolderOptions,setSharepointFolderOptions]=useState([]);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
   useEffect(()=>{
@@ -1193,6 +1201,57 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       sbGet('pis_tokens',`job_id=eq.${resolvedJobId}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
     }catch(e){alert('Send failed: '+e.message);}
     setPisSending(false);
+  };
+  // Hydrate the "copy existing project" dropdown when the SharePoint modal
+  // opens. Defaults source to "existing" and pre-selects the most recent
+  // same-customer folder when one is available; otherwise falls back to the
+  // master template.
+  useEffect(()=>{
+    if(!showSharepointModal||!job?.id)return;
+    sbGet('jobs','select=id,job_number,job_name,customer_name,sharepoint_folder_url&sharepoint_folder_url=not.is.null&order=job_number.desc&limit=200').then(rows=>{
+      const list=Array.isArray(rows)?rows.filter(r=>r.id!==job.id&&r.sharepoint_folder_url):[];
+      setSharepointFolderOptions(list);
+      const cust=(job.customer_name||'').toLowerCase().trim();
+      const sameCustomer=list.filter(r=>(r.customer_name||'').toLowerCase().trim()===cust);
+      if(sameCustomer.length>0){
+        setSharepointSource('existing');
+        setSharepointSourceUrl(sameCustomer[0].sharepoint_folder_url);
+      }else{
+        setSharepointSource('template');
+        setSharepointSourceUrl('');
+      }
+      setSharepointError(null);
+    }).catch(()=>{
+      setSharepointFolderOptions([]);
+      setSharepointSource('template');
+      setSharepointSourceUrl('');
+    });
+  },[showSharepointModal,job?.id,job?.customer_name]);
+  const submitSharepointFolder=async()=>{
+    if(sharepointSource==='existing'&&!sharepointSourceUrl){
+      setSharepointError('Please choose an existing project to copy from.');
+      return;
+    }
+    setSharepointSubmitting(true);setSharepointError(null);
+    try{
+      const payload={job_id:job.id,source:sharepointSource};
+      if(sharepointSource==='existing')payload.source_folder_url=sharepointSourceUrl;
+      const res=await fetch(`${SB}/functions/v1/create-sharepoint-folder`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',apikey:KEY,Authorization:`Bearer ${KEY}`},
+        body:JSON.stringify(payload),
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok||!data.success){throw new Error(data.error||`Folder creation failed (${res.status})`);}
+      setForm(p=>({...p,sharepoint_folder_url:data.url}));
+      logAct(job,'field_update','sharepoint_folder_url','',data.url||'');
+      toast.success('✓ SharePoint folder created');
+      setShowSharepointModal(false);
+      if(onRefresh)onRefresh();
+    }catch(e){
+      setSharepointError(e.message||'Folder creation failed');
+    }
+    setSharepointSubmitting(false);
   };
     const reopenJob=async(newStatus)=>{
     setReopening(true);
@@ -1347,6 +1406,30 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               ?{background:'#F0FDF4',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#065F46',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}
               :{background:'#065F46',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#FFF',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
           >{executed?'✓ Contract Executed — click to undo':'✓ Mark Contract Executed'}</button>;})()}
+          {/* SharePoint folder automation. Open is read-only and visible to anyone;
+              Create is gated to canEdit since it provisions real Microsoft Graph
+              resources. OOS market shows a disabled button until the folder
+              automation is extended to that region. */}
+          {!isNew&&(()=>{
+            const folderUrl=form.sharepoint_folder_url;
+            if(folderUrl){
+              return <button
+                title="Open the SharePoint folder for this project"
+                onClick={()=>window.open(folderUrl,'_blank','noopener')}
+                style={{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
+              >📁 Open SharePoint Folder</button>;
+            }
+            if(!canEdit)return null;
+            const isOOS=(form.market||'')==='OOS';
+            return <button
+              title={isOOS?'Out of State markets coming soon':'Create a SharePoint folder for this project'}
+              onClick={()=>{if(!isOOS)setShowSharepointModal(true);}}
+              disabled={isOOS}
+              style={isOOS
+                ?{background:'#F4F4F2',border:'1px solid #D1CFCB',borderRadius:8,padding:'8px 14px',color:'#9E9B96',fontWeight:700,fontSize:12,cursor:'not-allowed',whiteSpace:'nowrap'}
+                :{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
+            >📁 Create SharePoint Folder</button>;
+          })()}
           {canEdit
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
             : canEditInstallDateOnly
@@ -1653,6 +1736,50 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       {!isNew&&<div style={{padding:'12px 20px',borderTop:'1px solid #E5E3E0',flexShrink:0}}>
                 <button onClick={handleDup} style={{...btnS,fontSize:12}}>Duplicate Project</button>
       </div>}
+      {showSharepointModal&&(()=>{
+        const folderName=`${form.job_name||''}_${form.job_number||''}_${form.customer_name||''}1`;
+        const cust=(form.customer_name||'').toLowerCase().trim();
+        const sameCustomer=sharepointFolderOptions.filter(r=>(r.customer_name||'').toLowerCase().trim()===cust);
+        const otherCustomers=sharepointFolderOptions.filter(r=>(r.customer_name||'').toLowerCase().trim()!==cust).slice(0,50);
+        const noOptions=sharepointFolderOptions.length===0;
+        return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!sharepointSubmitting&&setShowSharepointModal(false)}>
+          <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(540px,96vw)',maxHeight:'90vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:4,color:'#1A1A1A'}}>Create SharePoint Folder</div>
+            <div style={{fontSize:12,color:'#625650',marginBottom:14}}>for: <b style={{color:'#1A1A1A'}}>{form.job_name||'Untitled'}</b> (#{form.job_number||'—'})</div>
+            <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 12px',marginBottom:14}}>
+              <div style={{fontSize:11,color:'#625650',marginBottom:4}}>Customer: <b style={{color:'#1A1A1A'}}>{form.customer_name||'—'}</b></div>
+              <div style={{fontSize:11,color:'#625650',marginBottom:8}}>Market: <b style={{color:'#1A1A1A'}}>{MARKET_FULL[form.market]||form.market||'—'}</b></div>
+              <div style={{fontSize:11,color:'#625650',marginBottom:2}}>Folder will be named:</div>
+              <div style={{fontFamily:'monospace',fontSize:12,fontWeight:700,color:'#185FA5',wordBreak:'break-all'}}>{folderName}</div>
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Source</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:18}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',border:`1px solid ${sharepointSource==='template'?'#185FA5':'#E5E3E0'}`,borderRadius:8,cursor:'pointer',background:sharepointSource==='template'?'#EFF6FF':'#FFF'}}>
+                <input type="radio" name="sp-source" checked={sharepointSource==='template'} onChange={()=>setSharepointSource('template')} disabled={sharepointSubmitting}/>
+                <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A'}}>Use master template</span>
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',border:`1px solid ${sharepointSource==='existing'?'#185FA5':'#E5E3E0'}`,borderRadius:8,cursor:noOptions?'not-allowed':'pointer',background:sharepointSource==='existing'?'#EFF6FF':'#FFF',opacity:noOptions?0.6:1}}>
+                <input type="radio" name="sp-source" checked={sharepointSource==='existing'} onChange={()=>setSharepointSource('existing')} disabled={sharepointSubmitting||noOptions}/>
+                <span style={{fontSize:13,fontWeight:600,color:noOptions?'#9E9B96':'#1A1A1A'}}>Copy existing project{noOptions?' (none available yet)':''}</span>
+              </label>
+              {sharepointSource==='existing'&&!noOptions&&<select value={sharepointSourceUrl} onChange={e=>setSharepointSourceUrl(e.target.value)} disabled={sharepointSubmitting} style={{padding:'8px 10px',border:'1px solid #E5E3E0',borderRadius:8,fontSize:13,marginLeft:24,maxWidth:'calc(100% - 24px)'}}>
+                <option value="">— Select a project —</option>
+                {sameCustomer.length>0&&<optgroup label={`Same customer${form.customer_name?' ('+form.customer_name+')':''}`}>
+                  {sameCustomer.map(r=><option key={r.id} value={r.sharepoint_folder_url}>{r.job_number} — {r.job_name} ({r.customer_name})</option>)}
+                </optgroup>}
+                {otherCustomers.length>0&&<optgroup label="Other recent projects">
+                  {otherCustomers.map(r=><option key={r.id} value={r.sharepoint_folder_url}>{r.job_number} — {r.job_name} ({r.customer_name})</option>)}
+                </optgroup>}
+              </select>}
+            </div>
+            {sharepointError&&<div style={{background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:8,padding:'8px 12px',color:'#991B1B',fontSize:12,fontWeight:600,marginBottom:12}}>{sharepointError}</div>}
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setShowSharepointModal(false)} disabled={sharepointSubmitting} style={btnS}>Cancel</button>
+              <button onClick={submitSharepointFolder} disabled={sharepointSubmitting} style={{...btnP,background:'#185FA5'}}>{sharepointSubmitting?'Creating folder... (5-10 sec)':'Create Folder'}</button>
+            </div>
+          </div>
+        </div>;
+      })()}
     </div>);
 }
 
