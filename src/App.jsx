@@ -8003,14 +8003,49 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
 
 /* ═══ WEATHER DAYS PAGE ═══ */
 /* ═══ MOLD INVENTORY PAGE ═══
-   System of record for physical mold counts. Section A holds one row per
-   panel mold set (with shared rows zeroed and flagged); Section B holds the
-   shared post / cap / rail constraints Luis tracks at the plant. Reads and
-   writes hit `mold_inventory` directly via the existing sb* helpers.
+   System of record for physical mold counts, presented as a single matrix
+   table. Each row is a style; columns hold the panel count for that style
+   and the shared post / cap / rail counts that Luis tracks plant-wide.
+   The shared columns all read from (and write back to) the seven
+   style_name='All Styles' rows in mold_inventory, so editing any one cell
+   in those columns updates the value seen by every other style row.
    Downstream consumers (Mold Capacity, Mold Utilization, AI Scheduler,
-   Dashboard tiles) already read from this table and pick up edits with no
+   Dashboard tiles) read mold_inventory directly and pick up edits with no
    additional wiring. The plant_config.total_molds row is intentionally
    left in place for now — its removal is a separate cleanup PR. */
+// V-Wood family — these styles share the 73" cap-rail mold and are the
+// only ones that get an editable "Rail VW 73"" cell. Standard styles
+// share the 54.5" cap-rail mold instead. Anything not in the V-Wood set
+// defaults to standard treatment per spec.
+const VWOOD_RAIL_STYLES=new Set([
+  "Vertical Wood 6'",
+  "Vertical Wood 8'",
+  "Vertical Wood 8' on Vertical",
+  "Board & Batten Fence Style 6'",
+  "Vertical Board and Batten",
+  "Horizontal Board and Batten",
+  "Vertical Wood Combo",
+]);
+// Kept as a documentation aid even though `!VWOOD_RAIL_STYLES.has(name)`
+// is the actual eligibility check — preserves the "either set" structure
+// from the spec for anyone reading the file.
+// eslint-disable-next-line no-unused-vars
+const STANDARD_RAIL_STYLES=new Set([
+  "Rock Style",
+  "Rock Style Z Panels",
+  "Stucco Style",
+  "Wood Style",
+  "Used Brick Style",
+  "Ledgestone",
+  "Split Faced CMU Block Style",
+  "Long Split Faced CMU Block Style",
+  "Smooth Style",
+  "Boxed Wood",
+]);
+// Retained from the prior two-section layout (PR #22). The matrix view
+// hardcodes shorter column headers, but these full names remain useful
+// for tooltips and any future mobile compact view.
+// eslint-disable-next-line no-unused-vars
 const MOLD_COMPONENT_LABELS={
   post_8ft:'Post 8ft',
   post_10ft:'Post 10ft',
@@ -8020,19 +8055,18 @@ const MOLD_COMPONENT_LABELS={
   cap_rail_standard:'Cap Rail — Standard 54.5"',
   cap_rail_vwood:'Cap Rail — Vertical Wood 73"',
 };
-const MOLD_SECTION_B_ORDER=['post_8ft','post_10ft','post_12ft','post_cap_line','post_cap_stop','cap_rail_standard','cap_rail_vwood'];
 // Pulls "Nft" from notes like "Physical molds: 28 × 5ft" or "26 × 5.5ft —
-// shared with...". Display-only; falls back to em-dash when the dimension
-// isn't carried in notes (typical for shared zero-count rows).
+// shared with...". Currently unused in the matrix layout; retained for
+// the planned mobile compact view.
+// eslint-disable-next-line no-unused-vars
 const parseMoldLength=(notes)=>{
   if(!notes)return'—';
   const m=String(notes).match(/(\d+(?:\.\d+)?)\s*ft/i);
   return m?`${m[1]}ft`:'—';
 };
-// Surfaces the "shared with" hint from notes for the Shared With column.
-// Two seed conventions are in play: shared rows say "Shares N molds with X
-// — do not count separately" and the parent style says "Physical molds: …
-// — shared with X, Y, Z". Both shapes are normalized here.
+// Surfaces the parent style from a shared row's notes ("Shares N molds
+// with X — do not count separately"). Used by panelCell to render the
+// "shared · Parent" badge underneath zero-count proxy rows.
 const parseSharedWith=(notes)=>{
   if(!notes)return'';
   const upper=notes.match(/Shares\s+\d+\s+molds?\s+with\s+([^—\n]+?)(?:\s*—|$)/i);
@@ -8041,6 +8075,7 @@ const parseSharedWith=(notes)=>{
   if(lower)return lower[1].trim();
   return'';
 };
+// eslint-disable-next-line no-unused-vars
 const fmtMoldUpdated=(ts)=>ts?new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
 
 function MoldInventoryPage(){
@@ -8048,6 +8083,10 @@ function MoldInventoryPage(){
   const[loading,setLoading]=useState(true);
   const[edit,setEdit]=useState(null);
   const[saving,setSaving]=useState(false);
+  // Per-mold-type save animation for the shared-cell pill: 'saving' (red)
+  // → 'saved' (green) → null (gray "shared"). One key at a time matches
+  // the one-cell-at-a-time edit flow.
+  const[savingAnim,setSavingAnim]=useState(null);
   const[showAdd,setShowAdd]=useState(false);
   const[addForm,setAddForm]=useState({style_name:'',mold_type:'panel',total_molds:'',notes:''});
   const[adding,setAdding]=useState(false);
@@ -8064,17 +8103,37 @@ function MoldInventoryPage(){
   },[]);
   useEffect(()=>{fetchRows();},[fetchRows]);
 
-  const sectionA=useMemo(()=>rows.filter(r=>r.style_name!=='All Styles')
-    .sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')),[rows]);
-  const sectionB=useMemo(()=>rows.filter(r=>r.style_name==='All Styles')
-    .sort((a,b)=>MOLD_SECTION_B_ORDER.indexOf(a.mold_type)-MOLD_SECTION_B_ORDER.indexOf(b.mold_type)),[rows]);
+  // Style rows = one panel row per style; shared rows are indexed by
+  // mold_type so every panel row can render the same value while edits
+  // route to the single 'All Styles' record for that mold_type.
+  const styleRows=useMemo(()=>rows.filter(r=>r.style_name!=='All Styles'&&r.mold_type==='panel'),[rows]);
+  const sharedByType=useMemo(()=>{
+    const m={};
+    rows.filter(r=>r.style_name==='All Styles').forEach(r=>{m[r.mold_type]=r;});
+    return m;
+  },[rows]);
 
-  // Excludes shared rows so the headline matches physical inventory. The
-  // marker is the "do not count separately" sentinel embedded in notes,
-  // which is how the seed data flags zero-count proxy rows.
-  const panelTotal=useMemo(()=>sectionA
+  // Sort: real (non-shared) panel rows first by total_molds desc, then
+  // shared zero-count proxies grouped at the bottom (alphabetical for
+  // determinism — exact spec ordering for the shared block isn't load-
+  // bearing since every value is 0).
+  const sortedStyleRows=useMemo(()=>{
+    const isShared=r=>/do not count separately/i.test(r.notes||'');
+    const main=styleRows.filter(r=>!isShared(r)).sort((a,b)=>n(b.total_molds)-n(a.total_molds)||(a.style_name||'').localeCompare(b.style_name||''));
+    const sub=styleRows.filter(r=>isShared(r)).sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||''));
+    return[...main,...sub];
+  },[styleRows]);
+
+  const panelTotal=useMemo(()=>styleRows
     .filter(r=>!/do not count separately/i.test(r.notes||''))
-    .reduce((s,r)=>s+n(r.total_molds),0),[sectionA]);
+    .reduce((s,r)=>s+n(r.total_molds),0),[styleRows]);
+
+  // Defensive default per spec: V-Wood family gets the V-Wood rail; all
+  // other styles (including any unrecognized names) get the standard
+  // rail. So the V-Wood rail cell is editable iff the style is in the
+  // V-Wood set, and the standard rail cell is editable otherwise.
+  const isVwoodFamily=(name)=>VWOOD_RAIL_STYLES.has(name);
+  const isStandardEligible=(name)=>!VWOOD_RAIL_STYLES.has(name);
 
   const startEdit=(row,field)=>{if(saving)return;setEdit({id:row.id,field,value:String(row[field]??'')});};
   const cancelEdit=()=>setEdit(null);
@@ -8094,16 +8153,24 @@ function MoldInventoryPage(){
       parsed=trimmed;
     }
     if(parsed===row[field]){cancelEdit();return;}
+    const isSharedRow=row.style_name==='All Styles';
+    const animKey=isSharedRow?row.mold_type:null;
     const prev=rows;
     const newTs=new Date().toISOString();
     setRows(rs=>rs.map(r=>r.id===id?{...r,[field]:parsed,updated_at:newTs}:r));
     setEdit(null);
+    if(animKey)setSavingAnim({moldType:animKey,phase:'saving'});
     setSaving(true);
     try{
       await sbPatch('mold_inventory',id,{[field]:parsed,updated_at:newTs});
-      toast.success('Saved ✓');
+      toast.success(isSharedRow?'Saved ✓ (applied to all styles)':'Saved ✓');
+      if(animKey){
+        setSavingAnim({moldType:animKey,phase:'saved'});
+        setTimeout(()=>setSavingAnim(p=>p&&p.moldType===animKey?null:p),900);
+      }
     }catch(e){
       setRows(prev);
+      if(animKey)setSavingAnim(null);
       toast.error('Save failed: '+e.message);
     }
     setSaving(false);
@@ -8143,21 +8210,54 @@ function MoldInventoryPage(){
     setDelBusy(false);
   };
 
-  const editableCell=(row,field,opts={})=>{
-    const isEditing=edit&&edit.id===row.id&&edit.field===field;
-    if(isEditing){
-      return opts.textarea
-        ? <textarea autoFocus value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} rows={2} style={{...inputS,background:'#FEFCE8',resize:'vertical',minWidth:opts.minWidth||220}}/>
-        : <input autoFocus type={opts.type||'text'} value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} style={{...inputS,background:'#FEFCE8',width:opts.width||'100%'}}/>;
-    }
-    const display=field==='total_molds'?(n(row[field])||0):(row[field]||'');
-    return <span onClick={()=>startEdit(row,field)} style={{cursor:'pointer',display:'inline-block',minWidth:20,padding:'2px 4px',borderRadius:4}} title="Click to edit">{display!==''&&display!==null&&display!==undefined?display:<span style={{color:'#9E9B96',fontStyle:'italic'}}>—</span>}</span>;
+  const inlineInput=(opts)=>opts.textarea
+    ? <textarea autoFocus value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} rows={2} style={{...inputS,background:'#FEFCE8',resize:'vertical',minWidth:opts.minWidth||220}}/>
+    : <input autoFocus type={opts.type||'text'} value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} style={{...inputS,background:'#FEFCE8',width:opts.width||'100%',textAlign:opts.numeric?'center':'left'}}/>;
+
+  // Panel cell on a style row. Shared (zero-count proxy) rows show a
+  // muted "0" with a "shared · Parent" badge underneath; the cell is
+  // still clickable in case the count needs to be overridden.
+  const panelCell=(r)=>{
+    const shared=/do not count separately/i.test(r.notes||'');
+    const isEditing=edit&&edit.id===r.id&&edit.field==='total_molds';
+    if(isEditing)return inlineInput({type:'number',width:60,numeric:true});
+    const parent=shared?parseSharedWith(r.notes):'';
+    return <div onClick={()=>startEdit(r,'total_molds')} title="Click to edit" style={{cursor:'pointer',textAlign:'center',padding:'2px 4px',borderRadius:4}}>
+      <div style={{fontFamily:'Inter',fontWeight:700,color:shared?'#9E9B96':'#1A1A1A'}}>{n(r.total_molds)}</div>
+      {shared&&<div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,letterSpacing:0.3,marginTop:2}}>shared{parent?' · '+parent:''}</div>}
+    </div>;
   };
 
-  const tdS={padding:'10px 12px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
-  const thS={textAlign:'left',padding:'10px 12px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5};
-  const sectTitle={fontFamily:'Syne',fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4};
-  const sectSub={fontSize:12,color:'#625650'};
+  const notesCell=(r)=>{
+    const isEditing=edit&&edit.id===r.id&&edit.field==='notes';
+    if(isEditing)return inlineInput({textarea:true,minWidth:220});
+    return <span onClick={()=>startEdit(r,'notes')} style={{cursor:'pointer',display:'inline-block',padding:'2px 4px',borderRadius:4}} title="Click to edit">{r.notes||<span style={{color:'#9E9B96',fontStyle:'italic'}}>—</span>}</span>;
+  };
+
+  // Shared cell for a posts/caps/rails column on any style row. Eligible
+  // = false renders an inert em-dash (used for V-Wood vs standard rail
+  // splits). Eligible = true makes the cell clickable; the input writes
+  // back to the single 'All Styles' row, so all other rows in this
+  // column re-render with the new value at the same time.
+  const sharedCell=(moldType,eligible)=>{
+    if(!eligible)return <div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}} aria-hidden="true">—</div>;
+    const sr=sharedByType[moldType];
+    if(!sr)return <div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}}>—</div>;
+    const isEditing=edit&&edit.id===sr.id&&edit.field==='total_molds';
+    if(isEditing)return inlineInput({type:'number',width:60,numeric:true});
+    const anim=savingAnim&&savingAnim.moldType===moldType?savingAnim.phase:null;
+    const pillColor=anim==='saving'?'#8A261D':anim==='saved'?'#065F46':'#9E9B96';
+    const pillText=anim==='saving'?'saving…':anim==='saved'?'✓ saved':'shared';
+    return <div onClick={()=>startEdit(sr,'total_molds')} title="Shared mold count — edits here update the plant-wide total used by every style." style={{cursor:'pointer',textAlign:'center',background:'#F4F4F2',padding:'4px 6px',borderRadius:6,border:'1px solid #ECEAE5'}}>
+      <div style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{n(sr.total_molds)}</div>
+      <div style={{fontSize:9,color:pillColor,textTransform:'uppercase',fontWeight:800,letterSpacing:0.3,marginTop:2,transition:'color 0.2s'}}>{pillText}</div>
+    </div>;
+  };
+
+  const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
+  const thNum={...thS,textAlign:'center'};
+  const totalAt=(t)=>n(sharedByType[t]?.total_molds);
 
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:16,flexWrap:'wrap'}}>
@@ -8173,64 +8273,58 @@ function MoldInventoryPage(){
     </div>
 
     <div style={{...card,padding:0,marginBottom:24,overflow:'hidden'}}>
-      <div style={{padding:'14px 18px',borderBottom:'1px solid #E5E3E0',background:'#FFF'}}>
-        <div style={sectTitle}>Panel Molds</div>
-        <div style={sectSub}>One row per physical mold set. Shared molds are noted; do not double-count.</div>
-      </div>
-      {loading?<div style={{padding:24}}><SkeletonRows rows={6} cols={6}/></div>:<div style={{overflow:'auto'}}>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={8} cols={10}/></div>:<div style={{overflow:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr>
             <th style={thS}>Style</th>
-            <th style={{...thS,width:120,textAlign:'right'}}>Total Molds</th>
-            <th style={{...thS,width:110}}>Mold Length</th>
-            <th style={{...thS,width:240}}>Shared With</th>
+            <th style={{...thNum,width:80}}>Panels</th>
+            <th style={{...thNum,width:80}}>Post 8'</th>
+            <th style={{...thNum,width:80}}>Post 10'</th>
+            <th style={{...thNum,width:80}}>Post 12'</th>
+            <th style={{...thNum,width:80}}>Cap Line</th>
+            <th style={{...thNum,width:80}}>Cap Stop</th>
+            <th style={{...thNum,width:110}}>Rail Std 54.5"</th>
+            <th style={{...thNum,width:100}}>Rail VW 73"</th>
             <th style={thS}>Notes</th>
-            <th style={{...thS,width:80}}>Actions</th>
+            <th style={{...thS,width:60}}>Actions</th>
           </tr></thead>
           <tbody>
-            {sectionA.length===0&&<tr><td colSpan={6} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No mold records yet — click + Add Mold Type to begin.</td></tr>}
-            {sectionA.map(r=>{
+            {sortedStyleRows.length===0&&<tr><td colSpan={11} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No mold records yet — click + Add Mold Type to begin.</td></tr>}
+            {sortedStyleRows.map(r=>{
               const shared=/do not count separately/i.test(r.notes||'');
+              const stdEligible=isStandardEligible(r.style_name);
+              const vwEligible=isVwoodFamily(r.style_name);
+              const editingStyle=edit&&edit.id===r.id&&edit.field==='style_name';
               return <tr key={r.id} style={{background:shared?'#FAFAF8':'#FFF'}}>
-                <td style={{...tdS,fontWeight:600}}>{editableCell(r,'style_name')}</td>
-                <td style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:shared?'#9E9B96':'#1A1A1A'}}>{editableCell(r,'total_molds',{type:'number',width:80})}</td>
-                <td style={{...tdS,color:'#625650'}}>{parseMoldLength(r.notes)}</td>
-                <td style={{...tdS,color:'#625650',fontSize:12}}>{parseSharedWith(r.notes)||<span style={{color:'#C8C4BD'}}>—</span>}</td>
-                <td style={{...tdS,minWidth:240}}>{editableCell(r,'notes',{textarea:true})}</td>
-                <td style={tdS}><button onClick={()=>setConfirmDel(r)} title="Delete this mold record" style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}}>Delete</button></td>
+                <td style={{...tdS,fontWeight:600}}>{editingStyle
+                  ? inlineInput({type:'text',width:200})
+                  : <span onClick={()=>startEdit(r,'style_name')} style={{cursor:'pointer',display:'inline-block',padding:'2px 4px',borderRadius:4}} title="Click to edit">{r.style_name}</span>}</td>
+                <td style={tdS}>{panelCell(r)}</td>
+                <td style={tdS}>{sharedCell('post_8ft',true)}</td>
+                <td style={tdS}>{sharedCell('post_10ft',true)}</td>
+                <td style={tdS}>{sharedCell('post_12ft',true)}</td>
+                <td style={tdS}>{sharedCell('post_cap_line',true)}</td>
+                <td style={tdS}>{sharedCell('post_cap_stop',true)}</td>
+                <td style={tdS}>{sharedCell('cap_rail_standard',stdEligible)}</td>
+                <td style={tdS}>{sharedCell('cap_rail_vwood',vwEligible)}</td>
+                <td style={{...tdS,minWidth:200}}>{notesCell(r)}</td>
+                <td style={tdS}><button onClick={()=>setConfirmDel(r)} title="Delete this mold record" style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button></td>
               </tr>;
             })}
           </tbody>
-          <tfoot><tr style={{background:'#F4F4F2'}}>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textTransform:'uppercase',fontSize:11,letterSpacing:0.5,fontWeight:800,color:'#625650'}}>Total Panel Molds</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'right',fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{panelTotal}</td>
-            <td colSpan={4} style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',color:'#9E9B96',fontSize:11,fontStyle:'italic'}}>Excludes shared-mold rows</td>
+          <tfoot><tr style={{background:'#FDF4F4'}}>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textTransform:'uppercase',fontSize:11,letterSpacing:0.5,fontWeight:800,color:'#8A261D'}}>Total</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{panelTotal}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_8ft')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_10ft')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_12ft')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_cap_line')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_cap_stop')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('cap_rail_standard')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('cap_rail_vwood')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none'}}/>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none'}}/>
           </tr></tfoot>
-        </table>
-      </div>}
-    </div>
-
-    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden'}}>
-      <div style={{padding:'14px 18px',borderBottom:'1px solid #E5E3E0',background:'#FFF'}}>
-        <div style={sectTitle}>Posts, Caps & Rails</div>
-        <div style={sectSub}>Shared across all styles. These are the constraints Luis tracks at the plant — please update when counts change.</div>
-      </div>
-      {loading?<div style={{padding:24}}><SkeletonRows rows={4} cols={4}/></div>:<div style={{overflow:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>
-            <th style={thS}>Component</th>
-            <th style={{...thS,width:120,textAlign:'right'}}>Total Molds</th>
-            <th style={thS}>Notes</th>
-            <th style={{...thS,width:200}}>Last Updated</th>
-          </tr></thead>
-          <tbody>
-            {sectionB.map(r=><tr key={r.id}>
-              <td style={{...tdS,fontWeight:600}}>{MOLD_COMPONENT_LABELS[r.mold_type]||r.mold_type}</td>
-              <td style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{editableCell(r,'total_molds',{type:'number',width:80})}</td>
-              <td style={{...tdS,minWidth:240}}>{editableCell(r,'notes',{textarea:true})}</td>
-              <td style={{...tdS,color:'#9E9B96',fontSize:11,whiteSpace:'nowrap'}}>{fmtMoldUpdated(r.updated_at)}</td>
-            </tr>)}
-          </tbody>
         </table>
       </div>}
     </div>
