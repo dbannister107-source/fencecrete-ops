@@ -8065,8 +8065,10 @@ const parseMoldLength=(notes)=>{
   return m?`${m[1]}ft`:'—';
 };
 // Surfaces the parent style from a shared row's notes ("Shares N molds
-// with X — do not count separately"). Used by panelCell to render the
-// "shared · Parent" badge underneath zero-count proxy rows.
+// with X — do not count separately"). Was used by panelCell for a
+// "shared · Parent" badge in PR #23; the always-input layout dropped
+// that badge. Kept for the planned mobile compact view.
+// eslint-disable-next-line no-unused-vars
 const parseSharedWith=(notes)=>{
   if(!notes)return'';
   const upper=notes.match(/Shares\s+\d+\s+molds?\s+with\s+([^—\n]+?)(?:\s*—|$)/i);
@@ -8081,12 +8083,6 @@ const fmtMoldUpdated=(ts)=>ts?new Date(ts).toLocaleString('en-US',{month:'short'
 function MoldInventoryPage(){
   const[rows,setRows]=useState([]);
   const[loading,setLoading]=useState(true);
-  const[edit,setEdit]=useState(null);
-  const[saving,setSaving]=useState(false);
-  // Per-mold-type save animation for the shared-cell pill: 'saving' (red)
-  // → 'saved' (green) → null (gray "shared"). One key at a time matches
-  // the one-cell-at-a-time edit flow.
-  const[savingAnim,setSavingAnim]=useState(null);
   const[showAdd,setShowAdd]=useState(false);
   const[addForm,setAddForm]=useState({style_name:'',mold_type:'panel',total_molds:'',notes:''});
   const[adding,setAdding]=useState(false);
@@ -8094,7 +8090,6 @@ function MoldInventoryPage(){
   const[delBusy,setDelBusy]=useState(false);
 
   const fetchRows=useCallback(async()=>{
-    setLoading(true);
     try{
       const d=await sbGet('mold_inventory','select=id,style_name,mold_type,total_molds,notes,updated_at');
       setRows(Array.isArray(d)?d:[]);
@@ -8105,7 +8100,7 @@ function MoldInventoryPage(){
 
   // Style rows = one panel row per style; shared rows are indexed by
   // mold_type so every panel row can render the same value while edits
-  // route to the single 'All Styles' record for that mold_type.
+  // route back to the single 'All Styles' record for that mold_type.
   const styleRows=useMemo(()=>rows.filter(r=>r.style_name!=='All Styles'&&r.mold_type==='panel'),[rows]);
   const sharedByType=useMemo(()=>{
     const m={};
@@ -8113,10 +8108,8 @@ function MoldInventoryPage(){
     return m;
   },[rows]);
 
-  // Sort: real (non-shared) panel rows first by total_molds desc, then
-  // shared zero-count proxies grouped at the bottom (alphabetical for
-  // determinism — exact spec ordering for the shared block isn't load-
-  // bearing since every value is 0).
+  // Sort: real (non-shared) panel rows by total_molds desc, then shared
+  // zero-count proxies grouped at the bottom in alphabetical order.
   const sortedStyleRows=useMemo(()=>{
     const isShared=r=>/do not count separately/i.test(r.notes||'');
     const main=styleRows.filter(r=>!isShared(r)).sort((a,b)=>n(b.total_molds)-n(a.total_molds)||(a.style_name||'').localeCompare(b.style_name||''));
@@ -8129,55 +8122,38 @@ function MoldInventoryPage(){
     .reduce((s,r)=>s+n(r.total_molds),0),[styleRows]);
 
   // Defensive default per spec: V-Wood family gets the V-Wood rail; all
-  // other styles (including any unrecognized names) get the standard
-  // rail. So the V-Wood rail cell is editable iff the style is in the
-  // V-Wood set, and the standard rail cell is editable otherwise.
+  // other styles get the standard rail. So the V-Wood rail input shows
+  // for V-Wood styles only, and the standard rail input shows otherwise.
   const isVwoodFamily=(name)=>VWOOD_RAIL_STYLES.has(name);
   const isStandardEligible=(name)=>!VWOOD_RAIL_STYLES.has(name);
 
-  const startEdit=(row,field)=>{if(saving)return;setEdit({id:row.id,field,value:String(row[field]??'')});};
-  const cancelEdit=()=>setEdit(null);
-  const commitEdit=async()=>{
-    if(!edit)return;
-    const{id,field,value}=edit;
-    const row=rows.find(r=>r.id===id);
-    if(!row){cancelEdit();return;}
-    let parsed=value;
-    if(field==='total_molds'){
-      const num=parseInt(value,10);
-      if(!Number.isFinite(num)||num<0){toast.error('Total molds must be 0 or greater');return;}
-      parsed=num;
-    }else if(field==='style_name'){
-      const trimmed=value.trim();
-      if(!trimmed){toast.error('Style name cannot be empty');return;}
-      parsed=trimmed;
-    }
-    if(parsed===row[field]){cancelEdit();return;}
-    const isSharedRow=row.style_name==='All Styles';
-    const animKey=isSharedRow?row.mold_type:null;
-    const prev=rows;
-    const newTs=new Date().toISOString();
-    setRows(rs=>rs.map(r=>r.id===id?{...r,[field]:parsed,updated_at:newTs}:r));
-    setEdit(null);
-    if(animKey)setSavingAnim({moldType:animKey,phase:'saving'});
-    setSaving(true);
+  // Save handlers — fire on blur. Refetch after each save so any other
+  // rows that mirror the same shared value re-render. No optimistic
+  // update path; if the user is mid-typing in another shared cell when
+  // a save lands, that input will remount with the fresh value (rare
+  // for a 2-3 person tool; acceptable per spec).
+  const handleSave=async(rowId,field,rawValue)=>{
+    const num=parseInt(rawValue,10);
+    if(!Number.isFinite(num)||num<0){toast.error('Total molds must be 0 or greater');return;}
+    const row=rows.find(r=>r.id===rowId);
+    if(!row)return;
+    if(num===n(row[field]))return; // no-op, no toast
     try{
-      await sbPatch('mold_inventory',id,{[field]:parsed,updated_at:newTs});
-      toast.success(isSharedRow?'Saved ✓ (applied to all styles)':'Saved ✓');
-      if(animKey){
-        setSavingAnim({moldType:animKey,phase:'saved'});
-        setTimeout(()=>setSavingAnim(p=>p&&p.moldType===animKey?null:p),900);
-      }
-    }catch(e){
-      setRows(prev);
-      if(animKey)setSavingAnim(null);
-      toast.error('Save failed: '+e.message);
-    }
-    setSaving(false);
+      await sbPatch('mold_inventory',rowId,{[field]:num,updated_at:new Date().toISOString()});
+      toast.success('Saved ✓');
+      fetchRows();
+    }catch(e){toast.error('Save failed: '+e.message);}
   };
-  const onEditKey=e=>{
-    if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();commitEdit();}
-    else if(e.key==='Escape'){e.preventDefault();cancelEdit();}
+  const handleSaveNotes=async(rowId,rawValue)=>{
+    const row=rows.find(r=>r.id===rowId);
+    if(!row)return;
+    const v=rawValue||'';
+    if(v===(row.notes||''))return;
+    try{
+      await sbPatch('mold_inventory',rowId,{notes:v,updated_at:new Date().toISOString()});
+      toast.success('Saved ✓');
+      fetchRows();
+    }catch(e){toast.error('Save failed: '+e.message);}
   };
 
   const submitAdd=async()=>{
@@ -8203,56 +8179,52 @@ function MoldInventoryPage(){
     try{
       const r=await sbDel('mold_inventory',id);
       if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
-      setRows(rs=>rs.filter(x=>x.id!==id));
-      toast.success('Mold record deleted');
       setConfirmDel(null);
+      toast.success('Mold record deleted');
+      fetchRows();
     }catch(e){toast.error('Delete failed: '+e.message);}
     setDelBusy(false);
   };
 
-  const inlineInput=(opts)=>opts.textarea
-    ? <textarea autoFocus value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} rows={2} style={{...inputS,background:'#FEFCE8',resize:'vertical',minWidth:opts.minWidth||220}}/>
-    : <input autoFocus type={opts.type||'text'} value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} style={{...inputS,background:'#FEFCE8',width:opts.width||'100%',textAlign:opts.numeric?'center':'left'}}/>;
+  // Always-visible inputs. defaultValue (uncontrolled) lets the DOM own
+  // the in-flight string while the user types; the key is bumped when
+  // the underlying total_molds changes so the input remounts and picks
+  // up server-side values (this is what makes shared-cell propagation
+  // visible across rows after a save).
+  const numInputStyle={width:'60px',textAlign:'center',padding:'6px 4px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontWeight:700,fontSize:14};
+  const dashCell=<div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}} aria-hidden="true">—</div>;
 
-  // Panel cell on a style row. Shared (zero-count proxy) rows show a
-  // muted "0" with a "shared · Parent" badge underneath; the cell is
-  // still clickable in case the count needs to be overridden.
-  const panelCell=(r)=>{
-    const shared=/do not count separately/i.test(r.notes||'');
-    const isEditing=edit&&edit.id===r.id&&edit.field==='total_molds';
-    if(isEditing)return inlineInput({type:'number',width:60,numeric:true});
-    const parent=shared?parseSharedWith(r.notes):'';
-    return <div onClick={()=>startEdit(r,'total_molds')} title="Click to edit" style={{cursor:'pointer',textAlign:'center',padding:'2px 4px',borderRadius:4}}>
-      <div style={{fontFamily:'Inter',fontWeight:700,color:shared?'#9E9B96':'#1A1A1A'}}>{n(r.total_molds)}</div>
-      {shared&&<div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,letterSpacing:0.3,marginTop:2}}>shared{parent?' · '+parent:''}</div>}
-    </div>;
+  const renderCount=(row,field,isShared)=>{
+    if(!row)return dashCell;
+    return <input
+      key={`${row.id}-${field}-${n(row[field])}`}
+      type="number"
+      min="0"
+      step="1"
+      defaultValue={n(row[field])}
+      onBlur={(e)=>handleSave(row.id,field,e.target.value)}
+      onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
+      style={{...numInputStyle,background:isShared?'#F4F4F2':'#FFFFFF'}}
+    />;
   };
 
-  const notesCell=(r)=>{
-    const isEditing=edit&&edit.id===r.id&&edit.field==='notes';
-    if(isEditing)return inlineInput({textarea:true,minWidth:220});
-    return <span onClick={()=>startEdit(r,'notes')} style={{cursor:'pointer',display:'inline-block',padding:'2px 4px',borderRadius:4}} title="Click to edit">{r.notes||<span style={{color:'#9E9B96',fontStyle:'italic'}}>—</span>}</span>;
-  };
-
-  // Shared cell for a posts/caps/rails column on any style row. Eligible
-  // = false renders an inert em-dash (used for V-Wood vs standard rail
-  // splits). Eligible = true makes the cell clickable; the input writes
-  // back to the single 'All Styles' row, so all other rows in this
-  // column re-render with the new value at the same time.
-  const sharedCell=(moldType,eligible)=>{
-    if(!eligible)return <div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}} aria-hidden="true">—</div>;
+  const renderSharedInput=(moldType,eligible)=>{
+    if(!eligible)return dashCell;
     const sr=sharedByType[moldType];
-    if(!sr)return <div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}}>—</div>;
-    const isEditing=edit&&edit.id===sr.id&&edit.field==='total_molds';
-    if(isEditing)return inlineInput({type:'number',width:60,numeric:true});
-    const anim=savingAnim&&savingAnim.moldType===moldType?savingAnim.phase:null;
-    const pillColor=anim==='saving'?'#8A261D':anim==='saved'?'#065F46':'#9E9B96';
-    const pillText=anim==='saving'?'saving…':anim==='saved'?'✓ saved':'shared';
-    return <div onClick={()=>startEdit(sr,'total_molds')} title="Shared mold count — edits here update the plant-wide total used by every style." style={{cursor:'pointer',textAlign:'center',background:'#F4F4F2',padding:'4px 6px',borderRadius:6,border:'1px solid #ECEAE5'}}>
-      <div style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{n(sr.total_molds)}</div>
-      <div style={{fontSize:9,color:pillColor,textTransform:'uppercase',fontWeight:800,letterSpacing:0.3,marginTop:2,transition:'color 0.2s'}}>{pillText}</div>
+    if(!sr)return dashCell;
+    return <div style={{textAlign:'center'}}>
+      {renderCount(sr,'total_molds',true)}
+      <div style={{fontSize:9,color:'#9E9B96',fontWeight:700,textTransform:'uppercase',marginTop:2,textAlign:'center'}}>shared</div>
     </div>;
   };
+
+  const renderNotes=(row)=><textarea
+    key={`notes-${row.id}-${row.updated_at}`}
+    defaultValue={row.notes||''}
+    onBlur={(e)=>handleSaveNotes(row.id,e.target.value)}
+    rows={2}
+    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical'}}
+  />;
 
   const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
   const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
@@ -8278,11 +8250,11 @@ function MoldInventoryPage(){
           <thead><tr>
             <th style={thS}>Style</th>
             <th style={{...thNum,width:80}}>Panels</th>
-            <th style={{...thNum,width:80}}>Post 8'</th>
-            <th style={{...thNum,width:80}}>Post 10'</th>
-            <th style={{...thNum,width:80}}>Post 12'</th>
-            <th style={{...thNum,width:80}}>Cap Line</th>
-            <th style={{...thNum,width:80}}>Cap Stop</th>
+            <th style={{...thNum,width:90}}>Post 8'</th>
+            <th style={{...thNum,width:90}}>Post 10'</th>
+            <th style={{...thNum,width:90}}>Post 12'</th>
+            <th style={{...thNum,width:90}}>Cap Line</th>
+            <th style={{...thNum,width:90}}>Cap Stop</th>
             <th style={{...thNum,width:110}}>Rail Std 54.5"</th>
             <th style={{...thNum,width:100}}>Rail VW 73"</th>
             <th style={thS}>Notes</th>
@@ -8294,21 +8266,18 @@ function MoldInventoryPage(){
               const shared=/do not count separately/i.test(r.notes||'');
               const stdEligible=isStandardEligible(r.style_name);
               const vwEligible=isVwoodFamily(r.style_name);
-              const editingStyle=edit&&edit.id===r.id&&edit.field==='style_name';
               return <tr key={r.id} style={{background:shared?'#FAFAF8':'#FFF'}}>
-                <td style={{...tdS,fontWeight:600}}>{editingStyle
-                  ? inlineInput({type:'text',width:200})
-                  : <span onClick={()=>startEdit(r,'style_name')} style={{cursor:'pointer',display:'inline-block',padding:'2px 4px',borderRadius:4}} title="Click to edit">{r.style_name}</span>}</td>
-                <td style={tdS}>{panelCell(r)}</td>
-                <td style={tdS}>{sharedCell('post_8ft',true)}</td>
-                <td style={tdS}>{sharedCell('post_10ft',true)}</td>
-                <td style={tdS}>{sharedCell('post_12ft',true)}</td>
-                <td style={tdS}>{sharedCell('post_cap_line',true)}</td>
-                <td style={tdS}>{sharedCell('post_cap_stop',true)}</td>
-                <td style={tdS}>{sharedCell('cap_rail_standard',stdEligible)}</td>
-                <td style={tdS}>{sharedCell('cap_rail_vwood',vwEligible)}</td>
-                <td style={{...tdS,minWidth:200}}>{notesCell(r)}</td>
-                <td style={tdS}><button onClick={()=>setConfirmDel(r)} title="Delete this mold record" style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button></td>
+                <td style={{...tdS,fontWeight:600,color:shared?'#9E9B96':'#1A1A1A'}}>{r.style_name}</td>
+                <td style={tdS}>{renderCount(r,'total_molds',false)}</td>
+                <td style={tdS}>{renderSharedInput('post_8ft',true)}</td>
+                <td style={tdS}>{renderSharedInput('post_10ft',true)}</td>
+                <td style={tdS}>{renderSharedInput('post_12ft',true)}</td>
+                <td style={tdS}>{renderSharedInput('post_cap_line',true)}</td>
+                <td style={tdS}>{renderSharedInput('post_cap_stop',true)}</td>
+                <td style={tdS}>{renderSharedInput('cap_rail_standard',stdEligible)}</td>
+                <td style={tdS}>{renderSharedInput('cap_rail_vwood',vwEligible)}</td>
+                <td style={{...tdS,minWidth:200}}>{renderNotes(r)}</td>
+                <td style={tdS}><button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button></td>
               </tr>;
             })}
           </tbody>
