@@ -12372,6 +12372,83 @@ function PlantMaintenancePage(){
   </div>;
 }
 
+/* ═══ PM SCHEDULE VIEW ═══
+   Read-only roll-up of fleet_pm_schedules joined to the parent equipment
+   record. Rendered as the PM Schedule page-level tab in FleetPage; the
+   parent passes its `crd` card style for visual parity with the other
+   tabs (the rest of the JSX block also passes equipment / btnP / inputS
+   / onLoad which we don't need for read-only — they're left unbound).
+   Status pill is computed from next_due_date vs today: overdue (red),
+   due within 14 days (yellow), otherwise on-track (green). Mileage- and
+   hour-triggered schedules don't expose a date so they show a neutral
+   "tracked" pill and the value falls back to the miles/hours intervals. */
+function PMScheduleView({crd}){
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{
+    let alive=true;
+    sbGet('fleet_pm_schedules','select=*,fleet_equipment(unit_number,make_model,equipment_type,city)&order=next_due_date.asc.nullslast&limit=300').then(d=>{
+      if(!alive)return;
+      setRows(Array.isArray(d)?d:[]);
+      setLoading(false);
+    }).catch(()=>{if(alive)setLoading(false);});
+    return()=>{alive=false;};
+  },[]);
+  if(loading)return <div style={{...crd,padding:40,textAlign:'center',color:'#9E9B96'}}>Loading PM schedules…</div>;
+  if(rows.length===0)return <div style={{...crd,padding:'60px',textAlign:'center',color:'#9E9B96'}}>
+    <div style={{fontSize:32,marginBottom:8}}>📅</div>
+    <div style={{fontFamily:'Syne',fontWeight:700}}>No PM schedules configured yet</div>
+    <div style={{fontSize:12,marginTop:4}}>Preventive maintenance plans set up at the equipment level will appear here.</div>
+  </div>;
+  const today=new Date();today.setHours(0,0,0,0);
+  const statusFor=(r)=>{
+    if(!r.next_due_date)return{bg:'#F4F4F2',c:'#625650',label:'tracked'};
+    const due=new Date(r.next_due_date);
+    const days=Math.ceil((due-today)/86400000);
+    if(days<0)return{bg:'#FEF2F2',c:'#991B1B',label:`overdue ${Math.abs(days)}d`};
+    if(days<=14)return{bg:'#FEF3C7',c:'#854F0B',label:`due in ${days}d`};
+    return{bg:'#D1FAE5',c:'#065F46',label:'on track'};
+  };
+  const fmtDate=(d)=>d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
+  const lastPerformed=(r)=>{
+    if(r.last_performed_date)return fmtDate(r.last_performed_date);
+    if(r.last_performed_miles!=null)return `${Number(r.last_performed_miles).toLocaleString()} mi`;
+    if(r.last_performed_hours!=null)return `${Number(r.last_performed_hours).toLocaleString()} hrs`;
+    return <span style={{color:'#9E9B96'}}>Never</span>;
+  };
+  const nextDue=(r)=>{
+    if(r.next_due_date)return fmtDate(r.next_due_date);
+    if(r.next_due_miles!=null)return `${Number(r.next_due_miles).toLocaleString()} mi`;
+    if(r.next_due_hours!=null)return `${Number(r.next_due_hours).toLocaleString()} hrs`;
+    return <span style={{color:'#9E9B96'}}>—</span>;
+  };
+  return <div style={{...crd,padding:0,overflow:'auto'}}>
+    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+      <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
+        {['Unit #','Equipment','PM Task','Trigger','Last Completed','Next Due','Status'].map(h=>
+          <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
+        )}
+      </tr></thead>
+      <tbody>
+        {rows.map((r,i)=>{
+          const eq=r.fleet_equipment;
+          const ss=statusFor(r);
+          const triggerExtra=r.interval_days?` · ${r.interval_days}d`:r.interval_miles?` · ${Number(r.interval_miles).toLocaleString()} mi`:r.interval_hours?` · ${Number(r.interval_hours).toLocaleString()} hrs`:'';
+          return <tr key={r.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8',opacity:r.is_active===false?0.55:1}}>
+            <td style={{padding:'10px 12px',fontFamily:'monospace',fontWeight:700}}>{eq?.unit_number||'—'}</td>
+            <td style={{padding:'10px 12px'}}>{eq?<><div style={{fontWeight:600}}>{eq.make_model||eq.equipment_type||'—'}</div>{eq.city&&<div style={{fontSize:10,color:'#9E9B96'}}>{eq.city}</div>}</>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+            <td style={{padding:'10px 12px',fontWeight:600}} title={r.description||''}>{r.task_name}</td>
+            <td style={{padding:'10px 12px',color:'#625650',textTransform:'capitalize'}}>{r.trigger_type||'—'}{triggerExtra}</td>
+            <td style={{padding:'10px 12px',color:'#625650',whiteSpace:'nowrap'}}>{lastPerformed(r)}</td>
+            <td style={{padding:'10px 12px',whiteSpace:'nowrap',fontWeight:600}}>{nextDue(r)}</td>
+            <td style={{padding:'10px 12px'}}><span style={{background:ss.bg,color:ss.c,borderRadius:12,padding:'3px 8px',fontSize:10,fontWeight:700,textTransform:'uppercase',whiteSpace:'nowrap'}}>{ss.label}</span></td>
+          </tr>;
+        })}
+      </tbody>
+    </table>
+  </div>;
+}
+
 /* ═══ INSPECTION HISTORY VIEW ═══
    Read-only roll-up of fleet_inspections joined to the parent equipment
    record. Rendered as the Inspections page-level tab in FleetPage; the
