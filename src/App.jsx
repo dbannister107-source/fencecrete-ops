@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import BUILD_INFO from './build-info.json';
+import SystemEventsPage from './features/system-events/SystemEventsPage';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
@@ -71,6 +72,14 @@ const AMIEE_EMAILS = new Set([
   'contracts@fencecrete.com',
 ]);
 const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim());
+
+// System admin allowlist — gates the ADMIN > System Events sidebar item
+// and the agentic-spine debug page. Keep narrow; this exposes the raw
+// event log for every automated workflow in the app.
+const SYSTEM_ADMIN_EMAILS = new Set([
+  'david@fencecrete.com',
+]);
+const canViewSystemEvents = (email) => SYSTEM_ADMIN_EMAILS.has((email||'').toLowerCase().trim());
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H })).json();
@@ -16276,6 +16285,7 @@ const PAGE_LABELS={
   contacts:'Contacts',
   fleet:'Fleet',
   admin:'Admin',
+  system_events:'System Events',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -17243,10 +17253,20 @@ function ProfileModal({ onClose }){
 
 /* ═══ APP (auth-gated) ═══ */
 function AppShell(){
-  const{profile}=useAuth();
+  const{profile,user}=useAuth();
   const isAdmin=profile?.role==='admin';
-  // Phase 1: everyone sees everything. Only admins get an extra Admin link appended.
-  const filteredNav=useMemo(()=>isAdmin?[...NAV_GROUPS,{label:'ADMIN',items:[{key:'admin',label:'User Management',icon:'🔐'}]}]:NAV_GROUPS,[isAdmin]);
+  const currentUserEmail=(user?.email||'').toLowerCase().trim();
+  const canSystemEvents=canViewSystemEvents(currentUserEmail);
+  // ADMIN group is shown when the user qualifies for at least one admin item.
+  // Items inside the group are independently gated so we can grow this list
+  // without coupling the User Management gate to the System Events gate.
+  const filteredNav=useMemo(()=>{
+    const adminItems=[];
+    if(isAdmin)adminItems.push({key:'admin',label:'User Management',icon:'🔐'});
+    if(canSystemEvents)adminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
+    if(adminItems.length===0)return NAV_GROUPS;
+    return[...NAV_GROUPS,{label:'ADMIN',color:'#4B5563',iconColor:'#9CA3AF',items:adminItems}];
+  },[isAdmin,canSystemEvents]);
   const[page,setPage]=useState('dashboard');
   const[pageHistory,setPageHistory]=useState([]);
   const navigateTo=(newPage)=>{if(newPage===page)return;setPageHistory(h=>[...h,page]);setPage(newPage);};
@@ -17407,6 +17427,7 @@ function AppShell(){
             {page==='proposal_triage'&&<ErrorBoundary label="Proposal Triage"><ProposalTriagePage/></ErrorBoundary>}
             {page==='bid_advisor'&&<ErrorBoundary label="Bid Advisor"><BidAdvisor/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
+            {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
           </>}
         </div>
       </div>
