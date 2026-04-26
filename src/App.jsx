@@ -8002,6 +8002,268 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
 }
 
 /* ═══ WEATHER DAYS PAGE ═══ */
+/* ═══ MOLD INVENTORY PAGE ═══
+   System of record for physical mold counts. Section A holds one row per
+   panel mold set (with shared rows zeroed and flagged); Section B holds the
+   shared post / cap / rail constraints Luis tracks at the plant. Reads and
+   writes hit `mold_inventory` directly via the existing sb* helpers.
+   Downstream consumers (Mold Capacity, Mold Utilization, AI Scheduler,
+   Dashboard tiles) already read from this table and pick up edits with no
+   additional wiring. The plant_config.total_molds row is intentionally
+   left in place for now — its removal is a separate cleanup PR. */
+const MOLD_COMPONENT_LABELS={
+  post_8ft:'Post 8ft',
+  post_10ft:'Post 10ft',
+  post_12ft:'Post 12ft',
+  post_cap_line:'Post Cap — Line',
+  post_cap_stop:'Post Cap — Stop',
+  cap_rail_standard:'Cap Rail — Standard 54.5"',
+  cap_rail_vwood:'Cap Rail — Vertical Wood 73"',
+};
+const MOLD_SECTION_B_ORDER=['post_8ft','post_10ft','post_12ft','post_cap_line','post_cap_stop','cap_rail_standard','cap_rail_vwood'];
+// Pulls "Nft" from notes like "Physical molds: 28 × 5ft" or "26 × 5.5ft —
+// shared with...". Display-only; falls back to em-dash when the dimension
+// isn't carried in notes (typical for shared zero-count rows).
+const parseMoldLength=(notes)=>{
+  if(!notes)return'—';
+  const m=String(notes).match(/(\d+(?:\.\d+)?)\s*ft/i);
+  return m?`${m[1]}ft`:'—';
+};
+// Surfaces the "shared with" hint from notes for the Shared With column.
+// Two seed conventions are in play: shared rows say "Shares N molds with X
+// — do not count separately" and the parent style says "Physical molds: …
+// — shared with X, Y, Z". Both shapes are normalized here.
+const parseSharedWith=(notes)=>{
+  if(!notes)return'';
+  const upper=notes.match(/Shares\s+\d+\s+molds?\s+with\s+([^—\n]+?)(?:\s*—|$)/i);
+  if(upper)return upper[1].trim();
+  const lower=notes.match(/shared\s+with\s+([^—\n]+?)(?:\s*—|$)/i);
+  if(lower)return lower[1].trim();
+  return'';
+};
+const fmtMoldUpdated=(ts)=>ts?new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
+
+function MoldInventoryPage(){
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[edit,setEdit]=useState(null);
+  const[saving,setSaving]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);
+  const[addForm,setAddForm]=useState({style_name:'',mold_type:'panel',total_molds:'',notes:''});
+  const[adding,setAdding]=useState(false);
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[delBusy,setDelBusy]=useState(false);
+
+  const fetchRows=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const d=await sbGet('mold_inventory','select=id,style_name,mold_type,total_molds,notes,updated_at');
+      setRows(Array.isArray(d)?d:[]);
+    }catch(e){toast.error('Load failed: '+e.message);}
+    setLoading(false);
+  },[]);
+  useEffect(()=>{fetchRows();},[fetchRows]);
+
+  const sectionA=useMemo(()=>rows.filter(r=>r.style_name!=='All Styles')
+    .sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')),[rows]);
+  const sectionB=useMemo(()=>rows.filter(r=>r.style_name==='All Styles')
+    .sort((a,b)=>MOLD_SECTION_B_ORDER.indexOf(a.mold_type)-MOLD_SECTION_B_ORDER.indexOf(b.mold_type)),[rows]);
+
+  // Excludes shared rows so the headline matches physical inventory. The
+  // marker is the "do not count separately" sentinel embedded in notes,
+  // which is how the seed data flags zero-count proxy rows.
+  const panelTotal=useMemo(()=>sectionA
+    .filter(r=>!/do not count separately/i.test(r.notes||''))
+    .reduce((s,r)=>s+n(r.total_molds),0),[sectionA]);
+
+  const startEdit=(row,field)=>{if(saving)return;setEdit({id:row.id,field,value:String(row[field]??'')});};
+  const cancelEdit=()=>setEdit(null);
+  const commitEdit=async()=>{
+    if(!edit)return;
+    const{id,field,value}=edit;
+    const row=rows.find(r=>r.id===id);
+    if(!row){cancelEdit();return;}
+    let parsed=value;
+    if(field==='total_molds'){
+      const num=parseInt(value,10);
+      if(!Number.isFinite(num)||num<0){toast.error('Total molds must be 0 or greater');return;}
+      parsed=num;
+    }else if(field==='style_name'){
+      const trimmed=value.trim();
+      if(!trimmed){toast.error('Style name cannot be empty');return;}
+      parsed=trimmed;
+    }
+    if(parsed===row[field]){cancelEdit();return;}
+    const prev=rows;
+    const newTs=new Date().toISOString();
+    setRows(rs=>rs.map(r=>r.id===id?{...r,[field]:parsed,updated_at:newTs}:r));
+    setEdit(null);
+    setSaving(true);
+    try{
+      await sbPatch('mold_inventory',id,{[field]:parsed,updated_at:newTs});
+      toast.success('Saved ✓');
+    }catch(e){
+      setRows(prev);
+      toast.error('Save failed: '+e.message);
+    }
+    setSaving(false);
+  };
+  const onEditKey=e=>{
+    if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();commitEdit();}
+    else if(e.key==='Escape'){e.preventDefault();cancelEdit();}
+  };
+
+  const submitAdd=async()=>{
+    const sn=addForm.style_name.trim();
+    if(!sn){toast.error('Style name is required');return;}
+    const num=parseInt(addForm.total_molds,10);
+    if(!Number.isFinite(num)||num<0){toast.error('Total molds must be 0 or greater');return;}
+    setAdding(true);
+    try{
+      await sbPost('mold_inventory',{style_name:sn,mold_type:(addForm.mold_type||'panel').trim()||'panel',total_molds:num,notes:addForm.notes||''});
+      setShowAdd(false);
+      setAddForm({style_name:'',mold_type:'panel',total_molds:'',notes:''});
+      toast.success('Mold type added');
+      fetchRows();
+    }catch(e){toast.error('Add failed: '+e.message);}
+    setAdding(false);
+  };
+
+  const doDelete=async()=>{
+    if(!confirmDel)return;
+    setDelBusy(true);
+    const id=confirmDel.id;
+    try{
+      const r=await sbDel('mold_inventory',id);
+      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      setRows(rs=>rs.filter(x=>x.id!==id));
+      toast.success('Mold record deleted');
+      setConfirmDel(null);
+    }catch(e){toast.error('Delete failed: '+e.message);}
+    setDelBusy(false);
+  };
+
+  const editableCell=(row,field,opts={})=>{
+    const isEditing=edit&&edit.id===row.id&&edit.field===field;
+    if(isEditing){
+      return opts.textarea
+        ? <textarea autoFocus value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} rows={2} style={{...inputS,background:'#FEFCE8',resize:'vertical',minWidth:opts.minWidth||220}}/>
+        : <input autoFocus type={opts.type||'text'} value={edit.value} onChange={e=>setEdit(s=>({...s,value:e.target.value}))} onBlur={commitEdit} onKeyDown={onEditKey} style={{...inputS,background:'#FEFCE8',width:opts.width||'100%'}}/>;
+    }
+    const display=field==='total_molds'?(n(row[field])||0):(row[field]||'');
+    return <span onClick={()=>startEdit(row,field)} style={{cursor:'pointer',display:'inline-block',minWidth:20,padding:'2px 4px',borderRadius:4}} title="Click to edit">{display!==''&&display!==null&&display!==undefined?display:<span style={{color:'#9E9B96',fontStyle:'italic'}}>—</span>}</span>;
+  };
+
+  const tdS={padding:'10px 12px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 12px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5};
+  const sectTitle={fontFamily:'Syne',fontSize:18,fontWeight:800,color:'#1A1A1A',marginBottom:4};
+  const sectSub={fontSize:12,color:'#625650'};
+
+  return <div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:16,flexWrap:'wrap'}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Mold Inventory</h1>
+        <div style={{fontSize:13,color:'#625650',marginTop:4,maxWidth:680}}>Physical mold counts — system of record. Updates here flow to Mold Capacity, AI Scheduler, and Dashboard tiles.</div>
+      </div>
+      <button onClick={()=>{setAddForm({style_name:'',mold_type:'panel',total_molds:'',notes:''});setShowAdd(true);}} style={btnP}>+ Add Mold Type</button>
+    </div>
+    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',color:'#1E3A8A',fontSize:12,marginBottom:24,display:'flex',gap:8,alignItems:'flex-start'}}>
+      <span aria-hidden="true">ℹ️</span>
+      <span>This page is the system of record. The <code style={{background:'#DBEAFE',padding:'1px 5px',borderRadius:3}}>plant_config.total_molds</code> value (currently 115) is deprecated and will be removed in a future release. Total panel molds shown here ({panelTotal}) is the live count.</span>
+    </div>
+
+    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden'}}>
+      <div style={{padding:'14px 18px',borderBottom:'1px solid #E5E3E0',background:'#FFF'}}>
+        <div style={sectTitle}>Panel Molds</div>
+        <div style={sectSub}>One row per physical mold set. Shared molds are noted; do not double-count.</div>
+      </div>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={6} cols={6}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Style</th>
+            <th style={{...thS,width:120,textAlign:'right'}}>Total Molds</th>
+            <th style={{...thS,width:110}}>Mold Length</th>
+            <th style={{...thS,width:240}}>Shared With</th>
+            <th style={thS}>Notes</th>
+            <th style={{...thS,width:80}}>Actions</th>
+          </tr></thead>
+          <tbody>
+            {sectionA.length===0&&<tr><td colSpan={6} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No mold records yet — click + Add Mold Type to begin.</td></tr>}
+            {sectionA.map(r=>{
+              const shared=/do not count separately/i.test(r.notes||'');
+              return <tr key={r.id} style={{background:shared?'#FAFAF8':'#FFF'}}>
+                <td style={{...tdS,fontWeight:600}}>{editableCell(r,'style_name')}</td>
+                <td style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:shared?'#9E9B96':'#1A1A1A'}}>{editableCell(r,'total_molds',{type:'number',width:80})}</td>
+                <td style={{...tdS,color:'#625650'}}>{parseMoldLength(r.notes)}</td>
+                <td style={{...tdS,color:'#625650',fontSize:12}}>{parseSharedWith(r.notes)||<span style={{color:'#C8C4BD'}}>—</span>}</td>
+                <td style={{...tdS,minWidth:240}}>{editableCell(r,'notes',{textarea:true})}</td>
+                <td style={tdS}><button onClick={()=>setConfirmDel(r)} title="Delete this mold record" style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 10px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}}>Delete</button></td>
+              </tr>;
+            })}
+          </tbody>
+          <tfoot><tr style={{background:'#F4F4F2'}}>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textTransform:'uppercase',fontSize:11,letterSpacing:0.5,fontWeight:800,color:'#625650'}}>Total Panel Molds</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'right',fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{panelTotal}</td>
+            <td colSpan={4} style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',color:'#9E9B96',fontSize:11,fontStyle:'italic'}}>Excludes shared-mold rows</td>
+          </tr></tfoot>
+        </table>
+      </div>}
+    </div>
+
+    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden'}}>
+      <div style={{padding:'14px 18px',borderBottom:'1px solid #E5E3E0',background:'#FFF'}}>
+        <div style={sectTitle}>Posts, Caps & Rails</div>
+        <div style={sectSub}>Shared across all styles. These are the constraints Luis tracks at the plant — please update when counts change.</div>
+      </div>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={4} cols={4}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Component</th>
+            <th style={{...thS,width:120,textAlign:'right'}}>Total Molds</th>
+            <th style={thS}>Notes</th>
+            <th style={{...thS,width:200}}>Last Updated</th>
+          </tr></thead>
+          <tbody>
+            {sectionB.map(r=><tr key={r.id}>
+              <td style={{...tdS,fontWeight:600}}>{MOLD_COMPONENT_LABELS[r.mold_type]||r.mold_type}</td>
+              <td style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{editableCell(r,'total_molds',{type:'number',width:80})}</td>
+              <td style={{...tdS,minWidth:240}}>{editableCell(r,'notes',{textarea:true})}</td>
+              <td style={{...tdS,color:'#9E9B96',fontSize:11,whiteSpace:'nowrap'}}>{fmtMoldUpdated(r.updated_at)}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {showAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!adding&&setShowAdd(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(440px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:14}}>Add Mold Type</div>
+        <div style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style Name *</label><input autoFocus value={addForm.style_name} onChange={e=>setAddForm(f=>({...f,style_name:e.target.value}))} style={inputS} placeholder="e.g. Custom Style"/></div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Mold Type</label><input value={addForm.mold_type} onChange={e=>setAddForm(f=>({...f,mold_type:e.target.value}))} style={inputS} placeholder="panel"/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Total Molds *</label><input type="number" min="0" value={addForm.total_molds} onChange={e=>setAddForm(f=>({...f,total_molds:e.target.value}))} style={inputS}/></div>
+        </div>
+        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={addForm.notes} onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}} placeholder="e.g. Physical molds: 4 × 6ft"/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowAdd(false)} disabled={adding} style={btnS}>Cancel</button>
+          <button onClick={submitAdd} disabled={adding} style={{...btnP,background:'#065F46'}}>{adding?'Saving...':'Save'}</button>
+        </div>
+      </div>
+    </div>}
+
+    {confirmDel&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!delBusy&&setConfirmDel(null)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(440px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:10}}>Delete mold record?</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:18}}>Delete the <b style={{color:'#1A1A1A'}}>{confirmDel.style_name}</b> mold record? This will recalculate Mold Capacity for all dependent views.</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setConfirmDel(null)} disabled={delBusy} style={btnS}>Cancel</button>
+          <button onClick={doDelete} disabled={delBusy} style={{...btnP,background:'#991B1B'}}>{delBusy?'Deleting...':'Delete'}</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function WeatherDaysPage({jobs}){
   const isMobile = useIsMobile();
   const[days,setDays]=useState([]);const[loading,setLoading]=useState(true);const[showForm,setShowForm]=useState(false);const[editDay,setEditDay]=useState(null);
@@ -15840,7 +16102,7 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
-  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'}]},
+  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
@@ -15874,7 +16136,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:148,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
       :<div style={{width:34,height:34,borderRadius:10,background:'#8A261D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{color:'#FFF',fontFamily:'Syne',fontWeight:900,fontSize:15,letterSpacing:'-0.5px'}}>F</span></div>}
     </div>
-    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>','mold_inventory':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="3" rx="0.5"/><rect x="1" y="7" width="14" height="3" rx="0.5"/><rect x="1" y="11" width="14" height="3" rx="0.5"/><path d="M5 3v3M11 3v3M3 7v3M9 7v3M13 7v3M5 11v3M11 11v3"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'10px 8px':'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',background:'rgba(0,0,0,0.15)'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
@@ -16335,6 +16597,7 @@ function AppShell(){
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
+            {page==='mold_inventory'&&<MoldInventoryPage/>}
             {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
