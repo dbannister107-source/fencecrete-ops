@@ -16754,10 +16754,10 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
-  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'},{key:'plant_maintenance',label:'Plant Maintenance',icon:'🏭'}]},
+  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
-  {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
+  {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
   {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
