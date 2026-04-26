@@ -18,6 +18,39 @@ const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
 const PIS_API = `${SB}/functions/v1/pis-public`;
 
+// Supabase edge functions occasionally return 503 with deployment_id=null on
+// cold starts (their gateway rejects before routing). They warm up within
+// 1-3 seconds. Without retry, customers see "HTTP 503" the first time they
+// click a PIS link if no one else has hit the function recently.
+//
+// Retry with exponential backoff for: network errors, 502, 503, 504.
+// Do NOT retry: 4xx (client errors), 500 (genuine server error in our code).
+async function fetchWithRetry(url, init = {}, maxAttempts = 4) {
+  const transientStatuses = new Set([502, 503, 504]);
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (transientStatuses.has(res.status) && attempt < maxAttempts - 1) {
+        // Wait 600ms, 1200ms, 2400ms before each retry
+        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts - 1) {
+        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (lastErr) throw lastErr;
+  // Should not reach here, but fall through with a final attempt response
+  return fetch(url, init);
+}
+
 const fcRed = '#8A261D';
 const fcRedDark = '#6B1D16';
 const fcBg = '#F4F4F2';
@@ -77,7 +110,7 @@ export default function PISFormPage({ token }) {
     (async () => {
       if (!token) { setStatus('invalid'); return; }
       try {
-        const res = await fetch(`${PIS_API}?token=${encodeURIComponent(token)}`, {
+        const res = await fetchWithRetry(`${PIS_API}?token=${encodeURIComponent(token)}`, {
           method: 'GET',
           headers: { 'Accept': 'application/json', 'apikey': KEY, 'Authorization': `Bearer ${KEY}` },
         });
@@ -123,7 +156,7 @@ export default function PISFormPage({ token }) {
     setStatus('submitting');
     try {
       const payload = { ...form, token };
-      const res = await fetch(`${PIS_API}?token=${encodeURIComponent(token)}`, {
+      const res = await fetchWithRetry(`${PIS_API}?token=${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'apikey': KEY, 'Authorization': `Bearer ${KEY}` },
         body: JSON.stringify(payload),
@@ -155,7 +188,26 @@ export default function PISFormPage({ token }) {
     return <StatePage icon="✅" title="Thank you!" body={<>Your project information has been received. Our team at Fencecrete America will review it and be in touch shortly.<br /><br />If you have questions, contact us at <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a> or (210) 492-7911.</>} color={fcRed} />;
   }
   if (status === 'error') {
-    return <StatePage icon="⚠️" title="Something went wrong" body={<>{errorMsg || 'Please try again.'}<br /><br />If this keeps happening, contact <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a>.</>} />;
+    return <div style={{ minHeight: '100vh', background: fcBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter, Arial, sans-serif' }}>
+      <div style={{ background: '#FFF', borderRadius: 16, padding: '48px 40px', maxWidth: 560, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}>
+        <div style={{ fontWeight: 900, fontSize: 22, color: fcRed, letterSpacing: -0.02, marginBottom: 32 }}>FENCECRETE</div>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>⚠️</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: fcText, marginBottom: 12 }}>We're having trouble loading the form</div>
+        <div style={{ fontSize: 15, color: fcMuted, lineHeight: 1.6, marginBottom: 24 }}>
+          This usually clears up in a few seconds. Please try again.
+          <br /><br />
+          If it keeps happening, contact <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a> or call (210) 492-7911.
+          <br /><br />
+          <span style={{ fontSize: 11, color: '#9E9B96' }}>Reference: {errorMsg || 'unknown'}</span>
+        </div>
+        <button
+          onClick={() => { setStatus('loading'); setErrorMsg(''); window.location.reload(); }}
+          style={{ background: fcRed, color: '#fff', border: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          Try again
+        </button>
+      </div>
+    </div>;
   }
 
   // Status is 'ready' or 'submitting' — render the form
