@@ -224,8 +224,8 @@ const getSharePointTooltip=(url)=>{
   }catch{return'Open in SharePoint';}
 };
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
-const REPS = ['Matt','Laura','Yuda','Nathan','Ryne'];
-const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'}];
+const REPS = ['Matt','Laura','Yuda','Nathan','Ryne','Mike Dean'];
+const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'},{id:'Hugo Rodriguez',short:'Hugo',label:'Hugo Rodriguez'},{id:'Israel Santibanez',short:'Israel',label:'Israel Santibanez'}];
 const PMS=PM_LIST.map(p=>p.id);
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
