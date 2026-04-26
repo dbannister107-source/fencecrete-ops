@@ -12372,6 +12372,68 @@ function PlantMaintenancePage(){
   </div>;
 }
 
+/* ═══ INSPECTION HISTORY VIEW ═══
+   Read-only roll-up of fleet_inspections joined to the parent equipment
+   record. Rendered as the Inspections page-level tab in FleetPage; the
+   parent passes its `crd` card style for visual parity with the other
+   tabs. Inspection creation lives elsewhere ("+ Daily Inspection"
+   button at the top of FleetPage); this component only displays
+   history. Limit 200 rows is plenty for now — pagination can come if
+   the table outgrows it. */
+function InspectionHistoryView({crd}){
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{
+    let alive=true;
+    sbGet('fleet_inspections','select=*,fleet_equipment(unit_number,make_model,equipment_type,city)&order=inspection_date.desc&limit=200').then(d=>{
+      if(!alive)return;
+      setRows(Array.isArray(d)?d:[]);
+      setLoading(false);
+    }).catch(()=>{if(alive)setLoading(false);});
+    return()=>{alive=false;};
+  },[]);
+  if(loading)return <div style={{...crd,padding:40,textAlign:'center',color:'#9E9B96'}}>Loading inspections…</div>;
+  if(rows.length===0)return <div style={{...crd,padding:'60px',textAlign:'center',color:'#9E9B96'}}>
+    <div style={{fontSize:32,marginBottom:8}}>📋</div>
+    <div style={{fontFamily:'Syne',fontWeight:700}}>No inspection history yet</div>
+    <div style={{fontSize:12,marginTop:4}}>Daily inspections logged from the field will appear here.</div>
+  </div>;
+  // overall_status comes back as text rather than a strict enum, so we
+  // bucket loosely on lowercased prefix and fall back to neutral gray
+  // for anything we don't recognise.
+  const statusStyle=(s)=>{
+    const v=String(s||'').toLowerCase();
+    if(v==='pass'||v==='passed')return{bg:'#D1FAE5',c:'#065F46'};
+    if(v==='fail'||v==='failed')return{bg:'#FEF2F2',c:'#991B1B'};
+    if(v==='conditional'||v==='warning')return{bg:'#FEF3C7',c:'#854F0B'};
+    return{bg:'#F4F4F2',c:'#625650'};
+  };
+  return <div style={{...crd,padding:0,overflow:'auto'}}>
+    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+      <thead><tr style={{background:'#1A1A1A',color:'#FFF'}}>
+        {['Date','Unit #','Type','Inspector','Status','Findings'].map(h=>
+          <th key={h} style={{padding:'10px 12px',textAlign:'left',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>{h}</th>
+        )}
+      </tr></thead>
+      <tbody>
+        {rows.map((r,i)=>{
+          const eq=r.fleet_equipment;
+          const ss=statusStyle(r.overall_status);
+          const findings=r.defects_found||r.notes||'';
+          return <tr key={r.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8'}}>
+            <td style={{padding:'10px 12px',fontWeight:600,whiteSpace:'nowrap'}}>{r.inspection_date?new Date(r.inspection_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—'}</td>
+            <td style={{padding:'10px 12px'}}>{eq?<><div style={{fontFamily:'monospace',fontWeight:700,fontSize:11}}>{eq.unit_number}</div><div style={{fontSize:10,color:'#9E9B96'}}>{eq.make_model||eq.equipment_type}</div></>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+            <td style={{padding:'10px 12px',color:'#625650',textTransform:'capitalize'}}>{r.inspection_type||'—'}</td>
+            <td style={{padding:'10px 12px',color:'#625650'}}>{r.inspector_name||'—'}</td>
+            <td style={{padding:'10px 12px'}}><span style={{background:ss.bg,color:ss.c,borderRadius:12,padding:'3px 8px',fontSize:10,fontWeight:700,textTransform:'uppercase'}}>{r.overall_status||'—'}</span></td>
+            <td style={{padding:'10px 12px',color:'#625650',maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={findings}>{findings||<span style={{color:'#9E9B96'}}>—</span>}</td>
+          </tr>;
+        })}
+      </tbody>
+    </table>
+  </div>;
+}
+
 function FleetPage({jobs}){
   const auth=useAuth();
   const v=useViewport();
