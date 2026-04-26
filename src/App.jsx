@@ -2823,15 +2823,21 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
       saved=[...saved.slice(0,insertAt),...missing,...saved.slice(insertAt)];
     }
     // One-shot backfill so existing users see the SharePoint column on first
-    // load after deploy. Guarded by a separate seed flag so a user who later
-    // unchecks it via the picker won't have it re-added on the next reload.
-    const SP_SEED='fc_sharepoint_col_seeded';
+    // load after deploy. Guarded by a seed flag so a user who later unchecks
+    // it via the picker won't have it re-added on the next reload.
+    //
+    // v2 (this revision): the v1 flag (fc_sharepoint_col_seeded) was getting
+    // set on some browsers without the column actually landing in saved —
+    // observed as "Columns (22)" but no 📁 column visible until manual toggle.
+    // v2 bumps the key so those users re-seed once, and uses dedupe-then-
+    // insert so the column is unconditionally placed before Status whenever
+    // the v2 flag is missing. The v1 key is intentionally left in place.
+    const SP_SEED='fc_sharepoint_col_seeded_v2';
     if(!localStorage.getItem(SP_SEED)){
-      if(!saved.includes('sharepoint_folder')){
-        const stIdx=saved.indexOf('status');
-        const insertAt=stIdx>=0?stIdx:saved.length;
-        saved=[...saved.slice(0,insertAt),'sharepoint_folder',...saved.slice(insertAt)];
-      }
+      saved=saved.filter(k=>k!=='sharepoint_folder');
+      const stIdx=saved.indexOf('status');
+      const insertAt=stIdx>=0?stIdx:saved.length;
+      saved=[...saved.slice(0,insertAt),'sharepoint_folder',...saved.slice(insertAt)];
       localStorage.setItem(SP_SEED,'1');
     }
     localStorage.setItem('fc_vis_cols_v3',JSON.stringify(saved));
