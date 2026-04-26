@@ -7,6 +7,7 @@ import L from 'leaflet';
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import BUILD_INFO from './build-info.json';
 import SystemEventsPage from './features/system-events/SystemEventsPage';
+import PISFormPage from './features/pis/PISFormPage';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
@@ -17449,6 +17450,22 @@ export default function App(){
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recoveryToken, setRecoveryToken] = useState(null);
+  // PIS public form route: hash is #/pis/{token}. Render outside the auth
+  // wrapper because external recipients (customers/GCs) do not have logins.
+  const [pisToken, setPisToken] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const m = (window.location.hash || '').match(/^#\/pis\/([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onHashChange = () => {
+      const m = (window.location.hash || '').match(/^#\/pis\/([A-Za-z0-9_-]+)/);
+      setPisToken(m ? m[1] : null);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
   useEffect(()=>{try{document.title='Fencecrete';}catch(e){}},[]);
   // Detect recovery hash from password-reset email
   useEffect(()=>{
@@ -17507,6 +17524,10 @@ export default function App(){
     setSession(null); setUser(null); setProfile(null);
   },[session]);
   const ctx = useMemo(()=>({session,user,profile,loading,signIn,signOut}),[session,user,profile,loading,signIn,signOut]);
+  // Public PIS route — render outside auth wrapper. Must come AFTER all hooks
+  // have run (rules of hooks) but BEFORE the loading/auth gates so external
+  // recipients without a Fencecrete login can still complete the form.
+  if (pisToken) return <PISFormPage token={pisToken} />;
   if (loading) {
     return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
