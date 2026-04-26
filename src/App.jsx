@@ -11787,6 +11787,591 @@ function PhotoUploadGrid({ photos, onPhotosChange, folder, disabled }) {
   );
 }
 
+/* ═══ PLANT MAINTENANCE PAGE ═══
+   Batch-plant work orders, kept separate from fleet analytics. Reads/writes
+   fleet_work_orders rows where equipment_id points at the lone batch_plant
+   equipment record (PLANT-SA-01). Plant-only fields — subsystem,
+   downtime_hours, plant_down — were added by the
+   plant_maintenance_columns migration. Downtime LF Lost is derived at
+   render time from plant_config.lf_per_day_current ÷ 8 × hours and is not
+   stored anywhere. WO numbers use the PLT-YYYY-NNN prefix so they don't
+   collide with the WO-YYYY-NNNN sequence used by fleet WOs. */
+const PLANT_SUBSYSTEMS=[
+  {value:'mixer',label:'Mixer (paddle, motor, gearbox, liner)'},
+  {value:'cement_silo',label:'Cement Silo (auger, pulse jet, sensors)'},
+  {value:'aggregate_system',label:'Aggregate Hoppers / Belts / Conveyors'},
+  {value:'scales',label:'Scales (cement, aggregate, water)'},
+  {value:'water_system',label:'Water System (pump, meter, valves)'},
+  {value:'dust_collector',label:'Dust Collector / Baghouse'},
+  {value:'air_compressor',label:'Air Compressor'},
+  {value:'control_panel',label:'Control Panel / PLC / Electrical'},
+  {value:'discharge',label:'Loadout / Discharge Chute'},
+  {value:'structural',label:'Structural (catwalks, ladders, hoppers)'},
+  {value:'general',label:'General / Other'},
+];
+const PLANT_ISSUE_TYPES=[
+  {value:'preventive',label:'Preventive (scheduled)'},
+  {value:'breakdown',label:'Breakdown (unplanned failure)'},
+  {value:'upgrade',label:'Capital Improvement / Upgrade'},
+  {value:'inspection',label:'Inspection / Safety Check'},
+  {value:'cleaning',label:'Cleaning'},
+  {value:'calibration',label:'Calibration'},
+];
+const PLANT_PRIORITIES=[
+  {value:'low',label:'Low'},
+  {value:'medium',label:'Medium'},
+  {value:'high',label:'High'},
+  {value:'critical',label:'Critical'},
+];
+const PLANT_STATUS_LABELS={open:'Open',new:'New',assigned:'Assigned',in_progress:'In Progress',pending_verification:'Pending Verify',completed:'Completed',verified:'Verified',closed:'Closed'};
+const PLANT_STATUS_C={open:'#991B1B',new:'#991B1B',assigned:'#185FA5',in_progress:'#B45309',pending_verification:'#D97706',completed:'#065F46',verified:'#065F46',closed:'#374151'};
+const PLANT_STATUS_BG={open:'#FEF2F2',new:'#FEF2F2',assigned:'#DBEAFE',in_progress:'#FEF3C7',pending_verification:'#FED7AA',completed:'#D1FAE5',verified:'#D1FAE5',closed:'#F4F4F2'};
+const PLANT_OPEN_STATUSES=new Set(['open','new','assigned','in_progress','pending_verification']);
+// Email-based gate, mirroring the rest of the app. Spec asked for a
+// role-based check; the codebase doesn't have a roles model yet, so the
+// admin / plant supervisor / mechanic identities are encoded as the
+// existing edit allowlist plus Max (plant supervisor) and Luis
+// (mechanic). Viewers — including outside PE sponsors — fall through to
+// read-only.
+const PLANT_EDIT_EMAILS=new Set([
+  'david@fencecrete.com',
+  'amiee@fencecrete.com',
+  'alex@fencecrete.com',
+  'contracts@fencecrete.com',
+  'ccontreras@fencecrete.com',
+  'max@fencecrete.com',
+  'luis@fencecrete.com',
+]);
+const canEditPlantWO=(email)=>PLANT_EDIT_EMAILS.has((email||'').toLowerCase().trim());
+const subsystemLabel=(v)=>{const m=PLANT_SUBSYSTEMS.find(s=>s.value===v);return m?m.label:(v||'—');};
+const subsystemShort=(v)=>(subsystemLabel(v)||'').split(' (')[0];
+const issueTypeLabel=(v)=>{const m=PLANT_ISSUE_TYPES.find(t=>t.value===v);return m?m.label:(v||'—');};
+const issueTypeShort=(v)=>(issueTypeLabel(v)||'').split(' (')[0];
+
+function PlantMaintenancePage(){
+  const auth=useAuth();
+  const currentEmail=(auth?.user?.email||'').toLowerCase().trim();
+  const canEdit=canEditPlantWO(currentEmail);
+
+  const[plantEquip,setPlantEquip]=useState(null);
+  const[wos,setWOs]=useState([]);
+  const[lfPerDay,setLfPerDay]=useState(3240);
+  const[loading,setLoading]=useState(true);
+
+  const[statusF,setStatusF]=useState('');
+  const[subsystemF,setSubsystemF]=useState('');
+  const[typeF,setTypeF]=useState('');
+  const[fromF,setFromF]=useState('');
+  const[toF,setToF]=useState('');
+  const[search,setSearch]=useState('');
+  const[showCharts,setShowCharts]=useState(false);
+
+  const emptyForm=useCallback(()=>({title:'',subsystem:'mixer',wo_type:'preventive',priority:'medium',reported_by:auth?.profile?.full_name||currentEmail||'',description:'',plant_down:false,downtime_hours:'',assigned_to:'',due_date:''}),[auth,currentEmail]);
+  const[showForm,setShowForm]=useState(false);
+  const[formMode,setFormMode]=useState('create');
+  const[form,setForm]=useState(emptyForm);
+  const[saving,setSaving]=useState(false);
+
+  const[detail,setDetail]=useState(null);
+  const[detailParts,setDetailParts]=useState([]);
+  const[detailUpdates,setDetailUpdates]=useState([]);
+  const[updateNote,setUpdateNote]=useState('');
+  const[partForm,setPartForm]=useState({part_name:'',quantity_used:1,unit_cost:'',notes:''});
+  const[showAddPart,setShowAddPart]=useState(false);
+
+  const load=useCallback(async()=>{
+    try{
+      const[eqRows,cfgRows]=await Promise.all([
+        sbGet('fleet_equipment','select=id,unit_number,equipment_type&equipment_type=eq.batch_plant&limit=1'),
+        sbGet('plant_config','select=key,value&key=eq.lf_per_day_current'),
+      ]);
+      const eq=Array.isArray(eqRows)&&eqRows[0]?eqRows[0]:null;
+      setPlantEquip(eq);
+      if(Array.isArray(cfgRows)&&cfgRows[0])setLfPerDay(n(cfgRows[0].value)||3240);
+      if(eq){
+        const wRows=await sbGet('fleet_work_orders',`select=*&equipment_id=eq.${eq.id}&order=reported_at.desc`);
+        setWOs(Array.isArray(wRows)?wRows:[]);
+      }else{
+        setWOs([]);
+      }
+    }catch(e){toast.error('Load failed: '+e.message);}
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const lfPerHour=useMemo(()=>n(lfPerDay)/8,[lfPerDay]);
+  const lfFromHours=useCallback((h)=>Math.round(n(h)*lfPerHour),[lfPerHour]);
+
+  const openCount=useMemo(()=>wos.filter(w=>PLANT_OPEN_STATUSES.has(w.status)).length,[wos]);
+  const plantDownNow=useMemo(()=>wos.some(w=>w.plant_down&&PLANT_OPEN_STATUSES.has(w.status)),[wos]);
+  const ytdDowntimeHrs=useMemo(()=>{
+    const yr=new Date().getFullYear();
+    return wos.filter(w=>w.reported_at&&new Date(w.reported_at).getFullYear()===yr).reduce((s,w)=>s+n(w.downtime_hours),0);
+  },[wos]);
+  const ytdLfLost=Math.round(ytdDowntimeHrs*lfPerHour);
+
+  const filtered=useMemo(()=>{
+    let f=wos;
+    if(statusF)f=f.filter(w=>w.status===statusF);
+    if(subsystemF)f=f.filter(w=>w.subsystem===subsystemF);
+    if(typeF)f=f.filter(w=>w.wo_type===typeF);
+    if(fromF)f=f.filter(w=>w.reported_at&&w.reported_at>=fromF);
+    if(toF)f=f.filter(w=>w.reported_at&&w.reported_at<=toF+'T23:59:59Z');
+    if(search){const q=search.toLowerCase();f=f.filter(w=>(w.wo_number||'').toLowerCase().includes(q)||(w.title||'').toLowerCase().includes(q)||(w.description||'').toLowerCase().includes(q)||(w.assigned_to||'').toLowerCase().includes(q));}
+    return f;
+  },[wos,statusF,subsystemF,typeF,fromF,toF,search]);
+
+  const subsystemCounts=useMemo(()=>{
+    const since=new Date();since.setMonth(since.getMonth()-12);
+    const out={};
+    wos.filter(w=>w.reported_at&&new Date(w.reported_at)>=since).forEach(w=>{
+      const k=w.subsystem||'general';out[k]=(out[k]||0)+1;
+    });
+    return PLANT_SUBSYSTEMS.map(s=>({name:s.value,count:out[s.value]||0,label:subsystemShort(s.value)})).filter(d=>d.count>0);
+  },[wos]);
+  const subsystemCosts=useMemo(()=>{
+    const since=new Date();since.setMonth(since.getMonth()-12);
+    const out={};
+    wos.filter(w=>w.reported_at&&new Date(w.reported_at)>=since).forEach(w=>{
+      const k=w.subsystem||'general';
+      out[k]=(out[k]||0)+(n(w.total_cost)||(n(w.labor_cost)+n(w.parts_cost)));
+    });
+    return PLANT_SUBSYSTEMS.map(s=>({name:s.value,cost:out[s.value]||0,label:subsystemShort(s.value)})).filter(d=>d.cost>0);
+  },[wos]);
+  const downtimeByMonth=useMemo(()=>{
+    const map={};const today=new Date();
+    for(let i=11;i>=0;i--){
+      const d=new Date(today.getFullYear(),today.getMonth()-i,1);
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      map[k]={month:d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}),hours:0};
+    }
+    wos.forEach(w=>{
+      if(!w.reported_at||!w.downtime_hours)return;
+      const d=new Date(w.reported_at);
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if(map[k])map[k].hours+=n(w.downtime_hours);
+    });
+    return Object.values(map);
+  },[wos]);
+
+  const nextWONumber=async()=>{
+    const yr=new Date().getFullYear();
+    const prefix=`PLT-${yr}-`;
+    const rows=await sbGet('fleet_work_orders',`select=wo_number&wo_number=like.${prefix}*&order=wo_number.desc&limit=1`);
+    if(Array.isArray(rows)&&rows[0]&&rows[0].wo_number){
+      const tail=rows[0].wo_number.slice(prefix.length);
+      const num=parseInt(tail,10);
+      if(Number.isFinite(num))return prefix+String(num+1).padStart(3,'0');
+    }
+    return prefix+'001';
+  };
+
+  const openCreate=()=>{setForm(emptyForm());setFormMode('create');setShowForm(true);};
+  const openEdit=(w)=>{
+    setForm({
+      id:w.id,
+      title:w.title||'',
+      subsystem:w.subsystem||'mixer',
+      wo_type:w.wo_type||'preventive',
+      priority:w.priority||'medium',
+      reported_by:w.reported_by||'',
+      description:w.description||'',
+      plant_down:!!w.plant_down,
+      downtime_hours:w.downtime_hours==null?'':String(w.downtime_hours),
+      assigned_to:w.assigned_to||'',
+      due_date:w.due_date||'',
+    });
+    setFormMode('edit');
+    setShowForm(true);
+  };
+
+  const submitForm=async()=>{
+    if(!form.title.trim()){toast.error('Title is required');return;}
+    if(form.plant_down&&(!form.downtime_hours||n(form.downtime_hours)<=0)){toast.error('Downtime hours required when Plant Down is set');return;}
+    if(!plantEquip){toast.error('Plant equipment record missing — cannot save');return;}
+    setSaving(true);
+    try{
+      const body={
+        title:form.title.trim(),
+        subsystem:form.subsystem||null,
+        wo_type:form.wo_type||null,
+        priority:form.priority||'medium',
+        reported_by:form.reported_by||null,
+        reported_by_email:currentEmail||null,
+        description:form.description||null,
+        plant_down:!!form.plant_down,
+        downtime_hours:form.downtime_hours===''||form.downtime_hours==null?null:n(form.downtime_hours),
+        assigned_to:form.assigned_to||null,
+        due_date:form.due_date||null,
+        updated_at:new Date().toISOString(),
+      };
+      if(formMode==='create'){
+        body.equipment_id=plantEquip.id;
+        body.status='open';
+        body.reported_at=new Date().toISOString();
+        body.wo_number=await nextWONumber();
+        await sbPost('fleet_work_orders',body);
+      }else{
+        await sbPatch('fleet_work_orders',form.id,body);
+      }
+      setShowForm(false);
+      toast.success('Saved ✓');
+      load();
+      if(detail&&formMode==='edit'&&detail.id===form.id){setDetail({...detail,...body});}
+    }catch(e){toast.error('Save failed: '+e.message);}
+    setSaving(false);
+  };
+
+  const openDetail=async(w)=>{
+    setDetail(w);
+    try{
+      const[parts,updates]=await Promise.all([
+        sbGet('fleet_wo_parts',`select=*&work_order_id=eq.${w.id}&order=created_at.desc`),
+        sbGet('fleet_wo_updates',`select=*&work_order_id=eq.${w.id}&order=created_at.desc`),
+      ]);
+      setDetailParts(Array.isArray(parts)?parts:[]);
+      setDetailUpdates(Array.isArray(updates)?updates:[]);
+    }catch(e){toast.error('Detail load failed: '+e.message);}
+  };
+  const closeDetail=()=>{setDetail(null);setDetailParts([]);setDetailUpdates([]);setUpdateNote('');setShowAddPart(false);};
+
+  const setStatus=async(w,newStatus,extra={})=>{
+    if(!canEdit){toast.error('Read-only access');return;}
+    const body={status:newStatus,updated_at:new Date().toISOString(),...extra};
+    try{
+      await sbPatch('fleet_work_orders',w.id,body);
+      try{await sbPost('fleet_wo_updates',{work_order_id:w.id,update_type:'status_change',from_status:w.status,to_status:newStatus,updated_by:auth?.profile?.full_name||currentEmail,updated_by_email:currentEmail});}catch(e){}
+      toast.success('Saved ✓');
+      load();
+      if(detail&&detail.id===w.id){
+        setDetail({...detail,...body});
+        const u=await sbGet('fleet_wo_updates',`select=*&work_order_id=eq.${w.id}&order=created_at.desc`);
+        setDetailUpdates(Array.isArray(u)?u:[]);
+      }
+    }catch(e){toast.error('Save failed: '+e.message);}
+  };
+
+  const submitUpdate=async()=>{
+    if(!detail||!updateNote.trim())return;
+    try{
+      await sbPost('fleet_wo_updates',{work_order_id:detail.id,update_type:'note',notes:updateNote.trim(),updated_by:auth?.profile?.full_name||currentEmail,updated_by_email:currentEmail});
+      setUpdateNote('');
+      const u=await sbGet('fleet_wo_updates',`select=*&work_order_id=eq.${detail.id}&order=created_at.desc`);
+      setDetailUpdates(Array.isArray(u)?u:[]);
+      toast.success('Update added');
+    }catch(e){toast.error('Update failed: '+e.message);}
+  };
+
+  const submitPart=async()=>{
+    if(!detail)return;
+    if(!partForm.part_name.trim()){toast.error('Part name is required');return;}
+    const qty=n(partForm.quantity_used)||1;
+    const cost=n(partForm.unit_cost);
+    try{
+      await sbPost('fleet_wo_parts',{work_order_id:detail.id,part_name:partForm.part_name.trim(),quantity_used:qty,unit_cost:cost||null,total_cost:cost?cost*qty:null,notes:partForm.notes||null});
+      const newParts=await sbGet('fleet_wo_parts',`select=quantity_used,unit_cost,total_cost&work_order_id=eq.${detail.id}`);
+      const newPartsCost=(Array.isArray(newParts)?newParts:[]).reduce((s,p)=>s+(n(p.total_cost)||(n(p.quantity_used)*n(p.unit_cost))),0);
+      await sbPatch('fleet_work_orders',detail.id,{parts_cost:newPartsCost,total_cost:newPartsCost+n(detail.labor_cost),updated_at:new Date().toISOString()});
+      setPartForm({part_name:'',quantity_used:1,unit_cost:'',notes:''});
+      setShowAddPart(false);
+      const refreshedParts=await sbGet('fleet_wo_parts',`select=*&work_order_id=eq.${detail.id}&order=created_at.desc`);
+      setDetailParts(Array.isArray(refreshedParts)?refreshedParts:[]);
+      toast.success('Part added');
+      load();
+    }catch(e){toast.error('Part add failed: '+e.message);}
+  };
+
+  const deleteWO=async(w)=>{
+    if(!canEdit)return;
+    if(!window.confirm(`Delete work order ${w.wo_number||w.id.slice(0,8)}? This cannot be undone.`))return;
+    try{
+      await sbDel('fleet_work_orders',w.id);
+      toast.success('Work order deleted');
+      closeDetail();
+      load();
+    }catch(e){toast.error('Delete failed: '+e.message);}
+  };
+
+  const cardL={background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,padding:16};
+  const inputSL={width:'100%',padding:'8px 10px',border:'1px solid #D1CEC9',borderRadius:6,fontSize:13,background:'#FFF',boxSizing:'border-box'};
+  const btnPL={padding:'8px 16px',background:'#8A261D',color:'#FFF',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:13};
+  const btnSL={...btnPL,background:'#F4F4F2',color:'#625650',border:'1px solid #E5E3E0'};
+  const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:12,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
+
+  const KPI=({label,value,color='#1A1A1A',accent})=><div style={{...cardL,padding:14}}>
+    <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,letterSpacing:0.5}}>{label}</div>
+    <div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color,marginTop:6}}>{value}</div>
+    {accent&&<div style={{fontSize:11,color:'#625650',marginTop:2}}>{accent}</div>}
+  </div>;
+  const StatusPill=({s})=><span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,background:PLANT_STATUS_BG[s]||'#F4F4F2',color:PLANT_STATUS_C[s]||'#625650'}}>{PLANT_STATUS_LABELS[s]||s||'—'}</span>;
+  const formField=(label,child,opts={})=><div style={{marginBottom:12,...(opts.style||{})}}>
+    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{label}{opts.required&&<span style={{color:'#991B1B'}}> *</span>}</label>
+    {child}
+  </div>;
+
+  const formModal=showForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!saving&&setShowForm(false)}>
+    <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(580px,96vw)',maxHeight:'92vh',overflow:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,marginBottom:14}}>{formMode==='create'?'New Plant Work Order':'Edit Plant Work Order'}</div>
+      {formField('Title',<input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} style={inputSL} placeholder="e.g. Mixer paddle replacement"/>,{required:true})}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        {formField('Subsystem',<select value={form.subsystem} onChange={e=>setForm(f=>({...f,subsystem:e.target.value}))} style={inputSL}>{PLANT_SUBSYSTEMS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>,{required:true})}
+        {formField('Issue Type',<select value={form.wo_type} onChange={e=>setForm(f=>({...f,wo_type:e.target.value}))} style={inputSL}>{PLANT_ISSUE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select>,{required:true})}
+        {formField('Priority',<select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={inputSL}>{PLANT_PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select>,{required:true})}
+        {formField('Reported By',<input value={form.reported_by} onChange={e=>setForm(f=>({...f,reported_by:e.target.value}))} style={inputSL}/>,{required:true})}
+      </div>
+      {formField('Description',<textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} style={{...inputSL,resize:'vertical'}} placeholder="What broke, what was observed, vendor name if applicable…"/>)}
+      <div style={{padding:'10px 12px',background:form.plant_down?'#FEF2F2':'#F9F8F6',border:`1px solid ${form.plant_down?'#FCA5A5':'#E5E3E0'}`,borderRadius:8,marginBottom:12}}>
+        <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,fontWeight:600}}>
+          <input type="checkbox" checked={form.plant_down} onChange={e=>setForm(f=>({...f,plant_down:e.target.checked}))}/>
+          <span>{form.plant_down?'🔴 Plant Down — production halted':'Plant continued running'}</span>
+        </label>
+        {form.plant_down&&<div style={{marginTop:10}}>
+          <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Downtime Hours <span style={{color:'#991B1B'}}>*</span></label>
+          <input type="number" min="0" step="0.25" value={form.downtime_hours} onChange={e=>setForm(f=>({...f,downtime_hours:e.target.value}))} style={inputSL} placeholder="e.g. 2.5"/>
+          {n(form.downtime_hours)>0&&<div style={{fontSize:11,color:'#625650',marginTop:6}}>Estimated LF lost: <b style={{color:'#991B1B'}}>{lfFromHours(form.downtime_hours).toLocaleString()} LF</b> <span style={{color:'#9E9B96'}}>(@ {lfPerDay.toLocaleString()} LF/day)</span></div>}
+        </div>}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        {formField('Assigned To',<input value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} style={inputSL} placeholder="e.g. Luis"/>)}
+        {formField('Due Date',<input type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))} style={inputSL}/>)}
+      </div>
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
+        <button onClick={()=>setShowForm(false)} disabled={saving} style={btnSL}>Cancel</button>
+        <button onClick={submitForm} disabled={saving} style={btnPL}>{saving?'Saving…':(formMode==='create'?'Create Work Order':'Save Changes')}</button>
+      </div>
+    </div>
+  </div>;
+
+  const timelineRow=(label,ts,who)=>ts?<div style={{display:'flex',gap:10,padding:'6px 0',borderBottom:'1px dashed #F4F4F2'}}>
+    <div style={{width:90,fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+    <div style={{flex:1,fontSize:12}}><b>{fD(ts)}</b>{who?<span style={{color:'#625650'}}> · {who}</span>:''}</div>
+  </div>:null;
+
+  const drawer=detail&&<div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(640px,100vw)',background:'#FFF',borderLeft:'1px solid #E5E3E0',zIndex:300,display:'flex',flexDirection:'column',boxShadow:'-12px 0 40px rgba(0,0,0,.12)'}}>
+    <div style={{padding:'14px 18px',borderBottom:'1px solid #E5E3E0',background:'#F9F8F6',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexShrink:0}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontFamily:'monospace',fontSize:12,color:'#625650',fontWeight:700}}>{detail.wo_number||'—'}</div>
+        <div style={{fontFamily:'Inter',fontSize:16,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{detail.title}</div>
+        <div style={{display:'flex',gap:6,marginTop:6,alignItems:'center',flexWrap:'wrap'}}>
+          <StatusPill s={detail.status}/>
+          {detail.priority&&<span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:6,background:'#F4F4F2',color:'#625650',textTransform:'uppercase'}}>{detail.priority}</span>}
+          {detail.plant_down&&<span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:6,background:'#FEF2F2',color:'#991B1B'}}>🔴 PLANT DOWN</span>}
+        </div>
+      </div>
+      <button onClick={closeDetail} style={{background:'none',border:'none',color:'#625650',fontSize:22,cursor:'pointer',padding:'0 4px'}} aria-label="Close">×</button>
+    </div>
+    <div style={{flex:1,overflow:'auto',padding:18}}>
+      <div style={{...cardL,padding:14,marginBottom:14}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,fontSize:12,marginBottom:10}}>
+          <div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Subsystem</div><div style={{fontWeight:600,marginTop:2}}>{subsystemLabel(detail.subsystem)}</div></div>
+          <div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Issue Type</div><div style={{fontWeight:600,marginTop:2}}>{issueTypeLabel(detail.wo_type)}</div></div>
+          {detail.plant_down&&<div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Downtime Hours</div><div style={{fontWeight:600,marginTop:2,color:'#991B1B'}}>{n(detail.downtime_hours).toFixed(1)} hrs</div></div>}
+          {detail.plant_down&&<div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>LF Lost (derived)</div><div style={{fontWeight:600,marginTop:2,color:'#991B1B'}}>{lfFromHours(detail.downtime_hours).toLocaleString()} LF</div></div>}
+        </div>
+        {detail.description&&<div style={{fontSize:13,color:'#1A1A1A',whiteSpace:'pre-wrap',padding:'8px 0',borderTop:'1px solid #F4F4F2'}}>{detail.description}</div>}
+      </div>
+
+      <div style={{...cardL,padding:14,marginBottom:14}}>
+        <div style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Timeline</div>
+        {timelineRow('Reported',detail.reported_at,detail.reported_by)}
+        {timelineRow('Assigned',detail.assigned_at,detail.assigned_to)}
+        {timelineRow('Started',detail.started_at)}
+        {timelineRow('Completed',detail.completed_at)}
+        {timelineRow('Verified',detail.verified_at)}
+        {timelineRow('Closed',detail.closed_at)}
+      </div>
+
+      <div style={{...cardL,padding:14,marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>Costs</div>
+          {canEdit&&<button onClick={()=>setShowAddPart(true)} style={{...btnSL,padding:'4px 10px',fontSize:11}}>+ Add Part</button>}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,fontSize:12,marginBottom:10}}>
+          <div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Labor</div><div style={{fontFamily:'Inter',fontWeight:700,marginTop:2}}>{n(detail.labor_hours).toFixed(1)} hrs · {$(detail.labor_cost)}</div></div>
+          <div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Parts</div><div style={{fontFamily:'Inter',fontWeight:700,marginTop:2}}>{detailParts.length} item{detailParts.length===1?'':'s'} · {$(detail.parts_cost)}</div></div>
+          <div><div style={{color:'#9E9B96',textTransform:'uppercase',fontSize:10,fontWeight:700}}>Total</div><div style={{fontFamily:'Inter',fontWeight:800,color:'#8A261D',marginTop:2}}>{$(n(detail.total_cost)||(n(detail.labor_cost)+n(detail.parts_cost)))}</div></div>
+        </div>
+        {detailParts.length>0&&<div style={{borderTop:'1px solid #F4F4F2',paddingTop:8}}>
+          {detailParts.map(p=><div key={p.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,padding:'3px 0',color:'#625650'}}>
+            <span><b style={{color:'#1A1A1A'}}>{p.part_name}</b> × {n(p.quantity_used)}</span>
+            <span>{p.total_cost!=null?$(p.total_cost):(p.unit_cost!=null?$(n(p.unit_cost)*n(p.quantity_used)):'—')}</span>
+          </div>)}
+        </div>}
+      </div>
+
+      {showAddPart&&<div style={{...cardL,padding:14,marginBottom:14,background:'#FDF9F6',border:'1px solid #FED7AA'}}>
+        <div style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#854F0B',textTransform:'uppercase',marginBottom:8}}>New Part</div>
+        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,marginBottom:8}}>
+          <input value={partForm.part_name} onChange={e=>setPartForm(f=>({...f,part_name:e.target.value}))} placeholder="Part name" style={inputSL}/>
+          <input type="number" min="0" value={partForm.quantity_used} onChange={e=>setPartForm(f=>({...f,quantity_used:e.target.value}))} placeholder="Qty" style={inputSL}/>
+          <input type="number" min="0" step="0.01" value={partForm.unit_cost} onChange={e=>setPartForm(f=>({...f,unit_cost:e.target.value}))} placeholder="Unit cost" style={inputSL}/>
+        </div>
+        <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowAddPart(false)} style={{...btnSL,padding:'4px 10px',fontSize:11}}>Cancel</button>
+          <button onClick={submitPart} style={{...btnPL,padding:'4px 12px',fontSize:11}}>Save Part</button>
+        </div>
+      </div>}
+
+      {canEdit&&<div style={{...cardL,padding:14,marginBottom:14}}>
+        <div style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Actions</div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          {(detail.status==='open'||detail.status==='new'||detail.status==='assigned')&&<button onClick={()=>setStatus(detail,'in_progress',{started_at:detail.started_at||new Date().toISOString()})} style={{...btnSL,fontSize:11}}>Mark In Progress</button>}
+          {detail.status==='in_progress'&&<button onClick={()=>setStatus(detail,'completed',{completed_at:new Date().toISOString()})} style={{...btnSL,fontSize:11,color:'#065F46',borderColor:'#86EFAC'}}>Mark Completed</button>}
+          {detail.status==='completed'&&<button onClick={()=>setStatus(detail,'verified',{verified_at:new Date().toISOString()})} style={{...btnSL,fontSize:11,color:'#065F46',borderColor:'#86EFAC'}}>Mark Verified</button>}
+          {(detail.status==='completed'||detail.status==='verified')&&<button onClick={()=>setStatus(detail,'closed',{closed_at:new Date().toISOString()})} style={{...btnSL,fontSize:11}}>Close</button>}
+          {detail.status==='closed'&&<button onClick={()=>setStatus(detail,'in_progress',{closed_at:null})} style={{...btnSL,fontSize:11,color:'#185FA5',borderColor:'#93C5FD'}}>Reopen</button>}
+          <button onClick={()=>openEdit(detail)} style={{...btnSL,fontSize:11}}>Edit Details</button>
+          <button onClick={()=>deleteWO(detail)} style={{...btnSL,fontSize:11,color:'#991B1B',borderColor:'#FCA5A5'}}>Delete</button>
+        </div>
+      </div>}
+
+      <div style={cardL}>
+        <div style={{fontFamily:'Inter',fontSize:12,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Updates</div>
+        {canEdit&&<div style={{display:'flex',gap:6,marginBottom:12}}>
+          <input value={updateNote} onChange={e=>setUpdateNote(e.target.value)} placeholder="Add an update note…" style={{...inputSL,flex:1}} onKeyDown={e=>{if(e.key==='Enter')submitUpdate();}}/>
+          <button onClick={submitUpdate} disabled={!updateNote.trim()} style={{...btnPL,padding:'8px 14px',fontSize:12}}>Add</button>
+        </div>}
+        {detailUpdates.length===0?<div style={{fontSize:12,color:'#9E9B96',fontStyle:'italic'}}>No updates yet.</div>:detailUpdates.map(u=><div key={u.id} style={{padding:'8px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',color:'#625650',marginBottom:2}}>
+            <span style={{fontWeight:700}}>{u.update_type==='status_change'?`Status: ${u.from_status||'—'} → ${u.to_status||'—'}`:(u.update_type||'Note')}</span>
+            <span>{relT(u.created_at)}{u.updated_by?` · ${u.updated_by}`:''}</span>
+          </div>
+          {u.notes&&<div style={{color:'#1A1A1A',whiteSpace:'pre-wrap'}}>{u.notes}</div>}
+        </div>)}
+      </div>
+    </div>
+  </div>;
+
+  return <div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,gap:16,flexWrap:'wrap'}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Plant Maintenance</h1>
+        <div style={{fontSize:13,color:'#625650',marginTop:4,maxWidth:680}}>Work orders against the San Antonio batch plant. Logs downtime, parts, and labor against subsystems for trend analysis.</div>
+      </div>
+      {canEdit&&<button onClick={openCreate} style={btnPL}>+ New Plant Work Order</button>}
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:12,marginBottom:16}}>
+      <KPI label="Open WOs" value={openCount}/>
+      <KPI label="Plant Down Now?" value={plantDownNow?'YES':'NO'} color={plantDownNow?'#991B1B':'#065F46'}/>
+      <KPI label="YTD Downtime Hrs" value={ytdDowntimeHrs.toFixed(1)} color={ytdDowntimeHrs>0?'#B45309':'#065F46'}/>
+      <KPI label="YTD Downtime LF Lost" value={ytdLfLost>0?ytdLfLost.toLocaleString()+' LF':'—'} color={ytdLfLost>0?'#991B1B':'#065F46'} accent={ytdLfLost>0?`@ ${lfPerDay.toLocaleString()} LF/day`:''}/>
+    </div>
+
+    <div style={{...cardL,padding:14,marginBottom:16,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+      <select value={statusF} onChange={e=>setStatusF(e.target.value)} style={{...inputSL,width:140}}>
+        <option value="">All Status</option>
+        {['open','new','assigned','in_progress','pending_verification','completed','verified','closed'].map(s=><option key={s} value={s}>{PLANT_STATUS_LABELS[s]||s}</option>)}
+      </select>
+      <select value={subsystemF} onChange={e=>setSubsystemF(e.target.value)} style={{...inputSL,width:200}}>
+        <option value="">All Subsystems</option>
+        {PLANT_SUBSYSTEMS.map(s=><option key={s.value} value={s.value}>{subsystemShort(s.value)}</option>)}
+      </select>
+      <select value={typeF} onChange={e=>setTypeF(e.target.value)} style={{...inputSL,width:200}}>
+        <option value="">All Issue Types</option>
+        {PLANT_ISSUE_TYPES.map(t=><option key={t.value} value={t.value}>{issueTypeShort(t.value)}</option>)}
+      </select>
+      <input type="date" value={fromF} onChange={e=>setFromF(e.target.value)} style={{...inputSL,width:150}} title="Reported on or after"/>
+      <input type="date" value={toF} onChange={e=>setToF(e.target.value)} style={{...inputSL,width:150}} title="Reported on or before"/>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search WO #, title, description, assignee…" style={{...inputSL,flex:1,minWidth:200}}/>
+    </div>
+
+    <div style={{...cardL,padding:0,marginBottom:16,overflow:'hidden'}}>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={6} cols={10}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>WO #</th>
+            <th style={thS}>Title</th>
+            <th style={thS}>Subsystem</th>
+            <th style={thS}>Issue Type</th>
+            <th style={thS}>Status</th>
+            <th style={thS}>Plant Down</th>
+            <th style={{...thS,textAlign:'right'}}>Downtime hrs</th>
+            <th style={{...thS,textAlign:'right'}}>Downtime LF</th>
+            <th style={thS}>Reported</th>
+            <th style={thS}>Assigned To</th>
+            <th style={{...thS,textAlign:'right'}}>Total Cost</th>
+            <th style={{...thS,width:140}}>Actions</th>
+          </tr></thead>
+          <tbody>
+            {filtered.length===0&&<tr><td colSpan={12} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>{wos.length===0?'No plant work orders yet — click + New Plant Work Order to log one.':'No plant work orders match the current filters.'}</td></tr>}
+            {filtered.map(w=>{
+              const lfLost=lfFromHours(w.downtime_hours);
+              const cost=n(w.total_cost)||(n(w.labor_cost)+n(w.parts_cost));
+              return <tr key={w.id} onClick={()=>openDetail(w)} style={{cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td style={{...tdS,fontFamily:'monospace',fontWeight:700}}>{w.wo_number||'—'}</td>
+                <td style={{...tdS,fontWeight:600,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={w.title}>{w.title}</td>
+                <td style={tdS}>{subsystemShort(w.subsystem)}</td>
+                <td style={tdS}>{issueTypeShort(w.wo_type)}</td>
+                <td style={tdS}><StatusPill s={w.status}/></td>
+                <td style={tdS}>{w.plant_down?<span style={{color:'#991B1B',fontWeight:700}}>🔴 YES</span>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{...tdS,textAlign:'right',fontFamily:'Inter'}}>{w.downtime_hours==null?<span style={{color:'#9E9B96'}}>—</span>:n(w.downtime_hours).toFixed(1)}</td>
+                <td style={{...tdS,textAlign:'right',color:'#9E9B96',fontFamily:'Inter'}}>{lfLost>0?lfLost.toLocaleString()+' LF':'—'}</td>
+                <td style={{...tdS,color:'#625650',whiteSpace:'nowrap'}} title={w.reported_at?fD(w.reported_at):''}>{w.reported_at?relT(w.reported_at):'—'}</td>
+                <td style={{...tdS,color:'#625650'}}>{w.assigned_to||<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{...tdS,textAlign:'right',fontFamily:'Inter',fontWeight:700,color:cost>0?'#1A1A1A':'#9E9B96'}}>{cost>0?$(cost):'—'}</td>
+                <td style={tdS} onClick={e=>e.stopPropagation()}>
+                  <button onClick={()=>openDetail(w)} style={{...btnSL,padding:'3px 8px',fontSize:11,marginRight:4}}>View</button>
+                  {canEdit&&<button onClick={()=>openEdit(w)} style={{...btnSL,padding:'3px 8px',fontSize:11}}>Edit</button>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    <div style={{...cardL,padding:0,marginBottom:24,overflow:'hidden'}}>
+      <button onClick={()=>setShowCharts(s=>!s)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',padding:'14px 18px',background:'#FFF',border:'none',borderBottom:showCharts?'1px solid #E5E3E0':'none',cursor:'pointer',fontFamily:'Syne',fontSize:16,fontWeight:800,color:'#1A1A1A'}}>
+        <span>Subsystem Breakdown · Last 12 Months</span>
+        <span style={{color:'#625650',fontWeight:400,fontSize:12}}>{showCharts?'▾ Hide':'▸ Show'}</span>
+      </button>
+      {showCharts&&<div style={{padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>WO Count by Subsystem</div>
+          {subsystemCounts.length===0?<div style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:12}}>No data yet</div>:<ResponsiveContainer width="100%" height={240}>
+            <BarChart data={subsystemCounts} margin={{top:5,right:10,left:0,bottom:50}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1EFEC"/>
+              <XAxis dataKey="label" tick={{fontSize:10,fill:'#625650'}} interval={0} angle={-30} textAnchor="end" height={60}/>
+              <YAxis tick={{fontSize:10,fill:'#625650'}} allowDecimals={false}/>
+              <Tooltip/>
+              <Bar dataKey="count" fill="#8A261D"/>
+            </BarChart>
+          </ResponsiveContainer>}
+        </div>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Total Cost by Subsystem</div>
+          {subsystemCosts.length===0?<div style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:12}}>No data yet</div>:<ResponsiveContainer width="100%" height={240}>
+            <BarChart data={subsystemCosts} margin={{top:5,right:10,left:0,bottom:50}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1EFEC"/>
+              <XAxis dataKey="label" tick={{fontSize:10,fill:'#625650'}} interval={0} angle={-30} textAnchor="end" height={60}/>
+              <YAxis tick={{fontSize:10,fill:'#625650'}} tickFormatter={v=>'$'+(v>=1000?(v/1000).toFixed(0)+'K':v)}/>
+              <Tooltip formatter={v=>$(v)}/>
+              <Bar dataKey="cost" fill="#185FA5"/>
+            </BarChart>
+          </ResponsiveContainer>}
+        </div>
+        <div style={{gridColumn:'1 / -1'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Plant Downtime Hours by Month</div>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={downtimeByMonth} margin={{top:5,right:10,left:0,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1EFEC"/>
+              <XAxis dataKey="month" tick={{fontSize:10,fill:'#625650'}}/>
+              <YAxis tick={{fontSize:10,fill:'#625650'}}/>
+              <Tooltip formatter={v=>`${n(v).toFixed(1)} hrs`}/>
+              <Line type="monotone" dataKey="hours" stroke="#B45309" strokeWidth={2} dot={{r:3}}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>}
+    </div>
+
+    {formModal}
+    {drawer}
+  </div>;
+}
+
 function FleetPage({jobs}){
   const auth=useAuth();
   const v=useViewport();
@@ -11832,8 +12417,12 @@ function FleetPage({jobs}){
         sbGet('fleet_work_orders','select=*,fleet_equipment(unit_number,make_model,equipment_type,city)&order=created_at.desc&limit=100'),
         sbGet('fleet_parts','select=*&order=name.asc'),
       ]);
-      setEquipment(eq||[]);
-      setWorkOrders(wo||[]);
+      // Plant Maintenance owns the batch_plant equipment record and any
+      // WOs against it. Filter both out here so fleet analytics and the
+      // equipment table stay clean. Done client-side because PostgREST
+      // doesn't filter on joined columns cleanly.
+      setEquipment((eq||[]).filter(e=>e.equipment_type!=='batch_plant'));
+      setWorkOrders((wo||[]).filter(w=>!w.fleet_equipment||w.fleet_equipment.equipment_type!=='batch_plant'));
       setParts(pts||[]);
     }catch(e){setToast({msg:'Failed to load fleet data',ok:false});}
     setLoading(false);
@@ -16165,7 +16754,7 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
-  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
+  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'},{key:'plant_maintenance',label:'Plant Maintenance',icon:'🏭'}]},
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'FLEET',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet & Equipment',icon:'🚛'},{key:'fleet_wo',label:'Work Orders',icon:'🔧'}]},
@@ -16199,7 +16788,7 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
       {!collapsed?<img src="/logo.png" alt="Fencecrete" style={{maxWidth:148,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
       :<div style={{width:34,height:34,borderRadius:10,background:'#8A261D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{color:'#FFF',fontFamily:'Syne',fontWeight:900,fontSize:15,letterSpacing:'-0.5px'}}>F</span></div>}
     </div>
-    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>','mold_inventory':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="3" rx="0.5"/><rect x="1" y="7" width="14" height="3" rx="0.5"/><rect x="1" y="11" width="14" height="3" rx="0.5"/><path d="M5 3v3M11 3v3M3 7v3M9 7v3M13 7v3M5 11v3M11 11v3"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
+    <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>','mold_inventory':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="3" rx="0.5"/><rect x="1" y="7" width="14" height="3" rx="0.5"/><rect x="1" y="11" width="14" height="3" rx="0.5"/><path d="M5 3v3M11 3v3M3 7v3M9 7v3M13 7v3M5 11v3M11 11v3"/></svg>','plant_maintenance':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 14h14"/><path d="M2 14V8l4 2V6l4 2V5l4 2v7"/><path d="M5 14v-2M9 14v-2M13 14v-2"/><path d="M11 2.5l1 1.5h-2z"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'10px 8px':'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',background:'rgba(0,0,0,0.15)'}}>
       {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
@@ -16661,6 +17250,7 @@ function AppShell(){
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
             {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
             {page==='mold_inventory'&&<MoldInventoryPage/>}
+            {page==='plant_maintenance'&&<PlantMaintenancePage/>}
             {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
