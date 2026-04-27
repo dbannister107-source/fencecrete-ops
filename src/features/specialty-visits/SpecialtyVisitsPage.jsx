@@ -1,21 +1,28 @@
-// SpecialtyVisitsPage
+// SpecialtyInstallPage (file kept as SpecialtyVisitsPage.jsx; UI label says "Specialty Install")
 //
-// Max's dispatch worklist for welder + painter visits. Auto-spawned rows
-// appear here when a job hits fence_complete (welder if WI/G addons, painter
-// always). Max picks who's going + a date, then marks complete after the
-// visit happens.
+// Max's dispatch worklist for welder + painter install work. Auto-spawned
+// rows appear here when a job moves to active_install AND has WI or G in
+// fence_addons. Welder + painter rows BOTH spawn (Max decides which are
+// actually required for the job).
 //
-// Why this exists: ad-hoc scheduling was letting jobs fall through cracks —
+// Why active_install (not fence_complete): Max needs lead time to schedule
+// people. Firing on fence_complete means panels are already up and install
+// crew is moving on -- zero planning window. Firing on active_install gives
+// the entire install duration (typically 1-3 weeks) to coordinate.
+//
+// Why this exists: ad-hoc scheduling was letting jobs fall through cracks --
 // "fence is up, customer is calling about gates, nobody remembered to send
 // the welder." This page is the single source of truth for "what specialty
-// work is open across all 4 markets."
+// install work is open across all 4 markets."
 //
 // Three sections, all on one page:
-//   🔴 Needed     — auto-spawned, no person/date assigned yet
-//   📅 Scheduled  — Max picked someone + a date; not done yet
-//   ✓ Completed   — last 30 days, collapsed by default
+//   🔴 Needed     -- auto-spawned, no person/date assigned yet
+//   📅 Scheduled  -- Max picked someone + a date; not done yet
+//   ✓ Completed   -- last 30 days, collapsed by default
 //
-// Mark a row "not_required" if the painter visit isn't needed for that job.
+// Mark a row "not_required" if that line of work isn't actually needed for
+// this particular job (e.g., painter on a job the customer doesn't want
+// painted).
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbPatch } from '../../shared/sb';
@@ -182,7 +189,7 @@ function VisitRow({ visit, job, roster, onChanged }) {
 
   const markNotRequired = async () => {
     if (busy) return;
-    if (!window.confirm(`Mark this ${visit.visit_type} visit as NOT REQUIRED for ${job?.job_name || 'this job'}?`)) return;
+    if (!window.confirm(`Mark this ${visit.visit_type} install as NOT REQUIRED for ${job?.job_name || 'this job'}?`)) return;
     setBusy(true);
     try {
       await sbPatch('specialty_visits', visit.id, { status: 'not_required' });
@@ -246,11 +253,9 @@ function VisitRow({ visit, job, roster, onChanged }) {
               <button onClick={() => setExpanded(v => !v)} style={btnP} disabled={busy}>
                 {expanded ? 'Cancel' : 'Assign'}
               </button>
-              {visit.visit_type === 'painter' && (
-                <button onClick={markNotRequired} style={btnS} disabled={busy} title="Mark not required (painter not needed for this job)">
+                <button onClick={markNotRequired} style={btnS} disabled={busy} title="Mark not required for this job">
                   Not needed
                 </button>
-              )}
             </>
           )}
           {visit.status === 'scheduled' && (
@@ -381,10 +386,10 @@ export default function SpecialtyVisitsPage({ jobs }) {
     <div>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, color: '#1A1A1A', margin: 0, marginBottom: 4 }}>
-          Specialty Visits
+          Specialty Install
         </h1>
         <div style={{ fontSize: 13, color: '#625650' }}>
-          Welder & painter dispatch. Auto-spawned when a job hits Fence Complete.
+          Welder & painter dispatch. Auto-spawned when a job has WI or gate add-ons and moves to Active Install.
         </div>
       </div>
 
@@ -467,9 +472,9 @@ export default function SpecialtyVisitsPage({ jobs }) {
       {!loading && visits.length === 0 && !err && (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: '#625650' }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>📭</div>
-          <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>No specialty visits yet</div>
+          <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>No specialty install work yet</div>
           <div style={{ fontSize: 13, color: '#9E9B96', maxWidth: 480, margin: '0 auto' }}>
-            Visit rows are auto-created when a job moves to Fence Complete status. As soon as a fence install wraps up, this page will populate with welder + painter work.
+            Welder + painter rows are auto-created when a job moves to Active Install with wrought-iron or gate add-ons. As soon as an install kicks off, this page will populate.
           </div>
         </div>
       )}
