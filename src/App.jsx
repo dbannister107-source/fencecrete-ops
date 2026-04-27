@@ -956,11 +956,90 @@ function LineItemsEditor({job,onChange,registerSave}){
   },[job?.job_number]);
   useEffect(()=>{loadLines();},[loadLines]);
   const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}return next;}));setDirty(true);};
-  const addLine=()=>{const nextNum=Math.max(0,...lines.map(l=>n(l.line_number)))+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
+  const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
+  /* Recompute job header rollups from the ACTUAL surviving line_items rows
+     in the database. Used by both removeLine and saveAll so the two code
+     paths can never disagree. Fetches fresh, sums by fence_type, writes the
+     job summary fields, and returns the fresh line_items array.
+
+     Bug history: prior to 2026-04-27, removeLine deleted from DB but did NOT
+     recompute the job rollup. If the user closed the modal without clicking
+     "Save Lines" the header stayed stale (e.g. Tamarron 22B showed 1,135 PC
+     LF after all PC lines were deleted). Cleaned up 6 active jobs in
+     migration fix_active_jobs_stale_rollup_2026_04_27. */
+  const recomputeJobFromLines=async()=>{
+    const fresh=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&order=line_number.asc`);
+    const all=fresh||[];
+    const pcLines=all.filter(x=>x.fence_type==='PC');
+    const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
+    /* Primary PC line drives the jobs-table style/color/height snapshot.
+       Definition: fence_type='PC' AND is_produced=true, ordered by
+       line_value DESC NULLS LAST. If no such line exists, leave the
+       jobs.style/color/height_precast values alone (don't blank them). */
+    const primaryPC=pcLines
+      .filter(x=>x.is_produced!==false)
+      .slice()
+      .sort((a,b)=>{
+        const av=a.line_value==null?-Infinity:n(a.line_value);
+        const bv=b.line_value==null?-Infinity:n(b.line_value);
+        return bv-av;
+      })[0];
+    const pcLF=all.filter(x=>x.fence_type==='PC').reduce((s,x)=>s+n(x.lf),0);
+    const swLF=all.filter(x=>x.fence_type==='SW').reduce((s,x)=>s+n(x.lf),0);
+    const wiLF=all.filter(x=>x.fence_type==='WI').reduce((s,x)=>s+n(x.lf),0);
+    const woodLF=all.filter(x=>x.fence_type==='Wood').reduce((s,x)=>s+n(x.lf),0);
+    const otherLF=all.filter(x=>x.fence_type==='Other').reduce((s,x)=>s+n(x.lf),0);
+    const summary={
+      lf_precast:pcLF,
+      total_lf_precast:pcLF,
+      lf_single_wythe:swLF,
+      total_lf_masonry:swLF,
+      lf_wrought_iron:wiLF,
+      total_lf_wrought_iron:wiLF,
+      lf_wood:woodLF,
+      /* lf_other holds Wood + Other (the "everything non-PC/SW/WI" bucket on Totals) */
+      lf_other:woodLF+otherLF,
+      number_of_gates:gateLines.reduce((s,x)=>s+n(x.lf),0),
+      total_lf:all.reduce((s,x)=>s+n(x.lf),0),
+      ...(primaryPC?.style?{style:primaryPC.style}:{}),
+      ...(primaryPC?.color?{color:primaryPC.color}:{}),
+      ...(primaryPC?.height?{height_precast:String(primaryPC.height)}:{}),
+    };
+    summary.fence_addons=syncFenceAddons({...job,...summary});
+    await sbPatch('jobs',job.id,summary);
+    return all;
+  };
+  /* Compact line numbers so they're always 1..N. Persists the renumber to DB
+     for any line whose stored line_number doesn't match its position. Skips
+     unsaved (_new) rows since those have no DB id yet. */
+  const compactLineNumbers=async(currentLines)=>{
+    const updates=[];
+    for(let i=0;i<currentLines.length;i++){
+      const l=currentLines[i];
+      const want=i+1;
+      if(!l._new&&l.id&&n(l.line_number)!==want){
+        updates.push(sbPatch('job_line_items',l.id,{line_number:want}));
+      }
+    }
+    if(updates.length)await Promise.all(updates);
+  };
   const removeLine=async(idx)=>{
     const l=lines[idx];
-    if(l._new){setLines(prev=>prev.filter((_,i)=>i!==idx));setDirty(true);setConfirmDel(null);return;}
-    try{await sbDel('job_line_items',l.id);setLines(prev=>prev.filter((_,i)=>i!==idx));setDirty(true);setConfirmDel(null);setToast('Line removed');}
+    if(l._new){
+      // Unsaved row — just drop it locally and renumber the remaining unsaved ones in state.
+      setLines(prev=>prev.filter((_,i)=>i!==idx).map((x,i)=>x._new?{...x,line_number:i+1}:x));
+      setDirty(true);setConfirmDel(null);return;
+    }
+    try{
+      await sbDel('job_line_items',l.id);
+      // Compute the surviving lines in their new order, then renumber + recompute rollup.
+      const survivors=lines.filter((_,i)=>i!==idx);
+      await compactLineNumbers(survivors);
+      const fresh=await recomputeJobFromLines();
+      setLines((fresh||[]).map(x=>({...x,_existing:true})));
+      setConfirmDel(null);setToast('Line removed — totals updated');
+      if(onChange)onChange();
+    }
     catch(e){setErr('Delete failed: '+e.message);}
   };
   const totals=useMemo(()=>{
@@ -971,59 +1050,20 @@ function LineItemsEditor({job,onChange,registerSave}){
   const saveAll=async()=>{
     setSaving(true);setErr('');
     try{
-      // Upsert each touched line
-      for(const l of lines){
+      // Upsert each touched line. Force line_number to its position so saves always compact.
+      for(let i=0;i<lines.length;i++){
+        const l=lines[i];
         if(!l._touched)continue;
-        const body={job_id:job.id,job_number:job.job_number,line_number:n(l.line_number),fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
+        const lineNum=i+1;
+        const body={job_id:job.id,job_number:job.job_number,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
         if(l._new){await sbPost('job_line_items',body);}
         else{await sbPatch('job_line_items',l.id,body);}
       }
-      // Recompute jobs summary fields from ALL line items (reload first)
-      const fresh=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&order=line_number.asc`);
-      const all=fresh||[];
-      const pcLines=all.filter(x=>x.fence_type==='PC');
-      // Also count gates (line items with description starting with "GATE:")
-      const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
-      /* Primary PC line drives the jobs-table style/color/height snapshot.
-         Definition: fence_type='PC' AND is_produced=true, ordered by
-         line_value DESC NULLS LAST. If no such line exists, leave the
-         jobs.style/color/height_precast values alone (don't blank them). */
-      const primaryPC = pcLines
-        .filter(x => x.is_produced !== false)
-        .slice()
-        .sort((a, b) => {
-          const av = a.line_value == null ? -Infinity : n(a.line_value);
-          const bv = b.line_value == null ? -Infinity : n(b.line_value);
-          return bv - av;
-        })[0];
-      // Bucket line items by fence_type into the correct header LF columns.
-      // These values overwrite the jobs-table columns on every Line Items save,
-      // so line items are the source of truth for LF totals.
-      const pcLF=all.filter(x=>x.fence_type==='PC').reduce((s,x)=>s+n(x.lf),0);
-      const swLF=all.filter(x=>x.fence_type==='SW').reduce((s,x)=>s+n(x.lf),0);
-      const wiLF=all.filter(x=>x.fence_type==='WI').reduce((s,x)=>s+n(x.lf),0);
-      const woodLF=all.filter(x=>x.fence_type==='Wood').reduce((s,x)=>s+n(x.lf),0);
-      const otherLF=all.filter(x=>x.fence_type==='Other').reduce((s,x)=>s+n(x.lf),0);
-      const summary={
-        lf_precast:pcLF,
-        total_lf_precast:pcLF,
-        lf_single_wythe:swLF,
-        total_lf_masonry:swLF,
-        lf_wrought_iron:wiLF,
-        total_lf_wrought_iron:wiLF,
-        lf_wood:woodLF,
-        /* lf_other holds Wood + Other (the "everything non-PC/SW/WI" bucket on Totals) */
-        lf_other:woodLF+otherLF,
-        number_of_gates:gateLines.reduce((s,x)=>s+n(x.lf),0),
-        total_lf:all.reduce((s,x)=>s+n(x.lf),0),
-        ...(primaryPC?.style?{style:primaryPC.style}:{}),
-        ...(primaryPC?.color?{color:primaryPC.color}:{}),
-        ...(primaryPC?.height?{height_precast:String(primaryPC.height)}:{}),
-      };
-      // Auto-sync fence_addons (G/WI/C) to reflect the new summary data
-      summary.fence_addons=syncFenceAddons({...job,...summary});
-      await sbPatch('jobs',job.id,summary);
-      setLines(all.map(l=>({...l,_existing:true})));
+      // Also compact any untouched lines whose stored line_number is wrong
+      // (e.g. legacy rows from imports where line_number wasn't 1..N).
+      await compactLineNumbers(lines);
+      const all=await recomputeJobFromLines();
+      setLines((all||[]).map(l=>({...l,_existing:true})));
       setDirty(false);
       setToast('Line items saved — summary fields updated');
       if(onChange)onChange();
@@ -1070,7 +1110,7 @@ function LineItemsEditor({job,onChange,registerSave}){
         const isPC=l.fence_type==='PC';
         return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.05)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F4F4F2',padding:'14px 20px',borderBottom:'1px solid #E5E3E0'}}>
-            <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{l.line_number||idx+1}</span>
+            <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{idx+1}</span>
             {confirmDel===idx
               ? <span style={{display:'flex',gap:6,alignItems:'center'}}>
                   <span style={{fontSize:12,color:'#991B1B',fontWeight:700}}>Delete this line?</span>
