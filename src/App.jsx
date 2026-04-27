@@ -1429,23 +1429,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
           {saveErr&&!isMobile&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
-          {!isNew&&(currentUserEmail==='david@fencecrete.com'||currentUserEmail==='amiee@fencecrete.com'||currentUserEmail==='contracts@fencecrete.com')&&<button
-            title="TEST ONLY: Generate a PIS form link for this job"
-            onClick={async()=>{
-              try{
-                const jRows=await sbGet('jobs',`job_number=eq.${job.job_number}&select=id`);
-                const resolvedId=(Array.isArray(jRows)&&jRows.length>0)?jRows[0].id:job.id;
-                const res=await fetch(`${SB}/functions/v1/pis-send`,{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},body:JSON.stringify({job_id:resolvedId,job_number:job.job_number,job_name:job.job_name,sent_to_email:currentUserEmail,sent_to_name:'TEST',sent_by:currentUserEmail})});
-                const data=await res.json();
-                // Refresh send history so the new test token shows up immediately
-                // when the user is on (or switches to) the Info Sheet tab.
-                if(data.success)loadPisData();
-                if(data.form_url){window.open(data.form_url,'_blank');}
-                else{alert('Error: '+(data.error||'Unknown'));}
-              }catch(e){alert('Error: '+e.message);}
-            }}
-            style={{background:'#FFF',border:'1px dashed #B45309',borderRadius:8,padding:'8px 14px',color:'#B45309',fontWeight:700,fontSize:12,cursor:'pointer'}}
-          >🧪 Test PIS</button>}
           {/* Mark Contract Executed — only visible while the job is still in
               Contract Review. Flipping the flag signals Max on the Production
               Board (green border) that material calc can proceed. Undoable in
