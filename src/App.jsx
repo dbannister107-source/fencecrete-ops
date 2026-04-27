@@ -1235,11 +1235,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[sharepointFolderOptions,setSharepointFolderOptions]=useState([]);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const[saveErr,setSaveErr]=useState(null);
+  const loadPisData=useCallback(async()=>{
+    if(!job?.id)return;
+    const[tokens,sheets]=await Promise.all([
+      sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`),
+      sbGet('project_info_sheets',`job_id=eq.${job.id}&order=submitted_at.desc`),
+    ]);
+    setPisTokens(Array.isArray(tokens)?tokens:[]);
+    setPisSheets(Array.isArray(sheets)?sheets:[]);
+  },[job?.id]);
   useEffect(()=>{
     if(tab!=='pis'||!job?.id)return;
-    sbGet('pis_tokens',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
-    sbGet('project_info_sheets',`job_id=eq.${job.id}&order=submitted_at.desc&limit=1`).then(d=>setPisSheets(Array.isArray(d)?d:[]));
-  },[tab,job?.id]);
+    loadPisData();
+  },[tab,job?.id,loadPisData]);
   const sendPisRequest=async()=>{
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
     setPisSending(true);
@@ -1259,7 +1267,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       if(!res.ok||!data.success){throw new Error(data.error||'Send failed');}
       setPisEmail('');setPisName('');
       setPisToast('Sent to '+pisEmail.trim()+'. Customer will receive email shortly.');
-      sbGet('pis_tokens',`job_id=eq.${resolvedJobId}&order=created_at.desc`).then(d=>setPisTokens(Array.isArray(d)?d:[]));
+      loadPisData();
     }catch(e){alert('Send failed: '+e.message);}
     setPisSending(false);
   };
@@ -1429,6 +1437,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 const resolvedId=(Array.isArray(jRows)&&jRows.length>0)?jRows[0].id:job.id;
                 const res=await fetch(`${SB}/functions/v1/pis-send`,{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},body:JSON.stringify({job_id:resolvedId,job_number:job.job_number,job_name:job.job_name,sent_to_email:currentUserEmail,sent_to_name:'TEST',sent_by:currentUserEmail})});
                 const data=await res.json();
+                // Refresh send history so the new test token shows up immediately
+                // when the user is on (or switches to) the Info Sheet tab.
+                if(data.success)loadPisData();
                 if(data.form_url){window.open(data.form_url,'_blank');}
                 else{alert('Error: '+(data.error||'Unknown'));}
               }catch(e){alert('Error: '+e.message);}
@@ -1556,14 +1567,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         {tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={onSaved?()=>{}:null} registerSave={(fn)=>{lineItemsSaveRef.current=fn;}}/>):tab==='tasks'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add tasks.</div>:<TaskTile scope={{job_id:job?.id}} title="Tasks for this Project"/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='pis'?<div style={{padding:'4px 0'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
             <div><div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Information Sheet</div><div style={{fontSize:11,color:'#625650',marginTop:2}}>Pursuant to Section 53.159 of the Texas Property Code</div></div>
-            {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received</span>}
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <button onClick={loadPisData} title="Refresh PIS data" style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>↻ Refresh</button>
+              {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received ({pisSheets.length})</span>}
+            </div>
           </div>
           {pisToast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'10px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>{pisToast}</div>}
-          {pisSheets.length>0&&(()=>{const s=pisSheets[0];return<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:10}}>Submitted Info</div>
-            {[['Project Name',s.project_name],['Job Address',s.job_address],['City/State/Zip',s.city_state_zip],['County',s.county],['Job Type',s.job_type],['Owner',s.owner_company],['Owner Contact',s.owner_contact],['Owner Email',s.owner_email],['GC',s.gc_company],['GC Contact',s.gc_contact],['GC Email',s.gc_email],['Billing Contact',s.billing_contact],['Billing Email',s.billing_email],['PM / Super',s.pm_name],['PM Mobile',s.pm_mobile],['PM Email',s.pm_email],['Bonding Required',s.bonding_required?'YES':'No'],['Surety',s.surety_name],['Bond #',s.bond_number],['Bond Amount',s.bond_amount?'$'+Number(s.bond_amount).toLocaleString():null],['Bonding Agent',s.agent_name],['Tax Status',s.taxable?'Taxable':'Non-Taxable'],['Notes',s.notes]].filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:'1px solid #F1EFEC',fontSize:12}}><span style={{color:'#9E9B96',minWidth:120}}>{k}</span><span style={{color:'#1A1A1A',fontWeight:600,flex:1}}>{v}</span></div>)}
-            <div style={{fontSize:11,color:'#9E9B96',marginTop:10}}>Submitted {s.submitted_at?new Date(s.submitted_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
-          </div>;})()}
+          {pisSheets.map((s,sheetIdx)=><div key={s.id} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5}}>{pisSheets.length>1?`Submission #${pisSheets.length-sheetIdx}`:'Submitted Info'}</div>
+              <div style={{fontSize:11,color:'#9E9B96'}}>Submitted {s.submitted_at||s.created_at?new Date(s.submitted_at||s.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
+            </div>
+            {s.submitted_by_name&&<div style={{fontSize:11,color:'#625650',marginBottom:10,fontStyle:'italic'}}>Submitted by {s.submitted_by_name}</div>}
+            {[['Project Name',s.project_name],['Job Address',s.job_address],['City/State/Zip',s.city_state_zip],['County',s.county],['Job Type',s.job_type],['Owner',s.owner_company],['Owner Contact',s.owner_contact],['Owner Email',s.owner_email],['Owner Phone',s.owner_phone],['GC',s.gc_company],['GC Contact',s.gc_contact],['GC Email',s.gc_email],['GC Phone',s.gc_phone],['Billing Contact',s.billing_contact],['Billing Email',s.billing_email],['Billing Phone',s.billing_phone],['PM / Super',s.pm_name],['PM Mobile',s.pm_mobile],['PM Office',s.pm_office],['PM Email',s.pm_email],['Bonding Required',s.bonding_required?'YES':'No'],['Surety',s.surety_name],['Bond #',s.bond_number],['Bond Amount',s.bond_amount?'$'+Number(s.bond_amount).toLocaleString():null],['Bonding Agent',s.agent_name],['Agent Email',s.agent_email],['Tax Status',s.taxable?'Taxable':'Non-Taxable'],['Notes',s.notes]].filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:'1px solid #F1EFEC',fontSize:12}}><span style={{color:'#9E9B96',minWidth:120}}>{k}</span><span style={{color:'#1A1A1A',fontWeight:600,flex:1,wordBreak:'break-word'}}>{v}</span></div>)}
+          </div>)}
           <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:12}}>{pisSheets.length>0?'Re-send Request':'Send Request to Customer'}</div>
             <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Recipient Email <span style={{color:'#991B1B'}}>*</span></div><input value={pisEmail} onChange={e=>setPisEmail(e.target.value)} placeholder="customer@example.com" style={{...inputS,pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}/></div>
@@ -1571,19 +1588,30 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             <button onClick={sendPisRequest} disabled={pisSending} style={{...btnP,width:'100%',pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}>{pisSending?'Sending...':'Send Project Info Request'}</button>
           </div>
           {pisTokens.length>0&&<div>
-            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Send History</div>
+            <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Send History ({pisTokens.length})</div>
             {pisTokens.map(t=>{
-              const formUrl=`${SB}/functions/v1/pis-public?token=${t.token}`;
+              // Form URL points at the React app (the Supabase edge function only serves JSON;
+              // text/html is rewritten to text/plain on default Supabase domains).
+              const formUrl=`https://fencecrete-ops.vercel.app/#/pis/${t.token}`;
               const isExpired=new Date(t.expires_at)<new Date();
+              const isTest=t.sent_to_name==='TEST';
               const statusBg=t.submitted_at?'#D1FAE5':isExpired?'#FEE2E2':'#FEF3C7';
               const statusColor=t.submitted_at?'#065F46':isExpired?'#991B1B':'#B45309';
               const statusLabel=t.submitted_at?'Received':isExpired?'Expired':'Pending';
               return<div key={t.id} style={{padding:'10px 0',borderBottom:'1px solid #F4F4F2',fontSize:12}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
-                  <div><div style={{fontWeight:600,color:'#1A1A1A'}}>{t.sent_to_email}</div><div style={{color:'#9E9B96',fontSize:11,marginTop:2}}>Sent {new Date(t.created_at).toLocaleDateString()} by {t.sent_by}</div></div>
-                  <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:700,background:statusBg,color:statusColor,flexShrink:0,marginLeft:8}}>{statusLabel}</span>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8}}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                      <span style={{fontWeight:600,color:'#1A1A1A'}}>{t.sent_to_email}</span>
+                      {isTest&&<span style={{padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#92400E',border:'1px solid #FDE68A'}}>TEST</span>}
+                    </div>
+                    <div style={{color:'#9E9B96',fontSize:11,marginTop:2}}>Sent {new Date(t.created_at).toLocaleDateString()} by {t.sent_by}{t.submitted_at?' · Submitted '+new Date(t.submitted_at).toLocaleDateString():''}</div>
+                  </div>
+                  <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:700,background:statusBg,color:statusColor,flexShrink:0}}>{statusLabel}</span>
                 </div>
-                {!t.submitted_at&&!isExpired&&<div style={{display:'flex',alignItems:'center',gap:6,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 10px'}}>
+                {/* Show link box on Pending (so the team can copy/share) and on Received (so they
+                    can re-open the form to view what the customer submitted, until expiry). */}
+                {!isExpired&&<div style={{display:'flex',alignItems:'center',gap:6,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 10px'}}>
                   <span style={{fontSize:10,color:'#9E9B96',flexShrink:0}}>Link:</span>
                   <span style={{fontSize:10,color:'#625650',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formUrl}</span>
                   <button onClick={()=>{navigator.clipboard.writeText(formUrl);setPisToast('Link copied!');}} style={{padding:'3px 8px',border:'1px solid #8A261D',borderRadius:5,background:'#FDF4F4',color:'#8A261D',fontSize:10,fontWeight:700,cursor:'pointer',flexShrink:0}}>Copy</button>
