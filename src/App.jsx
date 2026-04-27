@@ -814,6 +814,22 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
             <div><div style={lbl}>Est. Install Date</div><div style={val}>{fD(job.est_start_date)}</div></div>
           </div>
         </div>
+        {/* Section 1.5: Customer Contact (populated from PIS or manual entry).
+            Hidden entirely if no fields populated, so most jobs (which won't
+            have these yet) don't show an awkward empty section. */}
+        {(()=>{const cc=[
+          ['Customer Email',job.customer_email],
+          ['Billing Contact',job.billing_contact],
+          ['Billing Email',job.billing_email],
+          ['GC Company',job.gc_company],
+          ['Accounting Job #',job.accounting_job_number],
+        ].filter(([,v])=>v);
+        if(cc.length===0)return null;
+        return<div style={secStyle}><div style={secTitle}>Customer Contact</div>
+          <div style={grd}>
+            {cc.map(([k,v])=><div key={k}><div style={lbl}>{k}</div><div style={{...val,wordBreak:'break-word'}}>{v}</div></div>)}
+          </div>
+        </div>;})()}
         {/* Section 2: Fence Details */}
         <div style={secStyle}><div style={secTitle}>Fence Details</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
