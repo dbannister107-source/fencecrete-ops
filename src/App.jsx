@@ -1600,14 +1600,105 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             </div>
           </div>
           {pisToast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'10px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>{pisToast}</div>}
-          {pisSheets.map((s,sheetIdx)=><div key={s.id} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5}}>{pisSheets.length>1?`Submission #${pisSheets.length-sheetIdx}`:'Submitted Info'}</div>
-              <div style={{fontSize:11,color:'#9E9B96'}}>Submitted {s.submitted_at||s.created_at?new Date(s.submitted_at||s.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
-            </div>
-            {s.submitted_by_name&&<div style={{fontSize:11,color:'#625650',marginBottom:10,fontStyle:'italic'}}>Submitted by {s.submitted_by_name}</div>}
-            {[['Project Name',s.project_name],['Job Address',s.job_address],['City/State/Zip',s.city_state_zip],['County',s.county],['Job Type',s.job_type],['Owner',s.owner_company],['Owner Contact',s.owner_contact],['Owner Email',s.owner_email],['Owner Phone',s.owner_phone],['GC',s.gc_company],['GC Contact',s.gc_contact],['GC Email',s.gc_email],['GC Phone',s.gc_phone],['Billing Contact',s.billing_contact],['Billing Email',s.billing_email],['Billing Phone',s.billing_phone],['PM / Super',s.pm_name],['PM Mobile',s.pm_mobile],['PM Office',s.pm_office],['PM Email',s.pm_email],['Bonding Required',s.bonding_required?'YES':'No'],['Surety',s.surety_name],['Bond #',s.bond_number],['Bond Amount',s.bond_amount?'$'+Number(s.bond_amount).toLocaleString():null],['Bonding Agent',s.agent_name],['Agent Email',s.agent_email],['Tax Status',s.taxable?'Taxable':'Non-Taxable'],['Notes',s.notes]].filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:'1px solid #F1EFEC',fontSize:12}}><span style={{color:'#9E9B96',minWidth:120}}>{k}</span><span style={{color:'#1A1A1A',fontWeight:600,flex:1,wordBreak:'break-word'}}>{v}</span></div>)}
-          </div>)}
+          {pisSheets.map((s,sheetIdx)=>{
+            // Build sectioned field list. Empty sections are hidden via the
+            // .filter(([,v])=>v).length>0 check inside the renderer below.
+            // Tax section uses an explicit string ('Taxable' | 'Non-Taxable')
+            // because both values of the bool are meaningful (true/false) —
+            // unlike e.g. owner_company where empty=missing.
+            const fmtAddr=(addr,csz)=>[addr,csz].filter(Boolean).join(' · ')||null;
+            const sections=[
+              {title:'Project',rows:[
+                ['Project Name',s.project_name],
+                ['Job Address',fmtAddr(s.job_address,s.city_state_zip)],
+                ['County',s.county],
+                ['Job Type',s.job_type],
+                ['Lot #',s.lot_number],
+                ['Subdivision',s.subdivision],
+                ['Block / Section',s.block_section],
+                ['Legal (other)',s.legal_other],
+                ['Accounting Job #',s.accounting_job_number],
+                ['Est. Completion',s.est_completion_date?new Date(s.est_completion_date).toLocaleDateString('en-US'):null],
+              ]},
+              {title:'Owner',rows:[
+                ['Company',s.owner_company],
+                ['Address',fmtAddr(s.owner_address,s.owner_city_state_zip)],
+                ['Phone',s.owner_phone],
+                ['Primary Contact',s.owner_contact],
+                ['Contact Phone',s.owner_contact_phone],
+                ['Email',s.owner_email],
+                ['Alt Contact',s.owner_alt_contact],
+              ]},
+              {title:'General Contractor',rows:[
+                ['Company',s.gc_company],
+                ['Address',fmtAddr(s.gc_address,s.gc_city_state_zip)],
+                ['Phone',s.gc_phone],
+                ['Primary Contact',s.gc_contact],
+                ['Contact Phone',s.gc_contact_phone],
+                ['Email',s.gc_email],
+                ['Alt Contact',s.gc_alt_contact],
+              ]},
+              {title:'Billing',rows:[
+                ['Contact',s.billing_contact],
+                ['Address',fmtAddr(s.billing_address,s.billing_city_state_zip)],
+                ['Phone',s.billing_phone],
+                ['Email',s.billing_email],
+              ]},
+              {title:'Project Manager / Super (Customer-Side)',rows:[
+                ['Name',s.pm_name],
+                ['Mobile',s.pm_mobile],
+                ['Office',s.pm_office],
+                ['Fax',s.pm_fax],
+                ['Email',s.pm_email],
+              ]},
+              {title:'Bonding & Surety',rows:s.bonding_required?[
+                ['Bonding Required','YES'],
+                ['Bond #',s.bond_number],
+                ['Bond Amount',s.bond_amount?'$'+Number(s.bond_amount).toLocaleString():null],
+                ['Surety Company',s.surety_name],
+                ['Surety Address',fmtAddr(s.surety_address,s.surety_city_state_zip)],
+                ['Surety Contact',s.surety_contact],
+                ['Surety Phone',s.surety_phone],
+                ['Surety Fax',s.surety_fax],
+                ['Surety Email',s.surety_email],
+              ]:[['Bonding Required','No']]},
+              {title:'Insurance Agent',rows:[
+                ['Name',s.agent_name],
+                ['Address',fmtAddr(s.agent_address,s.agent_city_state_zip)],
+                ['Phone',s.agent_phone],
+                ['Fax',s.agent_fax],
+                ['Email',s.agent_email],
+              ]},
+              {title:'Tax',rows:[
+                ['Status',s.taxable===true?'Taxable':s.taxable===false?'Non-Taxable':null],
+                ['Tax-Exempt Cert',s.tax_exempt_cert_provided?'Provided':s.taxable===false?'Required':null],
+              ]},
+            ];
+            return<div key={s.id} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:.5}}>{pisSheets.length>1?`Submission #${pisSheets.length-sheetIdx}`:'Submitted Info'}</div>
+                <div style={{fontSize:11,color:'#9E9B96'}}>Submitted {s.submitted_at||s.created_at?new Date(s.submitted_at||s.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—'}</div>
+              </div>
+              {s.submitted_by_name&&<div style={{fontSize:11,color:'#625650',marginBottom:14,fontStyle:'italic'}}>Submitted by {s.submitted_by_name}</div>}
+              {sections.map(sec=>{
+                const filled=sec.rows.filter(([,v])=>v!=null&&v!=='');
+                if(filled.length===0)return null;
+                return<div key={sec.title} style={{marginBottom:14,paddingTop:8,borderTop:'1px solid #E5E3E0'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>{sec.title}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px 16px'}}>
+                    {filled.map(([k,v])=><div key={k} style={{display:'flex',gap:8,padding:'4px 0',borderBottom:'1px solid #F1EFEC',fontSize:12,minWidth:0}}>
+                      <span style={{color:'#9E9B96',minWidth:110,flexShrink:0}}>{k}</span>
+                      <span style={{color:'#1A1A1A',fontWeight:600,flex:1,wordBreak:'break-word'}}>{v}</span>
+                    </div>)}
+                  </div>
+                </div>;
+              })}
+              {s.notes&&<div style={{marginBottom:4,paddingTop:8,borderTop:'1px solid #E5E3E0'}}>
+                <div style={{fontSize:10,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>Notes</div>
+                <div style={{fontSize:12,color:'#1A1A1A',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,padding:'8px 12px',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{s.notes}</div>
+              </div>}
+            </div>;
+          })}
           <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:12}}>{pisSheets.length>0?'Re-send Request':'Send Request to Customer'}</div>
             <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Recipient Email <span style={{color:'#991B1B'}}>*</span></div><input value={pisEmail} onChange={e=>setPisEmail(e.target.value)} placeholder="customer@example.com" style={{...inputS,pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}/></div>
