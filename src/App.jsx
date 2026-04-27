@@ -9,6 +9,7 @@ import BUILD_INFO from './build-info.json';
 import SystemEventsPage from './features/system-events/SystemEventsPage';
 import SpecialtyVisitsPage from './features/specialty-visits/SpecialtyVisitsPage';
 import CVReconciliationPage from './features/cv-reconciliation/CVReconciliationPage';
+import MyPlatePage from './features/my-plate/MyPlatePage';
 import PISFormPage from './features/pis/PISFormPage';
 // Fix default Leaflet icon
 delete L.Icon.Default.prototype._getIconUrl;
@@ -16498,6 +16499,7 @@ const PAGE_LABELS={
   system_events:'System Events',
   specialty_visits:'Specialty Install',
   cv_reconciliation:'Contract Reconciliation',
+  my_plate:'My Plate',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -17112,7 +17114,7 @@ function BidAdvisor(){
 }
 
 const NAV_GROUPS=[
-  {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'}]},
+  {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'},{key:'my_plate',label:'My Plate',icon:'🍽️'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
   {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
@@ -17630,6 +17632,7 @@ function AppShell(){
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='specialty_visits'&&<ErrorBoundary label="Specialty Install"><SpecialtyVisitsPage jobs={jobs}/></ErrorBoundary>}
             {page==='cv_reconciliation'&&<ErrorBoundary label="Contract Reconciliation"><CVReconciliationPage jobs={jobs} onOpenJob={(j)=>{setOpenJob(j);setPage('projects');}}/></ErrorBoundary>}
+            {page==='my_plate'&&<ErrorBoundary label="My Plate"><MyPlatePage jobs={jobs} auth={{user}} onNavigate={(p)=>setPage(p)}/></ErrorBoundary>}
             {page==='pipeline'&&<ErrorBoundary label="Pipeline"><PipelinePage jobs={jobs} onRefresh={fetchJobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}}/></ErrorBoundary>}
             {page==='tasks'&&<TasksPage jobs={jobs}/>}
             {page==='contacts'&&<ContactsPage jobs={jobs} onOpenProject={(j)=>{setOpenJob(j);setPage('projects');}} onOpenLead={(l)=>{try{localStorage.setItem('fc_pipeline_highlight',l.id);}catch(e){}setPage('pipeline');}}/>}
