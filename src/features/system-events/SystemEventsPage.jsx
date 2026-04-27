@@ -11,11 +11,11 @@
 // supabase/functions/dispatch_system_event/index.ts.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { sbGet, sbPatch, sbFunctionUrl, sbAuthHeader } from '../../shared/sb';
+import { sbGet, sbFunctionUrl, sbAuthHeader } from '../../shared/sb';
 import { logEvent } from '../../shared/systemEvents';
 
 const REFRESH_MS = 5000;
-const ROW_LIMIT = 100;
+const ROW_LIMIT = 500;
 
 const STATUS_STYLES = {
   pending:    { bg: '#F1F0EE', fg: '#625650', label: 'pending' },
@@ -31,7 +31,8 @@ const CATEGORY_COLORS = {
   billing:    '#065F46',
   production: '#0F6E56',
   sales:      '#1D4ED8',
-  fleet:      '#854F0B',
+  contracts:  '#854F0B',
+  fleet:      '#B45309',
   test:       '#9333EA',
 };
 
@@ -197,6 +198,10 @@ export default function SystemEventsPage({ currentUserEmail }) {
   const [replaying, setReplaying] = useState(false);
   const [toast, setToast] = useState(null);
 
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterText, setFilterText] = useState('');
+
   const showToast = useCallback((msg, kind = 'info') => {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), 3500);
@@ -234,6 +239,56 @@ export default function SystemEventsPage({ currentUserEmail }) {
     const fresh = rows.find(r => r.id === selected.id);
     if (fresh && fresh !== selected) setSelected(fresh);
   }, [rows, selected]);
+
+  // Apply status / category / free-text filters client-side. Free-text matches
+  // event_type, actor_label, entity_id, OR stringified payload — that covers
+  // most of what someone would type into a search box ("find events for job
+  // 26H015", "find Amiee's actions", "find anything with bond_number").
+  // Filter is computed from `rows`, not refetched, so it's instant.
+  const filteredRows = useMemo(() => {
+    const needle = filterText.trim().toLowerCase();
+    return rows.filter(r => {
+      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+      if (filterCategory !== 'all' && r.event_category !== filterCategory) return false;
+      if (!needle) return true;
+      const haystack = [
+        r.event_type,
+        r.actor_label,
+        r.entity_id,
+        r.entity_type,
+        r.failed_reason,
+        // Stringify payload + actions_taken so users can search inside JSON
+        // (e.g. find every event mentioning a specific job_number).
+        (() => { try { return JSON.stringify(r.payload || {}); } catch { return ''; } })(),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [rows, filterStatus, filterCategory, filterText]);
+
+  // Counts grouped by event_type, restricted to whatever the current filters
+  // are showing. Lets you see at a glance "10 contract.executed today, 4
+  // pis.submitted, 2 test.ping" without scrolling through the table.
+  const typeBreakdown = useMemo(() => {
+    const counts = new Map();
+    for (const r of filteredRows) {
+      counts.set(r.event_type, (counts.get(r.event_type) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10); // top 10 types is plenty for an overview strip
+  }, [filteredRows]);
+
+  // Distinct categories observed in the current row set, for the filter
+  // dropdown. Always includes the standard ones from CATEGORY_COLORS so
+  // they're available even before any matching events have been seen.
+  const availableCategories = useMemo(() => {
+    const seen = new Set(Object.keys(CATEGORY_COLORS));
+    for (const r of rows) if (r.event_category) seen.add(r.event_category);
+    return Array.from(seen).sort();
+  }, [rows]);
+
+  const filtersActive = filterStatus !== 'all' || filterCategory !== 'all' || filterText.trim() !== '';
+  const clearFilters = () => { setFilterStatus('all'); setFilterCategory('all'); setFilterText(''); };
 
   const kpis = useMemo(() => {
     const todayStart = new Date();
@@ -278,15 +333,10 @@ export default function SystemEventsPage({ currentUserEmail }) {
     if (!ev || replaying) return;
     setReplaying(true);
     try {
-      await sbPatch('system_events', ev.id, {
-        status: 'pending',
-        processed_at: null,
-        failed_reason: null,
-        actions_taken: [],
-      });
-      const reread = await sbGet('system_events', `select=*&id=eq.${ev.id}`);
-      const fresh = Array.isArray(reread) ? reread[0] : null;
-      if (!fresh) throw new Error('Could not re-read event after reset');
+      // Replay runs server-side now — RLS blocks authenticated UPDATE on
+      // system_events (audit trail tamper-proofing), so the dispatcher is
+      // the only thing privileged enough to reset a row to pending. Send
+      // just the id; the dispatcher does reset + reprocess in one round-trip.
       const res = await fetch(sbFunctionUrl('dispatch_system_event'), {
         method: 'POST',
         headers: {
@@ -294,7 +344,7 @@ export default function SystemEventsPage({ currentUserEmail }) {
           Authorization: sbAuthHeader(),
           apikey: sbAuthHeader().replace(/^Bearer\s+/, ''),
         },
-        body: JSON.stringify({ record: fresh }),
+        body: JSON.stringify({ replay_id: ev.id }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `dispatcher returned ${res.status}`);
@@ -329,12 +379,78 @@ export default function SystemEventsPage({ currentUserEmail }) {
         <Kpi label="Pending Now" value={kpis.pending} color={kpis.pending > 0 ? '#1D4ED8' : '#1A1A1A'} />
         <Kpi label="Processed Today" value={kpis.processedToday} color="#065F46" />
         <Kpi label="Failed Today" value={kpis.failedToday} color={kpis.failedToday > 0 ? '#991B1B' : '#1A1A1A'} />
-        <Kpi label="Total Events (last 100)" value={kpis.total} />
+        <Kpi label={`Total Events (last ${ROW_LIMIT})`} value={kpis.total} />
       </div>
 
       {error && (
         <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#991B1B', padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
           {error}
+        </div>
+      )}
+
+      {/* Filter bar — status + category dropdowns + free-text search.
+          Filters are applied client-side over the already-fetched rows.
+          'Clear filters' is only shown when at least one filter is active. */}
+      <div style={{ ...card, padding: 14, marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#9E9B96', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Status</span>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ fontSize: 12, padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, background: '#FFF', color: '#1A1A1A', cursor: 'pointer' }}>
+            <option value="all">All</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+            <option value="skipped">Skipped</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#9E9B96', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Category</span>
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ fontSize: 12, padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, background: '#FFF', color: '#1A1A1A', cursor: 'pointer' }}>
+            <option value="all">All</option>
+            {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <input
+          type="text"
+          value={filterText}
+          onChange={e => setFilterText(e.target.value)}
+          placeholder="Search event type, actor, entity, payload…"
+          style={{ flex: '1 1 280px', minWidth: 200, fontSize: 12, padding: '7px 12px', border: '1px solid #E5E3E0', borderRadius: 6, background: '#FFF', color: '#1A1A1A' }}
+        />
+        {filtersActive && (
+          <button onClick={clearFilters} style={{ ...btnS, padding: '7px 12px' }}>Clear filters</button>
+        )}
+        <div style={{ fontSize: 11, color: '#9E9B96', marginLeft: 'auto' }}>
+          {filtersActive
+            ? `Showing ${filteredRows.length} of ${rows.length}`
+            : `${rows.length} events`}
+        </div>
+      </div>
+
+      {/* Event-type breakdown strip — top 10 most frequent types in the
+          current filter view. Click a chip to drill into just that type. */}
+      {typeBreakdown.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+          {typeBreakdown.map(([type, count]) => (
+            <button
+              key={type}
+              onClick={() => setFilterText(type)}
+              title={`Filter to ${type} events`}
+              style={{
+                padding: '4px 10px',
+                background: '#F4F4F2',
+                border: '1px solid #E5E3E0',
+                borderRadius: 99,
+                fontSize: 11,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                color: '#1A1A1A',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              {type} <span style={{ color: '#9E9B96', marginLeft: 4 }}>{count}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -363,7 +479,12 @@ export default function SystemEventsPage({ currentUserEmail }) {
                   No events yet. Click <strong>Send Test Ping</strong> to verify the spine.
                 </td></tr>
               )}
-              {rows.map(r => {
+              {!loading && rows.length > 0 && filteredRows.length === 0 && (
+                <tr><td colSpan={9} style={{ ...cell, padding: 32, textAlign: 'center', color: '#9E9B96' }}>
+                  No events match the current filters. <button onClick={clearFilters} style={{ ...btnS, marginLeft: 8, padding: '4px 10px' }}>Clear filters</button>
+                </td></tr>
+              )}
+              {filteredRows.map(r => {
                 const latencyMs = r.processed_at && r.created_at
                   ? new Date(r.processed_at).getTime() - new Date(r.created_at).getTime()
                   : null;
@@ -395,7 +516,7 @@ export default function SystemEventsPage({ currentUserEmail }) {
       </div>
 
       <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 10, display: 'flex', gap: 12 }}>
-        <span>Auto-refreshes every {Math.round(REFRESH_MS / 1000)}s · last 100 rows</span>
+        <span>Auto-refreshes every {Math.round(REFRESH_MS / 1000)}s · last {ROW_LIMIT} rows{filtersActive ? ` · ${filteredRows.length} match filters` : ''}</span>
       </div>
 
       <DetailDrawer event={selected} onClose={() => setSelected(null)} onReplay={replayEvent} replaying={replaying} />
