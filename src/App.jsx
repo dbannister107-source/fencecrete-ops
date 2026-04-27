@@ -140,6 +140,29 @@ const useAuth = () => React.useContext(AuthContext);
 
 const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ event: type, job }) }); } catch(e) {} };
 const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
+
+// Emit a row into system_events — the agentic spine. The DB webhook on
+// system_events INSERT fires the dispatch_system_event edge function which
+// looks up rules registered for this event_type and runs them. Fire-and-forget
+// like logAct: never block UI on event emission, never throw to the caller.
+//
+// event_type uses dotted-namespace ('domain.action', e.g. 'contract.executed',
+// 'pis.submitted', 'ntp.received'). entity_type/entity_id let rules look up
+// the related row. payload carries denormalized context so a rule doesn't
+// have to round-trip to the DB for the obvious fields.
+const logEvent = (event_type, { entity_type=null, entity_id=null, payload={}, actor_email=null, event_category='general' }={}) => {
+  try {
+    sbPost('system_events', {
+      event_type,
+      event_category,
+      actor_type: 'user',
+      actor_label: actor_email || 'desktop',
+      entity_type,
+      entity_id,
+      payload,
+    });
+  } catch(e) { /* spine emission is never allowed to break the UI */ }
+};
 // Keeps fence_addons in sync with a job row's scalar fields. Adds/removes the
 // auto-managed codes G (Gates), WI (Wrought Iron), C (Columns, from Single Wythe)
 // based on current data. Preserves any other codes outside {G, WI, C}.
@@ -1452,6 +1475,27 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 await sbPatch('jobs',job.id,{contract_executed:newVal});
                 setForm(p=>({...p,contract_executed:newVal}));
                 logAct(job,'field_update','contract_executed',executed,newVal);
+                // Spine emission — every contract execution leaves a queryable
+                // record. Future rules (NTP reminder at day 7, PIS auto-send,
+                // billing kickoff, audit) all read from this stream.
+                logEvent(newVal?'contract.executed':'contract.unexecuted', {
+                  entity_type: 'job',
+                  entity_id: job.id,
+                  event_category: 'contracts',
+                  actor_email: currentUserEmail,
+                  payload: {
+                    job_number: job.job_number,
+                    job_name: job.job_name,
+                    customer_name: job.customer_name,
+                    sales_rep: job.sales_rep,
+                    pm: job.pm,
+                    market: job.market,
+                    contract_value: job.contract_value,
+                    adj_contract_value: job.adj_contract_value,
+                    contract_date: job.contract_date,
+                    material_calc_already_ran: !!form.material_calc_date,
+                  },
+                });
                 if(newVal)toast.success('✓ Contract marked executed — Max will see the green card');
                 else toast.info('↺ Contract execution reverted');
                 if(onRefresh)onRefresh();
