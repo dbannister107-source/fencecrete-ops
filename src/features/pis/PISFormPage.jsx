@@ -84,10 +84,10 @@ function Field({ label, name, required, type = 'text', full, value, onChange, gr
 }
 
 // State page wrappers — for invalid/expired/loading/submitted/error.
-function StatePage({ icon, title, body, color = fcRed }) {
+function StatePage({ icon, title, body }) {
   return <div style={{ minHeight: '100vh', background: fcBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter, Arial, sans-serif' }}>
     <div style={{ background: '#FFF', borderRadius: 16, padding: '48px 40px', maxWidth: 560, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}>
-      <div style={{ fontWeight: 900, fontSize: 22, color, letterSpacing: -0.02, marginBottom: 32 }}>FENCECRETE</div>
+      <img src="/logo.png" alt="Fencecrete" style={{ display: 'block', height: 36, width: 'auto', maxWidth: 160, margin: '0 auto 32px' }} />
       <div style={{ fontSize: 56, marginBottom: 16 }}>{icon}</div>
       <div style={{ fontSize: 24, fontWeight: 800, color: fcText, marginBottom: 12 }}>{title}</div>
       <div style={{ fontSize: 15, color: fcMuted, lineHeight: 1.6 }}>{body}</div>
@@ -185,7 +185,7 @@ export default function PISFormPage({ token }) {
     return <StatePage icon="⌛" title="Link expired" body={<>This link has expired. Please contact <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a> for a new one.</>} />;
   }
   if (status === 'already_submitted' || status === 'success') {
-    return <StatePage icon="✅" title="Thank you!" body={<>Your project information has been received. Our team at Fencecrete will review it and be in touch shortly.<br /><br />If you have questions, contact us at <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a> or (210) 492-7911.</>} color={fcRed} />;
+    return <StatePage icon="✅" title="Thank you!" body={<>Your project information has been received. Our team at Fencecrete will review it and be in touch shortly.<br /><br />If you have questions, contact us at <a href="mailto:contracts@fencecrete.com" style={{ color: fcRed }}>contracts@fencecrete.com</a> or (210) 492-7911.</>} />;
   }
   if (status === 'error') {
     return <div style={{ minHeight: '100vh', background: fcBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter, Arial, sans-serif' }}>

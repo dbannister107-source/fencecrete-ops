@@ -6369,7 +6369,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       }));
 
       // Build the AI prompt
-      const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer in Texas.
+      const systemPrompt = `You are a production scheduling AI for Fencecrete, a precast concrete fence manufacturer in Texas.
 
 PLANT CAPACITY:
 - Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
