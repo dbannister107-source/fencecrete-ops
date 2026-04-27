@@ -3629,10 +3629,10 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
     </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
-    {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};const arIsNoBill=!!s.no_bill_required;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:''});}}>
+    {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};const arIsNoBill=!!s.no_bill_required;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:'min(600px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
-          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',fontStyle:arIsNoBill?'italic':'normal'}}>{s.job_name}</div>
+          <div style={{fontSize:18,fontWeight:800,color:'#1A1A1A',fontStyle:arIsNoBill?'italic':'normal'}}>{arJob.job_name||s.job_name}</div>
           {arIsNoBill?<span style={pill('#625650','#E5E3E0')}>🚫 No bill required</span>:s.ar_reviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}
         </div>
         {arIsNoBill&&<div style={{marginTop:8,marginBottom:12,padding:'10px 14px',background:'#F4F4F2',border:'1px dashed #C8C4BD',borderRadius:8,color:'#625650',fontStyle:'italic'}}>
