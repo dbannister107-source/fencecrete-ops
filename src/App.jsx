@@ -33,6 +33,7 @@ const STATUS_EDIT_EMAILS = new Set([
   'alex@fencecrete.com',
   'max@fencecrete.com',
   'ccontreras@fencecrete.com',
+  'mmartin@fencecrete.com',
   'luis@fencecrete.com',
 ]);
 // Reopening a closed job has billing/reporting ripple effects, so it's
@@ -44,6 +45,7 @@ const REOPEN_EMAILS = new Set([
   'amiee@fencecrete.com',
   'alex@fencecrete.com',
   'ccontreras@fencecrete.com',
+  'mmartin@fencecrete.com',
   'virginiag@fencecrete.com',
 ]);
 const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
@@ -12383,6 +12385,7 @@ const PLANT_EDIT_EMAILS=new Set([
   'alex@fencecrete.com',
   'contracts@fencecrete.com',
   'ccontreras@fencecrete.com',
+  'mmartin@fencecrete.com',
   'max@fencecrete.com',
   'luis@fencecrete.com',
 ]);
