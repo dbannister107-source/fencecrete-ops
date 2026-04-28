@@ -9961,6 +9961,15 @@ function MapPage({ jobs, onNav }) {
   const [mktF, setMktF] = useState('All');
   const [crewF, setCrewF] = useState('All');
   const [productF, setProductF] = useState('All');
+  // Primary fence type filter — driven by primary_fence_type column directly,
+  // matches the Projects page semantics ('Precast' / 'Masonry' / 'SW' / null).
+  // Distinct from productF which is the derived productOfJob() classification
+  // (Precast / Masonry / Hybrid / Gate / Other) — both are useful.
+  const [primaryTypeF, setPrimaryTypeF] = useState('All');
+  // Add-on filter — multi-select. Set of addon codes; a job matches if its
+  // fence_addons array contains ANY of the selected codes. Special code
+  // 'has_any' matches any job with at least one addon.
+  const [addonsF, setAddonsF] = useState(() => new Set());
   // Size filter (Small <500 LF, Medium 500-1500, Large >1500). Restored
   // from the previous map.
   const [sizeF, setSizeF] = useState('All');
@@ -10151,13 +10160,28 @@ function MapPage({ jobs, onNav }) {
       if (pmF !== 'All' && j.pm !== pmF) return false;
       if (mktF !== 'All' && j.market !== mktF) return false;
       if (productF !== 'All' && productOfJob(j) !== productF) return false;
+      // Primary fence type filter (precast/masonry/SW/null - canonical column)
+      if (primaryTypeF !== 'All') {
+        const pt = j.primary_fence_type || '__null__';
+        if (pt !== primaryTypeF) return false;
+      }
+      // Add-on filter — match if job's fence_addons contains ANY selected code,
+      // OR (special) if 'has_any' is selected and job has at least one addon.
+      if (addonsF.size > 0) {
+        const jobAddons = Array.isArray(j.fence_addons) ? j.fence_addons : [];
+        const wantsAny = addonsF.has('has_any');
+        const specificCodes = [...addonsF].filter(c => c !== 'has_any');
+        const matchesAny = wantsAny && jobAddons.length > 0;
+        const matchesSpecific = specificCodes.length > 0 && specificCodes.some(c => jobAddons.includes(c));
+        if (!matchesAny && !matchesSpecific) return false;
+      }
       if (crewF !== 'All') {
         if (crewF === '__unassigned__' && j.crew_id) return false;
         if (crewF !== '__unassigned__' && j.crew_id !== crewF) return false;
       }
       return true;
     });
-  }, [mappableJobs, dayWindow, weekRange, layers, sizeF, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness, today]);
+  }, [mappableJobs, dayWindow, weekRange, layers, sizeF, showOverdue, showUnscheduled, pmF, mktF, productF, primaryTypeF, addonsF, crewF, getReadiness, today]);
 
   // Counts for the right panel
   const counts = useMemo(() => {
@@ -10540,6 +10564,53 @@ function MapPage({ jobs, onNav }) {
       })}
     </div>}
 
+    {/* Add-on chips — multi-select. Same color palette as Projects page
+        for consistency. Counts reflect candidate set BEFORE addon filter. */}
+    {filtersOpen && <div style={{ ...card, padding: '8px 14px', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11 }}>
+      <span style={{ fontWeight: 700, color: '#625650', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4 }}>Add-ons</span>
+      {[
+        ['has_any', 'Any Add-on',     '#8A261D'],
+        ['G',       'Gates',          '#B45309'],
+        ['C',       'Columns',        '#854F0B'],
+        ['WI',      'Wrought Iron',   '#374151'],
+        ['SW',      'Single Wythe',   '#185FA5'],
+        ['R',       'Removal',        '#9333EA'],
+        ['LS',      'Lump Sum',       '#0E7490'],
+      ].map(([code, label, color]) => {
+        const on = addonsF.has(code);
+        // Count of jobs (with coords, in active install statuses) that have
+        // this addon. For 'has_any', count is jobs with at least one addon.
+        const count = mappableJobs.filter(j => {
+          const arr = Array.isArray(j.fence_addons) ? j.fence_addons : [];
+          return code === 'has_any' ? arr.length > 0 : arr.includes(code);
+        }).length;
+        return <button
+          key={code}
+          onClick={() => setAddonsF(prev => {
+            const next = new Set(prev);
+            if (next.has(code)) next.delete(code);
+            else next.add(code);
+            return next;
+          })}
+          disabled={count === 0 && !on}
+          style={{
+            padding: '4px 10px', borderRadius: 9999,
+            border: `1px solid ${on ? color : '#E5E3E0'}`,
+            background: on ? `${color}14` : '#FFF',
+            color: on ? color : (count === 0 ? '#D1CEC9' : '#9E9B96'),
+            fontSize: 11, fontWeight: 700,
+            cursor: count === 0 && !on ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', gap: 4,
+            opacity: count === 0 && !on ? 0.5 : 1
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: color, border: '1px solid #1A1A1A' }} />
+          {label} ({count})
+        </button>;
+      })}
+      {addonsF.size > 0 && <button onClick={() => setAddonsF(new Set())} style={{ ...btnS, padding: '3px 8px', fontSize: 10 }}>Clear</button>}
+    </div>}
+
     {filtersOpen && <div style={{ ...card, padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontWeight: 700, color: '#625650' }}>PM</span>
@@ -10566,6 +10637,17 @@ function MapPage({ jobs, onNav }) {
         </select>
       </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Type</span>
+        <select value={primaryTypeF} onChange={e => setPrimaryTypeF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 120 }}>
+          <option value="All">All</option>
+          <option value="Precast">Precast</option>
+          <option value="Masonry">Masonry</option>
+          <option value="SW">SW (Single Wythe)</option>
+          <option value="Wrought Iron">Wrought Iron</option>
+          <option value="__null__">Unspecified</option>
+        </select>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontWeight: 700, color: '#625650' }}>Size</span>
         <select value={sizeF} onChange={e => setSizeF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 100 }}>
           <option>All</option><option>Small</option><option>Medium</option><option>Large</option>
@@ -10584,7 +10666,7 @@ function MapPage({ jobs, onNav }) {
         <span style={{ fontWeight: 700, color: '#1A1A1A' }}>Show Clusters</span>
       </label>
       <button onClick={() => {
-        setPmF('All'); setMktF('All'); setProductF('All'); setCrewF('All'); setSizeF('All');
+        setPmF('All'); setMktF('All'); setProductF('All'); setPrimaryTypeF('All'); setCrewF('All'); setSizeF('All'); setAddonsF(new Set());
         setLayers({ active_install: true, material_ready: true, contract_review: false, in_production: false, production_queue: false, fence_complete: false });
       }} style={{ ...btnS, padding: '4px 10px', fontSize: 11 }}>Clear</button>
     </div>}
@@ -10648,6 +10730,22 @@ function MapPage({ jobs, onNav }) {
                   {selected.est_install_days ? `${selected.est_install_days} crew-days` : '—'}
                   {selected.est_install_days && !selected.est_install_days_override && <span style={{ fontSize: 10, color: '#9E9B96', fontWeight: 500, fontStyle: 'italic' }}>(auto · 50 LF/day)</span>}
                   {selected.est_install_days_override && <span style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, background: '#DBEAFE', padding: '1px 6px', borderRadius: 8 }}>manual</span>}
+                </div>
+              </div>
+              {/* Primary type + add-ons display */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={{ color: '#9E9B96' }}>Type & Add-ons</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+                  {selected.primary_fence_type ? <span style={{
+                    display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                    background: selected.primary_fence_type === 'Precast' ? '#8A261D' : selected.primary_fence_type === 'Masonry' ? '#185FA5' : '#374151',
+                    color: '#FFF'
+                  }}>{selected.primary_fence_type}</span> : <span style={{ color: '#9E9B96', fontSize: 12 }}>—</span>}
+                  {Array.isArray(selected.fence_addons) && selected.fence_addons.length > 0 && selected.fence_addons.map(a => {
+                    const addonStyles = { G: ['#B45309','Gates'], C: ['#854F0B','Columns'], WI: ['#374151','WI'], SW: ['#185FA5','SW'], R: ['#9333EA','R'], LS: ['#0E7490','LS'] };
+                    const [bg, label] = addonStyles[a] || ['#625650', a];
+                    return <span key={a} style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: bg, color: '#FFF' }}>{label}</span>;
+                  })}
                 </div>
               </div>
             </div>
