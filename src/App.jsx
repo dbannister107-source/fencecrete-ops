@@ -10,6 +10,7 @@ import SpecialtyVisitsPage from './features/specialty-visits/SpecialtyVisitsPage
 import CVReconciliationPage from './features/cv-reconciliation/CVReconciliationPage';
 import MyPlatePage from './features/my-plate/MyPlatePage';
 import PISFormPage from './features/pis/PISFormPage';
+import SharePointLinksPage from './features/sharepoint-links/SharePointLinksPage';
 
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
@@ -28,6 +29,11 @@ const EDIT_EMAILS = new Set([
   'amiee@fencecrete.com',
   'contracts@fencecrete.com',
   'alex@fencecrete.com',
+  // Apr 28 2026 per David: Carlos gets identical permissions to David.
+  // Already in STATUS_EDIT_EMAILS, REOPEN_EMAILS, PLANT_EDIT_EMAILS.
+  // Adding to EDIT_EMAILS (full project record editing) and
+  // SYSTEM_ADMIN_EMAILS below completes the parity.
+  'ccontreras@fencecrete.com',
 ]);
 const STATUS_EDIT_EMAILS = new Set([
   'david@fencecrete.com',
@@ -87,6 +93,7 @@ const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim(
 // event log for every automated workflow in the app.
 const SYSTEM_ADMIN_EMAILS = new Set([
   'david@fencecrete.com',
+  'ccontreras@fencecrete.com',
 ]);
 const canViewSystemEvents = (email) => SYSTEM_ADMIN_EMAILS.has((email||'').toLowerCase().trim());
 
@@ -17474,6 +17481,7 @@ const PAGE_LABELS={
   specialty_visits:'Specialty Install',
   cv_reconciliation:'Contract Reconciliation',
   my_plate:'My Plate',
+  sharepoint_links:'SharePoint Links',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -18451,6 +18459,7 @@ function AppShell(){
   const filteredNav=useMemo(()=>{
     const adminItems=[];
     if(isAdmin)adminItems.push({key:'admin',label:'User Management',icon:'🔐'});
+    if(isAdmin)adminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
     if(canSystemEvents)adminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
     if(adminItems.length===0)return NAV_GROUPS;
     return[...NAV_GROUPS,{label:'ADMIN',color:'#4B5563',iconColor:'#9CA3AF',items:adminItems}];
@@ -18608,6 +18617,7 @@ function AppShell(){
             {page==='bid_advisor'&&<ErrorBoundary label="Bid Advisor"><BidAdvisor/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
+            {page==='sharepoint_links'&&isAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
           </>}
         </div>
       </div>
