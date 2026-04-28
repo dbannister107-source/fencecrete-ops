@@ -9932,11 +9932,18 @@ const buildClusters = (jobs, radiusMiles = 15) => {
 
 function MapPage({ jobs, onNav }) {
   const isMobile = useIsMobile();
+  const auth = useAuth();
+  const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
+  // Reuse existing edit-emails allowlist as the admin gate for geocoding —
+  // it's already the David/Amiee/Alex/Contracts circle that should manage
+  // data hygiene tasks like running geocoding.
+  const canGeocode = canEditProjects(currentUserEmail);
 
   // ═══ FILTER STATE ═══
   // Time horizon: how far out to show scheduled installs.
-  // 'all' shows everything regardless of date.
-  const [horizon, setHorizon] = useState(45); // days; or 'all'
+  // 'all' shows everything regardless of date; 'this_week' / 'next_week'
+  // are calendar-week presets restored from the previous map.
+  const [horizon, setHorizon] = useState(45); // days; 'all' | 'this_week' | 'next_week'
   // Color mode: how to color each pin.
   //   'status'  → readiness (green/yellow/red based on production-readiness)
   //   'crew'    → each crew gets its own color
@@ -9946,6 +9953,20 @@ function MapPage({ jobs, onNav }) {
   const [mktF, setMktF] = useState('All');
   const [crewF, setCrewF] = useState('All');
   const [productF, setProductF] = useState('All');
+  // Size filter (Small <500 LF, Medium 500-1500, Large >1500). Restored
+  // from the previous map.
+  const [sizeF, setSizeF] = useState('All');
+  // Status layer toggles. Multi-select chips so a PM can quickly hide
+  // contract-review and in-production pins to focus on what's actually
+  // installable. Default: same as old map (active+material on, others off).
+  const [layers, setLayers] = useState({
+    active_install: true,
+    material_ready: true,
+    contract_review: false,
+    in_production: false,
+    production_queue: false,
+    fence_complete: false,
+  });
   // 'showOverdue': stale dates surfaced as overdue. ON by default
   // because the cleanup is part of the value of the page.
   const [showOverdue, setShowOverdue] = useState(true);
@@ -9953,6 +9974,55 @@ function MapPage({ jobs, onNav }) {
   const [showClusters, setShowClusters] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
   useEffect(() => { setFiltersOpen(!isMobile); }, [isMobile]);
+
+  // Geocoding: manual, admin-gated. Counts and triggers a one-shot run
+  // through Nominatim (OSM) for any active jobs missing lat/lng. Rate-
+  // limited to 1.1s/request per Nominatim's published policy.
+  const [geocoding, setGeocoding] = useState(false);
+  const [geoProgress, setGeoProgress] = useState('');
+  const needsGeocodingCount = useMemo(() =>
+    jobs.filter(j =>
+      ['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)
+      && (!j.lat || !j.lng)
+    ).length
+  , [jobs]);
+  const runGeocode = useCallback(async () => {
+    if (!canGeocode || geocoding) return;
+    const need = jobs.filter(j =>
+      ['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)
+      && (!j.lat || !j.lng)
+    );
+    if (need.length === 0) return;
+    setGeocoding(true);
+    setGeoProgress(`Locating ${need.length} jobs…`);
+    for (let i = 0; i < need.length; i++) {
+      setGeoProgress(`Locating ${i+1}/${need.length}…`);
+      const j = need[i];
+      const q = `${j.address || ''} ${j.city || ''} ${j.state || 'TX'}`.trim();
+      let lat = 0, lng = 0;
+      if (q.length > 3) {
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, { headers: { 'User-Agent': 'FencecreteOps/1.0' } });
+          const d = await r.json();
+          if (d && d[0]) { lat = parseFloat(d[0].lat); lng = parseFloat(d[0].lon); }
+        } catch (e) {}
+      }
+      // Fallback: jitter around market centroid so the pin shows up
+      // even if the address geocode failed.
+      if (!lat && j.market && MKT_COORDS[j.market]) {
+        const c = MKT_COORDS[j.market];
+        lat = c[0] + (Math.random()-0.5) * 0.05;
+        lng = c[1] + (Math.random()-0.5) * 0.05;
+      }
+      if (lat && lng) {
+        try { await sbPatch('jobs', j.id, { lat, lng }); } catch (e) {}
+      }
+      if (q.length > 3) await new Promise(r => setTimeout(r, 1100));
+    }
+    setGeocoding(false);
+    setGeoProgress('Geocoding complete. Refresh to see new pins.');
+    setTimeout(() => setGeoProgress(''), 4000);
+  }, [canGeocode, geocoding, jobs]);
 
   // ═══ DATA ═══
   const [crews, setCrews] = useState([]);
@@ -9970,6 +10040,19 @@ function MapPage({ jobs, onNav }) {
 
   // Today's date at start-of-day
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+
+  // Calendar week range. 'this_week' = Sun-Sat of current week.
+  // 'next_week' = Sun-Sat of the week after. Returns [startDate, endDate]
+  // with endDate exclusive.
+  const weekRange = useMemo(() => {
+    if (horizon !== 'this_week' && horizon !== 'next_week') return null;
+    const start = new Date(today);
+    start.setDate(today.getDate() - today.getDay()); // back to Sunday
+    if (horizon === 'next_week') start.setDate(start.getDate() + 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    return [start, end];
+  }, [horizon, today]);
 
   // Compute readiness bucket for a job. Drives color-by-status mode.
   //   'overdue'        → est_start_date in the past
@@ -9989,21 +10072,37 @@ function MapPage({ jobs, onNav }) {
     return 'production_risk';
   }, [today]);
 
-  // The candidate set: all active install-eligible jobs with coords
+  // The candidate set: all active install-eligible jobs with coords.
+  // Honors the status layer toggles so PMs can hide categories they
+  // don't care about (e.g. hide contract-review noise).
   const mappableJobs = useMemo(() => jobs.filter(j =>
     j.lat && j.lng && ACTIVE_INSTALL_STATUSES.includes(j.status)
   ), [jobs]);
 
   // Apply user filters → the visible set
   const filtered = useMemo(() => {
+    // Resolve horizon to days-out (or null = all). For week presets, we
+    // gate on the calendar window separately below.
+    const horizonDays = (horizon === 'all' || horizon === 'this_week' || horizon === 'next_week') ? null : horizon;
     return mappableJobs.filter(j => {
+      // Status layer toggle — multi-select chip filter
+      if (!layers[j.status]) return false;
       // Time-horizon: filter by readiness
-      const readiness = getReadiness(j, horizon === 'all' ? null : horizon);
+      const readiness = getReadiness(j, horizonDays);
       if (readiness === 'future') return false;       // beyond horizon → hide
       if (readiness === 'overdue' && !showOverdue) return false;
       if (readiness === 'unscheduled' && !showUnscheduled) return false;
-      if (readiness === 'complete') return false;     // already done
-
+      if (readiness === 'complete' && !layers.fence_complete) return false;
+      // Calendar week presets — must fall within Sun-Sat window
+      if (weekRange && j.est_start_date) {
+        const sd = new Date(j.est_start_date);
+        if (sd < weekRange[0] || sd >= weekRange[1]) return false;
+      } else if (weekRange && !j.est_start_date) {
+        // Week presets implicitly exclude unscheduled
+        return false;
+      }
+      // Size filter (Small/Medium/Large by total LF)
+      if (sizeF !== 'All' && sizeOfJob(j) !== sizeF) return false;
       // Other filters
       if (pmF !== 'All' && j.pm !== pmF) return false;
       if (mktF !== 'All' && j.market !== mktF) return false;
@@ -10014,7 +10113,7 @@ function MapPage({ jobs, onNav }) {
       }
       return true;
     });
-  }, [mappableJobs, horizon, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness]);
+  }, [mappableJobs, horizon, weekRange, layers, sizeF, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness]);
 
   // Counts for the right panel
   const counts = useMemo(() => {
@@ -10259,12 +10358,14 @@ function MapPage({ jobs, onNav }) {
 
   // ═══ RENDER ═══
   const HORIZON_OPTIONS = [
-    { val: 14, label: '14 days' },
-    { val: 30, label: '30 days' },
-    { val: 45, label: '45 days' },
-    { val: 60, label: '60 days' },
-    { val: 90, label: '90 days' },
-    { val: 'all', label: 'All' }
+    { val: 'this_week', label: 'This Week', group: 'wk' },
+    { val: 'next_week', label: 'Next Week', group: 'wk' },
+    { val: 14, label: '14 days', group: 'days' },
+    { val: 30, label: '30 days', group: 'days' },
+    { val: 45, label: '45 days', group: 'days' },
+    { val: 60, label: '60 days', group: 'days' },
+    { val: 90, label: '90 days', group: 'days' },
+    { val: 'all', label: 'All', group: 'all' }
   ];
 
   return <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', gap: 8 }}>
@@ -10272,7 +10373,26 @@ function MapPage({ jobs, onNav }) {
     <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div>
         <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Install Map</h1>
-        <div style={{ fontSize: 12, color: '#625650', marginTop: 2 }}>{counts.total} installs in window · {(counts.lf / 1000).toFixed(1)}k LF · ${(counts.dollars / 1000).toFixed(0)}k</div>
+        <div style={{ fontSize: 12, color: '#625650', marginTop: 2 }}>
+          {counts.total} installs in window · {(counts.lf / 1000).toFixed(1)}k LF · ${(counts.dollars / 1000).toFixed(0)}k
+          {/* Geocode button — admin-gated. Manual run-once: locates any
+              active jobs missing lat/lng via Nominatim (OSM). Rate-limited.
+              Shown only when there's actually work to do. */}
+          {canGeocode && needsGeocodingCount > 0 && <button
+            onClick={runGeocode}
+            disabled={geocoding}
+            style={{
+              marginLeft: 12, padding: '3px 10px', fontSize: 11, fontWeight: 700,
+              borderRadius: 8, border: '1px solid #B45309',
+              background: geocoding ? '#FEF3C7' : '#FFF',
+              color: '#B45309', cursor: geocoding ? 'wait' : 'pointer'
+            }}
+            title={`${needsGeocodingCount} active jobs are missing coordinates`}
+          >
+            {geocoding ? geoProgress || 'Geocoding…' : `📍 Geocode ${needsGeocodingCount} Missing`}
+          </button>}
+          {geoProgress && !geocoding && <span style={{ marginLeft: 12, fontSize: 11, color: '#15803D', fontWeight: 600 }}>{geoProgress}</span>}
+        </div>
       </div>
       <div style={{ flex: 1, minWidth: 280 }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Time Horizon</div>
@@ -10302,6 +10422,39 @@ function MapPage({ jobs, onNav }) {
     </div>
 
     {/* Filters row */}
+    {/* Status layer chips — multi-select. Click to toggle a status on/off
+        in the visible set. Counts shown reflect the candidate set BEFORE
+        layer filtering so the toggle's effect is obvious. */}
+    {filtersOpen && <div style={{ ...card, padding: '8px 14px', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11 }}>
+      <span style={{ fontWeight: 700, color: '#625650', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4 }}>Show Status</span>
+      {[
+        ['active_install',   'Active Install',   '#DC2626'],
+        ['material_ready',   'Material Ready',   '#EAB308'],
+        ['production_queue', 'Production Queue', '#7C3AED'],
+        ['in_production',    'In Production',    '#2563EB'],
+        ['contract_review',  'Contract Review',  '#6B7280'],
+        ['fence_complete',   'Fence Complete',   '#10B981'],
+      ].map(([k, label, color]) => {
+        const on = !!layers[k];
+        const count = jobs.filter(j => j.status === k && j.lat && j.lng).length;
+        return <button
+          key={k}
+          onClick={() => setLayers(prev => ({ ...prev, [k]: !prev[k] }))}
+          style={{
+            padding: '4px 10px', borderRadius: 9999,
+            border: `1px solid ${on ? color : '#E5E3E0'}`,
+            background: on ? `${color}14` : '#FFF',
+            color: on ? color : '#9E9B96',
+            fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 4
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: color, border: '1px solid #1A1A1A' }} />
+          {label} ({count})
+        </button>;
+      })}
+    </div>}
+
     {filtersOpen && <div style={{ ...card, padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontWeight: 700, color: '#625650' }}>PM</span>
@@ -10327,6 +10480,12 @@ function MapPage({ jobs, onNav }) {
           {productOptions.map(p => <option key={p}>{p}</option>)}
         </select>
       </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Size</span>
+        <select value={sizeF} onChange={e => setSizeF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 100 }}>
+          <option>All</option><option>Small</option><option>Medium</option><option>Large</option>
+        </select>
+      </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
         <input type="checkbox" checked={showOverdue} onChange={e => setShowOverdue(e.target.checked)} />
         <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue ({mappableJobs.filter(j => getReadiness(j, null) === 'overdue').length})</span>
@@ -10339,7 +10498,10 @@ function MapPage({ jobs, onNav }) {
         <input type="checkbox" checked={showClusters} onChange={e => setShowClusters(e.target.checked)} />
         <span style={{ fontWeight: 700, color: '#1A1A1A' }}>Show Clusters</span>
       </label>
-      <button onClick={() => { setPmF('All'); setMktF('All'); setProductF('All'); setCrewF('All'); }} style={{ ...btnS, padding: '4px 10px', fontSize: 11 }}>Clear</button>
+      <button onClick={() => {
+        setPmF('All'); setMktF('All'); setProductF('All'); setCrewF('All'); setSizeF('All');
+        setLayers({ active_install: true, material_ready: true, contract_review: false, in_production: false, production_queue: false, fence_complete: false });
+      }} style={{ ...btnS, padding: '4px 10px', fontSize: 11 }}>Clear</button>
     </div>}
 
     {/* Map + Side panel */}
