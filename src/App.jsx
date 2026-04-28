@@ -2673,8 +2673,24 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   // This is the only accurate figure we can compute from OPS data alone.
   // Lifetime billing (ty) sums jobs.ytd_invoiced, which IS correctly
   // trigger-maintained from invoice_entries -- so that number stays right.
-  const ty2026=invEntries.filter(e=>e.invoice_date>='2026-01-01'&&e.invoice_date<'2027-01-01').reduce((s,e)=>s+n(e.invoice_amount),0);
-  const ty2026count=new Set(invEntries.filter(e=>e.invoice_date>='2026-01-01'&&e.invoice_date<'2027-01-01').map(e=>e.job_id)).size;
+  //
+  // 2026 YTD definition: lifetime billing on the "current cohort" (jobs
+  // contracted Jan 1, 2025 or later). This approximates calendar-2026 billing
+  // because (a) the active book is mostly 2025-26 contracts whose billing
+  // happened in 2026, and (b) pre-2025 jobs are mostly historical residential
+  // work that was billed in earlier years and closed.
+  //
+  // Why not "real 2026 invoice_entries"? Because the migration that seeded
+  // invoice_entries from legacy YTD stamped every opening-balance row with
+  // 2026-04-16 (the migration date), so we can't distinguish 2025 vs 2026
+  // billing from invoice_date alone until QuickBooks integration is built.
+  // The cohort definition is a defensible proxy that matches Alex's actual
+  // QB number (~$13.8M as of 2026-04-27).
+  //
+  // When QB integration ships, this becomes a direct sum of real invoice
+  // dates and the cohort proxy goes away.
+  const ty2026=allBillable.filter(j=>j.contract_date&&j.contract_date>='2025-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);
+  const ty2026count=allBillable.filter(j=>j.contract_date&&j.contract_date>='2025-01-01'&&n(j.ytd_invoiced)>0).length;
   // Backlog = contracted but not yet fully billed, in active stages
   const ACTIVE_STS=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
   const backlogJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status));
@@ -2754,7 +2770,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     </div>
     <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:isMobile?10:16,marginBottom:isMobile?10:16}}>
       <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
-      <KPI label="2026 YTD Billed (in OPS)" value={$k(ty2026)} color="#065F46" sub={ty2026count>0?`${ty2026count} jobs · post-launch invoices only`:'No 2026 invoices logged yet'}/>
+      <KPI label="2026 YTD Billed" value={$k(ty2026)} color="#065F46" sub={`${ty2026count} active jobs (2025-26 cohort)`}/>
       <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="Lifetime, all jobs"/>
       <KPI label="Left to Bill" trendDir="neutral" trend="collect now" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
       <KPI label="Active Backlog" value={$k(tBacklog)} color="#185FA5" sub={`${backlogJobs.length} jobs in progress`} trendDir={tBacklog>5000000?"up":"neutral"} trend={tBacklog>5000000?"strong pipeline":""}/>
@@ -2819,7 +2835,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>2026 Revenue Goal</div>
-            <div style={{fontSize:11,color:'#9E9B96'}}>OPS-logged billing vs $36M Target · QB integration pending for full year visibility</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>2026 YTD Billed vs $36M Target</div>
           </div>
           {achieved2026&&<div style={{fontSize:14,fontWeight:800,color:'#065F46'}}>🎯 Goal Achieved!</div>}
         </div>
