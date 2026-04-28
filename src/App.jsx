@@ -6676,7 +6676,7 @@ function MaterialCalcPage({jobs,preJob}){
     </div>}
     {!result&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}><div style={{fontSize:28,marginBottom:8}}>🧮</div><div style={{fontSize:14}}>Select a style, height, and linear feet to calculate materials</div></div>}
     {/* Print Preview Modal */}
-    {showPrint&&result&&(()=>{const ph=result.postHeight;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=ov('linePosts',result.linePosts);const cp=ov('cornerPosts',result.cornerPosts);const sp=ov('stopPosts',result.stopPosts);const rp=ov('regularPanels',result.regularPanels);const hp=ov('halfPanels',result.halfPanels)||0;const cr=ov('capRails',result.capRails);const tr2=ov('topRails',result.topRails);const br=ov('bottomRails',result.bottomRails);const mr=ov('middleRails',result.middleRails);const lc=ov('lineCaps',result.lineCaps);const sc2=ov('stopCaps',result.stopCaps);const jobColor=color||selJob?.color||'';const mktShort=selJob?MS[selJob.market]||selJob.market||'':'';
+    {showPrint&&result&&(()=>{const ph=result.postHeight;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=ov('linePosts',result.linePosts);const cp=ov('cornerPosts',result.cornerPosts);const sp=ov('stopPosts',result.stopPosts);const rp=ov('regularPanels',result.regularPanels);const hp=ov('halfPanels',result.halfPanels)||0;const tp=ov('topPanels',result.topPanels)||0;const bp=ov('bottomPanels',result.bottomPanels)||0;const cr=ov('capRails',result.capRails);const tr2=ov('topRails',result.topRails);const br=ov('bottomRails',result.bottomRails);const mr=ov('middleRails',result.middleRails);const lc=ov('lineCaps',result.lineCaps);const sc2=ov('stopCaps',result.stopCaps);const jobColor=color||selJob?.color||'';const mktShort=selJob?MS[selJob.market]||selJob.market||'':'';const totalPanels=rp+hp+tp+bp;
     return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPrint(false)}>
       <div style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
         {/* Print-only controls */}
@@ -6732,14 +6732,26 @@ function MaterialCalcPage({jobs,preJob}){
               </tr>)}</tbody>
             </table>
           </div>
-          {/* PANELS */}
+          {/* PANELS — conditional rows for whichever panel types apply
+              to this style. Z-panel styles (V-Wood Combo, V-Board&Batten,
+              H-Board&Batten) use Top/Bottom; CMU uses Regular+Half;
+              standard styles use Regular only. Total row matches the
+              calculator UI's running total. */}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:14,fontWeight:900,borderBottom:'2px solid #000',paddingBottom:4,marginBottom:10}}>PANELS</div>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
               <tbody>
-                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,width:80,textAlign:'center'}}>{d(rp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Regular Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / <b>Reg</b></td></tr>
-                <tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(hp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Half Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / Reg</td></tr>
-                <tr><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>—</td><td style={{padding:'6px 0'}}>Each / Pallets</td><td style={{padding:'6px 0',fontWeight:600}}>Diamond/Bottle Panels</td><td></td></tr>
+                {rp>0&&<tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,width:80,textAlign:'center'}}>{d(rp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Regular Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / <b>Reg</b></td></tr>}
+                {hp>0&&<tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(hp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Half Panels</td><td style={{padding:'6px 0',color:'#666'}}>Short / Long / Reg</td></tr>}
+                {tp>0&&<tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(tp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Top Panels</td><td style={{padding:'6px 0',color:'#666'}}>Vertical / Z-style</td></tr>}
+                {bp>0&&<tr style={{borderBottom:'1px solid #eee'}}><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{d(bp)}</td><td style={{padding:'6px 0'}}>Each / Pallet</td><td style={{padding:'6px 0',fontWeight:600}}>Bottom Panels</td><td style={{padding:'6px 0',color:'#666'}}>Vertical / Z-style</td></tr>}
+                {totalPanels===0&&<tr><td style={{padding:'6px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>—</td><td style={{padding:'6px 0',color:'#666'}} colSpan={3}>No panels (Ranch Rail or override)</td></tr>}
+                {totalPanels>0&&<tr style={{borderTop:'2px solid #000',background:'#F4F4F2'}}>
+                  <td style={{padding:'8px 0',fontSize:28,fontWeight:900,textAlign:'center'}}>{totalPanels}</td>
+                  <td style={{padding:'8px 0'}}></td>
+                  <td style={{padding:'8px 0',fontWeight:900,fontSize:14}}>TOTAL PANELS</td>
+                  <td></td>
+                </tr>}
               </tbody>
             </table>
           </div>
