@@ -10161,7 +10161,7 @@ function MapPage({ jobs, onNav }) {
 
   // Counts for the right panel
   const counts = useMemo(() => {
-    const out = { ready: 0, prod_risk: 0, overdue: 0, unscheduled: 0, total: 0, lf: 0, dollars: 0, byMarket: {}, byPm: {}, byCrew: {} };
+    const out = { ready: 0, prod_risk: 0, overdue: 0, unscheduled: 0, total: 0, lf: 0, dollars: 0, install_days: 0, byMarket: {}, byPm: {}, byCrew: {}, byMarketDays: {} };
     filtered.forEach(j => {
       // For display classification, don't re-clip by horizon — the filter
       // already decided the job is in scope. We just report its bucket.
@@ -10173,8 +10173,10 @@ function MapPage({ jobs, onNav }) {
       out.total++;
       out.lf += n(j.total_lf);
       out.dollars += n(j.adj_contract_value || j.contract_value);
+      out.install_days += n(j.est_install_days);
       const mk = j.market || '—';
       out.byMarket[mk] = (out.byMarket[mk] || 0) + 1;
+      out.byMarketDays[mk] = (out.byMarketDays[mk] || 0) + n(j.est_install_days);
       const pm = j.pm || '—';
       out.byPm[pm] = (out.byPm[pm] || 0) + 1;
       const cw = j.crew_id ? (crewById[j.crew_id]?.name || '?') : 'Unassigned';
@@ -10640,6 +10642,14 @@ function MapPage({ jobs, onNav }) {
               <div><span style={{ color: '#9E9B96' }}>Est. Start</span><div style={{ fontWeight: 700 }}>{selected.est_start_date || '—'}</div></div>
               <div><span style={{ color: '#9E9B96' }}>Total LF</span><div style={{ fontWeight: 700 }}>{n(selected.total_lf).toLocaleString()}</div></div>
               <div><span style={{ color: '#9E9B96' }}>Contract</span><div style={{ fontWeight: 700 }}>${Math.round(n(selected.adj_contract_value || selected.contract_value) / 1000)}k</div></div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={{ color: '#9E9B96' }}>Install Days</span>
+                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {selected.est_install_days ? `${selected.est_install_days} crew-days` : '—'}
+                  {selected.est_install_days && !selected.est_install_days_override && <span style={{ fontSize: 10, color: '#9E9B96', fontWeight: 500, fontStyle: 'italic' }}>(auto · 50 LF/day)</span>}
+                  {selected.est_install_days_override && <span style={{ fontSize: 10, color: '#1D4ED8', fontWeight: 600, background: '#DBEAFE', padding: '1px 6px', borderRadius: 8 }}>manual</span>}
+                </div>
+              </div>
             </div>
             {/* Crew assignment */}
             <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
@@ -10677,10 +10687,18 @@ function MapPage({ jobs, onNav }) {
               </div>}
             </div>
             <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Install Capacity Needed</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0' }}>
+                <span style={{ fontSize: 12 }}>Total crew-days</span>
+                <span style={{ fontFamily: 'Inter', fontWeight: 800, fontSize: 18, color: '#8A261D' }}>{counts.install_days.toLocaleString()}</span>
+              </div>
+              <div style={{ fontSize: 10, color: '#9E9B96', marginTop: 2 }}>at 50 LF/day per crew</div>
+            </div>
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By Market</div>
               {Object.entries(counts.byMarket).sort((a,b) => b[1] - a[1]).map(([k,v]) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
                 <span>{k}</span>
-                <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v}</span>
+                <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v} jobs · <span style={{ color: '#8A261D' }}>{Math.round(counts.byMarketDays[k] || 0)}d</span></span>
               </div>)}
             </div>
             <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10, marginBottom: 10 }}>
