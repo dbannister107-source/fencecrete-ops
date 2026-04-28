@@ -4035,7 +4035,30 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const emptyForm=()=>({notes:'',...Object.fromEntries(LF_FIELDS.map(f=>[f,'']))});
   const pickPM=pm=>{setSelPM(pm);localStorage.setItem('fc_pm',pm);setExpandedRow(null);setEditingRow(null);setSelected(new Set());};
   const selMonthLabel=monthLabel(selMonth);
-  const activeJobs=useMemo(()=>{let j2=jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status));if(selPM)j2=j2.filter(j=>j.pm===selPM);return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));},[jobs,selPM]);
+  // activeJobs derivation is historical-month-aware:
+  // - For the current month: standard active billing statuses (unchanged).
+  // - For historical months: include jobs that EITHER (a) are still in
+  //   active billing statuses, OR (b) have a submission for that month
+  //   even if now closed (they were active when bills were submitted).
+  //   Then exclude any jobs created after the end of the billing month
+  //   so May-created jobs don't appear in April's view.
+  const activeJobs=useMemo(()=>{
+    // End of selected billing month, e.g. selMonth='2026-04' -> '2026-04-30'
+    const [yy,mm]=selMonth.split('-').map(Number);
+    const lastDay=new Date(yy,mm,0).getDate(); // 0 = last day of prev month -> last day of mm
+    const monthEnd=`${selMonth}-${String(lastDay).padStart(2,'0')}T23:59:59`;
+    const subJobIds=new Set((subs||[]).map(s=>s.job_id));
+    let j2=jobs.filter(j=>{
+      // Filter 1: had to exist by end of billing month
+      if(j.created_at&&j.created_at>monthEnd)return false;
+      // Filter 2: either currently active OR has a submission for this month
+      const isActive=ACTIVE_BILL_STATUSES.includes(j.status);
+      const hasSubmission=subJobIds.has(j.id);
+      return isActive||hasSubmission;
+    });
+    if(selPM)j2=j2.filter(j=>j.pm===selPM);
+    return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));
+  },[jobs,selPM,selMonth,subs]);
   const fetchSubs=useCallback(async()=>{if(!selPM)return;const d=await sbGet('pm_bill_submissions',`billing_month=eq.${selMonth}&pm=eq.${selPM}&order=created_at.desc`);setSubs(d||[]);},[selMonth,selPM]);
   useEffect(()=>{fetchSubs();},[fetchSubs,refreshKey]);
   const subByJob=useMemo(()=>{const m={};(subs||[]).forEach(s=>{if(!m[s.job_id])m[s.job_id]=s;});return m;},[subs]);
@@ -4810,6 +4833,9 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   // Line items — used by the LF Data Quality Check report to compare header LF vs. line-item sums
   const[reportLineItems,setReportLineItems]=useState([]);
   useEffect(()=>{sbGet('job_line_items','select=job_number,fence_type,lf&limit=5000').then(d=>{if(Array.isArray(d))setReportLineItems(d);}).catch(e=>console.error('[Reports] line items fetch failed:',e));},[]);
+  // Bill submissions across all months — used by the Bill Sheet History report
+  const[bsHistorySubs,setBsHistorySubs]=useState([]);
+  useEffect(()=>{sbGet('pm_bill_submissions','select=id,job_id,billing_month,submitted_by,submitted_at,ar_reviewed,ar_reviewed_at,no_bill_required,invoiced_amount,total_lf&order=submitted_at.desc&limit=10000').then(d=>{if(Array.isArray(d))setBsHistorySubs(d);}).catch(e=>console.error('[Reports] bill submissions fetch failed:',e));},[]);
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -4852,6 +4878,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {id:'ltb_pm',title:'Left to Bill by PM',desc:'Unbilled revenue by project manager',icon:'💰'},
     {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
     {id:'lf_drift',title:'LF Data Quality Check',desc:'Jobs where header LF values disagree with Line Items — flags stale data for cleanup',icon:'🔍'},
+    {id:'bill_sheet_history',title:'Bill Sheet History',desc:'PM × month grid — submissions, reviewed count, $ billed, and submission timing across all months',icon:'📚'},
   ];
   const salesReports=[
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
@@ -5775,6 +5802,159 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               <td style={{padding:'8px 10px'}}>{r.count>0?Math.round(r.total/r.count).toLocaleString():'—'}</td>
             </tr>;})}</tbody>
           </table>
+        </div>
+      </div>;
+    }
+    if(activeRpt==='bill_sheet_history'){
+      // Build PM × month grid from bsHistorySubs.
+      // Each cell: {submitted, reviewed, no_bill, dollars, lf, total_days_late}
+      // 'days_late' = days from end-of-billing-month to submitted_at.
+      //   Positive = late. Negative = early. Zero = on time.
+      const grid={};
+      const monthSet=new Set();
+      const pmSet=new Set();
+      // Distinct PMs: prefer the canonical PM_LIST order; fall back to whoever appears in submissions.
+      bsHistorySubs.forEach(s=>{
+        if(!s.billing_month||!s.submitted_by)return;
+        monthSet.add(s.billing_month);
+        pmSet.add(s.submitted_by);
+        const k=`${s.submitted_by}|${s.billing_month}`;
+        if(!grid[k])grid[k]={submitted:0,reviewed:0,no_bill:0,dollars:0,lf:0,total_days_late:0,subs_with_dates:0};
+        const c=grid[k];
+        c.submitted++;
+        if(s.ar_reviewed)c.reviewed++;
+        if(s.no_bill_required)c.no_bill++;
+        c.dollars+=n(s.invoiced_amount);
+        c.lf+=n(s.total_lf);
+        // Compute days-late vs end of billing month
+        if(s.submitted_at&&s.billing_month){
+          const [yy,mm]=s.billing_month.split('-').map(Number);
+          const monthEnd=new Date(yy,mm,0); // last day of mm (1-indexed)
+          const submitDate=new Date(s.submitted_at);
+          const diffDays=Math.round((submitDate-monthEnd)/86400000);
+          c.total_days_late+=diffDays;
+          c.subs_with_dates++;
+        }
+      });
+      const months=[...monthSet].sort().reverse(); // newest first
+      // Sort PMs: canonical PM_LIST first (in their order), then any others alphabetically
+      const canonicalIds=PM_LIST.map(p=>p.id);
+      const knownPms=canonicalIds.filter(id=>pmSet.has(id));
+      const otherPms=[...pmSet].filter(p=>!canonicalIds.includes(p)).sort();
+      const pms=[...knownPms,...otherPms];
+      // Per-month totals (across all PMs)
+      const monthTotals={};
+      months.forEach(m=>{monthTotals[m]={submitted:0,reviewed:0,dollars:0,lf:0};});
+      // Per-PM totals (across all months)
+      const pmTotals={};
+      pms.forEach(p=>{pmTotals[p]={submitted:0,reviewed:0,dollars:0,lf:0,total_days_late:0,subs_with_dates:0};});
+      let grandTotal={submitted:0,reviewed:0,dollars:0,lf:0};
+      pms.forEach(p=>{
+        months.forEach(m=>{
+          const c=grid[`${p}|${m}`];
+          if(!c)return;
+          monthTotals[m].submitted+=c.submitted;
+          monthTotals[m].reviewed+=c.reviewed;
+          monthTotals[m].dollars+=c.dollars;
+          monthTotals[m].lf+=c.lf;
+          pmTotals[p].submitted+=c.submitted;
+          pmTotals[p].reviewed+=c.reviewed;
+          pmTotals[p].dollars+=c.dollars;
+          pmTotals[p].lf+=c.lf;
+          pmTotals[p].total_days_late+=c.total_days_late;
+          pmTotals[p].subs_with_dates+=c.subs_with_dates;
+          grandTotal.submitted+=c.submitted;
+          grandTotal.reviewed+=c.reviewed;
+          grandTotal.dollars+=c.dollars;
+          grandTotal.lf+=c.lf;
+        });
+      });
+      // Render helpers
+      const pmShort=(id)=>{const p=PM_LIST.find(x=>x.id===id);return p?p.short:id;};
+      const cellColor=(c)=>{
+        if(!c||c.submitted===0)return'#FAFAFA';
+        const reviewedPct=c.reviewed/c.submitted;
+        const avgDaysLate=c.subs_with_dates>0?c.total_days_late/c.subs_with_dates:0;
+        if(reviewedPct>=0.9&&avgDaysLate<=2)return'#ECFDF5';   // all reviewed + on/before time
+        if(reviewedPct>=0.5||avgDaysLate<=5)return'#FEFCE8';   // mixed
+        return'#FEF2F2';                                         // poor
+      };
+      const lateBadge=(avg)=>{
+        if(avg===null||isNaN(avg))return null;
+        const rounded=Math.round(avg);
+        const color=rounded<=0?'#065F46':rounded<=3?'#B45309':'#991B1B';
+        const label=rounded<0?`${Math.abs(rounded)}d early`:rounded===0?'on time':`${rounded}d late`;
+        return<div style={{fontSize:9,color,fontWeight:700,marginTop:2}}>{label}</div>;
+      };
+      if(months.length===0)return<div style={{...card,padding:24,textAlign:'center',color:'#9E9B96'}}>No bill sheet submissions yet.</div>;
+      return<div>
+        <div style={{marginBottom:12,fontSize:12,color:'#625650'}}>
+          PM submission performance across all billing months. Click a cell to open that PM's bill sheet at that month.
+          Cell color: <span style={{padding:'2px 8px',borderRadius:4,background:'#ECFDF5',fontWeight:700}}>green</span> = mostly reviewed, on/before deadline ·
+          <span style={{padding:'2px 8px',borderRadius:4,background:'#FEFCE8',fontWeight:700,marginLeft:6}}>yellow</span> = mixed ·
+          <span style={{padding:'2px 8px',borderRadius:4,background:'#FEF2F2',fontWeight:700,marginLeft:6}}>red</span> = unreviewed or late.
+        </div>
+        <div style={{overflow:'auto',border:'1px solid #E5E3E0',borderRadius:8}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:Math.max(640,180+months.length*150)}}>
+            <thead>
+              <tr style={{background:'#F4F4F2'}}>
+                <th style={{padding:'10px 12px',textAlign:'left',color:'#625650',fontWeight:700,fontSize:11,textTransform:'uppercase',position:'sticky',left:0,background:'#F4F4F2',zIndex:2,minWidth:160,borderRight:'1px solid #E5E3E0'}}>PM</th>
+                {months.map(m=><th key={m} style={{padding:'10px 12px',textAlign:'center',color:'#625650',fontWeight:700,fontSize:11,textTransform:'uppercase',minWidth:140,borderLeft:'1px solid #E5E3E0'}}>{monthLabel(m)}</th>)}
+                <th style={{padding:'10px 12px',textAlign:'center',color:'#1A1A1A',fontWeight:800,fontSize:11,textTransform:'uppercase',background:'#E5E3E0',minWidth:120,borderLeft:'2px solid #C8C4BD'}}>PM Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pms.map(p=>{
+                const pt=pmTotals[p];
+                const pmAvgLate=pt.subs_with_dates>0?pt.total_days_late/pt.subs_with_dates:null;
+                return<tr key={p} style={{borderTop:'1px solid #E5E3E0'}}>
+                  <td style={{padding:'10px 12px',fontWeight:700,color:'#1A1A1A',position:'sticky',left:0,background:'#FFF',zIndex:1,borderRight:'1px solid #E5E3E0'}}>{pmShort(p)}</td>
+                  {months.map(m=>{
+                    const c=grid[`${p}|${m}`];
+                    const bg=cellColor(c);
+                    const avgLate=c&&c.subs_with_dates>0?c.total_days_late/c.subs_with_dates:null;
+                    return<td key={m} onClick={()=>{onNav&&onNav('pm_billing');}} style={{padding:'8px 10px',textAlign:'center',background:bg,borderLeft:'1px solid #E5E3E0',cursor:c?'pointer':'default',verticalAlign:'top'}} title={c?`Click to open PM Bill Sheet`:'No submissions'}>
+                      {c?<>
+                        <div style={{display:'flex',justifyContent:'center',gap:8,alignItems:'baseline'}}>
+                          <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#1A1A1A'}}>{c.submitted}</div>
+                          <div style={{fontSize:11,color:'#9E9B96'}}>submitted</div>
+                        </div>
+                        <div style={{fontSize:11,color:c.reviewed===c.submitted?'#065F46':'#B45309',fontWeight:600,marginTop:2}}>
+                          ✓ {c.reviewed} reviewed{c.no_bill>0?` · ${c.no_bill} no-bill`:''}
+                        </div>
+                        <div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,color:'#8A261D',marginTop:2}}>{$k(c.dollars)}</div>
+                        {lateBadge(avgLate)}
+                      </>:<span style={{color:'#D1CEC9',fontSize:18}}>—</span>}
+                    </td>;
+                  })}
+                  <td style={{padding:'8px 10px',textAlign:'center',background:'#F4F4F2',borderLeft:'2px solid #C8C4BD',verticalAlign:'top'}}>
+                    <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>{pt.submitted}</div>
+                    <div style={{fontSize:11,color:pt.reviewed===pt.submitted?'#065F46':'#B45309',fontWeight:600,marginTop:2}}>✓ {pt.reviewed}</div>
+                    <div style={{fontFamily:'Inter',fontWeight:700,fontSize:13,color:'#8A261D',marginTop:2}}>{$k(pt.dollars)}</div>
+                    {lateBadge(pmAvgLate)}
+                  </td>
+                </tr>;
+              })}
+              {/* Column totals */}
+              <tr style={{borderTop:'2px solid #C8C4BD',background:'#E5E3E0',fontWeight:800}}>
+                <td style={{padding:'10px 12px',color:'#1A1A1A',position:'sticky',left:0,background:'#E5E3E0',zIndex:1,borderRight:'1px solid #C8C4BD'}}>TOTAL</td>
+                {months.map(m=>{const t=monthTotals[m];return<td key={m} style={{padding:'8px 10px',textAlign:'center',borderLeft:'1px solid #C8C4BD',verticalAlign:'top'}}>
+                  <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>{t.submitted}</div>
+                  <div style={{fontSize:11,color:t.reviewed===t.submitted?'#065F46':'#B45309',fontWeight:700,marginTop:2}}>✓ {t.reviewed}</div>
+                  <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#8A261D',marginTop:2}}>{$k(t.dollars)}</div>
+                </td>;})}
+                <td style={{padding:'8px 10px',textAlign:'center',background:'#1A1A1A',color:'#FFF',borderLeft:'2px solid #1A1A1A',verticalAlign:'top'}}>
+                  <div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{grandTotal.submitted}</div>
+                  <div style={{fontSize:11,fontWeight:700,marginTop:2}}>✓ {grandTotal.reviewed}</div>
+                  <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,marginTop:2}}>{$k(grandTotal.dollars)}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:12,fontSize:11,color:'#9E9B96',lineHeight:1.6}}>
+          <b>Days late</b> = days from end of billing month to submission date. Negative = submitted before month end.
+          PMs typically have a few days into the new month before submissions are considered late; 0–3 days is normal.
         </div>
       </div>;
     }
