@@ -2638,7 +2638,43 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='canceled'&&j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
-  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').reduce((s,j)=>s+n(j.ytd_invoiced),0);const ty2026count=allBillable.filter(j=>j.last_billed&&j.last_billed>='2026-01-01').length;
+  // Real invoice_entries (excluding opening-balance migration rows) are the
+  // ONLY accurate source of "billed in calendar year X". The last_billed field
+  // on jobs got contaminated by the March 2026 opening-balance migration --
+  // every migrated row was stamped invoice_date=2026-04-16, so any job with a
+  // legacy YTD now has last_billed in 2026 regardless of when actual billing
+  // happened. We fetch invoice_entries once on mount + on refresh and use them
+  // for the 2026 YTD KPI and the Stale Billing detector.
+  const[invEntries,setInvEntries]=useState([]);
+  useEffect(()=>{
+    sbGet('invoice_entries','select=job_id,invoice_amount,invoice_date,notes&order=invoice_date.desc')
+      .then(rows=>setInvEntries((rows||[]).filter(r=>{
+        const note=(r.notes||'').toLowerCase();
+        // Exclude opening-balance migration rows. These represent pre-OPS
+        // billing with the migration date stamped as invoice_date, so they
+        // can't be allocated to a specific calendar year.
+        return !note.startsWith('opening balance');
+      })))
+      .catch(e=>{console.error('[Dashboard] Failed to fetch invoice_entries:',e);setInvEntries([]);});
+  },[refreshKey]);
+  // Real per-job most-recent invoice date, ignoring opening-balance noise.
+  const realLastInvoiceByJob=useMemo(()=>{
+    const m=new Map();
+    invEntries.forEach(e=>{
+      if(!e.job_id||!e.invoice_date)return;
+      const cur=m.get(e.job_id);
+      if(!cur||e.invoice_date>cur)m.set(e.job_id,e.invoice_date);
+    });
+    return m;
+  },[invEntries]);
+  const tc=allBillable.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);const tl=allBillable.reduce((s,j)=>s+n(j.left_to_bill),0);const ty=allBillable.reduce((s,j)=>s+n(j.ytd_invoiced),0);
+  // 2026 YTD = sum of REAL invoice_entries dated in 2026, excluding the
+  // opening-balance migration rows (already filtered out of invEntries above).
+  // This is the only accurate figure we can compute from OPS data alone.
+  // Lifetime billing (ty) sums jobs.ytd_invoiced, which IS correctly
+  // trigger-maintained from invoice_entries -- so that number stays right.
+  const ty2026=invEntries.filter(e=>e.invoice_date>='2026-01-01'&&e.invoice_date<'2027-01-01').reduce((s,e)=>s+n(e.invoice_amount),0);
+  const ty2026count=new Set(invEntries.filter(e=>e.invoice_date>='2026-01-01'&&e.invoice_date<'2027-01-01').map(e=>e.job_id)).size;
   // Backlog = contracted but not yet fully billed, in active stages
   const ACTIVE_STS=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
   const backlogJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status));
@@ -2648,7 +2684,15 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const tNeverBilled=neverBilledJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   // Stale = last billed before 2026, still open
   const today=new Date().toISOString().split('T')[0];
-  const staleJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status)&&n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01');const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
+  // Stale = job has real invoice activity but most recent REAL (non-migration)
+  // invoice was before 2026-01-01. Uses realLastInvoiceByJob computed from
+  // invoice_entries, not the contaminated last_billed field.
+  const staleJobs=allBillable.filter(j=>{
+    if(!ACTIVE_STS.has(j.status))return false;
+    if(n(j.ytd_invoiced)<=0)return false;
+    const realLast=realLastInvoiceByJob.get(j.id);
+    return realLast&&realLast<'2026-01-01';
+  });const BACKLOG_STS=new Set(['contract_review','production_queue','in_production','material_ready','active_install']);const tlfPC=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfPC(j),0);const tlf=jobs.filter(j=>BACKLOG_STS.has(j.status)).reduce((s,j)=>s+lfTotal(j),0);
   // Backlog months + market breakdown (shown inside Backlog LF card)
   const blCurrentMo=new Date().getMonth()+1;
   const blRunRate=blCurrentMo>0?ty/blCurrentMo:0;
@@ -2656,7 +2700,10 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const blColor=blMonths>=4?'#065F46':blMonths>=2?'#B45309':'#991B1B';
   const blMktLTB=MKTS.map(m=>{const mj=active.filter(j=>j.market===m);return{name:MS[m],market:m,ltb:mj.reduce((s,j)=>s+n(j.left_to_bill),0)};});
   const blMktTotal=blMktLTB.reduce((s,m)=>s+m.ltb,0);
-  // 2026 Revenue Goal — based on 2026 YTD Billed (last_billed >= Jan 1 2026)
+  // 2026 Revenue Goal — based on real invoice_entries dated in 2026,
+  // excluding opening-balance migration rows. Note: this only reflects
+  // billing logged in OPS post-launch (Mar 25, 2026). Full company billing
+  // for 2026 lives in QuickBooks until QB integration is built.
   const GOAL_2026=36000000;
   const ytd2026=ty2026;
   const pct2026=Math.min(ytd2026/GOAL_2026,1);
@@ -2707,12 +2754,12 @@ function Dashboard({jobs,onNav,refreshKey=0}){
     </div>
     <div style={{display:'grid',gridTemplateColumns:kpiCols,gap:isMobile?10:16,marginBottom:isMobile?10:16}}>
       <KPI label="Total Contract" value={$k(tc)} sub={`All ${allBillable.length} jobs`}/>
-      <KPI label="2026 YTD Billed" value={$k(ty2026)} color="#065F46" sub={`${ty2026count} jobs billed in 2026`}/>
-      <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="All jobs incl. closed"/>
+      <KPI label="2026 YTD Billed (in OPS)" value={$k(ty2026)} color="#065F46" sub={ty2026count>0?`${ty2026count} jobs · post-launch invoices only`:'No 2026 invoices logged yet'}/>
+      <KPI label="Total Billed (All Contracts)" value={$k(ty)} color="#625650" sub="Lifetime, all jobs"/>
       <KPI label="Left to Bill" trendDir="neutral" trend="collect now" value={$k(tl)} color="#B45309" sub="All jobs incl. closed"/>
       <KPI label="Active Backlog" value={$k(tBacklog)} color="#185FA5" sub={`${backlogJobs.length} jobs in progress`} trendDir={tBacklog>5000000?"up":"neutral"} trend={tBacklog>5000000?"strong pipeline":""}/>
       <KPI label="Never Billed ⚠" value={$k(tNeverBilled)} color={neverBilledJobs.length>10?"#991B1B":"#B45309"} sub={`${neverBilledJobs.length} active jobs · $0 invoiced`}/>
-      <KPI label="Stale Billing ⚠" value={staleJobs.length} color={staleJobs.length>5?"#991B1B":"#B45309"} sub={`${staleJobs.length} jobs not billed since 2025`}/>
+      <KPI label="Stale Billing ⚠" value={staleJobs.length} color={staleJobs.length>5?"#991B1B":"#B45309"} sub={staleJobs.length>0?`${staleJobs.length} active jobs · last real invoice pre-2026`:'No stale active billing'}/>
       <div style={card}>
         <div style={{fontFamily:'Syne',fontSize:28,fontWeight:800,color:'#065F46'}}>{tlfPC.toLocaleString()}</div>
         <div style={{fontSize:12,color:'#625650',marginTop:4}}>Precast LF <span style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>(production)</span></div>
@@ -2772,7 +2819,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>2026 Revenue Goal</div>
-            <div style={{fontSize:11,color:'#9E9B96'}}>2026 YTD Billed vs $36M Target</div>
+            <div style={{fontSize:11,color:'#9E9B96'}}>OPS-logged billing vs $36M Target · QB integration pending for full year visibility</div>
           </div>
           {achieved2026&&<div style={{fontSize:14,fontWeight:800,color:'#065F46'}}>🎯 Goal Achieved!</div>}
         </div>
