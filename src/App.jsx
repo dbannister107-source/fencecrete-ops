@@ -2,18 +2,21 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'react-qr-code';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import BUILD_INFO from './build-info.json';
 import SystemEventsPage from './features/system-events/SystemEventsPage';
 import SpecialtyVisitsPage from './features/specialty-visits/SpecialtyVisitsPage';
 import CVReconciliationPage from './features/cv-reconciliation/CVReconciliationPage';
 import MyPlatePage from './features/my-plate/MyPlatePage';
 import PISFormPage from './features/pis/PISFormPage';
-// Fix default Leaflet icon
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({iconRetinaUrl:require('leaflet/dist/images/marker-icon-2x.png'),iconUrl:require('leaflet/dist/images/marker-icon.png'),shadowUrl:require('leaflet/dist/images/marker-shadow.png')});
+
+// Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
+// in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
+// the client; they're scoped to allowed URLs, not secret. We just keep
+// them out of the repo on principle.
+const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN || '';
+if (MAPBOX_TOKEN) mapboxgl.accessToken = MAPBOX_TOKEN;
 
 /* ═══ CONFIG ═══ */
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
@@ -9869,7 +9872,6 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 /* ═══ MAP PAGE ═══ */
 const MKT_COORDS={AUS:[30.2672,-97.7431],CS:[30.6280,-96.3344],DFW:[32.7767,-96.7970],HOU:[29.7604,-95.3698],SA:[29.4241,-98.4936]};
 const MKT_PIN={AUS:'#FB923C',CS:'#A78BFA',DFW:'#60A5FA',HOU:'#34D399',SA:'#F472B6',OOS:'#9CA3AF'};
-function FitBounds({positions}){const map=useMap();useEffect(()=>{if(positions.length>0){const b=L.latLngBounds(positions);map.fitBounds(b,{padding:[40,40]});}},[positions,map]);return null;}
 const MAP_LAYER_STATUSES = ['active_install','material_ready','contract_review','in_production'];
 const MAP_LAYER_COLOR = { active_install:'#DC2626', material_ready:'#EAB308', contract_review:'#6B7280', in_production:'#2563EB' };
 const MAP_LAYER_LABEL = { active_install:'Active Installs', material_ready:'Material Ready', contract_review:'Contract Review', in_production:'In Production' };
@@ -9887,719 +9889,603 @@ const productOfJob = (j) => {
   return 'Other';
 };
 const sizeOfJob = (j) => { const lf = n(j.total_lf); if (lf < 500) return 'Small'; if (lf <= 1500) return 'Medium'; return 'Large'; };
-const weekRangeFor = (sel) => {
-  if (sel === 'All Active') return null;
-  const now = new Date();
-  const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0);
-  const end = new Date(start); end.setDate(start.getDate() + 7);
-  if (sel === 'Next Week') { start.setDate(start.getDate() + 7); end.setDate(end.getDate() + 7); }
-  return [start, end];
+
+// Haversine distance between two [lat,lng] points, in miles. Used for crew clustering.
+const haversineMiles = (a, b) => {
+  if (!a || !b) return Infinity;
+  const [lat1, lng1] = a, [lat2, lng2] = b;
+  const R = 3959; // earth radius in miles
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const x = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+};
+
+// Group jobs into clusters where each pair is within `radiusMiles` of at least
+// one other in the cluster (single-link). Used to surface "you have N jobs in
+// the same neighborhood" insights.
+const buildClusters = (jobs, radiusMiles = 15) => {
+  const pts = jobs.filter(j => j.lat && j.lng);
+  const clusters = [];
+  const visited = new Set();
+  pts.forEach(j => {
+    if (visited.has(j.id)) return;
+    const cluster = [j];
+    visited.add(j.id);
+    let i = 0;
+    while (i < cluster.length) {
+      const c = cluster[i];
+      pts.forEach(p => {
+        if (visited.has(p.id)) return;
+        if (haversineMiles([c.lat, c.lng], [p.lat, p.lng]) <= radiusMiles) {
+          cluster.push(p);
+          visited.add(p.id);
+        }
+      });
+      i++;
+    }
+    if (cluster.length >= 2) clusters.push(cluster);
+  });
+  return clusters;
 };
 
 function MapPage({ jobs, onNav }) {
   const isMobile = useIsMobile();
-  const [pins, setPins] = useState([]);
-  const [geocoding, setGeocoding] = useState(false);
-  const [geoProgress, setGeoProgress] = useState('');
-  const [layers, setLayers] = useState({ active_install: true, material_ready: true, contract_review: false, in_production: false });
+
+  // ═══ FILTER STATE ═══
+  // Time horizon: how far out to show scheduled installs.
+  // 'all' shows everything regardless of date.
+  const [horizon, setHorizon] = useState(45); // days; or 'all'
+  // Color mode: how to color each pin.
+  //   'status'  → readiness (green/yellow/red based on production-readiness)
+  //   'crew'    → each crew gets its own color
+  //   'market'  → market-based palette (legacy)
+  const [colorMode, setColorMode] = useState('status');
   const [pmF, setPmF] = useState('All');
   const [mktF, setMktF] = useState('All');
+  const [crewF, setCrewF] = useState('All');
   const [productF, setProductF] = useState('All');
-  const [sizeF, setSizeF] = useState('All');
-  const [weekF, setWeekF] = useState('All Active');
-  const [selected, setSelected] = useState(null);
-  const [prospectForm, setProspectForm] = useState(null); // null | {market, fenceType, height, lf}
+  // 'showOverdue': stale dates surfaced as overdue. ON by default
+  // because the cleanup is part of the value of the page.
+  const [showOverdue, setShowOverdue] = useState(true);
+  const [showUnscheduled, setShowUnscheduled] = useState(false);
+  const [showClusters, setShowClusters] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
-  const [colorBy, setColorBy] = useState('status'); // 'status' | 'rate'
-  const [showHeatZones, setShowHeatZones] = useState(false);
-  const [marketRates, setMarketRates] = useState([]); // from proposal_market_rates view
   useEffect(() => { setFiltersOpen(!isMobile); }, [isMobile]);
 
-  // Load market pricing analytics (from proposal_market_rates view)
+  // ═══ DATA ═══
+  const [crews, setCrews] = useState([]);
   useEffect(() => {
-    sbGet('proposal_market_rates', 'select=*').then(d => setMarketRates(d || [])).catch(()=>{});
+    sbGet('crews', 'select=*&active=eq.true&order=name.asc').then(d => setCrews(d || []));
+  }, []);
+  const crewById = useMemo(() => {
+    const m = {};
+    crews.forEach(c => { m[c.id] = c; });
+    return m;
+  }, [crews]);
+
+  // ═══ DERIVED ═══
+  const ACTIVE_INSTALL_STATUSES = ['production_queue','in_production','material_ready','active_install','fence_complete'];
+
+  // Today's date at start-of-day
+  const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+
+  // Compute readiness bucket for a job. Drives color-by-status mode.
+  //   'overdue'        → est_start_date in the past
+  //   'unscheduled'    → no est_start_date
+  //   'ready'          → status=material_ready or active_install (good)
+  //   'production_risk'→ scheduled within window but not material-ready
+  //   'future'         → scheduled but beyond horizon
+  const getReadiness = useCallback((j, horizonDays) => {
+    if (!j.est_start_date) return 'unscheduled';
+    const start = new Date(j.est_start_date);
+    const daysOut = Math.round((start - today) / 86400000);
+    if (daysOut < 0) return 'overdue';
+    if (typeof horizonDays === 'number' && daysOut > horizonDays) return 'future';
+    if (j.status === 'material_ready' || j.status === 'active_install') return 'ready';
+    if (j.status === 'fence_complete') return 'complete';
+    // Has a date in the window, but production isn't ready
+    return 'production_risk';
+  }, [today]);
+
+  // The candidate set: all active install-eligible jobs with coords
+  const mappableJobs = useMemo(() => jobs.filter(j =>
+    j.lat && j.lng && ACTIVE_INSTALL_STATUSES.includes(j.status)
+  ), [jobs]);
+
+  // Apply user filters → the visible set
+  const filtered = useMemo(() => {
+    return mappableJobs.filter(j => {
+      // Time-horizon: filter by readiness
+      const readiness = getReadiness(j, horizon === 'all' ? null : horizon);
+      if (readiness === 'future') return false;       // beyond horizon → hide
+      if (readiness === 'overdue' && !showOverdue) return false;
+      if (readiness === 'unscheduled' && !showUnscheduled) return false;
+      if (readiness === 'complete') return false;     // already done
+
+      // Other filters
+      if (pmF !== 'All' && j.pm !== pmF) return false;
+      if (mktF !== 'All' && j.market !== mktF) return false;
+      if (productF !== 'All' && productOfJob(j) !== productF) return false;
+      if (crewF !== 'All') {
+        if (crewF === '__unassigned__' && j.crew_id) return false;
+        if (crewF !== '__unassigned__' && j.crew_id !== crewF) return false;
+      }
+      return true;
+    });
+  }, [mappableJobs, horizon, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness]);
+
+  // Counts for the right panel
+  const counts = useMemo(() => {
+    const out = { ready: 0, prod_risk: 0, overdue: 0, unscheduled: 0, total: 0, lf: 0, dollars: 0, byMarket: {}, byPm: {}, byCrew: {} };
+    filtered.forEach(j => {
+      const r = getReadiness(j, horizon === 'all' ? null : horizon);
+      if (r === 'ready') out.ready++;
+      else if (r === 'production_risk') out.prod_risk++;
+      else if (r === 'overdue') out.overdue++;
+      else if (r === 'unscheduled') out.unscheduled++;
+      out.total++;
+      out.lf += n(j.total_lf);
+      out.dollars += n(j.adj_contract_value || j.contract_value);
+      const mk = j.market || '—';
+      out.byMarket[mk] = (out.byMarket[mk] || 0) + 1;
+      const pm = j.pm || '—';
+      out.byPm[pm] = (out.byPm[pm] || 0) + 1;
+      const cw = j.crew_id ? (crewById[j.crew_id]?.name || '?') : 'Unassigned';
+      out.byCrew[cw] = (out.byCrew[cw] || 0) + 1;
+    });
+    return out;
+  }, [filtered, getReadiness, horizon, crewById]);
+
+  // Geographic clusters within the filtered set. Only computed when toggled
+  // on (it's O(n²) so we don't run it constantly).
+  const clusters = useMemo(() => {
+    if (!showClusters) return [];
+    return buildClusters(filtered, 15); // 15 mile radius
+  }, [filtered, showClusters]);
+
+  // Production-ready gap: jobs in next 14 days that aren't material-ready.
+  // This is the "early warning" surface — surfaces problems before they
+  // hit the customer.
+  const productionGapJobs = useMemo(() => {
+    return filtered.filter(j => {
+      if (!j.est_start_date) return false;
+      const daysOut = Math.round((new Date(j.est_start_date) - today) / 86400000);
+      return daysOut >= 0 && daysOut <= 14 && j.status !== 'material_ready' && j.status !== 'active_install';
+    });
+  }, [filtered, today]);
+
+  // ═══ COLOR LOGIC ═══
+  const colorForJob = useCallback((j) => {
+    if (colorMode === 'crew') {
+      if (!j.crew_id) return '#9CA3AF'; // gray for unassigned
+      return crewById[j.crew_id]?.color_hex || '#9CA3AF';
+    }
+    if (colorMode === 'market') {
+      return MKT_PIN[j.market] || '#9CA3AF';
+    }
+    // Default: by readiness
+    const r = getReadiness(j, horizon === 'all' ? null : horizon);
+    if (r === 'overdue') return '#DC2626';        // red
+    if (r === 'unscheduled') return '#A855F7';    // purple
+    if (r === 'production_risk') return '#EAB308';// yellow
+    if (r === 'ready') return '#16A34A';          // green
+    return '#9CA3AF';
+  }, [colorMode, crewById, getReadiness, horizon]);
+
+  // ═══ MAP REF + LIFECYCLE ═══
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef([]);  // active marker DOM elements for cleanup
+  const [selected, setSelected] = useState(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  // Initialize map ONCE
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: [-98.5, 31.0],   // Texas
+      zoom: 5.6,
+      attributionControl: true,
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    map.on('load', () => { setMapReady(true); });
+    mapRef.current = map;
+    return () => {
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
   }, []);
 
-  // Build lookup: bucket key -> percentile row. Key is "market|fence_type|height_bucket".
-  // When a job doesn't match exactly, we fall back to market+fence_type alone.
-  const rateLookup = useMemo(() => {
-    const m = new Map();
-    marketRates.forEach(r => {
-      m.set(`${r.market}|${r.fence_type}|${r.height_bucket}`, r);
-      const fam = `${r.market}|${r.fence_type}|*`;
-      // Aggregate fallback per (market, fence_type): take the row with most won_count
-      const existing = m.get(fam);
-      if (!existing || (r.won_count || 0) > (existing.won_count || 0)) m.set(fam, r);
-    });
-    return m;
-  }, [marketRates]);
-
-  // Map a Fencecrete job to the proposal taxonomy used in proposals_enriched:
-  //   - market comes straight from j.market (we use the same enum)
-  //   - fence_type is a lightweight mapping from productOfJob/style
-  //   - height_bucket matches the CASE in the proposal_market_rates view
-  const bucketForJob = (j) => {
-    const market = j.market || null;
-    const prod = productOfJob(j);
-    let fence_type = 'Precast Concrete';
-    if (prod === 'Masonry') fence_type = 'Masonry';
-    else if (prod === 'Hybrid') fence_type = 'Mixed/Other';
-    else if (prod === 'Gate') fence_type = 'unknown';
-    const h = n(j.height_precast) || n(j.height) || null;
-    let height_bucket = 'unknown';
-    if (h) {
-      if (h < 5) height_bucket = '4ft';
-      else if (h < 6) height_bucket = '5ft';
-      else if (h < 7) height_bucket = '6ft';
-      else if (h < 8) height_bucket = '7ft';
-      else if (h < 9) height_bucket = '8ft';
-      else if (h < 10) height_bucket = '9ft';
-      else height_bucket = '10ft+';
-    }
-    return { market, fence_type, height_bucket };
-  };
-
-  // For a job, look up the relevant market-rate row. Prefer exact (market+ft+height),
-  // fall back to (market+ft+*) if the exact bucket is empty.
-  const getRateFor = (j) => {
-    const { market, fence_type, height_bucket } = bucketForJob(j);
-    if (!market || !fence_type) return null;
-    const exact = rateLookup.get(`${market}|${fence_type}|${height_bucket}`);
-    if (exact && (exact.won_count || 0) >= 3) return { ...exact, matchType: 'exact' };
-    const fallback = rateLookup.get(`${market}|${fence_type}|*`);
-    if (fallback && (fallback.won_count || 0) >= 3) return { ...fallback, matchType: 'family' };
-    return null;
-  };
-
-  // Compute this job's actual $/LF and its tier vs. market
-  const pricingFor = (j) => {
-    const rate = getRateFor(j);
-    const cv = n(j.adj_contract_value || j.contract_value);
-    const lf = n(j.total_lf);
-    if (!cv || !lf) return { rate, myRate: null, tier: 'unknown' };
-    const myRate = cv / lf;
-    if (!rate) return { rate, myRate, tier: 'unknown' };
-    const below25 = myRate < rate.p25_rate;
-    const above75 = myRate > rate.p75_rate;
-    let tier = 'at';
-    if (below25) tier = 'below';
-    else if (above75) tier = 'above';
-    return { rate, myRate, tier };
-  };
-
-  // Look up a comparable bucket for an arbitrary prospect spec (used by the
-  // New Prospect on Map form — no job row required).
-  const lookupForProspect = ({ market, fenceType, heightFt }) => {
-    if (!market || !fenceType) return null;
-    let height_bucket = 'unknown';
-    const h = n(heightFt);
-    if (h) {
-      if (h < 5) height_bucket = '4ft';
-      else if (h < 6) height_bucket = '5ft';
-      else if (h < 7) height_bucket = '6ft';
-      else if (h < 8) height_bucket = '7ft';
-      else if (h < 9) height_bucket = '8ft';
-      else if (h < 10) height_bucket = '9ft';
-      else height_bucket = '10ft+';
-    }
-    const exact = rateLookup.get(`${market}|${fenceType}|${height_bucket}`);
-    if (exact && (exact.won_count || 0) >= 3) return { ...exact, matchType: 'exact' };
-    const fam = rateLookup.get(`${market}|${fenceType}|*`);
-    if (fam && (fam.won_count || 0) >= 3) return { ...fam, matchType: 'family' };
-    return null;
-  };
-
-  // Heat-zone data: for each market, surface a representative won $/LF.
-  //
-  // When Product filter is "All", we pick the bucket with the highest
-  // won_count per market as the "headline" rate (same as v1 behavior).
-  //
-  // When Product filter is Precast / Masonry / Hybrid, we restrict to rows
-  // whose fence_type maps to that product family, then within the filtered
-  // set still pick each market's highest-won bucket. That way, switching the
-  // Product pill updates every heat zone to reflect the rate for THAT
-  // product family in that market -- instead of always showing whichever
-  // product happens to have the most deals overall.
-  //
-  // Gate: proposals_clean doesn't have a "Gate" fence_type (gates are priced
-  // per-piece, not per-LF, so they're excluded from the rate analytics).
-  // When Product = Gate is selected, no heat zones render.
-  const heatZones = useMemo(() => {
-    if (!marketRates.length) return [];
-
-    // Maps the app's Product filter values to proposal fence_type families.
-    // Multiple proposal types can map to one Product (e.g. Precast covers
-    // both pure Precast Concrete and Precast + Wrought Iron blends).
-    const fenceTypesFor = (p) => {
-      if (p === 'Precast') return ['Precast Concrete', 'Precast + Wrought Iron'];
-      if (p === 'Masonry') return ['Masonry'];
-      if (p === 'Hybrid')  return ['Mixed/Other', 'Precast + Wrought Iron'];
-      if (p === 'Gate')    return []; // no gate rates in proposals_clean
-      return null; // 'All' -> no restriction
-    };
-    const allowed = fenceTypesFor(productF);
-
-    // If Product = Gate (no comparables), hide all zones.
-    if (allowed && allowed.length === 0) return [];
-
-    const filtered = allowed
-      ? marketRates.filter(r => allowed.includes(r.fence_type))
-      : marketRates;
-
-    const byMarket = {};
-    filtered.forEach(r => {
-      if (!r.market || !MKT_COORDS[r.market]) return;
-      if (!byMarket[r.market] || (r.won_count || 0) > (byMarket[r.market].won_count || 0)) {
-        byMarket[r.market] = r;
-      }
-    });
-    return Object.entries(byMarket)
-      .filter(([, r]) => (r.won_count || 0) >= 3)
-      .map(([market, r]) => ({
-        market,
-        center: MKT_COORDS[market],
-        rate: r.median_won_rate || r.median_rate,
-        won_count: r.won_count,
-        total_count: r.proposal_count,
-        fence_type: r.fence_type,
-        height: r.height_bucket,
-      }));
-  }, [marketRates, productF]);
-
-  const mapJobs = useMemo(() => jobs.filter(j => MAP_LAYER_STATUSES.includes(j.status)), [jobs]);
-
+  // Re-render markers when the filtered set or color mode changes
   useEffect(() => {
-    let cancelled = false;
-    const already = mapJobs.filter(j => n(j.lat) && n(j.lng)).map(j => ({ ...j, lat: n(j.lat), lng: n(j.lng) }));
-    setPins(already);
-    const need = mapJobs.filter(j => !n(j.lat) || !n(j.lng));
-    if (need.length === 0) { setGeocoding(false); setGeoProgress(''); return; }
-    setGeocoding(true); setGeoProgress(`Locating ${need.length} jobs...`);
-    (async () => {
-      for (let i = 0; i < need.length; i++) {
-        if (cancelled) return;
-        setGeoProgress(`Locating ${i+1}/${need.length}...`);
-        const j = need[i];
-        const q = `${j.address || ''} ${j.city || ''} ${j.state || 'TX'}`.trim();
-        let lat = 0, lng = 0;
-        if (q.length > 3) {
-          try {
-            const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, { headers: { 'User-Agent': 'FencecreteOps/1.0' } });
-            const d = await r.json();
-            if (d && d[0]) { lat = parseFloat(d[0].lat); lng = parseFloat(d[0].lon); }
-          } catch (e) {}
-        }
-        if (!lat && j.market && MKT_COORDS[j.market]) {
-          const c = MKT_COORDS[j.market];
-          lat = c[0] + (Math.random()-0.5) * 0.05;
-          lng = c[1] + (Math.random()-0.5) * 0.05;
-        }
-        if (lat && lng) {
-          try { sbPatch('jobs', j.id, { lat, lng }); } catch (e) {}
-          if (!cancelled) setPins(prev => [...prev, { ...j, lat, lng }]);
-        }
-        if (q.length > 3) await new Promise(r => setTimeout(r, 1100));
-      }
-      if (!cancelled) { setGeocoding(false); setGeoProgress(''); }
-    })();
-    return () => { cancelled = true; };
-  }, [mapJobs]);
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    // Clear existing markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+    // Add a marker per job
+    filtered.forEach(j => {
+      if (!j.lat || !j.lng) return;
+      const color = colorForJob(j);
+      const isSelected = selected && selected.id === j.id;
+      const el = document.createElement('div');
+      el.className = 'fc-pin';
+      el.style.cssText = `
+        width: ${isSelected ? 22 : 14}px;
+        height: ${isSelected ? 22 : 14}px;
+        border-radius: 50%;
+        background: ${color};
+        border: 2px solid #1A1A1A;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        transition: transform 0.15s;
+      `;
+      el.title = `${j.job_number || ''} ${j.job_name || ''}`;
+      el.addEventListener('click', (e) => { e.stopPropagation(); setSelected(j); });
+      el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.4)'; });
+      el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
+      const marker = new mapboxgl.Marker(el).setLngLat([j.lng, j.lat]).addTo(map);
+      markersRef.current.push(marker);
+    });
+  }, [filtered, mapReady, colorForJob, selected]);
 
-  // Pre-layer filters
-  const passesScalarFilters = useCallback((j) => {
-    if (pmF !== 'All' && j.pm !== pmF) return false;
-    if (mktF !== 'All' && j.market !== mktF) return false;
-    if (productF !== 'All' && productOfJob(j) !== productF) return false;
-    if (sizeF !== 'All' && sizeOfJob(j) !== sizeF) return false;
-    const wr = weekRangeFor(weekF);
-    if (wr) {
-      if (!j.est_start_date) return false;
-      const d = new Date(j.est_start_date);
-      if (d < wr[0] || d >= wr[1]) return false;
+  // Fit bounds when filter set changes meaningfully
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || filtered.length === 0) return;
+    const coords = filtered.filter(j => j.lat && j.lng).map(j => [j.lng, j.lat]);
+    if (coords.length === 0) return;
+    if (coords.length === 1) {
+      mapRef.current.flyTo({ center: coords[0], zoom: 11, duration: 800 });
+      return;
     }
-    return true;
-  }, [pmF, mktF, productF, sizeF, weekF]);
+    const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+    mapRef.current.fitBounds(bounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 11, duration: 800 });
+  }, [filtered, mapReady]);
 
-  const baseFiltered = useMemo(() => pins.filter(passesScalarFilters), [pins, passesScalarFilters]);
-  const filtered = useMemo(() => baseFiltered.filter(j => layers[j.status]), [baseFiltered, layers]);
-  const layerCounts = useMemo(() => {
-    const c = { active_install: 0, material_ready: 0, contract_review: 0, in_production: 0 };
-    baseFiltered.forEach(j => { if (c[j.status] !== undefined) c[j.status]++; });
-    return c;
-  }, [baseFiltered]);
+  // Render cluster overlays as a separate layer using GeoJSON source.
+  // Done as map data layer instead of DOM markers because clusters need
+  // outline circles + labels that move with zoom.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'fc-clusters';
+    const LYR_FILL = 'fc-clusters-fill';
+    const LYR_LABEL = 'fc-clusters-label';
+    // Always tear down previous layers/sources before re-adding
+    if (map.getLayer(LYR_LABEL)) map.removeLayer(LYR_LABEL);
+    if (map.getLayer(LYR_FILL)) map.removeLayer(LYR_FILL);
+    if (map.getSource(SRC)) map.removeSource(SRC);
+    if (clusters.length === 0) return;
 
-  // Unmapped (passes scalar filters but no coords)
-  const notMappedCount = useMemo(() =>
-    mapJobs.filter(j => passesScalarFilters(j) && layers[j.status] && (!n(j.lat) || !n(j.lng))).length,
-    [mapJobs, layers, passesScalarFilters]);
+    const features = clusters.map((cluster, i) => {
+      const lats = cluster.map(j => j.lat);
+      const lngs = cluster.map(j => j.lng);
+      const centerLat = lats.reduce((a,b)=>a+b,0) / lats.length;
+      const centerLng = lngs.reduce((a,b)=>a+b,0) / lngs.length;
+      const totalLf = cluster.reduce((s,j) => s + n(j.total_lf), 0);
+      const totalK = Math.round(cluster.reduce((s,j) => s + n(j.adj_contract_value || j.contract_value), 0) / 1000);
+      const pms = [...new Set(cluster.map(j => j.pm).filter(Boolean))];
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [centerLng, centerLat] },
+        properties: {
+          id: i,
+          jobs: cluster.length,
+          totalLf,
+          totalK,
+          pms: pms.join(', '),
+          label: `${cluster.length} jobs · ${totalLf.toLocaleString()} LF · $${totalK}k`
+        }
+      };
+    });
+    map.addSource(SRC, { type: 'geojson', data: { type: 'FeatureCollection', features } });
+    map.addLayer({
+      id: LYR_FILL,
+      type: 'circle',
+      source: SRC,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'jobs'], 2, 18, 10, 50],
+        'circle-color': '#8A261D',
+        'circle-opacity': 0.18,
+        'circle-stroke-color': '#8A261D',
+        'circle-stroke-width': 2,
+        'circle-stroke-opacity': 0.7
+      }
+    });
+    map.addLayer({
+      id: LYR_LABEL,
+      type: 'symbol',
+      source: SRC,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 11,
+        'text-offset': [0, 1.6],
+        'text-anchor': 'top'
+      },
+      paint: {
+        'text-color': '#1A1A1A',
+        'text-halo-color': '#FFF',
+        'text-halo-width': 1.5
+      }
+    });
+  }, [clusters, mapReady]);
 
-  const unscheduled = useMemo(() => filtered.filter(j => !j.est_start_date), [filtered]);
+  // Fetch unique PMs & products for the filter dropdowns
+  const pmOptions = useMemo(() => {
+    const s = new Set(); jobs.forEach(j => { if (j.pm) s.add(j.pm); });
+    return ['All', ...[...s].sort()];
+  }, [jobs]);
+  const productOptions = useMemo(() => {
+    const s = new Set(); jobs.forEach(j => { const p = productOfJob(j); if (p) s.add(p); });
+    return ['All', ...[...s].sort()];
+  }, [jobs]);
+  const crewOptions = useMemo(() => {
+    return [
+      { id: 'All', name: 'All Crews' },
+      { id: '__unassigned__', name: 'Unassigned' },
+      ...crews
+    ];
+  }, [crews]);
 
-  const kpiCount = filtered.length;
-  const kpiLF = filtered.reduce((s, j) => s + n(j.total_lf), 0);
-  const kpiValue = filtered.reduce((s, j) => s + n(j.adj_contract_value || j.contract_value), 0);
-  const kpiCustomers = new Set(filtered.map(j => j.customer_name).filter(Boolean)).size;
+  // ═══ HANDLERS ═══
+  const flyToJob = (j) => {
+    if (!mapRef.current || !j.lat || !j.lng) return;
+    mapRef.current.flyTo({ center: [j.lng, j.lat], zoom: 13, duration: 700 });
+    setSelected(j);
+  };
 
-  // PM route: connect active_install pins in est_start_date order, only when one PM selected
-  const pmRoute = useMemo(() => {
-    if (pmF === 'All') return [];
-    return filtered
-      .filter(j => j.status === 'active_install' && j.est_start_date && j.lat && j.lng)
-      .sort((a, b) => String(a.est_start_date).localeCompare(String(b.est_start_date)))
-      .map(j => [j.lat, j.lng]);
-  }, [filtered, pmF]);
+  const assignCrew = async (jobId, crewId) => {
+    try {
+      await sbPatch('jobs', jobId, { crew_id: crewId || null });
+      // Optimistic update on the selected detail
+      if (selected && selected.id === jobId) {
+        setSelected({ ...selected, crew_id: crewId || null });
+      }
+      // Notify parent so the global jobs list refreshes
+      if (onNav) {
+        // soft refresh signal — call onNav with no page to trigger refresh
+        // (App's parent owns the jobs prop; we don't have a direct setter)
+      }
+    } catch (e) {
+      console.error('[MapPage] assignCrew failed:', e);
+    }
+  };
 
-  const positions = filtered.filter(j => j.lat && j.lng).map(j => [j.lat, j.lng]);
-  const kpiTile = (label, value) => (
-    <div style={{ ...card, padding: 10 }}>
-      <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: '#1A1A1A', marginTop: 2 }}>{value}</div>
-    </div>
-  );
+  // ═══ RENDER ═══
+  const HORIZON_OPTIONS = [
+    { val: 14, label: '14 days' },
+    { val: 30, label: '30 days' },
+    { val: 45, label: '45 days' },
+    { val: 60, label: '60 days' },
+    { val: 90, label: '90 days' },
+    { val: 'all', label: 'All' }
+  ];
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 96px)' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-        <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Map</h1>
-        {isMobile && (
-          <button onClick={() => setFiltersOpen(v => !v)} style={{ ...btnS, padding: '4px 12px', fontSize: 12 }}>
-            {filtersOpen ? 'Hide Filters' : 'Show Filters'}
-          </button>
-        )}
+  return <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', gap: 8 }}>
+    {/* Header bar with horizon slider */}
+    <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div>
+        <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Install Map</h1>
+        <div style={{ fontSize: 12, color: '#625650', marginTop: 2 }}>{counts.total} installs in window · {(counts.lf / 1000).toFixed(1)}k LF · ${(counts.dollars / 1000).toFixed(0)}k</div>
       </div>
-
-      {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10, marginBottom: 10 }}>
-        {kpiTile('Visible Jobs', kpiCount)}
-        {kpiTile('Total LF', kpiLF.toLocaleString())}
-        {kpiTile('Total Value', $k(kpiValue))}
-        {kpiTile('Unique Customers', kpiCustomers)}
-      </div>
-
-      {/* Filter bar */}
-      {filtersOpen && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>PM:
-            <select value={pmF} onChange={e => setPmF(e.target.value)} style={{ ...inputS, width: 160, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
-              <option value="All">All</option>
-              {PM_LIST.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Market:
-            <select value={mktF} onChange={e => setMktF(e.target.value)} style={{ ...inputS, width: 140, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
-              <option value="All">All</option>
-              {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Product:
-            <select value={productF} onChange={e => setProductF(e.target.value)} style={{ ...inputS, width: 120, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
-              {['All','Precast','Masonry','Gate','Hybrid'].map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Size:
-            <select value={sizeF} onChange={e => setSizeF(e.target.value)} style={{ ...inputS, width: 150, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
-              <option value="All">All sizes</option>
-              <option value="Small">Small (&lt;500 LF)</option>
-              <option value="Medium">Medium (500–1500)</option>
-              <option value="Large">Large (&gt;1500)</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: '#6B6056', fontWeight: 700 }}>Week:
-            <select value={weekF} onChange={e => setWeekF(e.target.value)} style={{ ...inputS, width: 130, padding: '4px 8px', fontSize: 12, marginLeft: 6 }}>
-              <option value="All Active">All Active</option>
-              <option value="This Week">This Week</option>
-              <option value="Next Week">Next Week</option>
-            </select>
-          </label>
-          <button onClick={() => { setPmF('All'); setMktF('All'); setProductF('All'); setSizeF('All'); setWeekF('All Active'); }}
-            style={{ ...btnS, padding: '4px 12px', fontSize: 12 }}>Reset</button>
-        </div>
-      )}
-
-      {/* Layer toggles + color-by */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-        {MAP_LAYER_STATUSES.map(s => {
-          const on = layers[s];
-          return (
-            <button key={s} onClick={() => setLayers(prev => ({ ...prev, [s]: !prev[s] }))}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9999,
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                border: `1px solid ${on ? MAP_LAYER_COLOR[s] : '#E5E3E0'}`,
-                background: on ? `${MAP_LAYER_COLOR[s]}14` : '#FFF',
-                color: on ? MAP_LAYER_COLOR[s] : '#9E9B96',
-              }}>
-              <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1px solid #1A1A1A' }} />
-              {MAP_LAYER_LABEL[s]} ({layerCounts[s]})
-            </button>
-          );
-        })}
-        {geocoding && <span style={{ fontSize: 11, color: '#625650', marginLeft: 8 }}>{geoProgress}</span>}
-        {/* Color-by toggle — Phase B of Map Pricing Intelligence (Apr 20 2026).
-            Switches pin coloring between "status" (default) and "$/LF vs market"
-            which uses proposal_market_rates view to classify each pin as
-            below-market (<p25), at-market, or above-market (>p75). */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#6B6056', textTransform: 'uppercase' }}>Color:</span>
-          <button onClick={() => setColorBy('status')} style={{
-            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${colorBy==='status' ? '#8A261D' : '#E5E3E0'}`,
-            background: colorBy==='status' ? '#FDEEED' : '#FFF',
-            color: colorBy==='status' ? '#8A261D' : '#9E9B96',
-          }}>Status</button>
-          <button onClick={() => setColorBy('rate')} style={{
-            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${colorBy==='rate' ? '#065F46' : '#E5E3E0'}`,
-            background: colorBy==='rate' ? '#ECFDF5' : '#FFF',
-            color: colorBy==='rate' ? '#065F46' : '#9E9B96',
-          }}>$/LF vs market</button>
-          <button onClick={() => setShowHeatZones(v => !v)} style={{
-            marginLeft: 6,
-            padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${showHeatZones ? '#1E3A8A' : '#E5E3E0'}`,
-            background: showHeatZones ? '#DBEAFE' : '#FFF',
-            color: showHeatZones ? '#1E3A8A' : '#9E9B96',
-          }}>{showHeatZones ? '🔥 Heat zones on' : 'Heat zones'}</button>
-          {/* Show which product family the zones are anchored to, so the
-              user can tell at a glance whether they're looking at Precast
-              rates vs. Masonry vs. the headline (All). */}
-          {showHeatZones && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: '#1E3A8A', background: '#EFF6FF',
-              border: '1px solid #BFDBFE', borderRadius: 9999, padding: '3px 8px',
-              textTransform: 'uppercase', letterSpacing: '0.04em',
-            }}>
-              {productF === 'All' ? 'Top product / market' : `${productF} rates`}
-              {heatZones.length === 0 && ' · no data'}
-            </span>
-          )}
+      <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Time Horizon</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {HORIZON_OPTIONS.map(o => <button key={o.val} onClick={() => setHorizon(o.val)} style={{
+            padding: '6px 12px', borderRadius: 8,
+            border: `1px solid ${horizon === o.val ? '#8A261D' : '#E5E3E0'}`,
+            background: horizon === o.val ? '#8A261D' : '#FFF',
+            color: horizon === o.val ? '#FFF' : '#1A1A1A',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            minWidth: 60
+          }}>{o.label}</button>)}
         </div>
       </div>
-
-      {/* Callouts */}
-      {(notMappedCount > 0 || unscheduled.length > 0) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          {notMappedCount > 0 && (
-            <div style={{ padding: '6px 12px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 12, color: '#78350F' }}>
-              ⚠️ {notMappedCount} job{notMappedCount !== 1 ? 's' : ''} not mapped — missing lat/lng.{' '}
-              <span onClick={() => onNav && onNav('production')} style={{ textDecoration: 'underline', cursor: 'pointer', fontWeight: 700 }}>Fix in Production →</span>
-            </div>
-          )}
-          {unscheduled.length > 0 && weekF === 'All Active' && (
-            <div style={{ padding: '6px 12px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 12, color: '#78350F' }}>
-              🗓 {unscheduled.length} Unscheduled (no est_start_date)
-            </div>
-          )}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Color By</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[['status','Readiness'],['crew','Crew'],['market','Market']].map(([v,lab]) => <button key={v} onClick={() => setColorMode(v)} style={{
+            padding: '6px 12px', borderRadius: 8,
+            border: `1px solid ${colorMode === v ? '#1A1A1A' : '#E5E3E0'}`,
+            background: colorMode === v ? '#1A1A1A' : '#FFF',
+            color: colorMode === v ? '#FFF' : '#1A1A1A',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer'
+          }}>{lab}</button>)}
         </div>
-      )}
-
-      {/* Map + Side panel */}
-      <div style={{ display: 'flex', flex: 1, gap: 12, minHeight: 0 }}>
-        <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E3E0', position: 'relative' }}>
-          <MapContainer center={[31.0, -99.0]} zoom={6} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
-            {positions.length > 1 && <FitBounds positions={positions} />}
-            {/* Market heat zones (Phase C, Apr 20 2026):
-                Translucent circles centered on each market's coordinates,
-                sized by won_count, colored by median won $/LF. Rendered
-                BELOW job pins so pins stay clickable. Always uses a muted
-                palette so pins still pop visually. */}
-            {showHeatZones && heatZones.map(z => {
-              const radius = Math.min(80000, 20000 + z.won_count * 2000); // meters
-              const color = z.rate < 80 ? '#DC2626' : z.rate > 140 ? '#2563EB' : '#65A30D';
-              return (
-                <Circle key={z.market} center={z.center} radius={radius}
-                  pathOptions={{ fillColor: color, color: color, weight: 1, fillOpacity: 0.12, opacity: 0.35 }}>
-                  <LeafletTooltip permanent direction="center" className="fc-heat-tooltip">
-                    <div style={{ textAlign: 'center', fontFamily: 'Inter', lineHeight: 1.2 }}>
-                      <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase' }}>{z.market}</div>
-                      <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800, color }}>${Math.round(z.rate)}/LF</div>
-                      <div style={{ fontSize: 9, color: '#6B6056' }}>{z.fence_type} · {z.height}</div>
-                      <div style={{ fontSize: 9, color: '#9E9B96' }}>n = {z.won_count} won</div>
-                    </div>
-                  </LeafletTooltip>
-                </Circle>
-              );
-            })}
-            {pmRoute.length > 1 && (
-              <Polyline positions={pmRoute} pathOptions={{ color: '#8B2020', weight: 3, opacity: 0.75, dashArray: '6 6' }} />
-            )}
-            {filtered.filter(j => j.lat && j.lng).map(j => {
-              const tierColors = { below: '#DC2626', at: '#65A30D', above: '#2563EB', unknown: '#9E9B96' };
-              const color = colorBy === 'rate'
-                ? tierColors[pricingFor(j).tier]
-                : (MAP_LAYER_COLOR[j.status] || '#8A261D');
-              return (
-                <CircleMarker key={j.id}
-                  center={[j.lat, j.lng]} radius={selected && selected.id === j.id ? 13 : 9}
-                  pathOptions={{ fillColor: color, color: '#1A1A1A', weight: 2, fillOpacity: 0.9 }}
-                  eventHandlers={{ click: () => setSelected(j) }} />
-              );
-            })}
-          </MapContainer>
-          {/* New Prospect on Map — instant bid-range tool (Phase C).
-              Click the button at top-right of the map to open a mini form;
-              get a recommended $/LF range from proposal_market_rates the
-              moment you fill in (Market, Product, Height, LF). */}
-          <button
-            onClick={() => setProspectForm(prospectForm ? null : { market: 'SA', fenceType: 'Precast Concrete', heightFt: 6, lf: 500 })}
-            style={{
-              position: 'absolute', top: 12, right: 12, zIndex: 1000,
-              padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: 9999,
-              background: prospectForm ? '#FFF' : '#8A261D',
-              color: prospectForm ? '#8A261D' : '#FFF',
-              border: '1px solid #8A261D',
-              fontSize: isMobile ? 11 : 12, fontWeight: 700, cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-            }}
-          >
-            {prospectForm ? '✕ Close' : (isMobile ? '+ Prospect' : '+ New Prospect')}
-          </button>
-
-          {prospectForm && (() => {
-            const rate = lookupForProspect(prospectForm);
-            const lf = n(prospectForm.lf);
-            const rangeLow = rate ? rate.p25_rate * lf : null;
-            const rangeMid = rate ? (rate.median_won_rate || rate.median_rate) * lf : null;
-            const rangeHigh = rate ? rate.p75_rate * lf : null;
-            return (
-              <div style={{
-                position: 'absolute',
-                top: isMobile ? 56 : 52,
-                right: isMobile ? 8 : 12,
-                left: isMobile ? 8 : 'auto',
-                zIndex: 1000,
-                width: isMobile ? 'auto' : 320,
-                maxHeight: isMobile ? 'calc(100% - 72px)' : 'none',
-                overflowY: isMobile ? 'auto' : 'visible',
-                background: '#FFF', borderRadius: 12,
-                border: '1px solid #E5E3E0', boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
-                padding: 16, fontSize: 12,
-              }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: '#6B6056', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                  New Prospect — Instant Bid Range
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  <label>
-                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Market</div>
-                    <select value={prospectForm.market} onChange={e => setProspectForm(f => ({ ...f, market: e.target.value }))}
-                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }}>
-                      {MKTS.map(m => <option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Product</div>
-                    <select value={prospectForm.fenceType} onChange={e => setProspectForm(f => ({ ...f, fenceType: e.target.value }))}
-                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }}>
-                      <option>Precast Concrete</option>
-                      <option>Masonry</option>
-                      <option>Precast + Wrought Iron</option>
-                      <option>Mixed/Other</option>
-                      <option>Wood</option>
-                    </select>
-                  </label>
-                  <label>
-                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Height (ft)</div>
-                    <input type="number" min="4" max="12" step="0.5" value={prospectForm.heightFt}
-                      onChange={e => setProspectForm(f => ({ ...f, heightFt: parseFloat(e.target.value) || 0 }))}
-                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }} />
-                  </label>
-                  <label>
-                    <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, marginBottom: 2 }}>Total LF</div>
-                    <input type="number" min="0" step="10" value={prospectForm.lf}
-                      onChange={e => setProspectForm(f => ({ ...f, lf: parseFloat(e.target.value) || 0 }))}
-                      style={{ ...inputS, padding: '4px 6px', fontSize: 12, width: '100%' }} />
-                  </label>
-                </div>
-
-                {rate ? (
-                  <div style={{ background: '#FAF9F6', border: '1px solid #E5E3E0', borderRadius: 8, padding: 10 }}>
-                    <div style={{ fontSize: 10, color: '#6B6056', marginBottom: 6 }}>
-                      Based on <b>{rate.won_count}</b> won / {rate.proposal_count} proposals
-                      {rate.matchType === 'family' && <span style={{ color: '#B45309' }}> (height fallback)</span>}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 8 }}>
-                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
-                        <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>P25</div>
-                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800 }}>${Math.round(rate.p25_rate)}/LF</div>
-                      </div>
-                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 6 }}>
-                        <div style={{ fontSize: 9, color: '#065F46', fontWeight: 700 }}>MEDIAN WON</div>
-                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800, color: '#065F46' }}>${Math.round(rate.median_won_rate || rate.median_rate)}/LF</div>
-                      </div>
-                      <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
-                        <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>P75</div>
-                        <div style={{ fontFamily: 'Syne', fontSize: 12, fontWeight: 800 }}>${Math.round(rate.p75_rate)}/LF</div>
-                      </div>
-                    </div>
-                    {lf > 0 && (
-                      <div style={{ paddingTop: 8, borderTop: '1px solid #E5E3E0' }}>
-                        <div style={{ fontSize: 10, color: '#6B6056', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Total Bid Range ({lf.toLocaleString()} LF)</div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Syne', fontWeight: 800 }}>
-                          <span style={{ fontSize: 13 }}>${(rangeLow/1000).toFixed(0)}K</span>
-                          <span style={{ fontSize: 16, color: '#065F46' }}>${(rangeMid/1000).toFixed(0)}K</span>
-                          <span style={{ fontSize: 13 }}>${(rangeHigh/1000).toFixed(0)}K</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#9E9B96', marginTop: 2 }}>
-                          <span>competitive low</span>
-                          <span>target</span>
-                          <span>premium high</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ padding: 10, background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 8, fontSize: 11, color: '#78350F' }}>
-                    No comparable won data for {prospectForm.market} + {prospectForm.fenceType} at {prospectForm.heightFt}ft yet.
-                    Need 3+ won tagged proposals in that bucket to get a recommendation.
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Legend */}
-          <div style={{ position: 'absolute', bottom: 14, right: 12, background: 'rgba(255,255,255,0.95)', borderRadius: 8, padding: '8px 12px', zIndex: 1000, border: '1px solid #E5E3E0', fontSize: 11 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4, color: '#6B6056', textTransform: 'uppercase', fontSize: 10 }}>
-              {colorBy === 'rate' ? '$/LF vs market' : 'Layers'}
-            </div>
-            {colorBy === 'rate' ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#DC2626', border: '1.5px solid #1A1A1A' }} />
-                  <span>Below market (&lt;25th %ile)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#65A30D', border: '1.5px solid #1A1A1A' }} />
-                  <span>At market (25–75th %ile)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#2563EB', border: '1.5px solid #1A1A1A' }} />
-                  <span>Above market (&gt;75th %ile)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#9E9B96', border: '1.5px solid #1A1A1A' }} />
-                  <span>No comparable data</span>
-                </div>
-              </>
-            ) : (
-              MAP_LAYER_STATUSES.filter(s => layers[s]).map(s => (
-                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: MAP_LAYER_COLOR[s], border: '1.5px solid #1A1A1A' }} />
-                  <span>{MAP_LAYER_LABEL[s]}</span>
-                </div>
-              ))
-            )}
-            {pmRoute.length > 1 && colorBy !== 'rate' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingTop: 4, borderTop: '1px solid #F1EFEC' }}>
-                <span style={{ width: 16, height: 2, background: '#8B2020', borderRadius: 1, borderTop: '1px dashed #8B2020' }} />
-                <span>{pmF} route</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Side panel */}
-        {selected && (
-          <div style={{ ...card, width: isMobile ? '100%' : 340, padding: 16, overflow: 'auto', flexShrink: 0 }}>
-            <BackButton onBack={() => setSelected(null)} style={{ marginBottom: 6, marginLeft: -6 }}/>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-              <div>
-                <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800, color: '#1A1A1A' }}>{selected.job_name || 'Untitled'}</div>
-                <div style={{ fontSize: 12, color: '#6B6056', marginTop: 2 }}>{selected.customer_name || '—'}</div>
-              </div>
-              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9E9B96' }}>✕</button>
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-              <span style={{ ...statusPill(selected.status), display: 'inline-block' }}>{SS[selected.status] || selected.status}</span>
-              {selected.market && <span style={{ ...pill(MC[selected.market] || '#6B6056', MB[selected.market] || '#F4F4F2'), display: 'inline-block' }}>{MS[selected.market] || selected.market}</span>}
-              {!selected.est_start_date && <span style={{ ...pill('#B45309','#FEF3C7','#B45309'), display: 'inline-block' }}>Unscheduled</span>}
-            </div>
-            <div style={{ fontSize: 12, color: '#1A1A1A', lineHeight: 1.6 }}>
-              {[
-                ['Address', [selected.address, selected.city, selected.state, selected.zip].filter(Boolean).join(', ') || '—'],
-                ['Total LF', n(selected.total_lf) ? n(selected.total_lf).toLocaleString() : '—'],
-                ['Product', productOfJob(selected)],
-                ['Style', selected.style || '—'],
-                ['Color', selected.color || '—'],
-                ['Height', selected.height || selected.height_precast || '—'],
-                ['PM', selected.pm || '—'],
-                ['Est. Start', selected.est_start_date ? fD(selected.est_start_date) : '—'],
-                ['Contract', $k(selected.adj_contract_value || selected.contract_value)],
-                ['Left to Bill', $k(selected.left_to_bill)],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F1EFEC', padding: '4px 0' }}>
-                  <span style={{ color: '#6B6056', fontWeight: 600 }}>{k}</span>
-                  <span style={{ textAlign: 'right', maxWidth: '70%' }}>{v}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* ═══ Pricing Intelligence (Map Pricing v1, Apr 20 2026) ═══
-                Shows how this job's $/LF compares to market comparables from
-                proposals_clean, stratified by market + fence_type + height. */}
-            {(() => {
-              const { rate, myRate, tier } = pricingFor(selected);
-              const tierMeta = {
-                below:   { label: 'BELOW MARKET', fg: '#7F1D1D', bg: '#FEE2E2', hint: 'Priced under 25th percentile of comparables — may be leaving money on the table' },
-                at:      { label: 'AT MARKET',    fg: '#065F46', bg: '#ECFDF5', hint: 'Within typical range (25–75th percentile) for this product & market' },
-                above:   { label: 'ABOVE MARKET', fg: '#1E3A8A', bg: '#DBEAFE', hint: 'Priced over 75th percentile — premium/challenging territory' },
-                unknown: { label: 'NO DATA',      fg: '#6B6056', bg: '#F4F4F2', hint: 'Not enough won comparables to benchmark — need more tagged proposals' },
-              }[tier];
-              return (
-                <div style={{ marginTop: 14, padding: 12, background: '#FAF9F6', border: '1px solid #E5E3E0', borderRadius: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: '#6B6056', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-                    Pricing Intelligence
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: '#1A1A1A' }}>
-                      {myRate ? `$${myRate.toFixed(0)}/LF` : '—'}
-                    </span>
-                    <span style={{ padding: '2px 8px', borderRadius: 9999, fontSize: 10, fontWeight: 700, color: tierMeta.fg, background: tierMeta.bg }}>
-                      {tierMeta.label}
-                    </span>
-                  </div>
-                  {rate ? (
-                    <>
-                      <div style={{ fontSize: 11, color: '#6B6056', marginBottom: 8 }}>
-                        Compared to <b>{rate.won_count || 0} won</b> / {rate.proposal_count} proposals · {rate.market} · {rate.fence_type} · {rate.height_bucket}
-                        {rate.matchType === 'family' && <span style={{ color: '#B45309' }}> (height fallback)</span>}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 8 }}>
-                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
-                          <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>25th %</div>
-                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800 }}>${Math.round(rate.p25_rate)}</div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 6 }}>
-                          <div style={{ fontSize: 9, color: '#065F46', fontWeight: 700 }}>MEDIAN WON</div>
-                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800, color: '#065F46' }}>
-                            ${Math.round(rate.median_won_rate || rate.median_rate)}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '6px 4px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6 }}>
-                          <div style={{ fontSize: 9, color: '#9E9B96', fontWeight: 700 }}>75th %</div>
-                          <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800 }}>${Math.round(rate.p75_rate)}</div>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 10, color: tierMeta.fg, lineHeight: 1.4 }}>{tierMeta.hint}</div>
-                    </>
-                  ) : (
-                    <div style={{ fontSize: 11, color: '#6B6056' }}>{tierMeta.hint}</div>
-                  )}
-                </div>
-              );
-            })()}
-            <button onClick={() => onNav && onNav('projects', selected)}
-              style={{ marginTop: 14, padding: '8px 14px', background: '#8B2020', color: '#FFF', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
-              Open Job Detail →
-            </button>
-          </div>
-        )}
       </div>
     </div>
-  );
+
+    {/* Filters row */}
+    {filtersOpen && <div style={{ ...card, padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>PM</span>
+        <select value={pmF} onChange={e => setPmF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 140 }}>
+          {pmOptions.map(p => <option key={p}>{p}</option>)}
+        </select>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Market</span>
+        <select value={mktF} onChange={e => setMktF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 100 }}>
+          <option>All</option><option>AUS</option><option>DFW</option><option>HOU</option><option>SA</option><option>OOS</option>
+        </select>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Crew</span>
+        <select value={crewF} onChange={e => setCrewF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 140 }}>
+          {crewOptions.map(c => <option key={c.id} value={c.id}>{c.name}{c.market ? ` (${c.market})` : ''}</option>)}
+        </select>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Product</span>
+        <select value={productF} onChange={e => setProductF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 110 }}>
+          {productOptions.map(p => <option key={p}>{p}</option>)}
+        </select>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <input type="checkbox" checked={showOverdue} onChange={e => setShowOverdue(e.target.checked)} />
+        <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue ({mappableJobs.filter(j => getReadiness(j, null) === 'overdue').length})</span>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <input type="checkbox" checked={showUnscheduled} onChange={e => setShowUnscheduled(e.target.checked)} />
+        <span style={{ color: '#A855F7', fontWeight: 700 }}>Unscheduled ({mappableJobs.filter(j => !j.est_start_date).length})</span>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <input type="checkbox" checked={showClusters} onChange={e => setShowClusters(e.target.checked)} />
+        <span style={{ fontWeight: 700, color: '#1A1A1A' }}>Show Clusters</span>
+      </label>
+      <button onClick={() => { setPmF('All'); setMktF('All'); setProductF('All'); setCrewF('All'); }} style={{ ...btnS, padding: '4px 10px', fontSize: 11 }}>Clear</button>
+    </div>}
+
+    {/* Map + Side panel */}
+    <div style={{ display: 'flex', flex: 1, gap: 12, minHeight: 0 }}>
+      <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E3E0', position: 'relative' }}>
+        <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+        {/* Legend overlay */}
+        <div style={{
+          position: 'absolute', bottom: 12, left: 12, zIndex: 10,
+          background: 'rgba(255,255,255,0.96)', borderRadius: 8, padding: '8px 12px',
+          fontSize: 11, boxShadow: '0 2px 10px rgba(0,0,0,0.1)', border: '1px solid #E5E3E0'
+        }}>
+          {colorMode === 'status' && <>
+            <div style={{ fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9, marginBottom: 4 }}>Readiness</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#16A34A', border: '1px solid #1A1A1A' }} />Ready</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#EAB308', border: '1px solid #1A1A1A' }} />Production risk</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#DC2626', border: '1px solid #1A1A1A' }} />Overdue</span>
+              {showUnscheduled && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#A855F7', border: '1px solid #1A1A1A' }} />No date</span>}
+            </div>
+          </>}
+          {colorMode === 'crew' && <>
+            <div style={{ fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9, marginBottom: 4 }}>Crews ({crews.length})</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: 400 }}>
+              {crews.map(c => <span key={c.id} title={c.name} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: c.color_hex, border: '1px solid #1A1A1A' }} />{c.name}
+              </span>)}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: '#9CA3AF', border: '1px solid #1A1A1A' }} />Unassigned
+              </span>
+            </div>
+          </>}
+        </div>
+      </div>
+
+      {/* Right side panel */}
+      <div style={{ width: isMobile ? 0 : 340, display: isMobile ? 'none' : 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+        {/* Selected job detail OR summary */}
+        {selected ? (
+          <div style={{ ...card, padding: 14, overflow: 'auto', flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 700, letterSpacing: 0.4 }}>{selected.job_number || '—'}</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 15, fontWeight: 800, marginTop: 2, color: '#1A1A1A', wordBreak: 'break-word' }}>{selected.job_name}</div>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: '#9E9B96', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}>×</button>
+            </div>
+            <div style={{ fontSize: 12, color: '#625650', marginBottom: 8 }}>{selected.customer_name || '—'}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginBottom: 12 }}>
+              <div><span style={{ color: '#9E9B96' }}>Status</span><div style={{ fontWeight: 700 }}>{(selected.status || '').replace(/_/g, ' ')}</div></div>
+              <div><span style={{ color: '#9E9B96' }}>Market</span><div style={{ fontWeight: 700 }}>{selected.market || '—'}</div></div>
+              <div><span style={{ color: '#9E9B96' }}>PM</span><div style={{ fontWeight: 700 }}>{selected.pm || '—'}</div></div>
+              <div><span style={{ color: '#9E9B96' }}>Est. Start</span><div style={{ fontWeight: 700 }}>{selected.est_start_date || '—'}</div></div>
+              <div><span style={{ color: '#9E9B96' }}>Total LF</span><div style={{ fontWeight: 700 }}>{n(selected.total_lf).toLocaleString()}</div></div>
+              <div><span style={{ color: '#9E9B96' }}>Contract</span><div style={{ fontWeight: 700 }}>${Math.round(n(selected.adj_contract_value || selected.contract_value) / 1000)}k</div></div>
+            </div>
+            {/* Crew assignment */}
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Crew Assignment</div>
+              <select value={selected.crew_id || ''} onChange={e => assignCrew(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
+                <option value="">— Unassigned —</option>
+                {crews.map(c => <option key={c.id} value={c.id}>{c.name}{c.market ? ` (${c.market})` : ''}</option>)}
+              </select>
+              {selected.crew_id && crewById[selected.crew_id] && <div style={{ marginTop: 6, fontSize: 11, color: '#625650' }}>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: crewById[selected.crew_id].color_hex, border: '1px solid #1A1A1A', marginRight: 6, verticalAlign: 'middle' }} />
+                Foreman: {crewById[selected.crew_id].lead_foreman || '(unassigned)'}
+              </div>}
+            </div>
+            <button onClick={() => onNav && onNav('projects', selected)} style={{ ...btnS, marginTop: 12, width: '100%', fontSize: 12 }}>Open in Projects →</button>
+          </div>
+        ) : (
+          <div style={{ ...card, padding: 14, overflow: 'auto', flex: '1 1 auto' }}>
+            <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 800, color: '#1A1A1A', marginBottom: 10 }}>📊 In Window</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+              <div style={{ padding: '8px 10px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: 800, color: '#15803D' }}>{counts.ready}</div>
+                <div style={{ fontSize: 10, color: '#15803D', fontWeight: 700, textTransform: 'uppercase' }}>Ready</div>
+              </div>
+              <div style={{ padding: '8px 10px', background: '#FEFCE8', border: '1px solid #FEF08A', borderRadius: 8 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: 800, color: '#A16207' }}>{counts.prod_risk}</div>
+                <div style={{ fontSize: 10, color: '#A16207', fontWeight: 700, textTransform: 'uppercase' }}>Production Risk</div>
+              </div>
+              {showOverdue && <div style={{ padding: '8px 10px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: 800, color: '#DC2626' }}>{counts.overdue}</div>
+                <div style={{ fontSize: 10, color: '#DC2626', fontWeight: 700, textTransform: 'uppercase' }}>Overdue</div>
+              </div>}
+              {showUnscheduled && <div style={{ padding: '8px 10px', background: '#FAF5FF', border: '1px solid #E9D5FF', borderRadius: 8 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: 800, color: '#7E22CE' }}>{counts.unscheduled}</div>
+                <div style={{ fontSize: 10, color: '#7E22CE', fontWeight: 700, textTransform: 'uppercase' }}>No Date</div>
+              </div>}
+            </div>
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By Market</div>
+              {Object.entries(counts.byMarket).sort((a,b) => b[1] - a[1]).map(([k,v]) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                <span>{k}</span>
+                <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v}</span>
+              </div>)}
+            </div>
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By PM</div>
+              {Object.entries(counts.byPm).sort((a,b) => b[1] - a[1]).map(([k,v]) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{k}</span>
+                <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v}</span>
+              </div>)}
+            </div>
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By Crew</div>
+              {Object.entries(counts.byCrew).sort((a,b) => b[1] - a[1]).map(([k,v]) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                <span style={{ color: k === 'Unassigned' ? '#9E9B96' : '#1A1A1A' }}>{k}</span>
+                <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v}</span>
+              </div>)}
+            </div>
+          </div>
+        )}
+
+        {/* Production-ready gap callout */}
+        {productionGapJobs.length > 0 && <div style={{ ...card, padding: 12, border: '2px solid #EAB308', background: '#FEFCE8' }}>
+          <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 800, color: '#A16207', marginBottom: 6 }}>⚠️ Production Gap (next 14 days)</div>
+          <div style={{ fontSize: 11, color: '#854D0E', marginBottom: 8 }}>{productionGapJobs.length} install{productionGapJobs.length===1?'':'s'} scheduled but not material-ready yet.</div>
+          <div style={{ maxHeight: 140, overflowY: 'auto' }}>
+            {productionGapJobs.slice(0, 10).map(j => <div key={j.id} onClick={() => flyToJob(j)} style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', borderRadius: 4 }} onMouseEnter={e => e.currentTarget.style.background = '#FEF9C3'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <div style={{ fontWeight: 700 }}>{j.job_name}</div>
+              <div style={{ color: '#854D0E' }}>{j.est_start_date} · {j.market} · {(j.status || '').replace(/_/g,' ')}</div>
+            </div>)}
+            {productionGapJobs.length > 10 && <div style={{ fontSize: 11, color: '#9E9B96', padding: '4px 6px', fontStyle: 'italic' }}>+ {productionGapJobs.length - 10} more</div>}
+          </div>
+        </div>}
+
+        {/* Cluster summary */}
+        {showClusters && clusters.length > 0 && <div style={{ ...card, padding: 12 }}>
+          <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 800, color: '#1A1A1A', marginBottom: 6 }}>📍 Geographic Clusters</div>
+          <div style={{ fontSize: 11, color: '#625650', marginBottom: 8 }}>{clusters.length} cluster{clusters.length===1?'':'s'} of jobs within 15mi of each other.</div>
+          <div style={{ maxHeight: 140, overflowY: 'auto' }}>
+            {clusters.sort((a,b)=>b.length-a.length).slice(0, 8).map((cluster, i) => {
+              const totalLf = cluster.reduce((s,j) => s + n(j.total_lf), 0);
+              const pms = [...new Set(cluster.map(j => j.pm).filter(Boolean))].join(', ');
+              return <div key={i} style={{ padding: '6px 8px', fontSize: 11, background: '#F4F4F2', borderRadius: 4, marginBottom: 4 }}>
+                <div style={{ fontWeight: 700 }}>{cluster.length} jobs · {totalLf.toLocaleString()} LF</div>
+                <div style={{ color: '#625650' }}>{pms || '—'}</div>
+              </div>;
+            })}
+          </div>
+        </div>}
+      </div>
+    </div>
+  </div>;
 }
 
 /* ═══ FCA ASSISTANT CHAT WIDGET — Phase 1 help/FAQ bot ═══ */
@@ -17899,17 +17785,6 @@ function AppShell(){
           50%{box-shadow:0 0 0 6px rgba(59,130,246,0);}
         }
         .fc-refresh-pulse{animation:fcRefreshPulse 2s ease-in-out infinite;}
-        /* ── Map heat-zone center tooltips ── */
-        .leaflet-tooltip.fc-heat-tooltip{
-          background: rgba(255,255,255,0.96);
-          border: 1px solid rgba(0,0,0,0.1);
-          border-radius: 10px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-          padding: 6px 10px;
-          color: #1A1A1A;
-          font-family: 'Inter', sans-serif;
-        }
-        .leaflet-tooltip.fc-heat-tooltip::before{display:none;}
         /* ── Nav item hover ── */
         .fc-nav-item:hover { background: rgba(255,255,255,0.06) !important; color: rgba(255,255,255,0.85) !important; }
         /* ── Sidebar nav scrollbar (dark) ── */
