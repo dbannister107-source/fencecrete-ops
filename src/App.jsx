@@ -3353,6 +3353,31 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   // Per-job invoice_entries aggregates for the current arMonth. Powers the
   // "X invoices entered" hint on pending rows and the invoiced_amount sum
   // written when Mark Reviewed is clicked inline.
+  // ──────────────────────────────────────────────────────────────────
+  // OVER-BILL GUARDRAIL (Apr 28, 2026 — David)
+  // Triggered by Elyson 24H052 case where a submission would have
+  // doubled an already-corrupt YTD ($1.46M) by adding the same amount
+  // again on top via the trg_ytd_invoiced_from_submission trigger.
+  //
+  // arOverbillBlock holds {sub, job, projected, contract, pct, action}
+  // where action is the deferred fn to call after override.
+  // The modal requires the user to type the job number to override —
+  // friction calibrated so it's hard to do by accident, easy if intentional.
+  // ──────────────────────────────────────────────────────────────────
+  const OVERBILL_THRESHOLD_PCT = 120; // hard-block above this
+  const[arOverbillBlock,setArOverbillBlock]=useState(null);
+  const[arOverbillTypeAck,setArOverbillTypeAck]=useState('');
+  // Returns { allow:true } if approval is safe, or {allow:false, projected, contract, pct} if it would push over the threshold.
+  // currentYtd = jobs.ytd_invoiced; addAmount = how much this approval will ADD (the trigger is additive).
+  const checkOverbillGuard=(job, addAmount)=>{
+    const adj = n(job?.adj_contract_value || job?.contract_value);
+    const currentYtd = n(job?.ytd_invoiced);
+    const projected = currentYtd + n(addAmount);
+    if(adj<=0) return {allow:true, projected, contract:adj, pct:0};
+    const pct = projected / adj * 100;
+    if(pct <= OVERBILL_THRESHOLD_PCT) return {allow:true, projected, contract:adj, pct};
+    return {allow:false, projected, contract:adj, pct};
+  };
   const[arInvByJob,setArInvByJob]=useState({});
   const[arDetail,setArDetail]=useState(null);
   const[arForm,setArForm]=useState({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});
@@ -3400,14 +3425,45 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   // invoiced_amount with SUM(invoice_entries). Distinct from the detail
   // modal's "Mark Submission Complete" which also accepts a form amount —
   // Virginia/Mary enter invoices via Add Invoice first, then hit this.
-  const markReviewedInline=async(sub)=>{
+  const markReviewedInline=async(sub, override)=>{
     const info=arInvByJob[sub.job_id]||{count:0,total:0};
     const reviewer=currentUserEmail||'AR';
+    const addAmount = info.total||n(sub.invoiced_amount)||0;
+    const job = jobs.find(j=>j.id===sub.job_id);
+    // Guard: block if this approval would push billed % above OVERBILL_THRESHOLD_PCT,
+    // unless caller already passed override flag (from the typed-confirmation modal).
+    if(!override){
+      const guard = checkOverbillGuard(job, addAmount);
+      if(!guard.allow){
+        setArOverbillBlock({
+          sub, job,
+          projected: guard.projected,
+          contract: guard.contract,
+          pct: guard.pct,
+          // Captured continuation: when user confirms the override, this gets called.
+          action: ()=>markReviewedInline(sub, true),
+          flow: 'inline'
+        });
+        setArOverbillTypeAck('');
+        return;
+      }
+    }
     try{
-      await sbPatch('pm_bill_submissions',sub.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:reviewer,ytd_applied:true,invoiced_amount:info.total||n(sub.invoiced_amount)||0});
+      const overrideNote = override
+        ? `\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${reviewer}: approved at ${(((n(job?.ytd_invoiced)+addAmount)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`
+        : '';
+      const existingNotes = sub.ar_notes || '';
+      await sbPatch('pm_bill_submissions',sub.id,{
+        ar_reviewed:true,
+        ar_reviewed_at:new Date().toISOString(),
+        ar_reviewed_by:reviewer,
+        ar_notes: override ? (existingNotes + overrideNote).trim() : existingNotes || null,
+        ytd_applied:true,
+        invoiced_amount:addAmount
+      });
       fetchArSubs();
       if(bumpRefresh)bumpRefresh();
-      setToast(`✓ ${sub.job_name||'Submission'} marked reviewed`);
+      setToast(`✓ ${sub.job_name||'Submission'} marked reviewed${override?' (over-bill override logged)':''}`);
     }catch(err){setToast({message:err.message||'Mark reviewed failed',isError:true});}
   };
   // Revert is current-month only (enforced at render time). Leaves invoice
@@ -3420,7 +3476,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
       setToast(`↺ ${sub.job_name||'Submission'} moved back to Pending`);
     }catch(err){setToast({message:err.message||'Revert failed',isError:true});}
   };
-  const markArReviewed=async()=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;try{await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:arForm.ar_notes||null,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});const job=jobs.find(j=>j.id===s.job_id);if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}. YTD invoiced updated.`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
+  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}.${override?' Over-bill override logged.':''}`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});if(!invCacheRef.current.has(sub.job_id))setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
@@ -3706,6 +3762,75 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
     </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
     {/* AR Detail Modal */}
+    {/* OVER-BILL GUARD MODAL — renders above arDetail. Hard-blocks an
+        approval that would push billed % above OVERBILL_THRESHOLD_PCT.
+        Override requires typing the job number — calibrated friction. */}
+    {arOverbillBlock&&(()=>{
+      const {sub,job,projected,contract,pct,action} = arOverbillBlock;
+      const jobNumber = job?.job_number || '';
+      const ackMatches = arOverbillTypeAck.trim().toLowerCase() === jobNumber.trim().toLowerCase() && jobNumber.length > 0;
+      const close = ()=>{setArOverbillBlock(null);setArOverbillTypeAck('');};
+      const proceed = async ()=>{
+        if(!ackMatches) return;
+        close();
+        if(typeof action === 'function') await action();
+      };
+      return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={close}>
+        <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:12,maxWidth:560,width:'100%',boxShadow:'0 24px 48px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+          <div style={{padding:'14px 20px',background:'#7F1D1D',color:'#FFF',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:24}}>🛑</span>
+            <div>
+              <div style={{fontSize:16,fontWeight:800,letterSpacing:0.3}}>Over-Bill Block — Approval would exceed contract</div>
+              <div style={{fontSize:11,opacity:0.85,marginTop:2}}>Job #{job?.job_number||'—'} · {job?.job_name||'—'}</div>
+            </div>
+          </div>
+          <div style={{padding:20}}>
+            <div style={{background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:8,padding:14,marginBottom:14}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,fontSize:13}}>
+                <div><div style={{color:'#991B1B',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Adjusted Contract</div><div style={{fontWeight:700,fontSize:15,color:'#1A1A1A',marginTop:2}}>{$(contract)}</div></div>
+                <div><div style={{color:'#991B1B',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Current YTD Invoiced</div><div style={{fontWeight:700,fontSize:15,color:'#1A1A1A',marginTop:2}}>{$(n(job?.ytd_invoiced))}</div></div>
+                <div><div style={{color:'#991B1B',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>This Approval Adds</div><div style={{fontWeight:700,fontSize:15,color:'#1A1A1A',marginTop:2}}>{$(projected - n(job?.ytd_invoiced))}</div></div>
+                <div><div style={{color:'#991B1B',fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Projected YTD After</div><div style={{fontWeight:800,fontSize:15,color:'#7F1D1D',marginTop:2}}>{$(projected)}</div></div>
+              </div>
+              <div style={{marginTop:12,paddingTop:10,borderTop:'1px solid #FCA5A5',display:'flex',alignItems:'baseline',justifyContent:'space-between'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#991B1B'}}>BILLED PERCENTAGE AFTER</div>
+                <div style={{fontSize:24,fontWeight:900,color:'#7F1D1D'}}>{pct.toFixed(1)}%</div>
+              </div>
+              <div style={{fontSize:11,color:'#991B1B',marginTop:4,fontStyle:'italic'}}>Threshold: {OVERBILL_THRESHOLD_PCT}% — anything beyond this needs CFO/CEO sign-off.</div>
+            </div>
+            <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.5,marginBottom:14}}>
+              <strong>This approval is blocked.</strong> Approving would put this job at {pct.toFixed(0)}% billed — above the {OVERBILL_THRESHOLD_PCT}% threshold. Common causes:
+              <ul style={{margin:'6px 0 0 18px',padding:0,fontSize:12,color:'#625650'}}>
+                <li>Opening balance was migrated AND a final invoice was entered (double-count)</li>
+                <li>Change order amount wasn't reflected in adj_contract_value</li>
+                <li>Invoice was entered against the wrong job</li>
+              </ul>
+            </div>
+            <div style={{background:'#F9FAFB',border:'1px solid #E5E3E0',borderRadius:8,padding:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>OVERRIDE — Type job number <code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontWeight:800,color:'#1A1A1A'}}>{jobNumber}</code> to confirm:</div>
+              <input
+                type="text"
+                value={arOverbillTypeAck}
+                onChange={e=>setArOverbillTypeAck(e.target.value)}
+                placeholder={jobNumber}
+                style={{width:'100%',padding:'8px 10px',border:`1px solid ${ackMatches?'#16A34A':'#D1CEC9'}`,borderRadius:6,fontSize:13,fontFamily:'Inter',outline:'none',background:ackMatches?'#F0FDF4':'#FFF'}}
+                autoFocus
+              />
+              <div style={{fontSize:10,color:'#9E9B96',marginTop:5,fontStyle:'italic'}}>The override will be logged with your name, timestamp, and the projected billing percentage in the submission's AR notes.</div>
+            </div>
+          </div>
+          <div style={{padding:'12px 20px',background:'#F9FAFB',borderTop:'1px solid #E5E3E0',display:'flex',gap:10,justifyContent:'flex-end'}}>
+            <button onClick={close} style={{...btnS,padding:'8px 16px',fontSize:13}}>Cancel — Don't Approve</button>
+            <button
+              onClick={proceed}
+              disabled={!ackMatches}
+              style={{padding:'8px 16px',fontSize:13,fontWeight:700,borderRadius:6,border:'1px solid '+(ackMatches?'#7F1D1D':'#D1CEC9'),background:ackMatches?'#7F1D1D':'#F4F4F2',color:ackMatches?'#FFF':'#9E9B96',cursor:ackMatches?'pointer':'not-allowed'}}
+            >Override & Approve at {pct.toFixed(0)}%</button>
+          </div>
+        </div>
+      </div>;
+    })()}
+
     {arDetail&&(()=>{const s=arDetail.sub;const arJob=jobs.find(x=>x.id===s.job_id)||{};const arIsNoBill=!!s.no_bill_required;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>{setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});}}>
       <div style={{background:'#fff',borderRadius:16,padding:24,width:'min(600px,96vw)',maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
@@ -3858,7 +3983,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
           <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice</button></div>
           {invEntries.filter(e=>!e.notes?.includes('Opening Balance')).length>0&&!s.ar_reviewed&&(
             <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #E5E3E0'}}>
-              <button onClick={markArReviewed} style={{...btnP,background:'#065F46',width:'100%',justifyContent:'center',display:'flex',alignItems:'center',gap:6}}>
+              <button onClick={()=>markArReviewed()} style={{...btnP,background:'#065F46',width:'100%',justifyContent:'center',display:'flex',alignItems:'center',gap:6}}>
                 ✓ Mark Submission Complete
               </button>
               <div style={{fontSize:10,color:'#9E9B96',textAlign:'center',marginTop:4}}>Stamps this PM submission as processed for {arMonth}</div>
