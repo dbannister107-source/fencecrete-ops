@@ -9944,6 +9944,14 @@ function MapPage({ jobs, onNav }) {
   // 'all' shows everything regardless of date; 'this_week' / 'next_week'
   // are calendar-week presets restored from the previous map.
   const [horizon, setHorizon] = useState(45); // days; 'all' | 'this_week' | 'next_week'
+  // Range mode: how the day-based horizon resolves.
+  //   'cumulative' (default) — "30 days" = days 0-30 (everything up to & including 30)
+  //   'window'                — "30 days" = days 16-30 (only that bucket)
+  // 'cumulative' answers "am I staffed for the next month total?"
+  // 'window' answers "what's coming in 60-90 days I haven't planned for?"
+  // Week presets ('this_week'/'next_week') and 'all' are unaffected by
+  // this toggle — they're always windows / always all.
+  const [rangeMode, setRangeMode] = useState('cumulative');
   // Color mode: how to color each pin.
   //   'status'  → readiness (green/yellow/red based on production-readiness)
   //   'crew'    → each crew gets its own color
@@ -10079,28 +10087,64 @@ function MapPage({ jobs, onNav }) {
     j.lat && j.lng && ACTIVE_INSTALL_STATUSES.includes(j.status)
   ), [jobs]);
 
+  // Resolve the day-based horizon to a [lower, upper] window. For
+  // cumulative mode (default), lower=0 so the bucket is days 0..upper.
+  // For window mode, lower is set to the previous bucket's upper.
+  const dayWindow = useMemo(() => {
+    if (horizon === 'all' || horizon === 'this_week' || horizon === 'next_week') return null;
+    const ladder = [0, 14, 30, 45, 60, 90]; // bucket boundaries
+    const upper = horizon;
+    if (rangeMode === 'cumulative') return [0, upper];
+    // Window mode: lower = previous bucket boundary, upper = this one.
+    // Special case: the smallest bucket (14 days) has no prior, so it
+    // always covers days 0-14 even in window mode.
+    const idx = ladder.indexOf(upper);
+    const lower = idx > 1 ? ladder[idx - 1] : 0;
+    return [lower, upper];
+  }, [horizon, rangeMode]);
+
   // Apply user filters → the visible set
   const filtered = useMemo(() => {
-    // Resolve horizon to days-out (or null = all). For week presets, we
-    // gate on the calendar window separately below.
-    const horizonDays = (horizon === 'all' || horizon === 'this_week' || horizon === 'next_week') ? null : horizon;
     return mappableJobs.filter(j => {
       // Status layer toggle — multi-select chip filter
       if (!layers[j.status]) return false;
-      // Time-horizon: filter by readiness
-      const readiness = getReadiness(j, horizonDays);
-      if (readiness === 'future') return false;       // beyond horizon → hide
-      if (readiness === 'overdue' && !showOverdue) return false;
-      if (readiness === 'unscheduled' && !showUnscheduled) return false;
-      if (readiness === 'complete' && !layers.fence_complete) return false;
-      // Calendar week presets — must fall within Sun-Sat window
-      if (weekRange && j.est_start_date) {
-        const sd = new Date(j.est_start_date);
-        if (sd < weekRange[0] || sd >= weekRange[1]) return false;
-      } else if (weekRange && !j.est_start_date) {
-        // Week presets implicitly exclude unscheduled
-        return false;
+
+      // ACTIVE INSTALLS BYPASS HORIZON FILTERING.
+      // They're work happening right now. Hiding them based on whether
+      // their scheduled start date falls in the next N days is wrong —
+      // the install IS the start, and it's already in flight. Show them
+      // unless the user has unchecked the 'Active Install' status layer
+      // (which is handled above).
+      const isActiveInstall = j.status === 'active_install';
+
+      // Time-horizon: filter by readiness for non-active jobs only
+      if (!isActiveInstall) {
+        const readiness = getReadiness(j, null); // resolve readiness without horizon clip
+        if (readiness === 'overdue' && !showOverdue) return false;
+        if (readiness === 'unscheduled' && !showUnscheduled) return false;
+        if (readiness === 'complete' && !layers.fence_complete) return false;
+
+        // Day-based horizon: gate on dayWindow
+        if (dayWindow && j.est_start_date) {
+          const daysOut = Math.round((new Date(j.est_start_date) - today) / 86400000);
+          // Skip if outside the window (lower-inclusive, upper-inclusive)
+          // Overdue jobs (negative daysOut) are NOT day-window-gated; their
+          // visibility is controlled by the showOverdue checkbox above.
+          if (daysOut >= 0 && (daysOut < dayWindow[0] || daysOut > dayWindow[1])) return false;
+        } else if (dayWindow && !j.est_start_date && !showUnscheduled) {
+          return false;
+        }
+
+        // Calendar week presets — must fall within Sun-Sat window
+        if (weekRange && j.est_start_date) {
+          const sd = new Date(j.est_start_date);
+          if (sd < weekRange[0] || sd >= weekRange[1]) return false;
+        } else if (weekRange && !j.est_start_date) {
+          // Week presets implicitly exclude unscheduled
+          return false;
+        }
       }
+
       // Size filter (Small/Medium/Large by total LF)
       if (sizeF !== 'All' && sizeOfJob(j) !== sizeF) return false;
       // Other filters
@@ -10113,13 +10157,15 @@ function MapPage({ jobs, onNav }) {
       }
       return true;
     });
-  }, [mappableJobs, horizon, weekRange, layers, sizeF, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness]);
+  }, [mappableJobs, dayWindow, weekRange, layers, sizeF, showOverdue, showUnscheduled, pmF, mktF, productF, crewF, getReadiness, today]);
 
   // Counts for the right panel
   const counts = useMemo(() => {
     const out = { ready: 0, prod_risk: 0, overdue: 0, unscheduled: 0, total: 0, lf: 0, dollars: 0, byMarket: {}, byPm: {}, byCrew: {} };
     filtered.forEach(j => {
-      const r = getReadiness(j, horizon === 'all' ? null : horizon);
+      // For display classification, don't re-clip by horizon — the filter
+      // already decided the job is in scope. We just report its bucket.
+      const r = getReadiness(j, null);
       if (r === 'ready') out.ready++;
       else if (r === 'production_risk') out.prod_risk++;
       else if (r === 'overdue') out.overdue++;
@@ -10164,14 +10210,15 @@ function MapPage({ jobs, onNav }) {
     if (colorMode === 'market') {
       return MKT_PIN[j.market] || '#9CA3AF';
     }
-    // Default: by readiness
-    const r = getReadiness(j, horizon === 'all' ? null : horizon);
+    // Default: by readiness. Filter has already gated by horizon/window;
+    // here we just classify the job for color.
+    const r = getReadiness(j, null);
     if (r === 'overdue') return '#DC2626';        // red
     if (r === 'unscheduled') return '#A855F7';    // purple
     if (r === 'production_risk') return '#EAB308';// yellow
     if (r === 'ready') return '#16A34A';          // green
     return '#9CA3AF';
-  }, [colorMode, crewById, getReadiness, horizon]);
+  }, [colorMode, crewById, getReadiness]);
 
   // ═══ MAP REF + LIFECYCLE ═══
   const mapContainerRef = useRef(null);
@@ -10374,7 +10421,17 @@ function MapPage({ jobs, onNav }) {
       <div>
         <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, margin: 0 }}>Install Map</h1>
         <div style={{ fontSize: 12, color: '#625650', marginTop: 2 }}>
-          {counts.total} installs in window · {(counts.lf / 1000).toFixed(1)}k LF · ${(counts.dollars / 1000).toFixed(0)}k
+          {(() => {
+            const activeCount = filtered.filter(j => j.status === 'active_install').length;
+            const otherCount = counts.total - activeCount;
+            return <>
+              {activeCount > 0 && <span><b style={{ color: '#DC2626' }}>{activeCount}</b> in flight</span>}
+              {activeCount > 0 && otherCount > 0 && <span> · </span>}
+              {otherCount > 0 && <span><b>{otherCount}</b> in window</span>}
+              {counts.total === 0 && <span>0 installs visible</span>}
+              <span> · {(counts.lf / 1000).toFixed(1)}k LF · ${(counts.dollars / 1000).toFixed(0)}k</span>
+            </>;
+          })()}
           {/* Geocode button — admin-gated. Manual run-once: locates any
               active jobs missing lat/lng via Nominatim (OSM). Rate-limited.
               Shown only when there's actually work to do. */}
@@ -10395,7 +10452,17 @@ function MapPage({ jobs, onNav }) {
         </div>
       </div>
       <div style={{ flex: 1, minWidth: 280 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Time Horizon</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5 }}>Time Horizon</div>
+          {/* Inline explainer: shows the resolved date window for the current selection */}
+          {(() => {
+            if (horizon === 'all') return <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 600 }}>everything</div>;
+            if (horizon === 'this_week') return <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 600 }}>Sun–Sat current week</div>;
+            if (horizon === 'next_week') return <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 600 }}>Sun–Sat next week</div>;
+            if (dayWindow) return <div style={{ fontSize: 10, color: '#9E9B96', fontWeight: 600 }}>days {dayWindow[0]}–{dayWindow[1]}{rangeMode === 'cumulative' ? ' (cumulative)' : ' (window only)'}</div>;
+            return null;
+          })()}
+        </div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {HORIZON_OPTIONS.map(o => <button key={o.val} onClick={() => setHorizon(o.val)} style={{
             padding: '6px 12px', borderRadius: 8,
@@ -10405,6 +10472,22 @@ function MapPage({ jobs, onNav }) {
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
             minWidth: 60
           }}>{o.label}</button>)}
+        </div>
+      </div>
+      {/* Range Mode toggle — applies only to day-based horizons (not week presets, not 'All') */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Range Mode</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[
+            ['cumulative', 'Cumulative', 'Show everything from today through the selected horizon'],
+            ['window',     'Window',     'Show ONLY the selected slice (e.g. days 30-45)']
+          ].map(([v, lab, tip]) => <button key={v} onClick={() => setRangeMode(v)} title={tip} style={{
+            padding: '6px 12px', borderRadius: 8,
+            border: `1px solid ${rangeMode === v ? '#1D4ED8' : '#E5E3E0'}`,
+            background: rangeMode === v ? '#1D4ED8' : '#FFF',
+            color: rangeMode === v ? '#FFF' : '#1A1A1A',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer'
+          }}>{lab}</button>)}
         </div>
       </div>
       <div>
