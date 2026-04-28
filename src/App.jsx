@@ -8737,10 +8737,10 @@ function MoldInventoryPage(){
   // the underlying total_molds changes so the input remounts and picks
   // up server-side values (this is what makes shared-cell propagation
   // visible across rows after a save).
-  const numInputStyle={width:'60px',textAlign:'center',padding:'6px 4px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontWeight:700,fontSize:14};
+  const numInputStyle={width:'80px',textAlign:'center',padding:'8px 6px',border:'1px solid #D6D3CE',borderRadius:6,fontFamily:'Inter',fontWeight:700,fontSize:15};
   const dashCell=<div style={{textAlign:'center',color:'#C8C4BD',fontSize:14}} aria-hidden="true">—</div>;
 
-  const renderCount=(row,field,isShared)=>{
+  const renderCount=(row,field)=>{
     if(!row)return dashCell;
     return <input
       key={`${row.id}-${field}-${n(row[field])}`}
@@ -8750,18 +8750,8 @@ function MoldInventoryPage(){
       defaultValue={n(row[field])}
       onBlur={(e)=>handleSave(row.id,field,e.target.value)}
       onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
-      style={{...numInputStyle,background:isShared?'#F4F4F2':'#FFFFFF'}}
+      style={numInputStyle}
     />;
-  };
-
-  const renderSharedInput=(moldType,eligible)=>{
-    if(!eligible)return dashCell;
-    const sr=sharedByType[moldType];
-    if(!sr)return dashCell;
-    return <div style={{textAlign:'center'}}>
-      {renderCount(sr,'total_molds',true)}
-      <div style={{fontSize:9,color:'#9E9B96',fontWeight:700,textTransform:'uppercase',marginTop:2,textAlign:'center'}}>shared</div>
-    </div>;
   };
 
   const renderNotes=(row)=><textarea
@@ -8772,10 +8762,26 @@ function MoldInventoryPage(){
     style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical'}}
   />;
 
+  // Universal mold types — these are NOT per-style. They live as
+  // single 'All Styles' rows in the database and the same value applies
+  // to every fence style. Previously these were rendered as columns on
+  // every style row with a tiny "shared" caption, which led PMs to
+  // think editing the Rock Style row's "Rail Std" cell was auto-filling
+  // the other rows. They were actually all reading the same record.
+  // Now they get their own table, clearly labeled "Universal".
+  const UNIVERSAL_MOLD_TYPES=[
+    {key:'post_8ft',     label:"Post Molds — 8'",        scope:'all styles'},
+    {key:'post_10ft',    label:"Post Molds — 10'",       scope:'all styles'},
+    {key:'post_12ft',    label:"Post Molds — 12'",       scope:'all styles'},
+    {key:'post_cap_line',label:"Line Post Caps",         scope:'all styles'},
+    {key:'post_cap_stop',label:"Stop Post Caps",         scope:'all styles'},
+    {key:'cap_rail_standard',label:'Standard Cap Rail (54.5")',scope:'all styles except Vertical Wood family'},
+    {key:'cap_rail_vwood',   label:'V-Wood Cap Rail (73")',     scope:'Vertical Wood family only'},
+  ];
+
   const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
   const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
   const thNum={...thS,textAlign:'center'};
-  const totalAt=(t)=>n(sharedByType[t]?.total_molds);
 
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:16,flexWrap:'wrap'}}>
@@ -8790,53 +8796,69 @@ function MoldInventoryPage(){
       <span>This page is the system of record. The <code style={{background:'#DBEAFE',padding:'1px 5px',borderRadius:3}}>plant_config.total_molds</code> value (currently 115) is deprecated and will be removed in a future release. Total panel molds shown here ({panelTotal}) is the live count.</span>
     </div>
 
-    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden'}}>
-      {loading?<div style={{padding:24}}><SkeletonRows rows={8} cols={10}/></div>:<div style={{overflow:'auto'}}>
+    {/* ═══ UNIVERSAL MOLDS — shared across all styles ═══ */}
+    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden',borderTop:'4px solid #625650'}}>
+      <div style={{padding:'12px 16px',background:'#F4F4F2',borderBottom:'1px solid #E5E3E0'}}>
+        <div style={{fontFamily:'Inter',fontSize:14,fontWeight:800,color:'#1A1A1A',marginBottom:2}}>🔧 Universal Molds</div>
+        <div style={{fontSize:12,color:'#625650',lineHeight:1.5}}>These molds are <b>shared across all fence styles</b>. Editing here updates plant-wide capacity once — not per style. (Standard Cap Rail and V-Wood Cap Rail are the only mold types that depend on style family.)</div>
+      </div>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={4} cols={3}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Mold Type</th>
+            <th style={{...thNum,width:140}}>Total Molds</th>
+            <th style={thS}>Applies To</th>
+            <th style={thS}>Notes</th>
+          </tr></thead>
+          <tbody>
+            {UNIVERSAL_MOLD_TYPES.map(u=>{
+              const sr=sharedByType[u.key];
+              return <tr key={u.key}>
+                <td style={{...tdS,fontWeight:600,color:'#1A1A1A'}}>{u.label}</td>
+                <td style={{...tdS,textAlign:'center'}}>{sr?renderCount(sr,'total_molds'):dashCell}</td>
+                <td style={{...tdS,fontSize:12,color:'#625650'}}>{u.scope}</td>
+                <td style={{...tdS,minWidth:200}}>{sr?renderNotes(sr):dashCell}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {/* ═══ STYLE-SPECIFIC MOLDS — Panels per style ═══ */}
+    <div style={{...card,padding:0,marginBottom:24,overflow:'hidden',borderTop:'4px solid #8A261D'}}>
+      <div style={{padding:'12px 16px',background:'#FDF4F4',borderBottom:'1px solid #F4D5D5'}}>
+        <div style={{fontFamily:'Inter',fontSize:14,fontWeight:800,color:'#1A1A1A',marginBottom:2}}>🎨 Style-Specific Panel Molds</div>
+        <div style={{fontSize:12,color:'#625650',lineHeight:1.5}}>Each row tracks panel molds for <b>one style only</b>. Editing a row affects only that style's capacity. Greyed-out rows below share their parent's molds (e.g. Boxed Wood uses Vertical Wood 6' molds) — these are read-only references.</div>
+      </div>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={8} cols={3}/></div>:<div style={{overflow:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr>
             <th style={thS}>Style</th>
-            <th style={{...thNum,width:80}}>Panels</th>
-            <th style={{...thNum,width:90}}>Post 8'</th>
-            <th style={{...thNum,width:90}}>Post 10'</th>
-            <th style={{...thNum,width:90}}>Post 12'</th>
-            <th style={{...thNum,width:90}}>Cap Line</th>
-            <th style={{...thNum,width:90}}>Cap Stop</th>
-            <th style={{...thNum,width:110}}>Rail Std 54.5"</th>
-            <th style={{...thNum,width:100}}>Rail VW 73"</th>
+            <th style={{...thNum,width:140}}>Panel Molds</th>
             <th style={thS}>Notes</th>
             <th style={{...thS,width:60}}>Actions</th>
           </tr></thead>
           <tbody>
-            {sortedStyleRows.length===0&&<tr><td colSpan={11} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No mold records yet — click + Add Mold Type to begin.</td></tr>}
+            {sortedStyleRows.length===0&&<tr><td colSpan={4} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No mold records yet — click + Add Mold Type to begin.</td></tr>}
             {sortedStyleRows.map(r=>{
               const shared=/do not count separately/i.test(r.notes||'');
-              const stdEligible=isStandardEligible(r.style_name);
-              const vwEligible=isVwoodFamily(r.style_name);
               return <tr key={r.id} style={{background:shared?'#FAFAF8':'#FFF'}}>
-                <td style={{...tdS,fontWeight:600,color:shared?'#9E9B96':'#1A1A1A'}}>{r.style_name}</td>
-                <td style={tdS}>{renderCount(r,'total_molds',false)}</td>
-                <td style={tdS}>{renderSharedInput('post_8ft',true)}</td>
-                <td style={tdS}>{renderSharedInput('post_10ft',true)}</td>
-                <td style={tdS}>{renderSharedInput('post_12ft',true)}</td>
-                <td style={tdS}>{renderSharedInput('post_cap_line',true)}</td>
-                <td style={tdS}>{renderSharedInput('post_cap_stop',true)}</td>
-                <td style={tdS}>{renderSharedInput('cap_rail_standard',stdEligible)}</td>
-                <td style={tdS}>{renderSharedInput('cap_rail_vwood',vwEligible)}</td>
+                <td style={{...tdS,fontWeight:600,color:shared?'#9E9B96':'#1A1A1A'}}>
+                  {r.style_name}
+                  {shared&&<div style={{fontSize:10,color:'#9E9B96',fontWeight:600,marginTop:2,fontStyle:'italic'}}>shares parent style's molds</div>}
+                </td>
+                <td style={{...tdS,textAlign:'center'}}>
+                  {shared?<span style={{color:'#C8C4BD',fontSize:14}} title="This style shares molds with another — edit the parent style instead">—</span>:renderCount(r,'total_molds')}
+                </td>
                 <td style={{...tdS,minWidth:200}}>{renderNotes(r)}</td>
                 <td style={tdS}><button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button></td>
               </tr>;
             })}
           </tbody>
           <tfoot><tr style={{background:'#FDF4F4'}}>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textTransform:'uppercase',fontSize:11,letterSpacing:0.5,fontWeight:800,color:'#8A261D'}}>Total</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{panelTotal}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_8ft')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_10ft')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_12ft')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_cap_line')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('post_cap_stop')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('cap_rail_standard')}</td>
-            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800}}>{totalAt('cap_rail_vwood')}</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textTransform:'uppercase',fontSize:11,letterSpacing:0.5,fontWeight:800,color:'#8A261D'}}>Total Panel Molds</td>
+            <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none',textAlign:'center',fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>{panelTotal}</td>
             <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none'}}/>
             <td style={{...tdS,borderTop:'2px solid #1A1A1A',borderBottom:'none'}}/>
           </tr></tfoot>
