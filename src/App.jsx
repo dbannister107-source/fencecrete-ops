@@ -10352,6 +10352,128 @@ function MapPage({ jobs, onNav }) {
     });
   }, [filtered, today]);
 
+  // ═══ CAPACITY HEATMAP ═══
+  // Matrix of markets × weeks showing crew-day utilization.
+  // - Rows: each market with active crews
+  // - Columns: 12 weeks starting from this Sunday
+  // - Cell value: scheduled crew-days / available crew-days for that bucket
+  //
+  // Capacity model:
+  //   - Each crew works 5 days per week
+  //   - Available crew-days = crew_count_in_market × 5
+  //
+  // Demand attribution (v1, deliberately simple):
+  //   - Active installs (status=active_install) with past start dates:
+  //     credit REMAINING days to the current week (slightly pessimistic
+  //     since some remaining days will spill into following weeks, but
+  //     fine for "are we overloaded right now" signal).
+  //   - Future scheduled jobs: full est_install_days attributed to the
+  //     week containing the start date. This over-attributes long jobs
+  //     to their start week, but it's the right "when is the crew
+  //     committing" signal.
+  // v2 idea: spread est_install_days across consecutive weeks proportionally.
+  //
+  // IMPORTANT: heatmap operates on the FULL job set (jobs prop), not the
+  // filter-narrowed `filtered` set. Otherwise filtering by market would
+  // make the heatmap show 100% utilization for that market only, which
+  // is circular. The filter pills above the map and the heatmap below
+  // serve different purposes: filter = "what's on the map right now",
+  // heatmap = "where is my company crewed up?".
+  const capacityHeatmap = useMemo(() => {
+    // Find this Sunday (start of current week)
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+
+    const NUM_WEEKS = 12;
+    // Build weeks array: [{ start, end, label, key }] where end is exclusive
+    const weeks = [];
+    for (let w = 0; w < NUM_WEEKS; w++) {
+      const s = new Date(weekStart);
+      s.setDate(weekStart.getDate() + w * 7);
+      const e = new Date(s);
+      e.setDate(s.getDate() + 7);
+      weeks.push({
+        start: s,
+        end: e,
+        label: `${s.getMonth() + 1}/${s.getDate()}`,
+        key: s.toISOString().slice(0, 10),
+      });
+    }
+
+    // Group active crews by market
+    const crewsByMarket = {};
+    crews.forEach(c => {
+      if (!c.active) return;
+      crewsByMarket[c.market] = (crewsByMarket[c.market] || 0) + 1;
+    });
+    const markets = Object.keys(crewsByMarket).sort();
+    if (markets.length === 0) return { weeks, markets: [], cells: {}, crewsByMarket };
+
+    // Initialize cells: { 'HOU__2026-05-03': { scheduled, available, jobs:[], lf } }
+    const cells = {};
+    markets.forEach(m => {
+      weeks.forEach(w => {
+        cells[`${m}__${w.key}`] = {
+          scheduled: 0,
+          available: crewsByMarket[m] * 5, // 5 working days per crew
+          jobs: [],
+          lf: 0,
+        };
+      });
+    });
+
+    // Walk every job and attribute to a market × week bucket
+    const SKIP_STATUSES = new Set(['canceled', 'cancelled', 'lost', 'dead', 'closed', 'fully_complete']);
+    jobs.forEach(j => {
+      if (!j.market || !crewsByMarket[j.market]) return;
+      if (SKIP_STATUSES.has(j.status)) return;
+      const days = n(j.est_install_days);
+      if (days <= 0) return;
+
+      let targetWeek = null;
+
+      if (j.status === 'active_install') {
+        // Active installs consume capacity NOW. Compute remaining days:
+        // if start was 5 days ago and total is 12 days, ~7 days remain.
+        // Crediting to current week gives a defensible "I'm using crews
+        // right now" signal.
+        const start = j.est_start_date ? new Date(j.est_start_date) : null;
+        let remaining = days;
+        if (start) {
+          const daysElapsed = Math.max(0, Math.round((today - start) / 86400000));
+          remaining = Math.max(1, days - daysElapsed); // never less than 1 (still in flight)
+        }
+        targetWeek = weeks[0]; // current week
+        const key = `${j.market}__${targetWeek.key}`;
+        cells[key].scheduled += remaining;
+        cells[key].jobs.push({ id: j.id, name: j.job_name, days: remaining, status: 'active' });
+        cells[key].lf += n(j.total_lf);
+        return;
+      }
+
+      // Future-scheduled jobs: attribute to start-week
+      if (!j.est_start_date) return; // unscheduled, no capacity attribution
+      const start = new Date(j.est_start_date);
+      // Find which week bucket this falls into. Anything before week 0
+      // is overdue and we already handled active_install above. Skip
+      // overdue non-active jobs — their work hasn't started.
+      if (start < weeks[0].start) return;
+      for (const w of weeks) {
+        if (start >= w.start && start < w.end) { targetWeek = w; break; }
+      }
+      if (!targetWeek) return; // beyond 12 weeks → out of scope
+      const key = `${j.market}__${targetWeek.key}`;
+      cells[key].scheduled += days;
+      cells[key].jobs.push({ id: j.id, name: j.job_name, days, status: 'scheduled' });
+      cells[key].lf += n(j.total_lf);
+    });
+
+    return { weeks, markets, cells, crewsByMarket };
+  }, [jobs, crews, today]);
+
+  const [showHeatmap, setShowHeatmap] = useState(false);
+
   // ═══ COLOR LOGIC ═══
   const colorForJob = useCallback((j) => {
     if (colorMode === 'crew') {
@@ -10790,6 +10912,10 @@ function MapPage({ jobs, onNav }) {
         <input type="checkbox" checked={showClusters} onChange={e => setShowClusters(e.target.checked)} />
         <span style={{ fontWeight: 700, color: '#1A1A1A' }}>Show Clusters</span>
       </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        <input type="checkbox" checked={showHeatmap} onChange={e => setShowHeatmap(e.target.checked)} />
+        <span style={{ fontWeight: 700, color: '#1D4ED8' }}>Capacity Heatmap</span>
+      </label>
       <button onClick={() => {
         setPmF('All'); setMktF('All'); setProductF('All'); setPrimaryTypeF('All'); setCrewF('All'); setSizeF('All'); setAddonsF(new Set());
         setLayers({ active_install: true, material_ready: true, contract_review: false, in_production: false, production_queue: false, fence_complete: false });
@@ -10971,6 +11097,121 @@ function MapPage({ jobs, onNav }) {
         </div>}
       </div>
     </div>
+
+    {/* ═══ CAPACITY HEATMAP ═══
+        Markets × 12 weeks. Cell color = utilization %. Click a cell
+        to filter the map to that market + week. Operates on the FULL
+        job set, not the filtered set, so it answers "where am I crewed
+        up?" regardless of what the user has narrowed the map to. */}
+    {showHeatmap && capacityHeatmap.markets.length > 0 && <div style={{ ...card, padding: '12px 14px', marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1D4ED8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Capacity Heatmap</div>
+          <div style={{ fontSize: 12, color: '#625650', marginTop: 2 }}>
+            Crew-day utilization by market × week. Click a cell to filter the map.
+          </div>
+        </div>
+        {/* Color legend */}
+        <div style={{ display: 'flex', gap: 6, fontSize: 10, alignItems: 'center' }}>
+          <span style={{ color: '#9E9B96', fontWeight: 600 }}>Util:</span>
+          {[
+            ['<60%', '#D1FAE5', '#065F46'],
+            ['60-80%', '#ECFDF5', '#065F46'],
+            ['80-100%', '#FEF3C7', '#92400E'],
+            ['100-120%', '#FED7AA', '#C2410C'],
+            ['>120%', '#FECACA', '#991B1B'],
+          ].map(([l, bg, fg]) => <span key={l} style={{ padding: '2px 6px', background: bg, color: fg, borderRadius: 3, border: '1px solid #E5E3E0', fontWeight: 700 }}>{l}</span>)}
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 2, width: '100%' }}>
+          <thead>
+            <tr>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, background: '#F9F8F6', borderRadius: 4, minWidth: 120 }}>Market</th>
+              {capacityHeatmap.weeks.map((w, i) => <th key={w.key} style={{
+                padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 700,
+                color: i === 0 ? '#1D4ED8' : '#625650',
+                background: i === 0 ? '#DBEAFE' : '#F9F8F6',
+                borderRadius: 4, minWidth: 60
+              }}>
+                <div>{w.label}</div>
+                {i === 0 && <div style={{ fontSize: 8, fontWeight: 600, marginTop: 1 }}>this week</div>}
+              </th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {capacityHeatmap.markets.map(m => <tr key={m}>
+              <td style={{ padding: '8px 10px', background: '#F9F8F6', borderRadius: 4 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: '#1A1A1A' }}>{m}</div>
+                <div style={{ fontSize: 10, color: '#9E9B96' }}>{capacityHeatmap.crewsByMarket[m]} crew{capacityHeatmap.crewsByMarket[m] === 1 ? '' : 's'}</div>
+              </td>
+              {capacityHeatmap.weeks.map(w => {
+                const cell = capacityHeatmap.cells[`${m}__${w.key}`];
+                const util = cell.available > 0 ? (cell.scheduled / cell.available) * 100 : 0;
+                let bg = '#F4F4F2', fg = '#9E9B96', bold = false;
+                if (cell.scheduled === 0) {
+                  bg = '#F4F4F2'; fg = '#9E9B96';
+                } else if (util < 60) {
+                  bg = '#D1FAE5'; fg = '#065F46';
+                } else if (util < 80) {
+                  bg = '#ECFDF5'; fg = '#065F46';
+                } else if (util < 100) {
+                  bg = '#FEF3C7'; fg = '#92400E';
+                } else if (util < 120) {
+                  bg = '#FED7AA'; fg = '#C2410C'; bold = true;
+                } else {
+                  bg = '#FECACA'; fg = '#991B1B'; bold = true;
+                }
+                const isHot = util >= 100;
+                return <td key={w.key} title={cell.jobs.length > 0
+                    ? `${m} · week of ${w.label}\n${cell.scheduled.toFixed(0)} of ${cell.available} crew-days (${util.toFixed(0)}%)\n${cell.jobs.length} job${cell.jobs.length===1?'':'s'} · ${cell.lf.toLocaleString()} LF\n\n${cell.jobs.slice(0, 5).map(jb => `• ${jb.name} (${jb.days}d)`).join('\n')}${cell.jobs.length > 5 ? `\n+${cell.jobs.length - 5} more` : ''}`
+                    : `${m} · week of ${w.label}\nno scheduled work`}
+                  onClick={() => {
+                    // Click-to-filter: set market filter, then either set
+                    // week preset (if it's this/next week) or use day-window.
+                    setMktF(m);
+                    // Set day-based horizon to roughly cover this week.
+                    // We compute the day offset from today to the week start
+                    // and end, then pick the closest standard horizon.
+                    // Simpler: set a custom horizon. But our HORIZON_OPTIONS
+                    // are fixed. Use 'this_week' if w is week 0, 'next_week'
+                    // if w is week 1, otherwise pick a day horizon and let
+                    // window mode show that bucket.
+                    // For now just set the market — user can refine timing.
+                    if (w === capacityHeatmap.weeks[0]) setHorizon('this_week');
+                    else if (w === capacityHeatmap.weeks[1]) setHorizon('next_week');
+                  }}
+                  style={{
+                    padding: '6px 4px',
+                    background: bg,
+                    color: fg,
+                    fontWeight: bold ? 800 : 700,
+                    fontSize: 12,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                    minWidth: 60,
+                    border: isHot ? '1px solid ' + fg : '1px solid transparent'
+                  }}
+                >
+                  <div>{cell.scheduled === 0 ? '—' : `${util.toFixed(0)}%`}</div>
+                  {cell.scheduled > 0 && <div style={{ fontSize: 9, opacity: 0.7, marginTop: 1, fontWeight: 600 }}>
+                    {cell.scheduled.toFixed(0)}/{cell.available}
+                  </div>}
+                </td>;
+              })}
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 8, fontSize: 11, color: '#625650', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <span>📌 Active installs credit remaining days to this week</span>
+        <span>📌 Future jobs attribute to start week</span>
+        <span>📌 5 working days/crew/week assumed</span>
+      </div>
+    </div>}
   </div>;
 }
 
