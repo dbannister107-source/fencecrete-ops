@@ -3930,6 +3930,40 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const pmApprovedCOByJob=useMemo(()=>{const m={};pmAllCOs.forEach(c=>{if(c.status!=='Approved')return;if(!m[c.job_id])m[c.job_id]=0;m[c.job_id]+=n(c.amount);});return m;},[pmAllCOs]);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
   const[selMonth,setSelMonth]=useState(curBillingMonth);
+  // True when viewing the current billing month. Editing actions (submit,
+  // batch $0, reset, save) are blocked when false to keep historical months
+  // immutable. Mirrors the same pattern AR Billing uses (arIsCurrent).
+  const isCurrentMonth=selMonth===curBillingMonth();
+  // History modal: lazy-loaded list of all months with submissions. Opened
+  // from the "📚 History" button next to the month picker.
+  const[historyOpen,setHistoryOpen]=useState(false);
+  const[historyData,setHistoryData]=useState(null);
+  const[historyLoading,setHistoryLoading]=useState(false);
+  const openHistory=async()=>{
+    setHistoryOpen(true);
+    if(historyData)return; // already loaded
+    setHistoryLoading(true);
+    try{
+      // Per-month rollup: total / reviewed / no-bill / dollars / pms / last activity
+      const rows=await sbGet('pm_bill_submissions','select=billing_month,ar_reviewed,no_bill_required,invoiced_amount,submitted_by,submitted_at&limit=10000');
+      const byMonth={};
+      (rows||[]).forEach(r=>{
+        const m=r.billing_month;if(!m)return;
+        if(!byMonth[m])byMonth[m]={month:m,total:0,reviewed:0,no_bill:0,dollars:0,pms:new Set(),last_activity:null};
+        const x=byMonth[m];
+        x.total++;
+        if(r.ar_reviewed)x.reviewed++;
+        if(r.no_bill_required)x.no_bill++;
+        x.dollars+=n(r.invoiced_amount);
+        if(r.submitted_by)x.pms.add(r.submitted_by);
+        const sd=r.submitted_at?r.submitted_at.split('T')[0]:null;
+        if(sd&&(!x.last_activity||sd>x.last_activity))x.last_activity=sd;
+      });
+      const list=Object.values(byMonth).map(x=>({...x,pms:x.pms.size})).sort((a,b)=>b.month.localeCompare(a.month));
+      setHistoryData(list);
+    }catch(e){console.error('[History] fetch failed:',e);setHistoryData([]);}
+    setHistoryLoading(false);
+  };
   const[subs,setSubs]=useState([]);
   const[expandedRow,setExpandedRow]=useState(null);
   const[extraSectionsByJob,setExtraSectionsByJob]=useState({});
@@ -4426,7 +4460,13 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value||curBillingMonth())} style={{...inputS,width:v?.ipad?200:170,minHeight:v?.ipad?52:36,fontSize:v?.ipad?16:13}}/>
       <button onClick={()=>{const [y,m]=selMonth.split('-').map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);}} style={{...btnS,padding:'4px 10px',minHeight:36,fontSize:18,lineHeight:1}}>›</button>
       <span style={{fontSize:v?.ipad?16:14,fontWeight:800,color:'#8A261D'}}>{selMonthLabel}</span>
+      <button onClick={openHistory} title="View past months" style={{...btnS,padding:v?.ipad?'8px 14px':'6px 12px',minHeight:v?.ipad?52:36,fontSize:v?.ipad?14:12,fontWeight:700,marginLeft:'auto'}}>📚 History</button>
     </div>
+    {/* Read-only banner — shown when viewing a past month */}
+    {!isCurrentMonth&&<div style={{background:'#FEF3C7',border:'1px solid #F9731640',borderRadius:8,padding:'10px 16px',marginBottom:12,fontSize:13,color:'#92400E',fontWeight:600,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <span>📅 Viewing historical data — {selMonthLabel} — read only</span>
+      <button onClick={()=>setSelMonth(curBillingMonth())} style={{...btnS,padding:'5px 12px',fontSize:12,fontWeight:700}}>Back to current month</button>
+    </div>}
     {/* Progress bar */}
     <div style={{...card,marginBottom:12,padding:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
@@ -4450,9 +4490,9 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       {filterTabs.map(([k,l,c,col,bg])=><button key={k} onClick={()=>{setFilterTab(k);setExpandedRow(null);setEditingRow(null);setSelected(new Set());}} style={{padding:'7px 14px',borderRadius:8,border:filterTab===k?`2px solid ${col}`:'1px solid #E5E3E0',background:filterTab===k?bg:'#FFF',color:filterTab===k?col:'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l} ({c})</button>)}
     </div>
     {/* Batch submit for Missing tab */}
-    {filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    {isCurrentMonth&&filterTab==='missing'&&missingJobs.length>0&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
       <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,fontWeight:600,color:'#625650',cursor:'pointer'}}><input type="checkbox" checked={selected.size===missingJobs.length&&missingJobs.length>0} onChange={toggleSelectAll} style={{width:16,height:16,accentColor:'#8A261D'}}/>Select all missing jobs</label>
-      {selected.size>0&&<button onClick={()=>setShowBatchConfirm(true)} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309'}}>Submit {selected.size} as $0 / No Activity</button>}
+      {isCurrentMonth&&selected.size>0&&<button onClick={()=>setShowBatchConfirm(true)} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309'}}>Submit {selected.size} as $0 / No Activity</button>}
     </div>}
     {/* Job list — compact rows */}
     {filteredJobs.length===0?<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}>No jobs in this filter</div>:<div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -4481,7 +4521,8 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
                   submission.total_lf (Precast LF + SW LF + One-Line-Items LF, Demo excluded). */}
               {sub&&n(sub.total_lf)>0&&<span title="Grand Total LF submitted this period (Demo excluded)" style={{fontSize:11,fontWeight:800,color:'#8A261D',background:'#FDF4F4',border:'1px solid #8A261D30',padding:'2px 8px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0,fontFamily:'Inter'}}>{n(sub.total_lf).toLocaleString()} LF</span>}
               {sub&&n(sub.remove_existing)>0&&<span title="Demo LF (tracked separately, not in total)" style={{fontSize:10,fontWeight:700,color:'#B45309',background:'#FEF2F2',border:'1px dashed #FCA5A5',padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',flexShrink:0}}>Demo {n(sub.remove_existing).toLocaleString()}</span>}
-              {status==='missing'&&<><button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button><button onClick={e=>{e.stopPropagation();openNoBill(j);}} title="No billable activity for this month" style={{padding:'5px 10px',fontSize:11,fontWeight:700,borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#625650',cursor:'pointer'}}>🚫 No Bill</button></>}
+              {isCurrentMonth&&status==='missing'&&<><button onClick={e=>{e.stopPropagation();expandRow(j.id);}} style={{...btnP,padding:'5px 14px',fontSize:11}}>Submit</button><button onClick={e=>{e.stopPropagation();openNoBill(j);}} title="No billable activity for this month" style={{padding:'5px 10px',fontSize:11,fontWeight:700,borderRadius:8,border:'1px solid #D1CEC9',background:'#FFF',color:'#625650',cursor:'pointer'}}>🚫 No Bill</button></>}
+              {!isCurrentMonth&&status==='missing'&&<span style={{fontSize:11,color:'#9E9B96',fontStyle:'italic'}}>Not submitted</span>}
               {status==='submitted'&&isNoBill&&<><span title={sub.no_bill_notes||''} style={{fontSize:11,fontWeight:700,color:'#625650',fontStyle:'italic',padding:'2px 8px',background:'#E5E3E0',borderRadius:6,whiteSpace:'nowrap'}}>🚫 No bill required{sub.no_bill_reason?` — ${NO_BILL_REASON_LABELS[sub.no_bill_reason]||sub.no_bill_reason}`:''}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
               {status==='submitted'&&!isNoBill&&<><span style={{fontSize:11,color:'#065F46',fontWeight:600}}>Submitted {subDate}</span><span style={{fontSize:11,color:'#9E9B96',transition:'transform .3s',display:'inline-block',transform:isExp?'rotate(180deg)':'rotate(0deg)'}}>▼</span></>}
               {status==='reviewed'&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>}
@@ -4501,18 +4542,20 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
                 {sub.notes&&<div style={{fontSize:12,color:'#625650',marginTop:4}}>Notes: {sub.notes}</div>}
               </>}
               <div style={{marginTop:10,display:'flex',gap:8}}>
-                {isNoBill
+                {isCurrentMonth&&(isNoBill
                   ?<button onClick={e=>{e.stopPropagation();undoNoBill(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>↺ Undo No Bill — Submit actual bill instead</button>
-                  :<button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button>}
-                <button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button>
+                  :<button onClick={e=>{e.stopPropagation();openEdit(j,sub);}} style={{...btnS,padding:'6px 14px',fontSize:12}}>Edit Submission</button>)}
+                {isCurrentMonth&&<button onClick={e=>{e.stopPropagation();setConfirmReset(j);}} style={{background:'none',border:'1px solid #EF444440',borderRadius:6,padding:'5px 10px',fontSize:11,color:'#EF4444',cursor:'pointer'}}>Reset</button>}
+                {!isCurrentMonth&&<span style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'6px 0'}}>📅 Historical — read only</span>}
               </div>
             </>:<>
-              {(n(j.lf_installed_to_date)>0||lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||n(j.lf_other)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=lfPC(j)+lfSW(j)+lfWI(j)+n(j.lf_other)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
+              {!isCurrentMonth?<div style={{padding:'10px 14px',background:'#F4F4F2',border:'1px dashed #D1CEC9',borderRadius:8,fontSize:12,color:'#625650',fontStyle:'italic'}}>📅 No submission for this month. Past months are read-only.</div>:<></>}
+              {isCurrentMonth&&(n(j.lf_installed_to_date)>0||lfPC(j)>0||lfSW(j)>0||lfWI(j)>0||n(j.lf_other)>0)&&(()=>{const installed=n(j.lf_installed_to_date);const contracted=lfPC(j)+lfSW(j)+lfWI(j)+n(j.lf_other)||n(j.total_lf);const pct=contracted>0?Math.round(installed/contracted*100):0;return<div style={{marginBottom:10,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:12,color:'#1D4ED8'}}>
                 📊 <b>Previously billed:</b> {installed.toLocaleString()} LF ({pct}% of {contracted.toLocaleString()} LF contracted){j.lf_last_billed_date&&<span style={{color:'#625650'}}> · last {fD(j.lf_last_billed_date)}</span>}
               </div>;})()}
-              {renderLFForm(j.id,j)}
-              <div style={{marginBottom:10,marginTop:12}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>
-              <div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:v?.ipad?'14px 0':'8px 0',fontSize:v?.ipad?17:13,opacity:saving===j.id?0.5:1,minHeight:v?.ipad?60:44}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>
+              {isCurrentMonth&&renderLFForm(j.id,j)}
+              {isCurrentMonth&&<div style={{marginBottom:10,marginTop:12}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:2,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={form.notes} onChange={e=>updateForm(j.id,'notes',e.target.value)} rows={2} placeholder="Section completed, upcoming work, issues..." style={{...inputS,padding:'6px 10px',fontSize:13,resize:'vertical'}}/></div>}
+              {isCurrentMonth&&<div style={{display:'flex',gap:8}}><button onClick={()=>submitEntry(j)} disabled={saving===j.id} style={{...btnP,flex:1,padding:v?.ipad?'14px 0':'8px 0',fontSize:v?.ipad?17:13,opacity:saving===j.id?0.5:1,minHeight:v?.ipad?60:44}}>{saving===j.id?'Saving...':sub?'Update Submission':'Submit'}</button><button onClick={()=>{setExpandedRow(null);setEditingRow(null);}} style={btnS}>Cancel</button></div>}
             </>}
           </div>}
           {status==='reviewed'&&<div style={{padding:'8px 14px',borderTop:'1px solid #BFDBFE',background:'#EFF6FF',fontSize:11,color:'#1D4ED8',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -4544,6 +4587,42 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
         <input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminPin} onChange={e=>{setAdminPin(e.target.value.replace(/\D/g,'').slice(0,4));setAdminPinErr(false);}} onKeyDown={e=>{if(e.key==='Enter'){if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}}} placeholder="••••" style={{width:'100%',padding:'12px 16px',fontSize:20,textAlign:'center',letterSpacing:8,border:`2px solid ${adminPinErr?'#DC2626':'#E5E3E0'}`,borderRadius:10,marginBottom:8,fontFamily:'Inter',fontWeight:700}}/>
         {adminPinErr&&<div style={{color:'#DC2626',fontSize:12,fontWeight:600,textAlign:'center',marginBottom:8}}>Incorrect PIN</div>}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>{setAdminPinJob(null);setAdminPin('');setAdminPinErr(false);}} style={btnS}>Cancel</button><button onClick={()=>{if(adminPin==='2020')resetSub(adminPinJob,true);else setAdminPinErr(true);}} style={{...btnP,background:'#991B1B'}}>Confirm</button></div>
+      </div>
+    </div>}
+    {/* HISTORY MODAL — list of all past months with submission rollups.
+        Lazily loaded via openHistory(). Clicking a month navigates to it
+        and the page goes read-only (banner shown via !isCurrentMonth). */}
+    {historyOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setHistoryOpen(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(640px,96vw)',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 8px 30px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+          <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#1A1A1A'}}>📚 Bill Sheet History</div>
+          <button onClick={()=>setHistoryOpen(false)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:22,cursor:'pointer',padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:16}}>Click a month to view its submissions (read-only).</div>
+        {historyLoading?<div style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>Loading history…</div>:
+         (historyData||[]).length===0?<div style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No bill sheet history yet.</div>:
+         <div style={{display:'flex',flexDirection:'column',gap:8}}>
+           {historyData.map(m=>{const isSelected=m.month===selMonth;const isCurrent=m.month===curBillingMonth();const reviewedPct=m.total>0?Math.round(m.reviewed/m.total*100):0;return<div key={m.month} onClick={()=>{setSelMonth(m.month);setHistoryOpen(false);setExpandedRow(null);setEditingRow(null);}} style={{padding:'12px 16px',border:`2px solid ${isSelected?'#8A261D':'#E5E3E0'}`,borderRadius:10,cursor:'pointer',background:isSelected?'#FDF4F4':'#FFF',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap',transition:'background .15s'}} onMouseEnter={e=>{if(!isSelected)e.currentTarget.style.background='#F9F8F6';}} onMouseLeave={e=>{if(!isSelected)e.currentTarget.style.background='#FFF';}}>
+             <div style={{flex:'1 1 180px',minWidth:0}}>
+               <div style={{fontSize:15,fontWeight:800,color:'#1A1A1A',marginBottom:2}}>{monthLabel(m.month)} {isCurrent&&<span style={{fontSize:10,fontWeight:700,color:'#065F46',background:'#D1FAE5',padding:'2px 8px',borderRadius:8,marginLeft:6,verticalAlign:'middle'}}>CURRENT</span>}</div>
+               <div style={{fontSize:11,color:'#625650'}}>{m.pms} PM{m.pms===1?'':'s'} · last activity {m.last_activity?fD(m.last_activity):'—'}</div>
+             </div>
+             <div style={{display:'flex',gap:14,fontSize:12,flexShrink:0}}>
+               <div style={{textAlign:'right'}}>
+                 <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>{m.total}</div>
+                 <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Submitted</div>
+               </div>
+               <div style={{textAlign:'right'}}>
+                 <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:reviewedPct>=80?'#065F46':reviewedPct>=50?'#B45309':'#9E9B96'}}>{m.reviewed}</div>
+                 <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Reviewed</div>
+               </div>
+               <div style={{textAlign:'right'}}>
+                 <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#8A261D'}}>{$k(m.dollars)}</div>
+                 <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Billed</div>
+               </div>
+             </div>
+           </div>;})}
+         </div>}
       </div>
     </div>}
     {noBillModal&&(()=>{const job=noBillModal.job;const otherInvalid=noBillForm.reason==='other'&&noBillForm.notes.trim().length>0&&noBillForm.notes.trim().length<3;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={closeNoBill}>
