@@ -11,6 +11,10 @@ import CVReconciliationPage from './features/cv-reconciliation/CVReconciliationP
 import MyPlatePage from './features/my-plate/MyPlatePage';
 import PISFormPage from './features/pis/PISFormPage';
 import SharePointLinksPage from './features/sharepoint-links/SharePointLinksPage';
+// Module-level setter exported by shared/sb.js so feature modules' H stays
+// in sync with App.jsx's H whenever auth state changes. Called alongside
+// every applyAuthToken() call below.
+import { applySharedAuthToken } from './shared/sb';
 
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
@@ -148,7 +152,16 @@ const authUpdatePassword = async (accessToken, newPassword) => {
 };
 const loadStoredSession = () => { try { const raw = localStorage.getItem(AUTH_STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } };
 const saveStoredSession = (s) => { try { if (s) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(s)); else localStorage.removeItem(AUTH_STORAGE_KEY); } catch(e) {} };
-const applyAuthToken = (accessToken) => { H.Authorization = `Bearer ${accessToken || KEY}`; };
+const applyAuthToken = (accessToken) => {
+  // Update App.jsx's local H
+  H.Authorization = `Bearer ${accessToken || KEY}`;
+  // Mirror the same token into shared/sb.js's H so feature modules
+  // (SystemEventsPage, PISFormPage, CVReconciliationPage, MyPlatePage,
+  // SharePointLinksPage, SpecialtyVisitsPage) hit PostgREST as the
+  // authenticated role, not anon. Without this, they fail RLS reads on
+  // tables like system_events that require the authenticated role.
+  applySharedAuthToken(accessToken);
+};
 // React context for auth
 const AuthContext = React.createContext(null);
 const useAuth = () => React.useContext(AuthContext);
