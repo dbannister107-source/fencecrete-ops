@@ -5300,6 +5300,14 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   // List view sort state (column, direction). Defaults to age-desc since the
   // most useful list-view question is "what's been sitting longest?".
   const[listSort,setListSort]=useState({col:'age',dir:'desc'});
+  // Style + Color text filters — free-form case-insensitive substring match.
+  // Style/color data is dirty (3 spellings of "Café", 4 of "Outback", etc.),
+  // so picklist-style exact filters under-count silently. Substring catches
+  // all spelling variants. Empty = no filter. Combines with all other filters.
+  // Match scope: jobs.style/color AND any line_items[*].style/color, since
+  // multi-product jobs have style/color on the line item rather than parent.
+  const[styleF,setStyleF]=useState('');
+  const[colorF,setColorF]=useState('');
   // Actuals + plan membership for kanban cards
   const[prodActuals,setProdActuals]=useState([]);
   const[prodPlanLines,setProdPlanLines]=useState([]);
@@ -5355,7 +5363,26 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   // Uses thresh[0] (warn) rather than thresh[1] (critical) because the chip
   // is supposed to surface things that need attention, not just emergencies.
   const isStale=React.useCallback((j)=>{const t=STAGE_THRESHOLDS[j.status];const d=stageAge(j);return t&&d!=null&&d>=t[0];},[stageAge]);
-  const filtered=useMemo(()=>{const seen=new Set();let f=jobs.filter(j=>{if(seen.has(j.id))return false;seen.add(j.id);return j.status!=='closed';});if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}if(addonsF.size>0)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));if(staleOnly)f=f.filter(j=>isStale(j));return f;},[jobs,mktF,statusF,search,addonsF,staleOnly,isStale]);
+  const filtered=useMemo(()=>{const seen=new Set();let f=jobs.filter(j=>{if(seen.has(j.id))return false;seen.add(j.id);return j.status!=='closed';});if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}if(addonsF.size>0)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));if(staleOnly)f=f.filter(j=>isStale(j));
+    // Style + Color text filters: case-insensitive substring match against
+    // jobs.style/color OR any line_items[*].style/color for that job.
+    // Trim() guards against accidental leading/trailing whitespace from the
+    // input box. Both filters AND together when both are populated.
+    const styleQ=(styleF||'').trim().toLowerCase();
+    const colorQ=(colorF||'').trim().toLowerCase();
+    if(styleQ){f=f.filter(j=>{
+      const jobMatch=(j.style||'').toLowerCase().includes(styleQ);
+      if(jobMatch)return true;
+      const lis=lineItemsByJob[j.job_number]||[];
+      return lis.some(li=>(li.style||'').toLowerCase().includes(styleQ));
+    });}
+    if(colorQ){f=f.filter(j=>{
+      const jobMatch=(j.color||'').toLowerCase().includes(colorQ);
+      if(jobMatch)return true;
+      const lis=lineItemsByJob[j.job_number]||[];
+      return lis.some(li=>(li.color||'').toLowerCase().includes(colorQ));
+    });}
+    return f;},[jobs,mktF,statusF,search,addonsF,staleOnly,isStale,styleF,colorF,lineItemsByJob]);
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
   const KANBAN_STS=['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
@@ -5386,6 +5413,25 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     </div>
     <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{(!isS||viewMode==='list')&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
     <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#854F0B',bg:'#FAEEDA'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}<span style={{color:'#E5E3E0',marginLeft:4}}>|</span><button onClick={()=>setStaleOnly(v=>!v)} title={staleOnly?'Showing only stale jobs (past warn threshold for current stage). Click to clear.':'Show only jobs that have sat in their current stage past the warn threshold.'} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:staleOnly?'2px solid #B45309':'1px solid #E5E3E0',background:staleOnly?'#FEF3C7':'#FFF',color:staleOnly?'#B45309':'#9E9B96',display:'inline-flex',alignItems:'center',gap:4}}>⏱ Stale only</button>{(addonsF.size>0||staleOnly)&&<span style={{fontSize:11,color:'#625650',marginLeft:4,fontWeight:600}}>{filtered.length} jobs</span>}</div>
+    {/* Style + Color text filters. Free-form substring match — handles the
+        spelling variants in real data (Café/Cafe/cafe, Vertical Wood 6'/8'/no-suffix,
+        etc.) that exact dropdowns would miss. Searches both jobs.style/color
+        and any line item style/color. */}
+    <div style={{display:'flex',gap:8,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Style:</span>
+      <div style={{position:'relative',display:'inline-block'}}>
+        <input value={styleF} onChange={e=>setStyleF(e.target.value)} placeholder="e.g. vertical, rock, brick" style={{padding:'5px 26px 5px 10px',borderRadius:6,border:styleF?'2px solid #8A261D':'1px solid #E5E3E0',fontSize:12,width:180,outline:'none',background:'#FFF',color:'#1A1A1A'}}/>
+        {styleF&&<button onClick={()=>setStyleF('')} title="Clear style filter" style={{position:'absolute',right:4,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#9E9B96',cursor:'pointer',fontSize:14,padding:'2px 4px',lineHeight:1}}>×</button>}
+      </div>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginLeft:4}}>Color:</span>
+      <div style={{position:'relative',display:'inline-block'}}>
+        <input value={colorF} onChange={e=>setColorF(e.target.value)} placeholder="e.g. cafe, brown, 8#860" style={{padding:'5px 26px 5px 10px',borderRadius:6,border:colorF?'2px solid #8A261D':'1px solid #E5E3E0',fontSize:12,width:180,outline:'none',background:'#FFF',color:'#1A1A1A'}}/>
+        {colorF&&<button onClick={()=>setColorF('')} title="Clear color filter" style={{position:'absolute',right:4,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#9E9B96',cursor:'pointer',fontSize:14,padding:'2px 4px',lineHeight:1}}>×</button>}
+      </div>
+      {(styleF||colorF)&&<span style={{fontSize:11,color:'#625650',marginLeft:4,fontWeight:600,padding:'3px 8px',background:'#FDF4F4',borderRadius:4,border:'1px solid #F4D4D4'}}>{filtered.length} match{filtered.length===1?'':'es'}</span>}
+      {(styleF||colorF)&&<button onClick={()=>{setStyleF('');setColorF('');}} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:'1px solid #E5E3E0',background:'#FFF',color:'#625650'}}>Clear both</button>}
+      <span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic',marginLeft:'auto'}}>Substring match — case-insensitive</span>
+    </div>
     {/* Body branch — desktop+list shows the flat sortable table; everything
         else (mobile, or desktop+kanban) shows the kanban board. The list view
         is intentionally desktop-only because a 9-column table doesn't fit
