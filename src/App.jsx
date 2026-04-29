@@ -9320,6 +9320,121 @@ function PMReportSection({sk,title,filled,isOpen,onToggle,children}){
     {isOpen&&<div style={{padding:18}}>{children}</div>}
   </div>;
 }
+
+// Photo capture grid for PM Daily Report. Mobile-first — large 100px thumbs,
+// big "Take Photo" button that triggers the phone's native camera via the
+// HTML5 capture attribute. Max 10 enforced client-side. Uploads go to the
+// pm-daily-reports public bucket; URLs returned are persisted on the report
+// row's photos column. Photos are removable until the report is submitted.
+const PM_REPORT_PHOTO_MAX = 10;
+function PMReportPhotos({photos, jobNumber, onChange}){
+  const [uploading, setUploading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const inputRef = React.useRef();
+  const list = Array.isArray(photos) ? photos : [];
+  const remaining = PM_REPORT_PHOTO_MAX - list.length;
+
+  const handleFiles = async (files) => {
+    if (!files || !files.length) return;
+    setError(null);
+    // Cap to remaining slots — if user picks 5 but only 2 left, take first 2
+    const take = Array.from(files).slice(0, Math.max(0, remaining));
+    if (!take.length) {
+      setError(`Max ${PM_REPORT_PHOTO_MAX} photos per report.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      // Folder by job_number (or "_unsorted" for repairs without a job).
+      // Sanitize so InvalidKey errors don't fire on % or whitespace.
+      const folder = String(jobNumber || '_unsorted')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '_') || '_unsorted';
+      const urls = await Promise.all(
+        take.map(f => uploadPhoto(f, 'pm-daily-reports', folder))
+      );
+      onChange([...list, ...urls]);
+    } catch (e) {
+      console.error('PM photo upload error:', e);
+      setError(e.message || 'Upload failed. Try again.');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const removeAt = (i) => onChange(list.filter((_, j) => j !== i));
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: '#625650', marginBottom: 12 }}>
+        Take photos of today's progress, defects, or site conditions.
+        <strong style={{ marginLeft: 6, color: list.length >= PM_REPORT_PHOTO_MAX ? '#991B1B' : '#1A1A1A' }}>
+          {list.length} / {PM_REPORT_PHOTO_MAX}
+        </strong>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        {list.map((url, i) => (
+          <div key={url || i} style={{ position: 'relative', width: 100, height: 100 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
+              <img
+                src={url}
+                alt={`Photo ${i + 1}`}
+                style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 10, border: '1px solid #E5E3E0', display: 'block' }}
+              />
+            </a>
+            <button
+              type="button"
+              onClick={() => removeAt(i)}
+              aria-label={`Remove photo ${i + 1}`}
+              style={{ position: 'absolute', top: -8, right: -8, width: 26, height: 26, borderRadius: '50%', background: '#991B1B', border: '2px solid #FFF', color: '#FFF', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
+            >✕</button>
+          </div>
+        ))}
+        {list.length < PM_REPORT_PHOTO_MAX && (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            style={{
+              width: 100, height: 100,
+              border: '2px dashed #8A261D',
+              borderRadius: 10,
+              background: uploading ? '#F4F4F2' : '#FDF4F4',
+              cursor: uploading ? 'wait' : 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, color: '#8A261D', fontSize: 12, fontWeight: 700, padding: 4,
+            }}
+          >
+            <span style={{ fontSize: 28, lineHeight: 1 }}>{uploading ? '⏳' : '📷'}</span>
+            <span style={{ fontSize: 11 }}>{uploading ? 'Uploading…' : 'Take Photo'}</span>
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#991B1B', marginBottom: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {/* capture="environment" hints the device to open the rear camera by default
+          on phones. accept="image/*" still allows picking from the photo library
+          when no camera is available (desktop) or when the PM tapped the file
+          picker fallback on iOS. multiple lets PMs select several from library. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        style={{ display: 'none' }}
+        onChange={e => handleFiles(e.target.files)}
+      />
+    </div>
+  );
+}
 function PMDailyReportPage({jobs}){
   useCatalog(); // subscribe for canonical style/color catalog re-render
   const isMobile=useIsMobile();
@@ -9329,11 +9444,12 @@ function PMDailyReportPage({jobs}){
   const[showAllPMs,setShowAllPMs]=useState(false);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO});
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
   const[form,setForm]=useState(emptyForm);
   const[collapsed,setCollapsed]=useState({});
   const SECTIONS=[
     {key:'job',title:'Job Info',fields:['job_number','repair_location','crew','num_employees','daily_target']},
+    {key:'photos',title:'Photos',fields:['photos']},
     {key:'gates',title:'Gates',fields:['gate_height','num_gates_installed']},
     {key:'posts',title:'Posts & Foundation',fields:['num_holes_dug','num_posts_placed']},
     {key:'panels',title:'Panels & Fence',fields:['lf_panels_installed','fence_height','num_cut_sections','num_sections_leveled','lf_panels_washed','precast_style_onsite']},
@@ -9342,7 +9458,7 @@ function PMDailyReportPage({jobs}){
     {key:'weather',title:'Weather Conditions',fields:['weather_condition','weather_temp_f','weather_notes']},
     {key:'delays',title:'Delays',fields:['lf_impacted_delays','num_defective_panels','num_defective_posts','other_defective_materials','delay_notes']},
   ];
-  const sectionFilled=(s)=>s.fields.some(f=>{const v=form[f];return v!==''&&v!==undefined&&v!==null&&v!=='0'&&v!==0;});
+  const sectionFilled=(s)=>s.fields.some(f=>{const v=form[f];if(Array.isArray(v))return v.length>0;return v!==''&&v!==undefined&&v!==null&&v!=='0'&&v!==0;});
   const sectionsFilledCount=SECTIONS.filter(sectionFilled).length;
   const clearForm=()=>{if(window.confirm('Clear all fields? This cannot be undone.')){setForm(emptyForm());setSelJobId('');setJobTotals(null);}};
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
@@ -9396,6 +9512,7 @@ function PMDailyReportPage({jobs}){
       weather_temp_f:form.weather_temp_f?n(form.weather_temp_f):null,
       weather_notes:form.weather_notes||null,
       submitted_by:selPM||form.submitted_by,
+      photos:Array.isArray(form.photos)&&form.photos.length?form.photos:null,
     };
     if(form.crew)localStorage.setItem('last_crew',form.crew);
     if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
@@ -9424,6 +9541,14 @@ function PMDailyReportPage({jobs}){
         {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['Precast Style on Site',detailRpt.precast_style_onsite],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Weather',detailRpt.weather_condition],['Temperature (°F)',detailRpt.weather_temp_f],['Weather Notes',detailRpt.weather_notes],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
       </div>
       {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
+      {Array.isArray(detailRpt.photos)&&detailRpt.photos.length>0&&<div style={{marginTop:16,paddingTop:14,borderTop:'1px solid #E5E3E0'}}>
+        <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Photos ({detailRpt.photos.length})</div>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          {detailRpt.photos.map((url,i)=><a key={url||i} href={url} target="_blank" rel="noopener noreferrer" style={{display:'block',width:120,height:120}}>
+            <img src={url} alt={`Photo ${i+1}`} style={{width:120,height:120,objectFit:'cover',borderRadius:10,border:'1px solid #E5E3E0',cursor:'zoom-in'}}/>
+          </a>)}
+        </div>
+      </div>}
     </div>
   </div>);
   return(<div>
@@ -9447,7 +9572,7 @@ function PMDailyReportPage({jobs}){
             <td style={{padding:'14px 10px'}}>{r.job_type||'—'}</td>
             <td style={{padding:'14px 10px'}}>{r.crew||'—'}</td>
             <td style={{padding:'14px 10px',fontWeight:700}}>{n(r.lf_panels_installed).toLocaleString()}</td>
-            <td style={{padding:'14px 10px'}}>{r.submitted_by||'—'}</td>
+            <td style={{padding:'14px 10px'}}>{r.submitted_by||'—'}{Array.isArray(r.photos)&&r.photos.length>0&&<span title={`${r.photos.length} photo${r.photos.length>1?'s':''}`} style={{marginLeft:8,fontSize:14}}>📷<span style={{fontSize:11,color:'#625650',marginLeft:2}}>{r.photos.length}</span></span>}</td>
             <td style={{padding:'14px 10px',textAlign:'right',color:'#8A261D',fontSize:20,fontWeight:700,width:32}}>›</td>
           </tr>)}</tbody></table>
       </div>}
@@ -9485,6 +9610,13 @@ function PMDailyReportPage({jobs}){
           <div style={{flex:1}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
           <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
         </div>
+      </PMReportSection>
+      <PMReportSection {...secProps('photos')} title="Photos">
+        <PMReportPhotos
+          photos={form.photos||[]}
+          jobNumber={form.job_number||'unknown'}
+          onChange={p=>set('photos',p)}
+        />
       </PMReportSection>
       <PMReportSection {...secProps('gates')} title="Gates">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
@@ -13002,6 +13134,34 @@ async function uploadFleetPhoto(file, folder) {
   });
   if (!resp.ok) throw new Error('Upload failed');
   return `${SB_URL}/storage/v1/object/public/fleet-photos/${path}`;
+}
+
+/* ── Generic Photo Upload Helper ──
+   Bucket-agnostic version of uploadFleetPhoto. Used by PMDailyReportPage and
+   any future feature that needs to upload to a public Supabase Storage bucket.
+   Returns the public URL. Sanitizes the filename extension so InvalidKey
+   errors (e.g. % characters in iOS HEIC names) don't slip through.
+*/
+async function uploadPhoto(file, bucket, folder) {
+  // Use App.jsx's own H so authenticated JWT is attached when present.
+  const ext = (file.name.split('.').pop() || 'jpg')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const resp = await fetch(`${SB}/storage/v1/object/${bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: KEY,
+      Authorization: H.Authorization,
+      'Content-Type': file.type || 'image/jpeg',
+    },
+    body: file,
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`Upload failed (${resp.status}): ${txt}`);
+  }
+  return `${SB}/storage/v1/object/public/${bucket}/${path}`;
 }
 
 /* ── QR Code Generator using inline SVG ── */
