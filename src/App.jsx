@@ -5085,6 +5085,16 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const[compactCards,setCompactCards]=useState(()=>{try{const v=localStorage.getItem('fc_prod_compact');return v===null?true:v==='1';}catch{return true;}});
   // Persist user's compact preference so it sticks across page reloads
   useEffect(()=>{try{localStorage.setItem('fc_prod_compact',compactCards?'1':'0');}catch{}},[compactCards]);
+  // View toggle — kanban (default) or flat list. Persisted per-browser.
+  const[viewMode,setViewMode]=useState(()=>{try{return localStorage.getItem('fc_prod_view')||'kanban';}catch{return 'kanban';}});
+  useEffect(()=>{try{localStorage.setItem('fc_prod_view',viewMode);}catch{}},[viewMode]);
+  // Stale filter — when on, restricts to jobs that have sat in their current
+  // stage past the warn threshold (STAGE_THRESHOLDS[status][0]). Designed for
+  // SVP Ops daily standup view: "what needs attention right now".
+  const[staleOnly,setStaleOnly]=useState(false);
+  // List view sort state (column, direction). Defaults to age-desc since the
+  // most useful list-view question is "what's been sitting longest?".
+  const[listSort,setListSort]=useState({col:'age',dir:'desc'});
   // Actuals + plan membership for kanban cards
   const[prodActuals,setProdActuals]=useState([]);
   const[prodPlanLines,setProdPlanLines]=useState([]);
@@ -5131,7 +5141,16 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     setJobs(prev=>prev.map(x=>x.id===updated.id?{...x,...updated}:x));
   },[setJobs]);
   const toggleAddon=code=>setAddonsF(prev=>{const s=new Set(prev);if(s.has(code))s.delete(code);else s.add(code);return s;});
-  const filtered=useMemo(()=>{const seen=new Set();let f=jobs.filter(j=>{if(seen.has(j.id))return false;seen.add(j.id);return j.status!=='closed';});if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}if(addonsF.size>0)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));return f;},[jobs,mktF,statusF,search,addonsF]);
+  // Compute days-in-current-stage for a job. Mirrors the logic in ProdCard:
+  // most stages have an explicit timestamp (active_install_date,
+  // production_start_date, etc.); contract_review and production_queue fall
+  // back to est_start_date as a proxy. Returns null when no anchor exists.
+  const stageAge=React.useCallback((j)=>{const k=STAGE_DATE_KEY[j.status];const anchor=(k&&j[k])||j.est_start_date;if(!anchor)return null;return Math.max(0,Math.round((Date.now()-new Date(anchor).getTime())/86400000));},[]);
+  // "Stale" = at or past the warn threshold for the job's current stage.
+  // Uses thresh[0] (warn) rather than thresh[1] (critical) because the chip
+  // is supposed to surface things that need attention, not just emergencies.
+  const isStale=React.useCallback((j)=>{const t=STAGE_THRESHOLDS[j.status];const d=stageAge(j);return t&&d!=null&&d>=t[0];},[stageAge]);
+  const filtered=useMemo(()=>{const seen=new Set();let f=jobs.filter(j=>{if(seen.has(j.id))return false;seen.add(j.id);return j.status!=='closed';});if(mktF)f=f.filter(j=>j.market===mktF);if(statusF)f=f.filter(j=>j.status===statusF);if(search){const q=search.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.customer_name}`.toLowerCase().includes(q));}if(addonsF.size>0)f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));if(staleOnly)f=f.filter(j=>isStale(j));return f;},[jobs,mktF,statusF,search,addonsF,staleOnly,isStale]);
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
   const KANBAN_STS=['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
@@ -5149,18 +5168,93 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       </div>
     </div>
     <div style={{...card,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}><span style={{fontFamily:'Inter',fontWeight:700,fontSize:16,color:pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'}}>{pipeLF.toLocaleString()} Precast LF</span><span style={{fontSize:12,color:'#625650'}}>in production pipeline</span><div style={{flex:1}}><PBar pct={Math.min(pipeLF/200000*100,100)} color={pipeLF>200000?'#991B1B':pipeLF>100000?'#B45309':'#065F46'} h={8}/></div></div>
-    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>{[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}
-      <button onClick={()=>setCompactCards(v=>!v)} style={{...gpill(compactCards),marginLeft:8}} title={compactCards?'Currently compact — click for full detail':'Currently full detail — click for compact'}>{compactCards?'⊟ Compact':'⊞ Full'}</button>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+      <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>View:</span>
+      <button onClick={()=>setViewMode('kanban')} style={gpill(viewMode==='kanban')} title="Kanban board — drag cards through stages">⊟ Kanban</button>
+      <button onClick={()=>setViewMode('list')} style={gpill(viewMode==='list')} title="Flat sortable list — best for scanning many jobs">☰ List</button>
+      {viewMode==='kanban'&&<>
+        <span style={{color:'#E5E3E0',marginLeft:4}}>|</span>
+        <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Group By:</span>
+        {[{key:'status',label:'Status'},{key:'customer_name',label:'Customer'},{key:'style',label:'Style'},{key:'color',label:'Color'}].map(g=><button key={g.key} onClick={()=>setGroupBy(g.key)} style={gpill(groupBy===g.key)}>{g.label}</button>)}
+        <button onClick={()=>setCompactCards(v=>!v)} style={{...gpill(compactCards),marginLeft:8}} title={compactCards?'Currently compact — click for full detail':'Currently full detail — click for compact'}>{compactCards?'⊟ Compact':'⊞ Full'}</button>
+      </>}
     </div>
-    <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{!isS&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
-    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#854F0B',bg:'#FAEEDA'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}{addonsF.size>0&&<span style={{fontSize:11,color:'#625650',marginLeft:4}}>{filtered.length} jobs</span>}</div>
-    {isMobile
+    <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputS,width:180,padding:'6px 10px',fontSize:12}}/><button onClick={()=>setMktF(null)} style={fpill(!mktF)}>All</button>{MKTS.map(m=><button key={m} onClick={()=>setMktF(m)} style={fpill(mktF===m)}>{MS[m]}</button>)}{(!isS||viewMode==='list')&&<><span style={{color:'#E5E3E0'}}>|</span><button onClick={()=>setStatusF(null)} style={fpill(!statusF)}>All</button>{KANBAN_STS.map(s=><button key={s} onClick={()=>setStatusF(s)} style={fpill(statusF===s)}>{SS[s]}</button>)}</>}</div>
+    <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}><span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Add-ons:</span><button onClick={()=>setAddonsF(new Set())} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',border:addonsF.size===0?'1px solid #8A261D':'1px solid #E5E3E0',background:addonsF.size===0?'#FDF4F4':'#FFF',color:addonsF.size===0?'#8A261D':'#9E9B96'}}>All</button>{[{code:'G',label:'Gates',color:'#B45309',bg:'#FEF3C7'},{code:'WI',label:'WI',color:'#374151',bg:'#F3F4F6'},{code:'C',label:'Columns',color:'#854F0B',bg:'#FAEEDA'}].map(a=><button key={a.code} onClick={()=>toggleAddon(a.code)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:addonsF.has(a.code)?`2px solid ${a.color}`:'1px solid #E5E3E0',background:addonsF.has(a.code)?a.bg:'#FFF',color:addonsF.has(a.code)?a.color:'#9E9B96'}}>{a.label}</button>)}<span style={{color:'#E5E3E0',marginLeft:4}}>|</span><button onClick={()=>setStaleOnly(v=>!v)} title={staleOnly?'Showing only stale jobs (past warn threshold for current stage). Click to clear.':'Show only jobs that have sat in their current stage past the warn threshold.'} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:staleOnly?'2px solid #B45309':'1px solid #E5E3E0',background:staleOnly?'#FEF3C7':'#FFF',color:staleOnly?'#B45309':'#9E9B96',display:'inline-flex',alignItems:'center',gap:4}}>⏱ Stale only</button>{(addonsF.size>0||staleOnly)&&<span style={{fontSize:11,color:'#625650',marginLeft:4,fontWeight:600}}>{filtered.length} jobs</span>}</div>
+    {/* Body branch — desktop+list shows the flat sortable table; everything
+        else (mobile, or desktop+kanban) shows the kanban board. The list view
+        is intentionally desktop-only because a 9-column table doesn't fit
+        usefully on a phone; mobile users get the touch-optimized MobileKanban. */}
+    {viewMode==='list'&&!isMobile?(()=>{
+      const COLS=[
+        {k:'status',l:'Status',w:130,sort:(a,b)=>{const o=KANBAN_STS.indexOf(a.status)-KANBAN_STS.indexOf(b.status);return o;}},
+        {k:'job_number',l:'Job #',w:90,sort:(a,b)=>(a.job_number||'').localeCompare(b.job_number||'')},
+        {k:'job_name',l:'Project',w:280,sort:(a,b)=>(a.job_name||'').localeCompare(b.job_name||'')},
+        {k:'market',l:'Market',w:80,sort:(a,b)=>(a.market||'').localeCompare(b.market||'')},
+        {k:'pm',l:'PM',w:130,sort:(a,b)=>(a.pm||'').localeCompare(b.pm||'')},
+        {k:'lf',l:'LF',w:90,sort:(a,b)=>(lfPC(a)||lfTotal(a))-(lfPC(b)||lfTotal(b)),align:'right'},
+        {k:'$',l:'Contract',w:110,sort:(a,b)=>n(a.adj_contract_value||a.contract_value)-n(b.adj_contract_value||b.contract_value),align:'right'},
+        {k:'age',l:'Age in Stage',w:120,sort:(a,b)=>(stageAge(a)??-1)-(stageAge(b)??-1),align:'right'},
+        {k:'style_color',l:'Style/Color',w:130,sort:(a,b)=>{const sa=(a.style&&a.color)?2:(a.style||a.color)?1:0;const sb=(b.style&&b.color)?2:(b.style||b.color)?1:0;return sa-sb;}},
+        {k:'action',l:'',w:160},
+      ];
+      const sorted=[...filtered];
+      const sortCol=COLS.find(c=>c.k===listSort.col);
+      if(sortCol&&sortCol.sort){
+        sorted.sort(sortCol.sort);
+        if(listSort.dir==='desc')sorted.reverse();
+      }
+      const toggleSort=(col)=>{if(!COLS.find(c=>c.k===col)?.sort)return;setListSort(s=>s.col===col?{col,dir:s.dir==='asc'?'desc':'asc'}:{col,dir:'desc'});};
+      const sortIcon=(col)=>listSort.col!==col?'':(listSort.dir==='asc'?' ▲':' ▼');
+      // Total width = sum of column widths, used for horizontal scroll on narrow desktop
+      const totalW=COLS.reduce((s,c)=>s+c.w,0);
+      return <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh-260px)'}}>
+        <table style={{width:'100%',minWidth:totalW,borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
+          <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
+            <tr>
+              {COLS.map(c=><th key={c.k} onClick={()=>toggleSort(c.k)} style={{padding:'10px 12px',textAlign:c.align||'left',fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:'.04em',borderBottom:'1px solid #E5E3E0',cursor:c.sort?'pointer':'default',whiteSpace:'nowrap',userSelect:'none',width:c.w}}>{c.l}{sortIcon(c.k)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length===0?<tr><td colSpan={COLS.length} style={{padding:32,textAlign:'center',color:'#9E9B96',fontSize:13}}>No jobs match the current filters.</td></tr>:sorted.map((j,idx)=>{
+              const days=stageAge(j);
+              const thresh=STAGE_THRESHOLDS[j.status];
+              const sev=days!=null&&thresh?(days>=thresh[1]?'critical':days>=thresh[0]?'warn':null):null;
+              const stale=sev!=null;
+              const hasStyle=!!(j.style&&j.style.trim());
+              const hasColor=!!(j.color&&j.color.trim());
+              const scLabel=hasStyle&&hasColor?'✓':hasStyle?'⚠ no color':hasColor?'⚠ no style':'✗';
+              const scColor=hasStyle&&hasColor?'#15803D':(hasStyle||hasColor)?'#B45309':'#DC2626';
+              const scBg=hasStyle&&hasColor?'#DCFCE7':(hasStyle||hasColor)?'#FEF3C7':'#FEE2E2';
+              const rowBg=stale&&sev==='critical'?'#FEF2F2':stale?'#FEFBF0':(idx%2===0?'#FFF':'#FAFAF9');
+              return <tr key={j.id} onClick={()=>setQuickViewJob(j)} style={{cursor:'pointer',background:rowBg,transition:'background .12s'}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2'}}><span style={{...pill(SC[j.status]||'#625650',SB_[j.status]||'#F4F4F2'),fontSize:11,whiteSpace:'nowrap'}}>{SS[j.status]||j.status}</span></td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',color:'#9E9B96',fontFamily:'Inter',fontSize:11}}>#{j.job_number}</td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}} title={j.job_name}>
+                  {j.job_name}
+                  {Array.isArray(j.fence_addons)&&j.fence_addons.length>0&&<span style={{marginLeft:6,fontSize:9,color:'#625650'}}>{j.fence_addons.map(a=>({G:'G',C:'C',WI:'WI'}[a]||a)).join(' ')}</span>}
+                </td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2'}}><span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span></td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',color:'#625650',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:130}} title={j.pm||''}>{j.pm||'—'}</td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',textAlign:'right',color:'#625650',fontFamily:'Inter',fontWeight:600}}>{(lfPC(j)||lfTotal(j)||0).toLocaleString()}</td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',textAlign:'right',color:'#8A261D',fontFamily:'Inter',fontWeight:700}}>{$(j.adj_contract_value||j.contract_value)}</td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2',textAlign:'right',whiteSpace:'nowrap'}}>{days==null?<span style={{color:'#C8C4BD'}}>—</span>:<span style={{display:'inline-block',padding:'2px 8px',borderRadius:5,fontSize:11,fontWeight:700,background:sev==='critical'?'#FEE2E2':sev==='warn'?'#FEF3C7':'#F4F4F2',color:sev==='critical'?'#991B1B':sev==='warn'?'#B45309':'#625650'}}>{sev==='critical'?'🔴 ':sev==='warn'?'⏱ ':''}{days}d</span>}</td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2'}}><span title={hasStyle&&hasColor?'Style and color confirmed':'Click row to fix'} style={{display:'inline-block',padding:'2px 6px',borderRadius:4,fontSize:10,fontWeight:700,background:scBg,color:scColor,whiteSpace:'nowrap'}}>{scLabel}</span></td>
+                <td style={{padding:'8px 12px',borderBottom:'1px solid #F4F4F2'}} onClick={e=>e.stopPropagation()}>
+                  {editUnlocked?<select value="" onChange={e=>{if(e.target.value)move(j,e.target.value);e.target.value='';}} style={{padding:'4px 8px',borderRadius:6,border:'1px solid #E5E3E0',fontSize:11,color:'#625650',cursor:'pointer',background:'#FFF',width:'100%'}}><option value="">{NEXT_STATUS[j.status]?`→ ${SS[NEXT_STATUS[j.status]]}…`:'Change status…'}</option>{NEXT_STATUS[j.status]&&<option value={NEXT_STATUS[j.status]}>→ {SS[NEXT_STATUS[j.status]]} (next)</option>}{STS.filter(s=>s!==j.status&&s!==NEXT_STATUS[j.status]).map(s=><option key={s} value={s}>{SS[s]}</option>)}</select>:<span style={{color:'#C8C4BD',fontSize:10}}>🔒 locked</span>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>;
+    })():(isMobile
       ? <MobileKanban
           columns={colArr.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.bg,items:col.jobs}))}
           emptyMessage="No jobs in this stage"
           renderCard={j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated}/>}
         />
-      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated}/>)}</div></div>;})}</div>}
+      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated}/>)}</div></div>;})}</div>)}
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
