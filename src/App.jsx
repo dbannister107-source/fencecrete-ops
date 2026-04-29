@@ -1308,6 +1308,16 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     return ()=>window.removeEventListener('keydown',onKey);
   },[onClose]);
   const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':canEditInstallDateOnly?'dates':'lineitems');const[saving,setSaving]=useState(false);
+  /* 2026-04-29 bug fix (Amiee, Emberly Sec 8-11): when the user navigates between
+     jobs via the prev/next arrow without closing the panel, the `job` prop
+     changes but `form` was initialized via useState({...job}) which only runs
+     once. Result: line items + PIS tabs reload correctly (their effects depend
+     on job.id), but the Totals/Details tab keeps showing stale form values
+     from the previously viewed job. Amiee saw 24H071's totals (1,236 LF) while
+     editing 25H046's line items (8,210/615 LF) and reasonably concluded her
+     edits "didn't carry over." Sync form to job whenever the underlying job id
+     changes. New-job (unsaved) panels skip the sync because they have no id. */
+  useEffect(()=>{if(job?.id)setForm({...job});},[job?.id]);
   // Ref held by LineItemsEditor — lets us trigger its saveAll() from the
   // parent's handleSave so clicking top "Save" also commits line item edits.
   const lineItemsSaveRef=useRef(null);
