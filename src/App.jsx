@@ -878,7 +878,7 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
           ['Billing Contact',job.billing_contact],
           ['Billing Email',job.billing_email],
           ['GC Company',job.gc_company],
-          ['Accounting Job #',job.accounting_job_number],
+          ['Job Number',job.accounting_job_number],
         ].filter(([,v])=>v);
         if(cc.length===0)return null;
         return<div style={secStyle}><div style={secTitle}>Customer Contact</div>
@@ -1698,6 +1698,26 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             // because both values of the bool are meaningful (true/false) —
             // unlike e.g. owner_company where empty=missing.
             const fmtAddr=(addr,csz)=>[addr,csz].filter(Boolean).join(' · ')||null;
+            // Tax cert section assembled separately so we can include the
+            // SharePoint link and sync error/timestamp when present. Spine
+            // rule notifyTaxCertUploadedRule writes:
+            //   tax_exempt_cert_sharepoint_url  - on successful Graph upload
+            //   tax_exempt_cert_synced_at       - always (success or failure)
+            //   tax_exempt_cert_sync_error      - on failure
+            // We render the cert URL as a link, and surface sync errors as
+            // an actionable hint to the contracts team.
+            const taxRows=[
+              ['Status',s.taxable===true?'Taxable':s.taxable===false?'Non-Taxable':null],
+              ['Tax-Exempt Cert',s.tax_exempt_cert_url
+                ? <a href={s.tax_exempt_cert_url} target="_blank" rel="noopener noreferrer" style={{color:'#8A261D',fontWeight:700,textDecoration:'underline'}}>{s.tax_exempt_cert_filename||'Download cert'} ↗</a>
+                : (s.tax_exempt_cert_provided?'Provided':s.taxable===false?'Required':null)],
+              ['SharePoint Copy',s.tax_exempt_cert_sharepoint_url
+                ? <a href={s.tax_exempt_cert_sharepoint_url} target="_blank" rel="noopener noreferrer" style={{color:'#065F46',fontWeight:700,textDecoration:'underline'}}>Open in SharePoint ↗</a>
+                : (s.tax_exempt_cert_sync_error
+                    ? <span style={{color:'#B45309',fontWeight:700}} title={s.tax_exempt_cert_sync_error}>⚠ Sync failed — file manually</span>
+                    : (s.tax_exempt_cert_url?<span style={{color:'#9E9B96'}}>Pending…</span>:null))],
+              ['Cert Synced',s.tax_exempt_cert_synced_at?new Date(s.tax_exempt_cert_synced_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):null],
+            ];
             const sections=[
               {title:'Project',rows:[
                 ['Project Name',s.project_name],
@@ -1708,10 +1728,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 ['Subdivision',s.subdivision],
                 ['Block / Section',s.block_section],
                 ['Legal (other)',s.legal_other],
-                ['Accounting Job #',s.accounting_job_number],
-                ['Est. Completion',s.est_completion_date?new Date(s.est_completion_date).toLocaleDateString('en-US'):null],
+                ['Job Number',s.accounting_job_number],
+                ['Fence Install Date',s.fence_install_date?new Date(s.fence_install_date).toLocaleDateString('en-US'):null],
+                ['Project Completion',s.est_completion_date?new Date(s.est_completion_date).toLocaleDateString('en-US'):null],
               ]},
-              {title:'Owner',rows:[
+              {title:'Property Owner',rows:[
                 ['Company',s.owner_company],
                 ['Address',fmtAddr(s.owner_address,s.owner_city_state_zip)],
                 ['Phone',s.owner_phone],
@@ -1739,7 +1760,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 ['Name',s.pm_name],
                 ['Mobile',s.pm_mobile],
                 ['Office',s.pm_office],
-                ['Fax',s.pm_fax],
                 ['Email',s.pm_email],
               ]},
               {title:'Bonding & Surety',rows:s.bonding_required?[
@@ -1750,20 +1770,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 ['Surety Address',fmtAddr(s.surety_address,s.surety_city_state_zip)],
                 ['Surety Contact',s.surety_contact],
                 ['Surety Phone',s.surety_phone],
-                ['Surety Fax',s.surety_fax],
                 ['Surety Email',s.surety_email],
               ]:[['Bonding Required','No']]},
               {title:'Insurance Agent',rows:[
                 ['Name',s.agent_name],
                 ['Address',fmtAddr(s.agent_address,s.agent_city_state_zip)],
                 ['Phone',s.agent_phone],
-                ['Fax',s.agent_fax],
                 ['Email',s.agent_email],
               ]},
-              {title:'Tax',rows:[
-                ['Status',s.taxable===true?'Taxable':s.taxable===false?'Non-Taxable':null],
-                ['Tax-Exempt Cert',s.tax_exempt_cert_provided?'Provided':s.taxable===false?'Required':null],
-              ]},
+              {title:'Tax',rows:taxRows},
             ];
             return<div key={s.id} style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>

@@ -457,7 +457,7 @@ export default function PISFormPage({ token }) {
           </div>
         </div>
 
-        {/* PM / Superintendent — v2: Fax field removed (paperless). */}
+        {/* PM / Superintendent — paperless, no Fax field. */}
         <div style={card}>
           <div style={sectionTitle}>Project Manager / Superintendent</div>
           <Field label="Name" name="pm_name" required full value={form.pm_name} onChange={onChange} />
@@ -468,7 +468,7 @@ export default function PISFormPage({ token }) {
           </div>
         </div>
 
-        {/* Bonding Information — v2: Fax fields removed from Surety + Agent. */}
+        {/* Bonding Information — paperless, no Fax fields. */}
         <div style={card}>
           <div style={sectionTitle}>Bonding Information</div>
           <div style={{ marginBottom: 12 }}>
