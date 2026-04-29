@@ -3412,6 +3412,29 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   // Tab counts are computed from submissions (not jobs), honoring the active
   // PM/Market filter so counts always match what the current tab will render.
   const arTabCounts=useMemo(()=>{let subs=arSubs;if(arPmF)subs=subs.filter(s=>s.pm===arPmF);if(arMktF)subs=subs.filter(s=>s.market===arMktF);let pending=0,reviewed=0,noBill=0;subs.forEach(s=>{if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else pending++;});return{pending,reviewed,noBill,total:pending+reviewed+noBill};},[arSubs,arPmF,arMktF]);
+  // Direct invoice entries logged this month — counted separately from
+  // "Bill Sheets Reviewed" because they're a different workflow path.
+  //
+  // Two paths produce billable activity:
+  //   1. PM Bill Sheet → AR Review (counts in arTabCounts.reviewed)
+  //   2. Direct Invoice Entry via the per-job invoice editor (this memo)
+  //
+  // Path 2 was previously invisible on the dashboard. Virginia (AR) flagged
+  // 2026-04-28 that her output was being dramatically undercounted — for
+  // April 2026 she had 25 reviewed bill sheets but 27 additional direct
+  // invoice entries that didn't appear anywhere on the KPI row.
+  //
+  // Filter semantics match the rest of the row: respect arPmF/arMktF so all
+  // four-now-five tiles are scoped consistently. We resolve PM/Market via
+  // the job, since invoice_entries doesn't carry those fields directly.
+  const arInvoiceEntryCount=useMemo(()=>{
+    const filteredJobIds=new Set(arFilteredJobs.map(j=>j.id));
+    let count=0;
+    Object.entries(arInvByJob||{}).forEach(([jobId,agg])=>{
+      if(filteredJobIds.has(jobId))count+=(agg?.count||0);
+    });
+    return count;
+  },[arInvByJob,arFilteredJobs]);
   const arTableData=useMemo(()=>{
     let filtered=arSubs;
     if(arPmF)filtered=filtered.filter(s=>s.pm===arPmF);
@@ -3597,12 +3620,17 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
         {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
       </div>
       {/* Summary stats — mirrors the three review-status buckets so Virginia/Mary
-          can eyeball the month's progress regardless of which tab is active. */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#625650'}}>Total Active Jobs</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{arTabCounts.pending}</div><div style={{fontSize:11,color:'#625650'}}>Pending Review</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arTabCounts.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Reviewed</div></div>
-        <div style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing Submissions</div></div>
+          can eyeball the month's progress regardless of which tab is active.
+          Apr 28 2026: Split "Reviewed" into "Bill Sheets Reviewed" + "Direct
+          Invoices Logged" because AR work happens through two paths and we
+          were only surfacing one. Tooltips on each tile spell out exactly
+          what they count so this is never confusing again. */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:16}}>
+        <div title="Active jobs in scope for this billing month, after PM/Market filter." style={{...card,padding:'12px 16px',borderLeft:'4px solid #8A261D'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20}}>{arStats.total}</div><div style={{fontSize:11,color:'#625650'}}>Total Active Jobs</div></div>
+        <div title="PM bill sheet submissions that AR has not yet marked Reviewed for this month." style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{arTabCounts.pending}</div><div style={{fontSize:11,color:'#625650'}}>Pending Review</div></div>
+        <div title="PM bill sheet submissions AR has marked Reviewed (the formal PM→AR workflow). Does NOT include direct invoice entries — see next tile." style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arTabCounts.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Bill Sheets Reviewed</div></div>
+        <div title="Direct invoice entries logged via the per-job invoice editor for this month. Counted separately because they bypass the PM bill sheet workflow — they're AR's own logging activity." style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#065F46'}}>{arInvoiceEntryCount}</div><div style={{fontSize:11,color:'#625650'}}>Direct Invoices Logged</div></div>
+        <div title="Active jobs in this month with no PM bill sheet submitted yet." style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing Submissions</div></div>
       </div>
       {/* Sub-tabs — Pending / Reviewed / No Bill. Virginia's workflow is to
           drain Pending → zero each month, so it is the default on page load. */}
