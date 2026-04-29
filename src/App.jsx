@@ -180,14 +180,23 @@ const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { 
 // have to round-trip to the DB for the obvious fields.
 const logEvent = (event_type, { entity_type=null, entity_id=null, payload={}, actor_email=null, event_category='general' }={}) => {
   try {
-    sbPost('system_events', {
-      event_type,
-      event_category,
-      actor_type: 'user',
-      actor_label: actor_email || 'desktop',
-      entity_type,
-      entity_id,
-      payload,
+    // INSERT-only with return=minimal: anon role has INSERT policy but no SELECT
+    // policy on system_events (intentional — event payloads may carry sensitive
+    // job/customer data). return=representation requires SELECT permission to
+    // echo the row back, so it falsely surfaces as a 42501 RLS error. We don't
+    // need the response anyway — this is fire-and-forget.
+    fetch(`${SB}/rest/v1/system_events`, {
+      method: 'POST',
+      headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        event_type,
+        event_category,
+        actor_type: 'user',
+        actor_label: actor_email || 'desktop',
+        entity_type,
+        entity_id,
+        payload,
+      }),
     });
   } catch(e) { /* spine emission is never allowed to break the UI */ }
 };
