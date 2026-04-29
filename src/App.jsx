@@ -154,7 +154,20 @@ const AuthContext = React.createContext(null);
 const useAuth = () => React.useContext(AuthContext);
 
 const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ event: type, job }) }); } catch(e) {} };
-const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: 'desktop' }); } catch(e) {} };
+
+// Module-level current-user tracker. AuthProvider's useEffect calls
+// setCurrentUserEmail() whenever the user object changes. logAct reads from
+// this so audit-log rows get the actual user's email instead of "desktop".
+// Bug history: prior to 2026-04-28, every activity_log row was being written
+// with changed_by='desktop' because logAct had no auth context — making the
+// audit trail useless for accountability ("who created this folder?", "who
+// changed this status?"). Amiee flagged this around the SharePoint folder
+// creation feature; root cause was app-wide, not feature-specific.
+let __currentUserEmail = '';
+const setCurrentUserEmail = (email) => { __currentUserEmail = (email||'').toLowerCase().trim(); };
+const getCurrentUserEmail = () => __currentUserEmail || 'unknown';
+
+const logAct = (job, action, field, ov, nv) => { try { sbPost('activity_log', { job_id: job?.id, job_number: job?.job_number, job_name: job?.job_name, action, field_name: field, old_value: String(ov||''), new_value: String(nv||''), changed_by: getCurrentUserEmail() }); } catch(e) {} };
 
 // Emit a row into system_events — the agentic spine. The DB webhook on
 // system_events INSERT fires the dispatch_system_event edge function which
@@ -1374,6 +1387,25 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       if(!res.ok||!data.success){throw new Error(data.error||`Folder creation failed (${res.status})`);}
       setForm(p=>({...p,sharepoint_folder_url:data.url}));
       logAct(job,'field_update','sharepoint_folder_url','',data.url||'');
+      // Emit a system event so the spine can route a notification to Amiee
+      // when someone other than her or contracts@ creates a folder.
+      // Routing rule lives in the dispatch_system_event edge function.
+      try {
+        logEvent('sharepoint.folder_created', {
+          entity_type: 'job',
+          entity_id: job.id,
+          actor_email: currentUserEmail,
+          event_category: 'governance',
+          payload: {
+            job_number: job.job_number,
+            job_name: job.job_name,
+            customer_name: job.customer_name,
+            market: job.market,
+            folder_url: data.url,
+            source: sharepointSource, // 'template' or 'existing'
+          },
+        });
+      } catch(e) { /* fire-and-forget */ }
       toast.success('✓ SharePoint folder created');
       setShowSharepointModal(false);
       if(onRefresh)onRefresh();
@@ -18740,6 +18772,11 @@ export default function App(){
     saveStoredSession(null); applyAuthToken(null);
     setSession(null); setUser(null); setProfile(null);
   },[session]);
+  // Keep the module-level current-user tracker in sync with auth state so
+  // logAct() writes the real user email into activity_log.changed_by instead
+  // of the legacy hardcoded 'desktop' value. Runs on login, logout, and
+  // session refresh. See setCurrentUserEmail definition near top of file.
+  useEffect(()=>{ setCurrentUserEmail(user?.email || ''); },[user]);
   const ctx = useMemo(()=>({session,user,profile,loading,signIn,signOut}),[session,user,profile,loading,signIn,signOut]);
   // Public PIS route — render outside auth wrapper. Must come AFTER all hooks
   // have run (rules of hooks) but BEFORE the loading/auth gates so external
