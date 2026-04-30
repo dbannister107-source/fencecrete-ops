@@ -1022,7 +1022,7 @@ const PM_BILL_LF_GROUPS=[
   // but excluded from any LF subtotal or grand total.
   {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Posts'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['gate_controls','Gate Controls'],['remove_existing','Demo']]},
 ];
-const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'parties',label:'Parties',fields:[]},{key:'dates',label:'Dates',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'tasks',label:'Tasks',fields:[]},{key:'history',label:'History',fields:[]},{key:'pis',label:'Info Sheet',fields:[]}];
+const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'gates',label:'Gates & Extras',fields:['number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'parties',label:'Parties',fields:[]},{key:'documents',label:'Documents',fields:[]},{key:'dates',label:'Dates',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'tasks',label:'Tasks',fields:[]},{key:'history',label:'History',fields:[]},{key:'pis',label:'Info Sheet',fields:[]}];
 
 const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#625650',job_created:'#8A261D'};
 
@@ -1466,6 +1466,209 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     }catch(e){console.error('[Parties save]',e);setPartiesToast({kind:'error',msg:e.message||'Save failed'});}
     setPartiesSaving(false);
   };
+
+  // ============================================================================
+  // Documents tab — project_attachments backing
+  // ============================================================================
+  // Backed by the project_attachments table (Phase D1, 2026-04-29) and the
+  // project-attachments Storage bucket. The DB trigger trg_project_attachments
+  // _emit_au fires document.uploaded / document.deleted spine events
+  // automatically, so this UI doesn't need to emit anything.
+  const DOC_CATEGORIES=React.useMemo(()=>[
+    {key:'contract',label:'Contract',color:'#8A261D',bg:'#FDF4F4'},
+    {key:'change_order',label:'Change Order',color:'#0F766E',bg:'#CCFBF1'},
+    {key:'pis',label:'PIS / Tax Cert',color:'#7C3AED',bg:'#EDE9FE'},
+    {key:'permits',label:'Permits',color:'#B45309',bg:'#FEF3C7'},
+    {key:'bonds',label:'Bonds',color:'#854F0B',bg:'#FAEEDA'},
+    {key:'drawings',label:'Drawings & Specs',color:'#1D4ED8',bg:'#DBEAFE'},
+    {key:'photos',label:'Photos',color:'#C2410C',bg:'#FFEDD5'},
+    {key:'insurance',label:'Insurance',color:'#374151',bg:'#F3F4F6'},
+    {key:'correspondence',label:'Correspondence',color:'#185FA5',bg:'#E6F1FB'},
+    {key:'other',label:'Other',color:'#625650',bg:'#F4F4F2'},
+  ],[]);
+  const [attachments,setAttachments]=useState([]);
+  const [attachmentsLoading,setAttachmentsLoading]=useState(false);
+  const [uploadQueue,setUploadQueue]=useState([]);// [{id,filename,progress,error}]
+  const [uploadCategory,setUploadCategory]=useState('contract');
+  const [uploadDescription,setUploadDescription]=useState('');
+  const [docSearch,setDocSearch]=useState('');
+  const [docCategoryFilter,setDocCategoryFilter]=useState('');
+  const [attachmentToDelete,setAttachmentToDelete]=useState(null);
+  const [attachmentsToast,setAttachmentsToast]=useState(null);
+  const [draggingOver,setDraggingOver]=useState(false);
+  const fileInputRef=React.useRef(null);
+
+  // Fetch attachments when the Documents tab opens
+  const loadAttachments=React.useCallback(async()=>{
+    if(!job?.id)return;
+    setAttachmentsLoading(true);
+    try{
+      const rows=await sbGet('project_attachments',`job_id=eq.${job.id}&deleted_at=is.null&order=uploaded_at.desc&limit=500`);
+      setAttachments(Array.isArray(rows)?rows:[]);
+    }catch(e){console.error('[Documents load]',e);setAttachmentsToast({kind:'error',msg:'Could not load documents'});}
+    setAttachmentsLoading(false);
+  },[job?.id]);
+  useEffect(()=>{
+    if(tab!=='documents'||!job?.id)return;
+    loadAttachments();
+  },[tab,job?.id,loadAttachments]);
+
+  // Sanitize filename for safe Storage paths. Strips characters that broke
+  // the tax cert sync earlier (% notably). Lowercased, dot-preserving for
+  // extension. Length-capped at 200 chars to fit S3-style key limits.
+  const sanitizeForStorage=React.useCallback((name)=>{
+    if(!name)return 'file';
+    const dotIdx=name.lastIndexOf('.');
+    const stem=dotIdx>0?name.slice(0,dotIdx):name;
+    const ext=dotIdx>0?name.slice(dotIdx+1):'';
+    const cleanStem=stem.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,180);
+    const cleanExt=ext.replace(/[^a-zA-Z0-9]/g,'').toLowerCase().slice(0,16);
+    return cleanExt?`${cleanStem}.${cleanExt}`:cleanStem;
+  },[]);
+  const formatBytes=(b)=>{
+    if(!b||b<0)return '—';
+    if(b<1024)return `${b} B`;
+    if(b<1048576)return `${(b/1024).toFixed(1)} KB`;
+    if(b<1073741824)return `${(b/1048576).toFixed(1)} MB`;
+    return `${(b/1073741824).toFixed(1)} GB`;
+  };
+  const mimeIcon=(m,filename)=>{
+    if(!m&&filename){
+      const ext=(filename.split('.').pop()||'').toLowerCase();
+      if(['jpg','jpeg','png','gif','webp','heic','heif'].includes(ext))return '🖼️';
+      if(ext==='pdf')return '📄';
+      if(['xlsx','xls','csv'].includes(ext))return '📊';
+      if(['docx','doc','txt'].includes(ext))return '📝';
+      if(['pptx','ppt'].includes(ext))return '📊';
+      if(['zip','rar'].includes(ext))return '🗜️';
+      if(['dwg','dxf'].includes(ext))return '📐';
+    }
+    if(!m)return '📎';
+    if(m.startsWith('image/'))return '🖼️';
+    if(m==='application/pdf')return '📄';
+    if(m.includes('spreadsheet')||m.includes('excel'))return '📊';
+    if(m.includes('word')||m.includes('document'))return '📝';
+    if(m.includes('presentation')||m.includes('powerpoint'))return '📊';
+    if(m.includes('zip'))return '🗜️';
+    return '📎';
+  };
+
+  // Upload one file. Storage put → DB insert. The DB trigger emits the
+  // spine event automatically. Updates uploadQueue with progress so the UI
+  // can render per-file status while a batch is in flight.
+  const uploadAttachment=React.useCallback(async(file,category,description)=>{
+    if(!job?.id||!file)return;
+    if(file.size>26214400){return{ok:false,error:`File too large (${formatBytes(file.size)}). 25 MB max.`};}
+    const queueId=`${file.name}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    setUploadQueue(q=>[...q,{id:queueId,filename:file.name,progress:0,error:null}]);
+    try{
+      const cleanName=sanitizeForStorage(file.name);
+      const stamp=Date.now();
+      const path=`${job.id}/${category}/${stamp}-${cleanName}`;
+      // Storage put via the REST API (avoid pulling in the full Supabase JS SDK
+      // for this one operation — we already have apikey + bearer in scope)
+      const putRes=await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`,{
+        method:'POST',
+        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':file.type||'application/octet-stream','x-upsert':'false'},
+        body:file,
+      });
+      if(!putRes.ok){const txt=await putRes.text();throw new Error(`Storage upload failed (${putRes.status}): ${txt.slice(0,200)}`);}
+      // Record metadata in project_attachments. Trigger emits document.uploaded
+      // event — that's how Block C rules (when added) hook in.
+      // Derive a friendly display name from the email — capitalize the local
+      // part, strip dots/underscores. Falls back to null when email is missing.
+      const friendlyName=(()=>{
+        const e=(typeof currentUserEmail==='string'?currentUserEmail:'')||'';
+        if(!e)return null;
+        const local=e.split('@')[0]||'';
+        if(!local)return null;
+        return local.replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).trim()||null;
+      })();
+      const meta={
+        job_id:job.id,
+        job_number:job.job_number||null,
+        filename:file.name,
+        storage_path:path,
+        mime_type:file.type||null,
+        file_size_bytes:file.size,
+        category:category||'other',
+        description:description?description.slice(0,500):null,
+        uploaded_by_email:(typeof currentUserEmail==='string'?currentUserEmail:null)||null,
+        uploaded_by_name:friendlyName,
+      };
+      const insertRes=await fetch(`${SB}/rest/v1/project_attachments`,{
+        method:'POST',
+        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
+        body:JSON.stringify(meta),
+      });
+      if(!insertRes.ok){
+        // Storage put succeeded but DB insert failed. Try to clean up the
+        // orphaned Storage object so we don't accumulate ghost files.
+        const txt=await insertRes.text();
+        try{await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});}catch(_){}
+        throw new Error(`Database insert failed (${insertRes.status}): ${txt.slice(0,200)}`);
+      }
+      setUploadQueue(q=>q.filter(x=>x.id!==queueId));
+      return{ok:true};
+    }catch(e){
+      console.error('[Documents upload]',e);
+      setUploadQueue(q=>q.map(x=>x.id===queueId?{...x,error:e.message||'Upload failed',progress:0}:x));
+      return{ok:false,error:e.message};
+    }
+  },[job?.id,job?.job_number,sanitizeForStorage,currentUserEmail]);
+
+  // Soft-delete (sets deleted_at; DB trigger emits document.deleted event).
+  // The actual Storage object stays for 30+ days for recovery.
+  const deleteAttachment=async(att,reason)=>{
+    if(!att?.id)return{ok:false};
+    try{
+      const payload={
+        deleted_at:new Date().toISOString(),
+        deleted_by_email:(typeof currentUserEmail==='string'?currentUserEmail:'unknown')||'unknown',
+        deleted_reason:reason||'no reason given',
+      };
+      const res=await fetch(`${SB}/rest/v1/project_attachments?id=eq.${att.id}`,{
+        method:'PATCH',
+        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify(payload),
+      });
+      if(!res.ok){const txt=await res.text();throw new Error(`Delete failed (${res.status}): ${txt.slice(0,200)}`);}
+      return{ok:true};
+    }catch(e){console.error('[Documents delete]',e);return{ok:false,error:e.message};}
+  };
+
+  // Generate a signed URL for a private file (5-minute expiry — long enough
+  // to download/print, short enough that copied URLs don't leak indefinitely).
+  const getSignedUrl=async(storagePath)=>{
+    try{
+      const res=await fetch(`${SB}/storage/v1/object/sign/project-attachments/${encodeURIComponent(storagePath)}`,{
+        method:'POST',
+        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({expiresIn:300}),
+      });
+      if(!res.ok){const txt=await res.text();throw new Error(`Sign failed (${res.status}): ${txt.slice(0,200)}`);}
+      const data=await res.json();
+      return`${SB}/storage/v1${data.signedURL||data.signedUrl}`;
+    }catch(e){console.error('[Documents sign]',e);throw e;}
+  };
+
+  // Drop handler for the upload zone. Iterates files and uploads each.
+  const handleFiles=async(fileList)=>{
+    if(!fileList||fileList.length===0)return;
+    setAttachmentsToast(null);
+    const files=Array.from(fileList);
+    let okCount=0,failCount=0;
+    for(const f of files){
+      const r=await uploadAttachment(f,uploadCategory,uploadDescription);
+      if(r&&r.ok)okCount++;else failCount++;
+    }
+    await loadAttachments();
+    if(failCount===0)setAttachmentsToast({kind:'success',msg:`Uploaded ${okCount} file${okCount===1?'':'s'}`});
+    else if(okCount===0)setAttachmentsToast({kind:'error',msg:`Failed to upload ${failCount} file${failCount===1?'':'s'} — see queue below`});
+    else setAttachmentsToast({kind:'partial',msg:`${okCount} uploaded · ${failCount} failed`});
+    setUploadDescription('');
+  };
+
   const sendPisRequest=async()=>{
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
     setPisSending(true);
@@ -2086,6 +2289,162 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               Saved here → written to the same project_info_sheets row that the PIS portal uses. The contracts team and Command Center reads from this.
             </div>
             <button onClick={savePartiesDraft} disabled={partiesSaving} style={{...btnP,padding:'10px 20px',fontSize:13,opacity:partiesSaving?0.6:1,cursor:partiesSaving?'wait':'pointer'}}>{partiesSaving?'Saving…':'Save Parties'}</button>
+          </div>}
+        </div>:tab==='documents'?<div style={{padding:'4px 0'}}>
+          {/* Documents Tab — project_attachments backed (Phase D2, 2026-04-29).
+              Replaces SharePoint sync as the canonical filing system. The DB
+              trigger emits document.uploaded / document.deleted spine events
+              automatically — no application code needs to remember to emit. */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:12,flexWrap:'wrap'}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Documents</div>
+              <div style={{fontSize:11,color:'#625650',marginTop:2,maxWidth:520,lineHeight:1.4}}>
+                Single source of truth for all files attached to this project — contracts, change orders, permits, drawings, photos, insurance, and correspondence. Files are private; downloads use signed URLs that expire after 5 minutes.{job.sharepoint_folder_url?<><br/><span style={{color:'#B45309',fontWeight:600}}>Note: this project also has a SharePoint folder. New uploads go here; SharePoint remains accessible for legacy files.</span></>:null}
+              </div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:24,fontWeight:800,color:'#8A261D'}}>{attachments.length}</div>
+              <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',letterSpacing:'.05em',fontWeight:700}}>Document{attachments.length===1?'':'s'}</div>
+            </div>
+          </div>
+
+          {attachmentsToast&&<div style={{marginBottom:12,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:attachmentsToast.kind==='success'?'#D1FAE5':attachmentsToast.kind==='error'?'#FEE2E2':'#FEF3C7',color:attachmentsToast.kind==='success'?'#065F46':attachmentsToast.kind==='error'?'#991B1B':'#B45309',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{attachmentsToast.msg}</span><button onClick={()=>setAttachmentsToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
+
+          {/* Upload zone — drag-drop OR button click. Disabled when canEdit is false. */}
+          {canEdit&&<div
+            onDragEnter={e=>{e.preventDefault();e.stopPropagation();setDraggingOver(true);}}
+            onDragOver={e=>{e.preventDefault();e.stopPropagation();setDraggingOver(true);}}
+            onDragLeave={e=>{e.preventDefault();e.stopPropagation();setDraggingOver(false);}}
+            onDrop={e=>{e.preventDefault();e.stopPropagation();setDraggingOver(false);handleFiles(e.dataTransfer.files);}}
+            style={{
+              border:`2px dashed ${draggingOver?'#8A261D':'#E5E3E0'}`,
+              borderRadius:10,
+              padding:'18px 16px',
+              background:draggingOver?'#FDF4F4':'#F9F8F6',
+              transition:'all .15s',
+              marginBottom:14,
+            }}
+          >
+            <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:10}}>
+              <label style={{display:'block',flex:'1 1 200px'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Category</div>
+                <select value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} style={{...inputS,fontSize:12,padding:'6px 10px',width:'100%'}}>
+                  {DOC_CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+              </label>
+              <label style={{display:'block',flex:'2 1 280px'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Description (optional)</div>
+                <input value={uploadDescription} onChange={e=>setUploadDescription(e.target.value)} placeholder={uploadCategory==='change_order'?'e.g. CO #2 — additional gates':uploadCategory==='photos'?'e.g. Day 3 install progress — east wall':'e.g. Original signed contract'} style={{...inputS,fontSize:12,padding:'6px 10px',width:'100%'}}/>
+              </label>
+            </div>
+            <div style={{textAlign:'center',padding:'8px 0'}}>
+              <input ref={fileInputRef} type="file" multiple onChange={e=>{handleFiles(e.target.files);e.target.value='';}} style={{display:'none'}}/>
+              <div style={{fontSize:13,color:'#625650',marginBottom:8,fontWeight:600}}>
+                {draggingOver?'Drop to upload':<>Drag files here or <button onClick={()=>fileInputRef.current?.click()} style={{background:'none',border:'none',color:'#8A261D',fontWeight:700,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:'inherit'}}>browse</button></>}
+              </div>
+              <div style={{fontSize:10,color:'#9E9B96'}}>PDF · Images · Office docs · DWG/DXF · 25 MB max per file</div>
+            </div>
+            {uploadQueue.length>0&&<div style={{marginTop:10,display:'flex',flexDirection:'column',gap:4}}>
+              {uploadQueue.map(q=><div key={q.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#FFF',padding:'6px 10px',borderRadius:6,fontSize:11,border:'1px solid #E5E3E0'}}>
+                <span style={{color:q.error?'#991B1B':'#625650',fontWeight:q.error?700:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}}>{q.error?'⚠ ':'⏳ '}{q.filename}</span>
+                {q.error?<span style={{color:'#991B1B',fontSize:10,fontWeight:600}}>{q.error.slice(0,80)}</span>:<span style={{color:'#9E9B96',fontSize:10}}>uploading…</span>}
+                {q.error&&<button onClick={()=>setUploadQueue(qs=>qs.filter(x=>x.id!==q.id))} style={{background:'none',border:'none',cursor:'pointer',color:'#9E9B96',fontSize:14,padding:'0 4px'}}>×</button>}
+              </div>)}
+            </div>}
+          </div>}
+
+          {/* Filter row */}
+          {(attachments.length>0||attachmentsLoading)&&<div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+            <input value={docSearch} onChange={e=>setDocSearch(e.target.value)} placeholder="Search filename or description…" style={{...inputS,fontSize:12,padding:'6px 10px',width:240}}/>
+            <button onClick={()=>setDocCategoryFilter('')} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:!docCategoryFilter?'1px solid #8A261D':'1px solid #E5E3E0',background:!docCategoryFilter?'#FDF4F4':'#FFF',color:!docCategoryFilter?'#8A261D':'#9E9B96'}}>All</button>
+            {DOC_CATEGORIES.map(c=>{
+              const cnt=attachments.filter(a=>a.category===c.key).length;
+              if(cnt===0)return null;
+              const active=docCategoryFilter===c.key;
+              return<button key={c.key} onClick={()=>setDocCategoryFilter(active?'':c.key)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',border:active?`2px solid ${c.color}`:'1px solid #E5E3E0',background:active?c.bg:'#FFF',color:active?c.color:'#9E9B96'}}>{c.label} <span style={{opacity:.7,marginLeft:2}}>{cnt}</span></button>;
+            })}
+          </div>}
+
+          {/* Document list */}
+          {attachmentsLoading?<div style={{padding:'24px 16px',textAlign:'center',color:'#9E9B96',fontSize:13}}>Loading documents…</div>:
+            attachments.length===0?<div style={{padding:'32px 16px',textAlign:'center',background:'#F9F8F6',borderRadius:10,border:'1px solid #E5E3E0'}}>
+              <div style={{fontSize:32,marginBottom:8}}>📁</div>
+              <div style={{fontSize:13,fontWeight:700,color:'#1A1A1A',marginBottom:4}}>No documents yet</div>
+              <div style={{fontSize:11,color:'#625650',maxWidth:380,margin:'0 auto',lineHeight:1.5}}>{canEdit?'Drag files into the upload zone above, or browse to add the first document. Contracts, change orders, permits, photos — anything related to this project belongs here.':'When documents are uploaded, they\'ll appear here.'}</div>
+            </div>:(()=>{
+              const q=docSearch.toLowerCase().trim();
+              const filtered=attachments.filter(a=>{
+                if(docCategoryFilter&&a.category!==docCategoryFilter)return false;
+                if(q&&!`${a.filename||''} ${a.description||''}`.toLowerCase().includes(q))return false;
+                return true;
+              });
+              if(filtered.length===0)return<div style={{padding:'24px 16px',textAlign:'center',color:'#9E9B96',fontSize:13,background:'#F9F8F6',borderRadius:10}}>No documents match the current filters.</div>;
+              return<div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {filtered.map(a=>{
+                  const cat=DOC_CATEGORIES.find(c=>c.key===a.category)||DOC_CATEGORIES.find(c=>c.key==='other');
+                  const isImage=(a.mime_type||'').startsWith('image/');
+                  return<div key={a.id} style={{display:'flex',gap:10,alignItems:'center',padding:'10px 12px',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,transition:'border-color .12s'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderColor='#E5E3E0'}>
+                    <div style={{fontSize:24,width:36,textAlign:'center',flexShrink:0}}>{mimeIcon(a.mime_type,a.filename)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,flexWrap:'wrap'}}>
+                        <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}} title={a.filename}>{a.filename}</span>
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,background:cat.bg,color:cat.color,whiteSpace:'nowrap'}}>{cat.label}</span>
+                        {a.source_table&&<span title={`Auto-attached from ${a.source_table}`} style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:'#EDE9FE',color:'#7C3AED'}}>AUTO</span>}
+                      </div>
+                      <div style={{fontSize:11,color:'#625650',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                        <span>{formatBytes(a.file_size_bytes)}</span>
+                        <span style={{color:'#C8C4BD'}}>·</span>
+                        <span>{new Date(a.uploaded_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+                        {a.uploaded_by_name&&<><span style={{color:'#C8C4BD'}}>·</span><span>{a.uploaded_by_name}</span></>}
+                      </div>
+                      {a.description&&<div style={{fontSize:11,color:'#625650',marginTop:3,fontStyle:'italic'}}>{a.description}</div>}
+                    </div>
+                    <div style={{display:'flex',gap:6,flexShrink:0}}>
+                      <button
+                        onClick={async()=>{
+                          try{const url=await getSignedUrl(a.storage_path);window.open(url,'_blank');}
+                          catch(e){setAttachmentsToast({kind:'error',msg:`Could not open file: ${e.message}`});}
+                        }}
+                        title={isImage?'View image':'Download file'}
+                        style={{padding:'5px 10px',borderRadius:6,border:'1px solid #E5E3E0',background:'#FFF',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                      >{isImage?'View':'Download'}</button>
+                      {canEdit&&<button
+                        onClick={()=>setAttachmentToDelete(a)}
+                        title="Delete document"
+                        style={{padding:'5px 10px',borderRadius:6,border:'1px solid #E5E3E0',background:'#FFF',color:'#991B1B',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                      >×</button>}
+                    </div>
+                  </div>;
+                })}
+              </div>;
+            })()}
+
+          {/* Soft-delete confirmation modal */}
+          {attachmentToDelete&&<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16}} onClick={()=>setAttachmentToDelete(null)}>
+            <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:12,padding:24,maxWidth:480,width:'100%',boxShadow:'0 20px 50px rgba(0,0,0,0.25)'}}>
+              <div style={{fontSize:16,fontWeight:800,color:'#1A1A1A',marginBottom:6}}>Delete this document?</div>
+              <div style={{fontSize:13,color:'#625650',marginBottom:14,lineHeight:1.5}}>
+                <strong>{attachmentToDelete.filename}</strong> will be hidden from the Documents tab. The file is preserved on the server for 30 days in case you need to recover it. After 30 days, it's permanently removed.
+              </div>
+              <label style={{display:'block',marginBottom:14}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:4}}>Reason for delete (optional but recommended)</div>
+                <input id="delete-reason-input" placeholder="e.g. Wrong file uploaded, replaced with corrected version" style={{...inputS,fontSize:12,padding:'8px 10px',width:'100%'}}/>
+              </label>
+              <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                <button onClick={()=>setAttachmentToDelete(null)} style={{padding:'8px 18px',borderRadius:8,border:'1px solid #E5E3E0',background:'#FFF',color:'#625650',fontSize:13,fontWeight:600,cursor:'pointer'}}>Cancel</button>
+                <button onClick={async()=>{
+                  const reason=document.getElementById('delete-reason-input')?.value||null;
+                  const r=await deleteAttachment(attachmentToDelete,reason);
+                  if(r.ok){
+                    setAttachmentsToast({kind:'success',msg:`Deleted "${attachmentToDelete.filename}"`});
+                    setAttachmentToDelete(null);
+                    await loadAttachments();
+                  }else{
+                    setAttachmentsToast({kind:'error',msg:r.error||'Delete failed'});
+                  }
+                }} style={{padding:'8px 18px',borderRadius:8,border:'1px solid #991B1B',background:'#991B1B',color:'#FFF',fontSize:13,fontWeight:700,cursor:'pointer'}}>Delete</button>
+              </div>
+            </div>
           </div>}
         </div>:tab==='co'?<div style={{padding:'4px 0'}}>
           {/* Change Orders Tab — inline multi-CO editor, same pattern as Line Items */}
