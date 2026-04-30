@@ -12100,7 +12100,13 @@ function MapPage({ jobs, onNav }) {
     };
   }, []);
 
-  // Re-render markers when the filtered set or color mode changes
+  // Re-render markers when the filtered set or color mode changes.
+  // IMPORTANT: 'selected' is intentionally NOT in this deps array. Including it
+  // caused every click on a dot to destroy and recreate ALL markers (because
+  // setSelected re-fired this effect), which made the just-clicked dot flicker
+  // out of view as its DOM element was swapped. Selected state is now handled
+  // by a separate effect (below) that mutates the existing element's style in
+  // place without rebuilding the whole marker set.
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
@@ -12111,18 +12117,18 @@ function MapPage({ jobs, onNav }) {
     filtered.forEach(j => {
       if (!j.lat || !j.lng) return;
       const color = colorForJob(j);
-      const isSelected = selected && selected.id === j.id;
       const el = document.createElement('div');
       el.className = 'fc-pin';
+      el.dataset.jobId = j.id;
       el.style.cssText = `
-        width: ${isSelected ? 22 : 14}px;
-        height: ${isSelected ? 22 : 14}px;
+        width: 14px;
+        height: 14px;
         border-radius: 50%;
         background: ${color};
         border: 2px solid #1A1A1A;
         cursor: pointer;
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        transition: transform 0.15s;
+        transition: transform 0.15s, width 0.15s, height 0.15s;
       `;
       el.title = `${j.job_number || ''} ${j.job_name || ''}`;
       el.addEventListener('click', (e) => { e.stopPropagation(); setSelected(j); });
@@ -12131,7 +12137,25 @@ function MapPage({ jobs, onNav }) {
       const marker = new mapboxgl.Marker(el).setLngLat([j.lng, j.lat]).addTo(map);
       markersRef.current.push(marker);
     });
-  }, [filtered, mapReady, colorForJob, selected]);
+  }, [filtered, mapReady, colorForJob]);
+
+  // Apply selected-state styling to existing markers without rebuilding them.
+  // Resizes the selected dot to 22px and resets all others to 14px. Runs on
+  // every selection change but only mutates DOM styles, no marker churn.
+  useEffect(() => {
+    if (!mapReady) return;
+    markersRef.current.forEach(marker => {
+      const el = marker.getElement();
+      if (!el) return;
+      const isSelected = selected && el.dataset.jobId === selected.id;
+      el.style.width = isSelected ? '22px' : '14px';
+      el.style.height = isSelected ? '22px' : '14px';
+      // Bring selected marker visually to the front by raising its parent's z-index.
+      // Mapbox sets a z-index per marker; we just bump it above the rest when picked.
+      const parent = el.parentElement;
+      if (parent) parent.style.zIndex = isSelected ? '10' : '';
+    });
+  }, [selected, mapReady, filtered]);
 
   // Fit bounds when filter set changes meaningfully
   useEffect(() => {
