@@ -1,13 +1,25 @@
 // CustomerMasterPage
 //
-// Phase 2.1 (2026-04-30): added Undo button on the success toast. Reverses
-// link / mark-residential / create-and-link actions. In-memory only (refresh
-// or navigate away wipes it). create-and-link undo deletes the new company
-// only if no other jobs reference it.
+// Phase 2.2 (2026-04-30): bulk actions on the Reconcile tab.
+// - Checkbox per row to multi-select customer-name groups
+// - Sticky bulk action bar (gray) when any are selected:
+//     · Mark all residential
+//     · Link all to… (company picker dropdown)
+//     · Select all visible / Clear
+// - "Auto-accept N high-confidence matches" button in the toolbar.
+//   Scans every unmatched group, finds the top company match ≥80%
+//   similarity, opens a preview modal where each suggestion can be
+//   unchecked. One click commits all accepted matches in batched
+//   PATCHes (one per target company), single undo entry covers
+//   the whole batch.
 //
-// Phase 2 (2026-04-30): added Reconcile tab — match unmatched jobs to
-// existing companies via fuzzy suggestions, create new companies inline,
-// or mark as residential.
+// Phase 2.1 (2026-04-30): added Undo button on the success toast.
+// Reverses link / mark-residential / create-and-link actions.
+// In-memory only (refresh wipes it).
+//
+// Phase 2 (2026-04-30): added Reconcile tab — match unmatched jobs
+// to existing companies via fuzzy suggestions, create new companies
+// inline, or mark as residential.
 //
 // Phase 1 (2026-04-30): Diagnostic tab. Read-only counters + duplicate
 // finder + per-market breakdown + top unmatched list.
@@ -289,6 +301,15 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
   const [lastAction, setLastAction] = useState(null);
   const [undoing, setUndoing] = useState(false);
 
+  // Bulk selection — set of customer_name strings (each is one ReconcileRow).
+  // When >0, a sticky action bar appears at the top with bulk actions.
+  // Cleared on every successful action (so user starts fresh after each batch).
+  const [selectedNames, setSelectedNames] = useState(() => new Set());
+  const [bulkLinkOpen, setBulkLinkOpen] = useState(false); // dropdown for "Link selected to..."
+  const [bulkLinkSearch, setBulkLinkSearch] = useState('');
+  // Auto-accept preview modal — populated when user clicks "Auto-accept high-confidence"
+  const [autoPreview, setAutoPreview] = useState(null); // {matches: [{group, company, score}], total}
+
   // Show only unmatched groups matching search + market
   const filtered = useMemo(() => {
     let f = unmatchedGroups;
@@ -500,10 +521,193 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
     }
   }, [lastAction, onRefresh]);
 
+  // ============================================================
+  // BULK ACTIONS
+  // ============================================================
+  // Selection helpers — the checkbox in each ReconcileRow toggles via this.
+  const toggleSelected = useCallback((name) => {
+    setSelectedNames((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedNames(new Set()), []);
+  const selectAllVisible = useCallback((visibleGroups) => {
+    setSelectedNames((prev) => {
+      const next = new Set(prev);
+      visibleGroups.forEach((g) => next.add(g.name));
+      return next;
+    });
+  }, []);
+
+  // Resolve selected names → list of group objects (for job ID extraction).
+  const selectedGroups = useMemo(
+    () => unmatchedGroups.filter((g) => selectedNames.has(g.name)),
+    [unmatchedGroups, selectedNames]
+  );
+  const selectedJobCount = useMemo(
+    () => selectedGroups.reduce((s, g) => s + g.count, 0),
+    [selectedGroups]
+  );
+
+  // Bulk: mark all selected as residential. One PATCH covers all jobs across
+  // all selected groups. One undo entry reverses the whole batch.
+  const bulkMarkResidential = useCallback(async () => {
+    if (selectedGroups.length === 0) return;
+    setBusy('__bulk__');
+    try {
+      const jobIds = selectedGroups.flatMap((g) => g.jobs.map((j) => j.id));
+      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+        method: 'PATCH',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_residential: true }),
+      });
+      if (!res.ok && res.status !== 204) {
+        const txt = await res.text();
+        throw new Error(`Bulk mark failed (${res.status}): ${txt.slice(0, 120)}`);
+      }
+      setToast({
+        msg: `Marked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} across ${selectedGroups.length} customer name${selectedGroups.length === 1 ? '' : 's'} as residential`,
+        kind: 'success',
+      });
+      setLastAction({ kind: 'residential', jobIds, groupName: `${selectedGroups.length} customers` });
+      clearSelection();
+      onRefresh();
+    } catch (e) {
+      setToast({ msg: 'Bulk mark failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
+    } finally {
+      setBusy(null);
+    }
+  }, [selectedGroups, clearSelection, onRefresh]);
+
+  // Bulk: link all selected groups to ONE chosen company. Single PATCH.
+  const bulkLinkToCompany = useCallback(async (company) => {
+    if (selectedGroups.length === 0) return;
+    setBusy('__bulk__');
+    try {
+      const jobIds = selectedGroups.flatMap((g) => g.jobs.map((j) => j.id));
+      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+        method: 'PATCH',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ company_id: company.id }),
+      });
+      if (!res.ok && res.status !== 204) {
+        const txt = await res.text();
+        throw new Error(`Bulk link failed (${res.status}): ${txt.slice(0, 120)}`);
+      }
+      setToast({
+        msg: `Linked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} across ${selectedGroups.length} customer name${selectedGroups.length === 1 ? '' : 's'} to ${company.name}`,
+        kind: 'success',
+      });
+      setLastAction({ kind: 'link', jobIds, groupName: `${selectedGroups.length} customers`, companyName: company.name });
+      setBulkLinkOpen(false);
+      setBulkLinkSearch('');
+      clearSelection();
+      onRefresh();
+    } catch (e) {
+      setToast({ msg: 'Bulk link failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
+    } finally {
+      setBusy(null);
+    }
+  }, [selectedGroups, clearSelection, onRefresh]);
+
+  // ============================================================
+  // AUTO-ACCEPT HIGH-CONFIDENCE FUZZY MATCHES
+  // ============================================================
+  // Scan all unmatched groups, find the top fuzzy candidate per group,
+  // collect everything ≥ 0.80 similarity. Show preview modal — user can
+  // uncheck any false positives, then commit all in one PATCH.
+  // Threshold of 0.80 is conservative — rare to be wrong at that level
+  // because the Jaccard+first-token-bonus formula already excludes most noise.
+  const HIGH_CONFIDENCE_THRESHOLD = 0.80;
+  const highConfidenceMatches = useMemo(() => {
+    const matches = [];
+    for (const g of unmatchedGroups) {
+      let best = null;
+      for (const c of companies) {
+        const score = similarity(g.name, c.name);
+        if (score >= HIGH_CONFIDENCE_THRESHOLD && (!best || score > best.score)) {
+          best = { group: g, company: c, score };
+        }
+      }
+      if (best) matches.push(best);
+    }
+    return matches.sort((a, b) => b.score - a.score);
+  }, [unmatchedGroups, companies]);
+
+  const openAutoPreview = useCallback(() => {
+    // Default: all matches checked. User can uncheck false positives in modal.
+    setAutoPreview({
+      matches: highConfidenceMatches.map((m) => ({ ...m, accepted: true })),
+    });
+  }, [highConfidenceMatches]);
+
+  const toggleAutoMatch = useCallback((idx) => {
+    setAutoPreview((prev) => {
+      if (!prev) return prev;
+      const next = [...prev.matches];
+      next[idx] = { ...next[idx], accepted: !next[idx].accepted };
+      return { matches: next };
+    });
+  }, []);
+
+  // Commit auto-accept: group jobs by target company, then issue ONE PATCH
+  // per company. Single undo entry covers the whole batch (reverses all
+  // job_id updates across all companies in one PATCH).
+  const commitAutoAccept = useCallback(async () => {
+    if (!autoPreview) return;
+    const accepted = autoPreview.matches.filter((m) => m.accepted);
+    if (accepted.length === 0) {
+      setAutoPreview(null);
+      return;
+    }
+    setBusy('__bulk__');
+    try {
+      // Group by company so we can do one PATCH per target.
+      const byCompany = new Map();
+      accepted.forEach(({ group, company }) => {
+        if (!byCompany.has(company.id)) byCompany.set(company.id, { company, jobIds: [] });
+        group.jobs.forEach((j) => byCompany.get(company.id).jobIds.push(j.id));
+      });
+      // Execute sequentially. PATCHes are idempotent so partial failure is recoverable.
+      const allJobIds = [];
+      for (const [companyId, { jobIds }] of byCompany.entries()) {
+        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+          method: 'PATCH',
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ company_id: companyId }),
+        });
+        if (!res.ok && res.status !== 204) {
+          const txt = await res.text();
+          throw new Error(`Auto-accept failed mid-batch (${res.status}): ${txt.slice(0, 120)}`);
+        }
+        allJobIds.push(...jobIds);
+      }
+      setToast({
+        msg: `Auto-accepted ${accepted.length} match${accepted.length === 1 ? '' : 'es'} (${allJobIds.length} job${allJobIds.length === 1 ? '' : 's'} linked)`,
+        kind: 'success',
+      });
+      // Single undo entry covers all linked jobs across all companies.
+      setLastAction({ kind: 'link', jobIds: allJobIds, groupName: `${accepted.length} auto-matched`, companyName: 'multiple companies' });
+      setAutoPreview(null);
+      clearSelection();
+      onRefresh();
+    } catch (e) {
+      setToast({ msg: 'Auto-accept failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
+    } finally {
+      setBusy(null);
+    }
+  }, [autoPreview, clearSelection, onRefresh]);
+
   return (
     <>
       <div style={card}>
-        <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             placeholder="Search customer names…"
             value={search}
@@ -514,7 +718,92 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
             <option value="all">All markets</option>
             {allMarkets.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
+          {/* Auto-accept lives in the toolbar — it scans all groups, not just selected,
+              and pre-fills the preview modal. Hidden when 0 matches at the threshold. */}
+          {highConfidenceMatches.length > 0 && (
+            <button onClick={openAutoPreview} style={{ ...btnS, background: '#FEF3C7', borderColor: '#FCD34D', color: '#92400E' }}>
+              ⚡ Auto-accept {highConfidenceMatches.length} high-confidence match{highConfidenceMatches.length === 1 ? '' : 'es'}
+            </button>
+          )}
         </div>
+
+        {/* Bulk action bar — sticky-feeling, only visible when something is selected */}
+        {selectedNames.size > 0 && (
+          <div style={{
+            marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#1F2937', color: '#FFF',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>
+              {selectedNames.size} customer name{selectedNames.size === 1 ? '' : 's'} selected · {selectedJobCount} job{selectedJobCount === 1 ? '' : 's'}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', position: 'relative' }}>
+              <button
+                onClick={bulkMarkResidential}
+                disabled={busy === '__bulk__'}
+                style={{ ...btnS, background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' }}
+              >
+                🏠 Mark all residential
+              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setBulkLinkOpen((s) => !s)}
+                  disabled={busy === '__bulk__'}
+                  style={{ ...btnS, background: '#FFF', color: '#1A1A1A' }}
+                >
+                  🔗 Link all to… {bulkLinkOpen ? '▲' : '▼'}
+                </button>
+                {bulkLinkOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: 280, maxHeight: 320, overflowY: 'auto',
+                    background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    padding: 8, zIndex: 100,
+                  }}>
+                    <input
+                      placeholder="Search companies…"
+                      value={bulkLinkSearch}
+                      onChange={(e) => setBulkLinkSearch(e.target.value)}
+                      style={{ ...inputS, width: '100%', marginBottom: 6 }}
+                      autoFocus
+                    />
+                    {companies
+                      .filter((c) => !bulkLinkSearch.trim() || (c.name || '').toLowerCase().includes(bulkLinkSearch.toLowerCase()))
+                      .slice(0, 25)
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => bulkLinkToCompany(c)}
+                          disabled={busy === '__bulk__'}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: 12,
+                            background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#1A1A1A',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#F4F4F2')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div style={{ fontWeight: 600 }}>{c.name}</div>
+                          {c.market && <div style={{ fontSize: 10, color: '#9E9B96' }}>{c.market}</div>}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => selectAllVisible(filtered)}
+                disabled={busy === '__bulk__'}
+                style={{ ...btnS, background: '#374151', color: '#FFF', borderColor: '#4B5563' }}
+              >
+                + Select all visible
+              </button>
+              <button
+                onClick={clearSelection}
+                disabled={busy === '__bulk__'}
+                style={{ ...btnS, background: 'transparent', color: '#FFF', borderColor: '#4B5563' }}
+              >
+                × Clear
+              </button>
+            </div>
+          </div>
+        )}
 
         {toast && (
           <div style={{
@@ -556,7 +845,9 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
               key={g.name}
               group={g}
               companies={companies}
-              busy={busy === g.name}
+              busy={busy === g.name || busy === '__bulk__'}
+              selected={selectedNames.has(g.name)}
+              onToggleSelected={() => toggleSelected(g.name)}
               onLinkExisting={(c) => linkToCompany(g, c)}
               onMarkResidential={() => markResidential(g)}
               onCreateNew={(draft) => createAndLink(g, draft)}
@@ -564,11 +855,87 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
           ))}
         </div>
       </div>
+
+      {/* Auto-accept preview modal */}
+      {autoPreview && (
+        <div
+          onClick={() => setAutoPreview(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#FFF', borderRadius: 12, maxWidth: 720, width: '100%', maxHeight: '85vh',
+              display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E3E0' }}>
+              <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800 }}>
+                ⚡ Auto-accept high-confidence matches
+              </div>
+              <div style={{ fontSize: 12, color: '#625650', marginTop: 4 }}>
+                Review {autoPreview.matches.length} suggested link{autoPreview.matches.length === 1 ? '' : 's'} at ≥80% similarity. Uncheck any false positives, then commit.
+              </div>
+            </div>
+            <div style={{ overflowY: 'auto', padding: 12, flex: 1 }}>
+              {autoPreview.matches.map((m, idx) => (
+                <label
+                  key={`${m.group.name}-${m.company.id}`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', marginBottom: 4,
+                    background: m.accepted ? '#ECFDF5' : '#F9F8F6',
+                    border: `1px solid ${m.accepted ? '#86EFAC' : '#E5E3E0'}`,
+                    borderRadius: 8, cursor: 'pointer', fontSize: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={m.accepted}
+                    onChange={() => toggleAutoMatch(idx)}
+                    style={{ cursor: 'pointer', width: 14, height: 14, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{m.group.name}</div>
+                    <div style={{ fontSize: 11, color: '#625650', marginTop: 2 }}>
+                      → <span style={{ fontWeight: 600 }}>{m.company.name}</span>
+                      {m.company.market && <span style={{ marginLeft: 6, color: '#9E9B96' }}>· {m.company.market}</span>}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: m.score > 0.9 ? '#065F46' : '#92400E' }}>
+                      {Math.round(m.score * 100)}%
+                    </div>
+                    <div style={{ fontSize: 10, color: '#9E9B96' }}>{m.group.count} job{m.group.count === 1 ? '' : 's'}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #E5E3E0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ fontSize: 12, color: '#625650' }}>
+                {autoPreview.matches.filter((m) => m.accepted).length} of {autoPreview.matches.length} will be linked
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setAutoPreview(null)} style={btnS}>Cancel</button>
+                <button
+                  onClick={commitAutoAccept}
+                  disabled={busy === '__bulk__' || autoPreview.matches.filter((m) => m.accepted).length === 0}
+                  style={{ ...btnP, opacity: busy === '__bulk__' ? 0.6 : 1 }}
+                >
+                  {busy === '__bulk__' ? 'Linking…' : `✓ Commit ${autoPreview.matches.filter((m) => m.accepted).length} match${autoPreview.matches.filter((m) => m.accepted).length === 1 ? '' : 'es'}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-function ReconcileRow({ group, companies, busy, onLinkExisting, onMarkResidential, onCreateNew }) {
+function ReconcileRow({ group, companies, busy, selected, onToggleSelected, onLinkExisting, onMarkResidential, onCreateNew }) {
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState({ name: group.name, market: group.markets.split(',')[0]?.trim() || '' });
   const [showAllCompanies, setShowAllCompanies] = useState(false);
@@ -593,13 +960,28 @@ function ReconcileRow({ group, companies, busy, onLinkExisting, onMarkResidentia
   }, [companies, allSearch, showAllCompanies]);
 
   return (
-    <div style={{ border: '1px solid #E5E3E0', borderRadius: 10, padding: 14, background: '#FAFAFA', opacity: busy ? 0.6 : 1 }}>
+    <div style={{
+      border: `1px solid ${selected ? '#8A261D' : '#E5E3E0'}`,
+      borderRadius: 10, padding: 14,
+      background: selected ? '#FDF4F4' : '#FAFAFA',
+      opacity: busy ? 0.6 : 1,
+    }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-        <div style={{ flex: '1 1 300px' }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{group.name}</div>
-          <div style={{ fontSize: 11, color: '#625650' }}>
-            {group.count} job{group.count === 1 ? '' : 's'} · {fmtMoney(group.ncv)} NCV · {group.markets || 'no market'}
+        <div style={{ flex: '1 1 300px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={onToggleSelected}
+            disabled={busy}
+            title="Select for bulk action"
+            style={{ marginTop: 3, cursor: busy ? 'wait' : 'pointer', width: 16, height: 16, flexShrink: 0, accentColor: '#8A261D' }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{group.name}</div>
+            <div style={{ fontSize: 11, color: '#625650' }}>
+              {group.count} job{group.count === 1 ? '' : 's'} · {fmtMoney(group.ncv)} NCV · {group.markets || 'no market'}
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
