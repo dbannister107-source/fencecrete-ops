@@ -2674,12 +2674,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <div key={f} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #E5E3E0'}}><span style={{fontSize:12,color:'#625650'}}>{cd?cd.label:f}</span><span style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{val}</span></div>);})}
           </div>}
           {tab==='contract'&&<>
-            {/* Bonds & Permits */}
-            <div style={{marginTop:18,marginBottom:10,fontSize:11,color:'#8A261D',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5,paddingBottom:4,borderBottom:'1px solid #E5E3E0'}}>Bonds & Permits</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
-              {[['Permit Amount','permit_amount'],['P&P Bond Amount','pp_bond_amount'],['Maint Bond Amount','maint_bond_amount']].map(([lbl,k])=>
-                <div key={k}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label><input type="number" value={form[k]??''} onChange={e=>set(k,e.target.value)} placeholder="0" style={inputS}/></div>
-              )}
+            {/* Permits & Bonds — now entered as line items (see Line Items tab).
+                Flat columns kept on jobs for backward compat but no longer
+                surfaced in the UI. The legacy summary block below still reads
+                them defensively for any historical data. */}
+            <div style={{marginTop:18,marginBottom:16,padding:'10px 14px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:12,color:'#1D4ED8',lineHeight:1.5}}>
+              <strong>Permits, P&amp;P bonds, and maintenance bonds</strong> are now tracked as line items. Add them in the <b>Line Items</b> tab as separate rows so they roll up cleanly into the contract value.
             </div>
             {/* Sales Tax */}
             {(()=>{
