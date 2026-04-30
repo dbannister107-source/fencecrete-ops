@@ -12120,6 +12120,13 @@ function MapPage({ jobs, onNav }) {
       const el = document.createElement('div');
       el.className = 'fc-pin';
       el.dataset.jobId = j.id;
+      // DIAGNOSTIC VERSION (2026-04-30 evening): no transform on hover. Earlier
+      // attempts to fix "dot disappears on hover" assumed the scale transform
+      // was causing a re-render flicker. Removing the transform entirely as a
+      // diagnostic — if dots still disappear, the bug is NOT in our hover
+      // handler and we need to look at mapbox-gl marker behavior directly.
+      // Also forcing visibility:visible !important and opacity:1 !important to
+      // rule out a CSS rule from somewhere else hiding the dot.
       el.style.cssText = `
         width: 14px;
         height: 14px;
@@ -12128,12 +12135,16 @@ function MapPage({ jobs, onNav }) {
         border: 2px solid #1A1A1A;
         cursor: pointer;
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        transition: transform 0.15s, width 0.15s, height 0.15s;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto;
       `;
       el.title = `${j.job_number || ''} ${j.job_name || ''}`;
       el.addEventListener('click', (e) => { e.stopPropagation(); setSelected(j); });
-      el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.4)'; });
-      el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
+      // Diagnostic: log hover events. If the dot disappears on hover but no log
+      // fires, the cursor isn't actually hitting the dot — mapbox is.
+      el.addEventListener('mouseenter', () => { console.log('[PIN] mouseenter', j.job_number); });
+      el.addEventListener('mouseleave', () => { console.log('[PIN] mouseleave', j.job_number); });
       const marker = new mapboxgl.Marker(el).setLngLat([j.lng, j.lat]).addTo(map);
       markersRef.current.push(marker);
     });
