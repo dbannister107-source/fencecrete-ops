@@ -1837,7 +1837,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
-  const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});
+  const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null});
   const[latestPmLF,setLatestPmLF]=useState(null);
   const[salesOrigin,setSalesOrigin]=useState(null);
   useEffect(()=>{if(job?.id)sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));},[job?.id]);
@@ -1847,10 +1847,38 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   },[job?.job_number,isNew]);
   useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
   const[coToast,setCOToast]=useState(null);
-  const saveCO=async()=>{const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}
+  const saveCO=async()=>{
+    let pdfStoragePath=null;
+    // Phase D3.5: optional CO PDF upload. If a file is staged, upload first.
+    // On upload failure we abort the CO save — the user clearly wanted this
+    // PDF attached, silently dropping it would lose audit trail.
+    if(coForm.pdfFile){
+      try{
+        const f=coForm.pdfFile;
+        const safeName=(f.name||'co.pdf').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,200);
+        const path=`change-orders/${job.id}/${Date.now()}-${safeName}`;
+        const upRes=await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURI(path)}`,{
+          method:'POST',
+          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':f.type||'application/pdf','x-upsert':'true'},
+          body:f,
+        });
+        if(!upRes.ok){
+          const txt=await upRes.text().catch(()=>'');
+          throw new Error(`Storage upload failed (${upRes.status}): ${txt.slice(0,140)}`);
+        }
+        pdfStoragePath=path;
+      }catch(uploadErr){
+        console.error('[CO PDF upload]',uploadErr);
+        setCOToast({msg:'PDF upload failed: '+uploadErr.message+' — CO not submitted',kind:'error'});
+        return;
+      }
+    }
+    const body={job_id:job.id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null,pdf_storage_path:pdfStoragePath};
+    try{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();console.error('CO save failed:',txt);}
     // Non-blocking email alert for CO submission
     fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:coForm.co_number||'—',amount:n(coForm.amount),description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${coForm.co_number||'—'}`})}).catch(e=>console.error('CO email alert failed:',e));
-    setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:''});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));setCOToast({msg:'CO submitted — notification sent',kind:'success'});}catch(e){console.error('CO error:',e);setCOToast({msg:'CO save failed: '+e.message,kind:'error'});}};
+    setShowCOForm(false);setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null});sbGet('change_orders',`job_id=eq.${job.id}&order=created_at.desc`).then(d=>setCOList(d||[]));setCOToast({msg:pdfStoragePath?'CO submitted with PDF — notification sent':'CO submitted — notification sent',kind:'success'});}catch(e){console.error('CO error:',e);setCOToast({msg:'CO save failed: '+e.message,kind:'error'});}
+  };
   const approveCO=async(c)=>{
     const today=new Date().toISOString().split('T')[0];
     // Only Amiee can approve COs
@@ -2538,6 +2566,24 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             </div>
             <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Description *</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} placeholder="Describe the scope of this change order..." style={{...inputS,fontSize:12,resize:'vertical'}}/></div>
             <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Notes</label><textarea value={coForm.notes} onChange={e=>setCOForm(f=>({...f,notes:e.target.value}))} rows={2} placeholder="Internal notes..." style={{...inputS,fontSize:12,resize:'vertical'}}/></div>
+            {/* Phase D3.5: optional signed PDF. When the CO is approved the
+                spine rule auto-files this to the Documents tab. Skip and
+                upload later if the PDF isn't in hand yet. */}
+            <div style={{marginBottom:10,padding:'10px 12px',background:'#FFF',border:'1px dashed #D1CFCB',borderRadius:8}}>
+              <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:6,fontWeight:600,textTransform:'uppercase'}}>Signed PDF (optional)</label>
+              {coForm.pdfFile?(
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}>
+                  <span style={{flex:1,fontWeight:600,color:'#065F46'}}>📄 {coForm.pdfFile.name}</span>
+                  <span style={{color:'#9E9B96',fontSize:10}}>{Math.round(coForm.pdfFile.size/1024)} KB</span>
+                  <button onClick={()=>setCOForm(f=>({...f,pdfFile:null}))} style={{background:'transparent',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 8px',fontSize:10,fontWeight:600,color:'#625650',cursor:'pointer'}}>Remove</button>
+                </div>
+              ):(
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <input type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files&&e.target.files[0];if(f){if(f.size>25*1024*1024){setCOToast({msg:'PDF must be 25MB or smaller',kind:'error'});return;}setCOForm(p=>({...p,pdfFile:f}));}}} style={{fontSize:11,flex:1}}/>
+                  <span style={{fontSize:10,color:'#9E9B96'}}>Auto-files to Documents on approval</span>
+                </div>
+              )}
+            </div>
             <div style={{padding:'6px 10px',background:'#FEF3C7',borderRadius:6,fontSize:10,color:'#92400E',marginBottom:10}}>⚠️ Submits as <b>Pending</b> — only Amiee can approve or reject</div>
             <button onClick={saveCO} style={{...btnP,width:'100%',justifyContent:'center',display:'flex',gap:6}}>Submit Change Order</button>
           </div>
