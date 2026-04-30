@@ -845,6 +845,10 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   // Documents count — surfaces "📂 N docs" in the header so users see at a glance
   // whether a project has had files uploaded. Phase D7 (2026-04-30).
   const[docCount,setDocCount]=useState(null);
+  // Company row — when job.company_id is set, fetch the master record so we can
+  // show a "🏢 Linked" badge on the Customer field. Customer Master Phase 2.3
+  // (2026-04-30). Falls back to null silently if company_id is null/missing.
+  const[companyRow,setCompanyRow]=useState(null);
   useEffect(()=>{
     if(!job?.id)return;
     let cancelled=false;
@@ -860,8 +864,17 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
       const total=parseInt(cr.split('/')[1]||'0',10);
       if(!cancelled)setDocCount(Number.isFinite(total)?total:0);
     }).catch(()=>{if(!cancelled)setDocCount(null);});
+    // Company master fetch — only when job.company_id is set. is_residential
+    // jobs and unlinked jobs skip this entirely (no wasted query).
+    if(job.company_id){
+      sbGet('companies',`id=eq.${job.company_id}&select=id,name,company_type,market,address,city,state,active&limit=1`).then(rows=>{
+        if(!cancelled)setCompanyRow(Array.isArray(rows)&&rows.length>0?rows[0]:null);
+      }).catch(()=>{if(!cancelled)setCompanyRow(null);});
+    }else{
+      setCompanyRow(null);
+    }
     return()=>{cancelled=true;};
-  },[job?.id]);
+  },[job?.id,job?.company_id]);
   if(!job)return null;
   const reqFlags=[{k:'aia_billing',l:'AIA'},{k:'bonds',l:'Bonds'},{k:'certified_payroll',l:'Cert Payroll'},{k:'ocip_ccip',l:'OCIP/CCIP'},{k:'third_party_billing',l:'3rd Party'}];
   const secStyle={marginBottom:16};
@@ -891,7 +904,17 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
         {/* Section 1: Project Info */}
         <div style={secStyle}><div style={secTitle}>Project Info</div>
           <div style={grd}>
-            <div><div style={lbl}>Customer</div><div style={val}>{job.customer_name||'—'}</div></div>
+            <div><div style={lbl}>Customer</div><div style={val}>
+              {job.customer_name||'—'}
+              {/* Customer Master Phase 2.3 — three states:
+                  - Linked to company master: green 🏢 pill, hover for details
+                  - Residential job: blue 🏠 pill (no company expected)
+                  - Unlinked: subtle yellow "Not linked" hint (only for non-residential)
+                  Designed to be informational, not alarming. */}
+              {companyRow?<span title={`Linked to company: ${companyRow.name}${companyRow.market?' · '+companyRow.market:''}${companyRow.city?' · '+companyRow.city+(companyRow.state?', '+companyRow.state:''):''}`} style={{display:'inline-block',marginLeft:8,padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#D1FAE5',color:'#065F46',verticalAlign:'middle'}}>🏢 LINKED</span>
+              :job.is_residential?<span title="Residential / individual customer — no company link expected" style={{display:'inline-block',marginLeft:8,padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#DBEAFE',color:'#1D4ED8',verticalAlign:'middle'}}>🏠 RESIDENTIAL</span>
+              :<span title="This customer is not linked to the company master. Resolve in Admin → Customer Master." style={{display:'inline-block',marginLeft:8,padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#FEF3C7',color:'#92400E',verticalAlign:'middle'}}>UNLINKED</span>}
+            </div></div>
             <div><div style={lbl}>Job Type</div><div style={val}>{job.job_type||'—'}</div></div>
             <div><div style={lbl}>Primary Fence Type</div><div style={{marginTop:2}}>{job.primary_fence_type?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:job.primary_fence_type==='Precast'?'#8A261D':job.primary_fence_type==='Masonry'?'#185FA5':'#374151',color:'#FFF'}}>{job.primary_fence_type}</span>:<span style={{color:'#9E9B96'}}>—</span>}{Array.isArray(job.fence_addons)&&job.fence_addons.length>0&&<span style={{marginLeft:6}}>{job.fence_addons.map(a=>{const[bg,l2]=addC[a]||['#625650',a];return<span key={a} style={{display:'inline-block',padding:'1px 5px',borderRadius:4,fontSize:9,fontWeight:700,background:bg,color:'#FFF',marginRight:3}}>{l2}</span>;})}</span>}</div></div>
             <div><div style={lbl}>Address</div><div style={val}>{[job.address,job.city,job.state].filter(Boolean).join(', ')||'—'}</div></div>
@@ -1430,6 +1453,22 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
      edits "didn't carry over." Sync form to job whenever the underlying job id
      changes. New-job (unsaved) panels skip the sync because they have no id. */
   useEffect(()=>{if(job?.id)setForm({...job});},[job?.id]);
+  // Customer Master Phase 2.3 — fetch the linked company record so the header
+  // can show a "🏢 [Company Name]" pill. Empty when company_id is null.
+  // Re-runs whenever company_id changes (covers reconcile→reload→panel-still-open
+  // pattern). Cheap query: 1 row by primary key, ~20ms.
+  const[companyRow,setCompanyRow]=useState(null);
+  useEffect(()=>{
+    let cancelled=false;
+    if(form?.company_id){
+      sbGet('companies',`id=eq.${form.company_id}&select=id,name,market,city,state&limit=1`).then(rows=>{
+        if(!cancelled)setCompanyRow(Array.isArray(rows)&&rows.length>0?rows[0]:null);
+      }).catch(()=>{if(!cancelled)setCompanyRow(null);});
+    }else{
+      setCompanyRow(null);
+    }
+    return()=>{cancelled=true;};
+  },[form?.company_id]);
   // Ref held by LineItemsEditor — lets us trigger its saveAll() from the
   // parent's handleSave so clicking top "Save" also commits line item edits.
   const lineItemsSaveRef=useRef(null);
@@ -2065,7 +2104,16 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           <BackButton onBack={onClose} style={{marginLeft:-6}}/>
           <div style={{minWidth:0,flex:1}}>
             <div style={{fontFamily:'Inter',fontSize:isMobile?15:16,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'New Project':(form.job_name||'Untitled')}</div>
-            <div style={{fontSize:12,color:'#625650',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</div>
+            <div style={{fontSize:12,color:'#625650',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:6}}>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{isNew?'Fill in details':`#${form.job_number} · ${form.customer_name}`}</span>
+              {/* Customer master link state badge — Phase 2.3.
+                  Shows next to customer_name in the header so the link state
+                  is visible from every tab without taking column space.
+                  Hidden for new (unsaved) jobs. */}
+              {!isNew&&(companyRow?<span title={`Linked to company master: ${companyRow.name}${companyRow.market?' · '+companyRow.market:''}${companyRow.city?' · '+companyRow.city+(companyRow.state?', '+companyRow.state:''):''}`} style={{flexShrink:0,display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#D1FAE5',color:'#065F46',whiteSpace:'nowrap'}}>🏢 LINKED</span>
+              :form.is_residential?<span title="Residential / individual customer — no company link expected" style={{flexShrink:0,display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#DBEAFE',color:'#1D4ED8',whiteSpace:'nowrap'}}>🏠 RESIDENTIAL</span>
+              :<span title="Not linked to company master — resolve in Admin → Customer Master" style={{flexShrink:0,display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:'#FEF3C7',color:'#92400E',whiteSpace:'nowrap'}}>UNLINKED</span>)}
+            </div>
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
@@ -8259,7 +8307,7 @@ function MaterialCalcPage({jobs,preJob}){
         </div>
       </div>
     </div>;})()}
-    <style>{`@media print{body *{visibility:hidden}#production-order,#production-order *{visibility:visible}#production-order{position:absolute;left:0;top:0;width:100%;padding:24px 32px!important}.no-print{display:none!important}}`}</style>
+    <style>{`@page{size:legal;margin:0.5in}@media print{body *{visibility:hidden}#production-order,#production-order *{visibility:visible}#production-order{position:absolute;left:0;top:0;width:100%;padding:24px 32px!important}.no-print{display:none!important}}`}</style>
   </div>);
 }
 
