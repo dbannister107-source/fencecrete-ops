@@ -8308,34 +8308,45 @@ function MaterialCalcPage({jobs,preJob}){
       </div>
     </div>;})()}
     <style>{`
-      @page{size:legal;margin:0.5in}
+      @page{size:letter;margin:0.5in}
       @media print{
-        /* Reset html/body so the print document can grow to multiple pages.
-           Default html/body height inheritance can otherwise clip pagination. */
-        html,body{height:auto!important;overflow:visible!important;margin:0!important;padding:0!important}
-        /* Hide all UI by visibility, then expose the production-order subtree.
-           visibility:hidden + visibility:visible keeps DOM structure intact
-           (display:none would break some layout calculations). */
-        body *{visibility:hidden}
-        #production-order,#production-order *{visibility:visible}
-        /* Neutralize the modal wrappers. They use position:fixed + maxHeight
-           + overflow:auto for on-screen scroll. At print time those constrain
-           the printable area to one viewport, clipping anything past page 1.
-           We explicitly reset them so the order can flow naturally. */
-        .po-print-backdrop,.po-print-modal{
-          position:static!important;
-          inset:auto!important;
-          background:none!important;
-          box-shadow:none!important;
-          max-height:none!important;
-          overflow:visible!important;
+        /* Print strategy: hide everything via visibility (NOT display) so the
+           DOM layout calculations stay intact for tables. Then lift ONLY
+           #production-order to position:absolute at the document root,
+           escaping all parent overflow/maxHeight/position:fixed clipping.
+
+           Three pitfalls avoided:
+           1. position:fixed only paints on page 1, so we use position:absolute
+              which respects pagination across pages.
+           2. display:none on parents breaks visibility:visible on descendants
+              in some print engines (this was the regression in 11d5e5a9
+              where setting display:block on the flex backdrop wrapper made
+              the page paint blank). Pure visibility cascade is reliable.
+           3. We don't touch the modal wrappers at all — they stay hidden via
+              body *{visibility:hidden}, and the print target escapes them via
+              absolute positioning. */
+        html,body{margin:0!important;padding:0!important;background:#fff!important}
+        body *{visibility:hidden!important}
+        #production-order,#production-order *{visibility:visible!important}
+        #production-order{
+          position:absolute!important;
+          left:0!important;
+          top:0!important;
+          right:0!important;
           width:auto!important;
-          display:block!important;
+          max-height:none!important;
+          height:auto!important;
+          overflow:visible!important;
+          padding:0.25in 0.5in!important;
+          margin:0!important;
+          background:#fff!important;
         }
-        #production-order{position:static!important;width:100%!important;max-height:none!important;overflow:visible!important;padding:24px 32px!important}
         .no-print{display:none!important}
-        /* Prefer breaking between sections rather than mid-section. */
-        #production-order > table > tbody > tr > td > div{page-break-inside:avoid;break-inside:avoid}
+        /* Avoid splitting individual sections across pages. */
+        #production-order > table > tbody > tr > td > div{
+          page-break-inside:avoid;
+          break-inside:avoid;
+        }
       }
     `}</style>
   </div>);
