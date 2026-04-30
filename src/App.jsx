@@ -840,6 +840,9 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
   // columns are populated on <1% of jobs, so reading from PIS is required for
   // these sections to actually show anything.
   const[pisRow,setPisRow]=useState(null);
+  // Documents count — surfaces "📂 N docs" in the header so users see at a glance
+  // whether a project has had files uploaded. Phase D7 (2026-04-30).
+  const[docCount,setDocCount]=useState(null);
   useEffect(()=>{
     if(!job?.id)return;
     let cancelled=false;
@@ -847,6 +850,14 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
       if(cancelled)return;
       setPisRow(Array.isArray(rows)&&rows.length>0?rows[0]:null);
     }).catch(()=>{if(!cancelled)setPisRow(null);});
+    // PostgREST count via Prefer: count=exact + a HEAD-like select=id&limit=1 (fastest signal)
+    fetch(`${SB}/rest/v1/project_attachments?job_id=eq.${job.id}&deleted_at=is.null&select=id&limit=1`,{
+      headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,Prefer:'count=exact'},
+    }).then(r=>{
+      const cr=r.headers.get('content-range')||'';
+      const total=parseInt(cr.split('/')[1]||'0',10);
+      if(!cancelled)setDocCount(Number.isFinite(total)?total:0);
+    }).catch(()=>{if(!cancelled)setDocCount(null);});
     return()=>{cancelled=true;};
   },[job?.id]);
   if(!job)return null;
@@ -868,6 +879,8 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
             <span style={statusPill(job.status)}>{SS[job.status]}</span>
             <span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:600,background:'rgba(255,255,255,0.2)'}}>{MS[job.market]||job.market||'—'}</span>
             {job.pm&&<span style={{fontSize:12,opacity:0.9}}>{job.pm}</span>}
+            {/* Documents count badge — Phase D7. Hidden until count loads. */}
+            {docCount!=null&&<span title={docCount===0?'No documents yet':`${docCount} document${docCount===1?'':'s'} on file`} style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:docCount>0?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.08)',color:docCount>0?'#FFF':'rgba(255,255,255,0.55)'}}>📂 {docCount}</span>}
           </div>
         </div>
         <button onClick={onClose} style={{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:22,cursor:'pointer',padding:'0 4px',lineHeight:1}}>×</button>
@@ -1488,6 +1501,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   ],[]);
   const [attachments,setAttachments]=useState([]);
   const [attachmentsLoading,setAttachmentsLoading]=useState(false);
+  // Header doc count — Phase D7. Loads on every job change regardless of the
+  // active tab, so the Documents tab nav button can show "📂 N" even when
+  // the user hasn't opened that tab yet. Cheap PostgREST count query, doesn't
+  // pull the full attachment list.
+  const [headerDocCount,setHeaderDocCount]=useState(null);
   const [uploadQueue,setUploadQueue]=useState([]);// [{id,filename,progress,error}]
   const [uploadCategory,setUploadCategory]=useState('contract');
   const [uploadDescription,setUploadDescription]=useState('');
@@ -1498,13 +1516,31 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const [draggingOver,setDraggingOver]=useState(false);
   const fileInputRef=React.useRef(null);
 
-  // Fetch attachments when the Documents tab opens
+  // Lightweight count fetch — runs on job change so the tab nav can show
+  // "📂 N" even before the user opens Documents tab.
+  useEffect(()=>{
+    if(!job?.id){setHeaderDocCount(null);return;}
+    let cancelled=false;
+    fetch(`${SB}/rest/v1/project_attachments?job_id=eq.${job.id}&deleted_at=is.null&select=id&limit=1`,{
+      headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,Prefer:'count=exact'},
+    }).then(r=>{
+      const cr=r.headers.get('content-range')||'';
+      const total=parseInt(cr.split('/')[1]||'0',10);
+      if(!cancelled)setHeaderDocCount(Number.isFinite(total)?total:0);
+    }).catch(()=>{if(!cancelled)setHeaderDocCount(null);});
+    return()=>{cancelled=true;};
+  },[job?.id]);
+
+  // Fetch full attachments list when the Documents tab opens
   const loadAttachments=React.useCallback(async()=>{
     if(!job?.id)return;
     setAttachmentsLoading(true);
     try{
       const rows=await sbGet('project_attachments',`job_id=eq.${job.id}&deleted_at=is.null&order=uploaded_at.desc&limit=500`);
       setAttachments(Array.isArray(rows)?rows:[]);
+      // Sync header count to actual list length (covers cases where the
+      // count fetch raced with an upload/delete that the user just performed).
+      setHeaderDocCount(Array.isArray(rows)?rows.length:0);
     }catch(e){console.error('[Documents load]',e);setAttachmentsToast({kind:'error',msg:'Could not load documents'});}
     setAttachmentsLoading(false);
   },[job?.id]);
@@ -1922,29 +1958,28 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               ?{background:'#F0FDF4',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#065F46',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}
               :{background:'#065F46',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#FFF',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
           >{executed?'✓ Contract Executed — click to undo':'✓ Mark Contract Executed'}</button>;})()}
-          {/* SharePoint folder automation. Open is read-only and visible to anyone;
-              Create is gated to canEdit since it provisions real Microsoft Graph
-              resources. OOS market shows a disabled button until the folder
-              automation is extended to that region. */}
+          {/* SharePoint folder automation. Open is read-only and visible to
+              anyone for legacy folders; Create is RETIRED as of Phase D6
+              (2026-04-30) — new uploads go to the Documents tab instead.
+              The Create modal still works if reached via bookmark, but no
+              entry point launches it from the toolbar. */}
           {!isNew&&(()=>{
             const folderUrl=form.sharepoint_folder_url;
             if(folderUrl){
               return <button
-                title={getSharePointTooltip(folderUrl)}
+                title={getSharePointTooltip(folderUrl)+' · Legacy folder; new uploads go to the Documents tab.'}
                 onClick={()=>window.open(folderUrl,'_blank','noopener')}
                 style={{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
               >📁 Open SharePoint Folder</button>;
             }
             if(!canEdit)return null;
-            const isOOS=(form.market||'')==='OOS';
+            // No SharePoint folder + new project → point user to the Documents
+            // tab. Clicking jumps the EditPanel to the Documents tab.
             return <button
-              title={isOOS?'Out of State markets coming soon':'Create a SharePoint folder for this project'}
-              onClick={()=>{if(!isOOS)setShowSharepointModal(true);}}
-              disabled={isOOS}
-              style={isOOS
-                ?{background:'#F4F4F2',border:'1px solid #D1CFCB',borderRadius:8,padding:'8px 14px',color:'#9E9B96',fontWeight:700,fontSize:12,cursor:'not-allowed',whiteSpace:'nowrap'}
-                :{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
-            >📁 Create SharePoint Folder</button>;
+              title="Upload project documents directly in the app — they're searchable, audited, and propagate via the spine"
+              onClick={()=>setTab('documents')}
+              style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
+            >📂 Use Documents Tab</button>;
           })()}
           {canEdit
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
@@ -1992,7 +2027,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
           </div>
       )}
-      <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>{s.label}</button>)}</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>{s.label}{s.key==='documents'&&headerDocCount!=null&&headerDocCount>0&&<span style={{display:'inline-block',padding:'1px 6px',borderRadius:99,fontSize:9,fontWeight:800,background:tab===s.key?'#8A261D':'#625650',color:'#FFF',lineHeight:1.4}}>{headerDocCount}</span>}</button>)}</div>
       <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:(canEdit||canEditInstallDateOnly)?'auto':'none'}}>
         {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'linear-gradient(135deg,#FDF4F4 0%,#F9F8F6 100%)',border:'1px solid #8A261D33',borderLeft:'4px solid #8A261D',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
