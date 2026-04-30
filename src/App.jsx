@@ -1151,7 +1151,7 @@ function LineItemsEditor({job,onChange,registerSave}){
     setLoading(false);
   },[job?.job_number]);
   useEffect(()=>{loadLines();},[loadLines]);
-  const FLAT_COST_TYPES={'Gate':{category:'gate',taxable:true},'Lump Sum':{category:'lump_sum',taxable:true},'Permit':{category:'permit',taxable:false},'P&P Bond':{category:'pp_bond',taxable:false},'Maint Bond':{category:'maint_bond',taxable:false}};
+  const FLAT_COST_TYPES={'Gate':{category:'gate',taxable:true},'Lump Sum':{category:'lump_sum',taxable:true},'Columns':{category:'columns',taxable:true},'Permit':{category:'permit',taxable:false},'P&P Bond':{category:'pp_bond',taxable:false},'Maint Bond':{category:'maint_bond',taxable:false}};
   const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};
     // If user switches Type to a flat-cost type (Permit/Bond), snap to flat-cost
     // defaults: lf=1 (so contract_rate is the total), no style/color/height,
@@ -1312,7 +1312,7 @@ function LineItemsEditor({job,onChange,registerSave}){
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Lump Sum','Lump Sum'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -1398,7 +1398,7 @@ function LineItemsEditor({job,onChange,registerSave}){
             {/* Row 3: Description (always visible) */}
             <div>
               <label style={fieldLabel}>Description</label>
-              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={isFlat?(l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':l.fence_type==='Permit'?'e.g. City of Sugar Land permit':l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':'e.g. 2-year maintenance bond'):'Optional notes for this line'} style={{...inp,width:'100%'}}/>
+              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={isFlat?(l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':l.fence_type==='Columns'?'e.g. 12 columns @ $850 each':l.fence_type==='Permit'?'e.g. City of Sugar Land permit':l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':'e.g. 2-year maintenance bond'):'Optional notes for this line'} style={{...inp,width:'100%'}}/>
             </div>
             </>;
             })()}
