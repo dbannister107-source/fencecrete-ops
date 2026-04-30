@@ -8193,8 +8193,8 @@ function MaterialCalcPage({jobs,preJob}){
     {!result&&<div style={{...card,textAlign:'center',padding:40,color:'#9E9B96'}}><div style={{fontSize:28,marginBottom:8}}>🧮</div><div style={{fontSize:14}}>Select a style, height, and linear feet to calculate materials</div></div>}
     {/* Print Preview Modal */}
     {showPrint&&result&&(()=>{const ph=result.postHeight;const phCol=ph<=8?'8':ph<=10?'10':'12';const d=(v)=>v>0?v:'—';const lp=ov('linePosts',result.linePosts);const cp=ov('cornerPosts',result.cornerPosts);const sp=ov('stopPosts',result.stopPosts);const rp=ov('regularPanels',result.regularPanels);const hp=ov('halfPanels',result.halfPanels)||0;const tp=ov('topPanels',result.topPanels)||0;const bp=ov('bottomPanels',result.bottomPanels)||0;const cr=ov('capRails',result.capRails);const tr2=ov('topRails',result.topRails);const br=ov('bottomRails',result.bottomRails);const mr=ov('middleRails',result.middleRails);const lc=ov('lineCaps',result.lineCaps);const sc2=ov('stopCaps',result.stopCaps);const jobColor=color||selJob?.color||'';const mktShort=selJob?MS[selJob.market]||selJob.market||'':'';const totalPanels=rp+hp+tp+bp;
-    return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPrint(false)}>
-      <div style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
+    return<div className="po-print-backdrop" style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPrint(false)}>
+      <div className="po-print-modal" style={{background:'#FFF',width:816,maxWidth:'98vw',maxHeight:'96vh',overflow:'auto',boxShadow:'0 12px 40px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
         {/* Print-only controls */}
         <div className="no-print" style={{display:'flex',gap:8,justifyContent:'flex-end',padding:'12px 20px',borderBottom:'1px solid #E5E3E0'}}>
           <button onClick={()=>window.print()} style={{...btnP,padding:'8px 20px',fontSize:13}}>Print</button>
@@ -8307,7 +8307,37 @@ function MaterialCalcPage({jobs,preJob}){
         </div>
       </div>
     </div>;})()}
-    <style>{`@page{size:legal;margin:0.5in}@media print{body *{visibility:hidden}#production-order,#production-order *{visibility:visible}#production-order{position:absolute;left:0;top:0;width:100%;padding:24px 32px!important}.no-print{display:none!important}}`}</style>
+    <style>{`
+      @page{size:legal;margin:0.5in}
+      @media print{
+        /* Reset html/body so the print document can grow to multiple pages.
+           Default html/body height inheritance can otherwise clip pagination. */
+        html,body{height:auto!important;overflow:visible!important;margin:0!important;padding:0!important}
+        /* Hide all UI by visibility, then expose the production-order subtree.
+           visibility:hidden + visibility:visible keeps DOM structure intact
+           (display:none would break some layout calculations). */
+        body *{visibility:hidden}
+        #production-order,#production-order *{visibility:visible}
+        /* Neutralize the modal wrappers. They use position:fixed + maxHeight
+           + overflow:auto for on-screen scroll. At print time those constrain
+           the printable area to one viewport, clipping anything past page 1.
+           We explicitly reset them so the order can flow naturally. */
+        .po-print-backdrop,.po-print-modal{
+          position:static!important;
+          inset:auto!important;
+          background:none!important;
+          box-shadow:none!important;
+          max-height:none!important;
+          overflow:visible!important;
+          width:auto!important;
+          display:block!important;
+        }
+        #production-order{position:static!important;width:100%!important;max-height:none!important;overflow:visible!important;padding:24px 32px!important}
+        .no-print{display:none!important}
+        /* Prefer breaking between sections rather than mid-section. */
+        #production-order > table > tbody > tr > td > div{page-break-inside:avoid;break-inside:avoid}
+      }
+    `}</style>
   </div>);
 }
 
