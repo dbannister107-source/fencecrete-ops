@@ -2701,7 +2701,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       </tr>
                     </thead>
                     <tbody>
-                      {lines.length===0?<tr><td colSpan="6" style={{border:'1px solid #1A1A1A',padding:8,textAlign:'center',color:'#9E9B96',fontStyle:'italic'}}>No sub-lines</td></tr>
+                      {lines.length===0?<tr>
+                        {/* Fallback rendering for legacy COs with no sub-lines:
+                            show the CO's description + total as a single row so
+                            the form looks complete. New COs entered via this UI
+                            will have explicit sub-lines. */}
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{c.description||'(no description)'}</td>
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter'}}>{$(c.amount)}</td>
+                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</td>
+                      </tr>
                       :lines.map(li=><tr key={li.id}>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.bu||''}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.obj||''}</td>
