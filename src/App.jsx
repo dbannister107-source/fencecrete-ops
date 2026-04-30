@@ -1122,7 +1122,26 @@ function LineItemsEditor({job,onChange,registerSave}){
     setLoading(false);
   },[job?.job_number]);
   useEffect(()=>{loadLines();},[loadLines]);
-  const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}return next;}));setDirty(true);};
+  const FLAT_COST_TYPES={'Permit':{category:'permit',taxable:false},'P&P Bond':{category:'pp_bond',taxable:false},'Maint Bond':{category:'maint_bond',taxable:false}};
+  const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};
+    // If user switches Type to a flat-cost type (Permit/Bond), snap to flat-cost
+    // defaults: lf=1 (so contract_rate is the total), no style/color/height,
+    // not produced, taxable=false, and set the matching category for A3.
+    if(field==='fence_type'&&FLAT_COST_TYPES[val]){
+      next.lf=1; next.height=''; next.style=''; next.color='';
+      next.is_produced=false;
+      next.taxable=FLAT_COST_TYPES[val].taxable;
+      next.category=FLAT_COST_TYPES[val].category;
+      const r=n(next.contract_rate); next.line_value=Math.round(1*r*100)/100;
+    }
+    // If user switches AWAY from a flat-cost type, clear category and taxable
+    // so the next pick (PC/SW/WI/etc) gets correct defaults.
+    else if(field==='fence_type'&&FLAT_COST_TYPES[l.fence_type]){
+      next.category=null; next.taxable=true; next.is_produced=true;
+    }
+    if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}
+    return next;
+  }));setDirty(true);};
   const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
   /* Recompute job header rollups from the ACTUAL surviving line_items rows
      in the database. Used by both removeLine and saveAll so the two code
@@ -1264,7 +1283,7 @@ function LineItemsEditor({job,onChange,registerSave}){
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -1297,32 +1316,35 @@ function LineItemsEditor({job,onChange,registerSave}){
               : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
           </div>
           <div style={{padding:20}}>
-            {/* Row 1: Type, Height, LF, Rate, Line Value */}
+            {(() => {
+              const isFlat = !!FLAT_COST_TYPES[l.fence_type];
+              return <>
+            {/* Row 1: Type, Height, LF, Rate, Line Value (Height/LF hidden for flat-cost) */}
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
               <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Type</label>
                 <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
                   {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
                 </select>
               </div>
-              <div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
+              {!isFlat&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
                 <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
                   <option value="">—</option>
                   {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
                   {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
                 </select>
-              </div>
-              <div style={{width:110,flexShrink:0}}><label style={fieldLabel}>LF</label>
+              </div>}
+              {!isFlat&&<div style={{width:110,flexShrink:0}}><label style={fieldLabel}>LF</label>
                 <input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder="0" style={{...inp,width:'100%'}}/>
-              </div>
-              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Rate ($/LF)</label>
+              </div>}
+              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>{isFlat?'Amount ($)':'Rate ($/LF)'}</label>
                 <input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
               </div>
               <div style={{width:150,flexShrink:0}}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
               </div>
             </div>
-            {/* Row 2: Style, Color, Produced */}
-            <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
+            {/* Row 2: Style, Color, Produced (entirely hidden for flat-cost) */}
+            {!isFlat&&<div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
               <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
                 <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)}
                   style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
@@ -1343,12 +1365,14 @@ function LineItemsEditor({job,onChange,registerSave}){
                   Produced
                 </label>
               </div>}
-            </div>
-            {/* Row 3: Description */}
+            </div>}
+            {/* Row 3: Description (always visible) */}
             <div>
               <label style={fieldLabel}>Description</label>
-              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder="Optional notes for this line" style={{...inp,width:'100%'}}/>
+              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={isFlat?(l.fence_type==='Permit'?'e.g. City of Sugar Land permit':l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':'e.g. 2-year maintenance bond'):'Optional notes for this line'} style={{...inp,width:'100%'}}/>
             </div>
+            </>;
+            })()}
           </div>
         </div>;
       })}
@@ -2679,7 +2703,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 surfaced in the UI. The legacy summary block below still reads
                 them defensively for any historical data. */}
             <div style={{marginTop:18,marginBottom:16,padding:'10px 14px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:12,color:'#1D4ED8',lineHeight:1.5}}>
-              <strong>Permits, P&amp;P bonds, and maintenance bonds</strong> are now tracked as line items. Add them in the <b>Line Items</b> tab as separate rows so they roll up cleanly into the contract value.
+              <strong>Permits, P&amp;P bonds, and maintenance bonds</strong> are entered as line items. In the <b>Line Items</b> tab, click <b>+ Add Line</b> and pick <b>Permit</b>, <b>P&amp;P Bond</b>, or <b>Maint Bond</b> from the Type dropdown — each rolls into the Adjusted Contract Value.
             </div>
             {/* Sales Tax */}
             {(()=>{
