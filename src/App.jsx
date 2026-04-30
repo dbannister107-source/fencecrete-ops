@@ -1732,9 +1732,40 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 
   // Generate a signed URL for a private file (5-minute expiry — long enough
   // to download/print, short enough that copied URLs don't leak indefinitely).
-  const getSignedUrl=async(storagePath)=>{
+  //
+  // Two prior bugs fixed here on 2026-04-30:
+  //   1. encodeURIComponent on the entire storage_path collapses '/' to '%2F'.
+  //      Storage's POST/PUT endpoints tolerate that, but the SIGN endpoint
+  //      treats the URL path as a literal key lookup, so it 404s on encoded
+  //      slashes. Fix: encode each path SEGMENT individually so slashes stay
+  //      literal in the URL.
+  //   2. Bucket was hardcoded to 'project-attachments'. PIS tax certs live in
+  //      a separate 'pis-tax-certs' bucket (uploaded by pis-public edge fn
+  //      directly to that bucket). Detect via attachment row's category +
+  //      source_table fields, fall through to 'project-attachments' default.
+  //
+  // Caller passes the entire row so we can inspect category + source_table.
+  // For backwards compat, accept a string (legacy path-only signature) and
+  // assume project-attachments bucket.
+  const getSignedUrl=async(rowOrPath)=>{
     try{
-      const res=await fetch(`${SB}/storage/v1/object/sign/project-attachments/${encodeURIComponent(storagePath)}`,{
+      const isRow=typeof rowOrPath==='object'&&rowOrPath!==null;
+      const storagePath=isRow?rowOrPath.storage_path:rowOrPath;
+      // Determine bucket. PIS tax certs go to pis-tax-certs bucket; the row's
+      // storage_path on those rows redundantly includes 'pis-tax-certs/' as a
+      // prefix (legacy bug from PIS portal upload code) — strip it before signing.
+      let bucket='project-attachments';
+      let pathInBucket=storagePath;
+      if(isRow&&(rowOrPath.category==='pis'||rowOrPath.source_table==='project_info_sheets')){
+        bucket='pis-tax-certs';
+        if(pathInBucket&&pathInBucket.startsWith('pis-tax-certs/')){
+          pathInBucket=pathInBucket.slice('pis-tax-certs/'.length);
+        }
+      }
+      // Encode each path segment individually so '/' stays literal in the URL.
+      // Sign endpoint treats encoded slashes as part of the key and returns 404.
+      const encodedPath=pathInBucket.split('/').map(encodeURIComponent).join('/');
+      const res=await fetch(`${SB}/storage/v1/object/sign/${bucket}/${encodedPath}`,{
         method:'POST',
         headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({expiresIn:300}),
@@ -2570,7 +2601,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                     <div style={{display:'flex',gap:6,flexShrink:0}}>
                       <button
                         onClick={async()=>{
-                          try{const url=await getSignedUrl(a.storage_path);window.open(url,'_blank');}
+                          try{const url=await getSignedUrl(a);window.open(url,'_blank');}
                           catch(e){setAttachmentsToast({kind:'error',msg:`Could not open file: ${e.message}`});}
                         }}
                         title={isImage?'View image':'Download file'}
