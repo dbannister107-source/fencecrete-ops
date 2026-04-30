@@ -5104,12 +5104,44 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   },[pmLineItemsByJob]);
   // Clear cached line items on global refresh so lazy loads re-fetch fresh data
   useEffect(()=>{setPmLineItemsByJob({});},[refreshKey]);
-  // Approved CO totals per job — used in the "COs" column
+  // Approved CO totals per job — used in the "COs" column.
+  // Note: status is stored lowercase ('approved'), prior version checked 'Approved' (capital)
+  // so this column read $0 for every job. Fixing here as part of the in-cycle CO build.
   const[pmAllCOs,setPmAllCOs]=useState([]);
-  useEffect(()=>{sbGet('change_orders','select=job_id,amount,status&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[refreshKey]);
-  const pmApprovedCOByJob=useMemo(()=>{const m={};pmAllCOs.forEach(c=>{if(c.status!=='Approved')return;if(!m[c.job_id])m[c.job_id]=0;m[c.job_id]+=n(c.amount);});return m;},[pmAllCOs]);
+  useEffect(()=>{sbGet('change_orders','select=id,job_id,co_number,amount,status,date_submitted,date_approved,description&limit=2000').then(d=>setPmAllCOs(d||[])).catch(()=>{});},[refreshKey]);
+  const pmApprovedCOByJob=useMemo(()=>{const m={};pmAllCOs.forEach(c=>{if((c.status||'').toLowerCase()!=='approved')return;if(!m[c.job_id])m[c.job_id]=0;m[c.job_id]+=n(c.amount);});return m;},[pmAllCOs]);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('fc_pm')||'');
   const[selMonth,setSelMonth]=useState(curBillingMonth);
+  // In-cycle CO filter (rolled out 2026-05-01).
+  // For each cycle month (selMonth = 'YYYY-MM'), include APPROVED COs where
+  // date_submitted OR date_approved falls within the prior calendar month
+  // OR the cycle month itself. Rule applies May 2026 onward — historical
+  // bill sheets (April 2026 and earlier) do NOT show this panel because
+  // those cycles closed before this feature shipped.
+  // Example: selMonth='2026-05' → window = April 1, 2026 through May 31, 2026.
+  const IN_CYCLE_CO_FEATURE_START='2026-05';
+  const inCycleCOsByJob=useMemo(()=>{
+    if(!selMonth||selMonth<IN_CYCLE_CO_FEATURE_START)return{};
+    // Compute window bounds from selMonth
+    const[yr,mo]=selMonth.split('-').map(Number);
+    // Prior month's first day. mo is 1-indexed; JS months are 0-indexed.
+    // selMonth's month index = mo-1; prior month index = mo-2 (handles year wrap via Date).
+    const priorStart=new Date(Date.UTC(yr,mo-2,1)).toISOString().slice(0,10);
+    // Cycle month's last day (next month's day 0 = last day of current month)
+    const cycleEnd=new Date(Date.UTC(yr,mo,0)).toISOString().slice(0,10);
+    const map={};
+    pmAllCOs.forEach(c=>{
+      if((c.status||'').toLowerCase()!=='approved')return;
+      const ds=c.date_submitted||'';
+      const da=c.date_approved||'';
+      const subInWindow=ds&&ds>=priorStart&&ds<=cycleEnd;
+      const apprInWindow=da&&da>=priorStart&&da<=cycleEnd;
+      if(!subInWindow&&!apprInWindow)return;
+      if(!map[c.job_id])map[c.job_id]=[];
+      map[c.job_id].push(c);
+    });
+    return map;
+  },[pmAllCOs,selMonth]);
   // True when viewing the current billing month. Editing actions (submit,
   // batch $0, reset, save) are blocked when false to keep historical months
   // immutable. Mirrors the same pattern AR Billing uses (arIsCurrent).
@@ -5733,6 +5765,23 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
           </div>
           {/* Expanded inline form */}
           {isExp&&status!=='reviewed'&&<div style={{padding:'12px 14px',borderTop:'1px solid #E5E3E0',background:'#FFF'}}>
+            {/* In-cycle CO panel — shown when this job has approved COs whose
+                date_submitted OR date_approved is in the cycle's prior month
+                or cycle month. Read-only display for now (PM can see them);
+                billing % per CO is a future enhancement. */}
+            {(inCycleCOsByJob[j.id]||[]).length>0&&(()=>{const cycleCOs=inCycleCOsByJob[j.id];const total=cycleCOs.reduce((s,c)=>s+n(c.amount),0);return<div style={{marginBottom:10,padding:'10px 12px',background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:6}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:0.5}}>📋 Change Orders This Cycle ({cycleCOs.length})</div>
+                <div style={{fontSize:11,fontWeight:800,color:'#92400E',fontFamily:'Inter'}}>{$(total)}</div>
+              </div>
+              <div style={{fontSize:10,color:'#92400E',fontStyle:'italic',marginBottom:6}}>Approved COs with submitted or approval date in the prior or current cycle month — include in this bill cycle as appropriate.</div>
+              <div style={{display:'flex',flexDirection:'column',gap:4}}>{cycleCOs.map(c=><div key={c.id} style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:8,fontSize:11,padding:'4px 6px',background:'#FFF',borderRadius:4,border:'1px solid #FDE68A'}}>
+                <span style={{fontWeight:700,color:'#1A1A1A'}}>CO #{c.co_number||'—'}</span>
+                <span style={{color:'#625650',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={c.description||''}>{c.description||'(no description)'}</span>
+                <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{$(c.amount)}</span>
+                <span style={{gridColumn:'1/-1',fontSize:9,color:'#9E9B96'}}>{c.date_submitted?`Submitted ${fD(c.date_submitted)}`:''}{c.date_submitted&&c.date_approved?' · ':''}{c.date_approved?`Approved ${fD(c.date_approved)}`:''}</span>
+              </div>)}</div>
+            </div>;})()}
             {(pmLineItemsByJob[j.job_number]||[]).length>0&&(()=>{const lis=pmLineItemsByJob[j.job_number];const lineTotal=lis.reduce((s,x)=>s+n(x.line_value),0);const contractTotal=lineTotal+n(j.lump_sum_amount)+n(j.change_orders);return<div style={{marginBottom:10,padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Contract Line Items ({lis.length})</div><div style={{display:'flex',flexDirection:'column',gap:3,marginBottom:6}}>{lis.map(li=><div key={li.id} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#1A1A1A'}}><span>#{li.line_number} · <b>{li.fence_type}</b> · {n(li.lf).toLocaleString()} LF {li.height&&`@ ${li.height}ft`} {li.style||''} {li.color?'· '+li.color:''}</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</span></div>)}</div><div style={{borderTop:'1px solid #E5E3E0',paddingTop:6,display:'flex',flexDirection:'column',gap:2,fontSize:11}}><div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Line items subtotal</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(lineTotal)}</span></div>{n(j.lump_sum_amount)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Lump sum</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.lump_sum_amount)}</span></div>}{n(j.change_orders)>0&&<div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'#625650'}}>Change orders</span><span style={{fontFamily:'Inter',fontWeight:700}}>{$(j.change_orders)}</span></div>}<div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #E5E3E0',paddingTop:4,marginTop:2}}><span style={{fontWeight:700,color:'#8A261D'}}>Total contract value</span><span style={{fontFamily:'Inter',fontWeight:800,color:'#8A261D'}}>{$(contractTotal)}</span></div></div></div>;})()}
             {status==='submitted'&&!isEditing?<>
               {isNoBill?<div style={{padding:'10px 14px',background:'#F4F4F2',border:'1px dashed #C8C4BD',borderRadius:8,fontStyle:'italic',color:'#625650'}}>
