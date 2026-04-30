@@ -1,5 +1,10 @@
 // CustomerMasterPage
 //
+// Phase 2.1 (2026-04-30): added Undo button on the success toast. Reverses
+// link / mark-residential / create-and-link actions. In-memory only (refresh
+// or navigate away wipes it). create-and-link undo deletes the new company
+// only if no other jobs reference it.
+//
 // Phase 2 (2026-04-30): added Reconcile tab — match unmatched jobs to
 // existing companies via fuzzy suggestions, create new companies inline,
 // or mark as residential.
@@ -275,7 +280,14 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
   const [search, setSearch] = useState('');
   const [marketFilter, setMarketFilter] = useState('all');
   const [busy, setBusy] = useState(null); // customer_name being saved
+  // Toast state. When an action succeeds, `lastAction` is also set with the
+  // payload needed to reverse it. Click Undo → reverse → clear → refresh.
+  // Errors set toast WITHOUT lastAction (nothing to undo).
+  // Undo is in-memory only — refresh / navigate-away wipes it. That's fine,
+  // undo is "I just clicked the wrong thing", not "yesterday I made a mistake".
   const [toast, setToast] = useState(null);
+  const [lastAction, setLastAction] = useState(null);
+  const [undoing, setUndoing] = useState(false);
 
   // Show only unmatched groups matching search + market
   const filtered = useMemo(() => {
@@ -311,9 +323,17 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
         throw new Error(`Link failed (${res.status}): ${txt.slice(0, 120)}`);
       }
       setToast({ msg: `Linked ${group.count} job${group.count === 1 ? '' : 's'} to ${company.name}`, kind: 'success' });
+      // Record undo payload: jobs were unlinked before, now linked. Reverse = unlink.
+      setLastAction({
+        kind: 'link',
+        jobIds,
+        groupName: group.name,
+        companyName: company.name,
+      });
       onRefresh();
     } catch (e) {
       setToast({ msg: 'Link failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
     } finally {
       setBusy(null);
     }
@@ -334,9 +354,16 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
         throw new Error(`Mark residential failed (${res.status}): ${txt.slice(0, 120)}`);
       }
       setToast({ msg: `Marked ${group.count} job${group.count === 1 ? '' : 's'} as residential`, kind: 'success' });
+      // Record undo payload: was is_residential=false, now true. Reverse = false.
+      setLastAction({
+        kind: 'residential',
+        jobIds,
+        groupName: group.name,
+      });
       onRefresh();
     } catch (e) {
       setToast({ msg: 'Mark failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
     } finally {
       setBusy(null);
     }
@@ -377,13 +404,101 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
         throw new Error(`Link failed (${linkRes.status}): ${txt.slice(0, 120)}`);
       }
       setToast({ msg: `Created "${draft.name}" and linked ${group.count} job${group.count === 1 ? '' : 's'}`, kind: 'success' });
+      // Record undo payload: created company AND linked jobs. Reverse = unlink jobs,
+      // then delete company IF nothing else references it (defensive).
+      setLastAction({
+        kind: 'create_and_link',
+        jobIds,
+        groupName: group.name,
+        createdCompanyId: newCompanyId,
+        createdCompanyName: draft.name.trim(),
+      });
       onRefresh();
     } catch (e) {
       setToast({ msg: 'Create+link failed: ' + e.message, kind: 'error' });
+      setLastAction(null);
     } finally {
       setBusy(null);
     }
   }, [onRefresh]);
+
+  // Reverse the last action. Per-kind logic:
+  //   - link: PATCH jobs back to company_id=null
+  //   - residential: PATCH jobs back to is_residential=false
+  //   - create_and_link: PATCH jobs to company_id=null, THEN attempt to delete
+  //     the company we just created. Skip the delete if other jobs got linked
+  //     to that company in the meantime (rare, but defensive).
+  const performUndo = useCallback(async () => {
+    if (!lastAction) return;
+    setUndoing(true);
+    try {
+      const { kind, jobIds, createdCompanyId, createdCompanyName, companyName, groupName } = lastAction;
+
+      if (kind === 'link') {
+        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+          method: 'PATCH',
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ company_id: null }),
+        });
+        if (!res.ok && res.status !== 204) {
+          const txt = await res.text();
+          throw new Error(`Undo link failed (${res.status}): ${txt.slice(0, 120)}`);
+        }
+        setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} from ${companyName}`, kind: 'gray' });
+      } else if (kind === 'residential') {
+        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+          method: 'PATCH',
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ is_residential: false }),
+        });
+        if (!res.ok && res.status !== 204) {
+          const txt = await res.text();
+          throw new Error(`Undo residential failed (${res.status}): ${txt.slice(0, 120)}`);
+        }
+        setToast({ msg: `Undone — ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} no longer marked residential`, kind: 'gray' });
+      } else if (kind === 'create_and_link') {
+        // Step 1: unlink the jobs we linked
+        const unlinkRes = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
+          method: 'PATCH',
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ company_id: null }),
+        });
+        if (!unlinkRes.ok && unlinkRes.status !== 204) {
+          const txt = await unlinkRes.text();
+          throw new Error(`Undo unlink failed (${unlinkRes.status}): ${txt.slice(0, 120)}`);
+        }
+        // Step 2: defensive — only delete the company if no OTHER jobs reference
+        // it. If someone linked another group to this company in the meantime,
+        // leave it alone (just unlink ours).
+        const refCheck = await fetch(`${SB}/rest/v1/jobs?company_id=eq.${createdCompanyId}&select=id&limit=1`, {
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+        });
+        const stillReferenced = refCheck.ok ? (await refCheck.json()).length > 0 : true; // be safe on error
+        if (!stillReferenced) {
+          const deleteRes = await fetch(`${SB}/rest/v1/companies?id=eq.${createdCompanyId}`, {
+            method: 'DELETE',
+            headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+          });
+          if (!deleteRes.ok && deleteRes.status !== 204) {
+            // Non-fatal — jobs are already unlinked, just leave the orphan company.
+            console.warn('Undo: failed to delete created company', createdCompanyId, await deleteRes.text());
+            setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} but couldn't delete "${createdCompanyName}" (kept as orphan)`, kind: 'gray' });
+          } else {
+            setToast({ msg: `Undone — unlinked jobs and deleted "${createdCompanyName}"`, kind: 'gray' });
+          }
+        } else {
+          setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'}. Kept "${createdCompanyName}" (other jobs are linked to it now)`, kind: 'gray' });
+        }
+      }
+
+      setLastAction(null);
+      onRefresh();
+    } catch (e) {
+      setToast({ msg: 'Undo failed: ' + e.message, kind: 'error' });
+    } finally {
+      setUndoing(false);
+    }
+  }, [lastAction, onRefresh]);
 
   return (
     <>
@@ -404,12 +519,28 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
         {toast && (
           <div style={{
             marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-            background: toast.kind === 'success' ? '#D1FAE5' : '#FEE2E2',
-            color: toast.kind === 'success' ? '#065F46' : '#991B1B',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            background: toast.kind === 'success' ? '#D1FAE5' : toast.kind === 'gray' ? '#F4F4F2' : '#FEE2E2',
+            color: toast.kind === 'success' ? '#065F46' : toast.kind === 'gray' ? '#625650' : '#991B1B',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
           }}>
-            <span>{toast.msg}</span>
-            <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, padding: 0 }}>×</button>
+            <span style={{ flex: 1 }}>{toast.msg}</span>
+            {/* Undo only shows when there's a reversible action attached AND
+                the toast is the success message (not the post-undo confirmation
+                which sets kind='gray' and clears lastAction). */}
+            {lastAction && toast.kind === 'success' && (
+              <button
+                onClick={performUndo}
+                disabled={undoing}
+                style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                  background: '#065F46', color: '#FFF', border: 'none', cursor: undoing ? 'wait' : 'pointer',
+                  opacity: undoing ? 0.6 : 1,
+                }}
+              >
+                {undoing ? 'Undoing…' : '↶ Undo'}
+              </button>
+            )}
+            <button onClick={() => { setToast(null); setLastAction(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, padding: 0 }}>×</button>
           </div>
         )}
 
