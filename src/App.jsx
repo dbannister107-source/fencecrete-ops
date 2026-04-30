@@ -20185,6 +20185,14 @@ function ProfileModal({ onClose }){
 function AppShell(){
   const{profile,user}=useAuth();
   const isAdmin=profile?.role==='admin';
+  // Folder/customer admin = data-hygiene work (SharePoint folder linkage,
+  // customer master reconciliation). Open to admin AND billing roles.
+  // Rationale: Amiee (Contracts/Accounting Admin), Virginia (AR), and the
+  // rest of the billing role do this kind of cleanup as part of their day
+  // job — but they don't need User Management or System Events access.
+  // Added 2026-04-30 to give Amiee SharePoint Links access without
+  // promoting her to full admin.
+  const canFolderAdmin=isAdmin||profile?.role==='billing';
   const currentUserEmail=(user?.email||'').toLowerCase().trim();
   const canSystemEvents=canViewSystemEvents(currentUserEmail);
   // ADMIN group is shown when the user qualifies for at least one admin item.
@@ -20193,12 +20201,12 @@ function AppShell(){
   const filteredNav=useMemo(()=>{
     const adminItems=[];
     if(isAdmin)adminItems.push({key:'admin',label:'User Management',icon:'🔐'});
-    if(isAdmin)adminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
-    if(isAdmin)adminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
+    if(canFolderAdmin)adminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
+    if(canFolderAdmin)adminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
     if(canSystemEvents)adminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
     if(adminItems.length===0)return NAV_GROUPS;
     return[...NAV_GROUPS,{label:'ADMIN',color:'#4B5563',iconColor:'#9CA3AF',items:adminItems}];
-  },[isAdmin,canSystemEvents]);
+  },[isAdmin,canFolderAdmin,canSystemEvents]);
   const[page,setPage]=useState('dashboard');
   const[pageHistory,setPageHistory]=useState([]);
   const navigateTo=(newPage)=>{if(newPage===page)return;setPageHistory(h=>[...h,page]);setPage(newPage);};
@@ -20352,8 +20360,8 @@ function AppShell(){
             {page==='bid_advisor'&&<ErrorBoundary label="Bid Advisor"><BidAdvisor/></ErrorBoundary>}
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
-            {page==='sharepoint_links'&&isAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
-            {page==='customer_master'&&isAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage/></ErrorBoundary>}
+            {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
+            {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage/></ErrorBoundary>}
           </>}
         </div>
       </div>
