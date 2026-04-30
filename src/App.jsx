@@ -336,6 +336,7 @@ const _COLOR_FALLBACK = [
   {name:'Outback #677',     display_order:40, active:true},
   {name:'Regular Brown',    display_order:50, active:true},
   {name:'Buff Green',       display_order:60, active:true},
+  {name:'Painted',          display_order:70, active:true},
 ];
 let STYLE_CATALOG = _STYLE_FALLBACK.slice();
 let COLOR_CATALOG = _COLOR_FALLBACK.slice();
@@ -19119,7 +19120,7 @@ function BidAdvisor(){
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
               <button type="button" onClick={() => setColor('standard')} style={radioBtn(color === 'standard')}>
                 <div style={{ fontWeight: 700 }}>Standard</div>
-                <div style={{ fontSize: 11, color: '#625650', fontWeight: 400, marginTop: 2 }}>Regular Brown, Café, Green, Paint</div>
+                <div style={{ fontSize: 11, color: '#625650', fontWeight: 400, marginTop: 2 }}>Regular Brown, Café, Green, Painted</div>
               </button>
               <button type="button" onClick={() => setColor('lac_white')} style={radioBtn(color === 'lac_white')}>
                 <div style={{ fontWeight: 700 }}>LAC / White / Custom White Cement</div>
