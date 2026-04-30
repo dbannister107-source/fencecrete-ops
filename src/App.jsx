@@ -10908,7 +10908,7 @@ function PMDailyReportPage({jobs}){
   const isMobile=useIsMobile();
   const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('selected_pm')||'');
-  const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);
+  const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);const[jobError,setJobError]=useState(false);
   const[showAllPMs,setShowAllPMs]=useState(false);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
@@ -10932,16 +10932,19 @@ function PMDailyReportPage({jobs}){
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
   const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.pm===selPM),[jobs,selPM]);
-  const selectJob=(jobId)=>{setSelJobId(jobId);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
+  const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
   const submitReport=async()=>{
+    if(!selJobId){setJobError(true);setToast({message:'Please select a job before submitting',isError:true});return;}
+    setJobError(false);
     // Body keys must match the pm_daily_reports schema exactly. Form uses legacy field
     // names (num_*, lf_panels_completed, etc.); we map them to actual DB column names here.
     const body={
       report_date:form.report_date||todayISO,
       job_number:form.job_number,
+      job_id:selJobId,
       repair_location:form.repair_location,
       job_type:form.job_type,
       crew:form.crew,
@@ -11056,8 +11059,9 @@ function PMDailyReportPage({jobs}){
         </div>
       </div>
       <PMReportSection {...secProps('job')} title="Job Info">
-        <div style={{marginBottom:12}}><label style={lblStyle}>Select Job</label>
-          <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={mSel}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
+        <div style={{marginBottom:12}}><label style={lblStyle}>Select Job <span style={{color:'#8A261D'}}>*</span></label>
+          <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={{...mSel,...(jobError?{borderColor:'#8A261D',background:'#FDF4F4'}:{})}}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
+          {jobError&&<div style={{color:'#8A261D',fontSize:12,marginTop:6,fontWeight:600}}>Please select a job before submitting</div>}
         </div>
         {jobTotals&&<div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:14,marginBottom:16,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10}}>
           <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>LF Installed to Date</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.lf.toLocaleString()}</div></div>
@@ -11149,7 +11153,7 @@ function PMDailyReportPage({jobs}){
       {/* Sticky submit bar — fixed to viewport bottom */}
       <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8A261D',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
         <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
-        <button onClick={submitReport} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:'#8A261D',color:'#fff'}}>Submit Report</button>
+        <button onClick={submitReport} disabled={!selJobId} title={!selJobId?'Select a job to enable submit':''} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:selJobId?'#8A261D':'#9E9B96',color:'#fff',cursor:selJobId?'pointer':'not-allowed',opacity:selJobId?1:0.7}}>Submit Report</button>
       </div>
     </div>;})()}
   </div>);
