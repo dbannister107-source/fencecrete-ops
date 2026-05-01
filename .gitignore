@@ -3,3 +3,8 @@ build
 .vercel
 
 .vercel
+
+# Build artifacts — auto-regenerated on every build, should not be tracked
+.claude/settings.local.json
+public/version.json
+src/build-info.json
