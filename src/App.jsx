@@ -10862,7 +10862,19 @@ const parseSharedWith=(notes)=>{
 const fmtMoldUpdated=(ts)=>ts?new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
 
 function MoldInventoryPage(){
+  // 2026-04-30: extended with post/rail/cap sub-tabs. Panels tab preserves
+  // the matrix view and edit semantics that existed before; the three new
+  // tabs are simple per-row tables backed by mold_inventory_post / _rail /
+  // _cap. Page-level summary strip recomputes on every render from the
+  // four datasets — cheap because each table has <50 rows in practice.
+  const auth=useAuth();
+  const isAdmin=auth?.profile?.role==='admin';
+  const[tab,setTab]=useState('panels');
   const[rows,setRows]=useState([]);
+  const[posts,setPosts]=useState([]);
+  const[rails,setRails]=useState([]);
+  const[caps,setCaps]=useState([]);
+  const[styleOptions,setStyleOptions]=useState([]);
   const[loading,setLoading]=useState(true);
   const[showAdd,setShowAdd]=useState(false);
   const[addForm,setAddForm]=useState({style_name:'',mold_type:'panel',total_molds:'',notes:''});
@@ -10872,12 +10884,32 @@ function MoldInventoryPage(){
 
   const fetchRows=useCallback(async()=>{
     try{
-      const d=await sbGet('mold_inventory','select=id,style_name,mold_type,total_molds,notes,updated_at');
+      const[d,p,r,c,s]=await Promise.all([
+        sbGet('mold_inventory','select=id,style_name,mold_type,total_molds,notes,updated_at'),
+        sbGet('mold_inventory_post','select=*&order=style_name.asc,height_ft.asc'),
+        sbGet('mold_inventory_rail','select=*&order=style_name.asc,rail_type.asc'),
+        sbGet('mold_inventory_cap','select=*&order=style_name.asc,cap_type.asc'),
+        // style_with_mold_inventory drives the picker dropdown — distinct
+        // recognized style names. Free-text fallback in each Add modal handles
+        // styles not yet in the catalog.
+        sbGet('style_with_mold_inventory','select=style_name&order=style_name.asc'),
+      ]);
       setRows(Array.isArray(d)?d:[]);
+      setPosts(Array.isArray(p)?p:[]);
+      setRails(Array.isArray(r)?r:[]);
+      setCaps(Array.isArray(c)?c:[]);
+      setStyleOptions(Array.isArray(s)?Array.from(new Set(s.map(x=>x.style_name).filter(Boolean))):[]);
     }catch(e){toast.error('Load failed: '+e.message);}
     setLoading(false);
   },[]);
   useEffect(()=>{fetchRows();},[fetchRows]);
+
+  // Page-level summary numbers — sum of counts for posts/rails/caps,
+  // row count for panels (matches the spec's mixed-metric strip).
+  const summaryPosts=posts.reduce((acc,r)=>acc+n(r.line_count)+n(r.corner_count)+n(r.stop_count),0);
+  const summaryRails=rails.reduce((acc,r)=>acc+n(r.count),0);
+  const summaryCaps=caps.reduce((acc,r)=>acc+n(r.count),0);
+  const summaryPanelRows=rows.filter(r=>r.mold_type==='panel'&&r.style_name!=='All Styles').length;
 
   // Style rows = one panel row per style; shared rows are indexed by
   // mold_type so every panel row can render the same value while edits
@@ -10983,18 +11015,20 @@ function MoldInventoryPage(){
       min="0"
       step="1"
       defaultValue={n(row[field])}
-      onBlur={(e)=>handleSave(row.id,field,e.target.value)}
+      onBlur={(e)=>{if(isAdmin)handleSave(row.id,field,e.target.value);}}
       onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
-      style={numInputStyle}
+      readOnly={!isAdmin}
+      style={{...numInputStyle,...(isAdmin?{}:{background:'#F4F4F2',cursor:'not-allowed',color:'#625650'})}}
     />;
   };
 
   const renderNotes=(row)=><textarea
     key={`notes-${row.id}-${row.updated_at}`}
     defaultValue={row.notes||''}
-    onBlur={(e)=>handleSaveNotes(row.id,e.target.value)}
+    onBlur={(e)=>{if(isAdmin)handleSaveNotes(row.id,e.target.value);}}
     rows={2}
-    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical'}}
+    readOnly={!isAdmin}
+    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical',...(isAdmin?{}:{background:'#F4F4F2',cursor:'not-allowed',color:'#625650'})}}
   />;
 
   // Universal mold types — these are NOT per-style. They live as
@@ -11018,13 +11052,47 @@ function MoldInventoryPage(){
   const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
   const thNum={...thS,textAlign:'center'};
 
+  const tabBtn=(key,label)=>{
+    const active=tab===key;
+    return <button
+      key={key}
+      onClick={()=>setTab(key)}
+      style={{
+        padding:'8px 16px',background:active?'#1A1A1A':'#FFF',color:active?'#FFF':'#625650',
+        border:'1px solid '+(active?'#1A1A1A':'#E5E3E0'),borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',
+      }}
+    >{label}</button>;
+  };
+
   return <div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:16,flexWrap:'wrap'}}>
-      <div>
-        <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Mold Inventory</h1>
-        <div style={{fontSize:13,color:'#625650',marginTop:4,maxWidth:680}}>Physical mold counts — system of record. Updates here flow to Mold Capacity, AI Scheduler, and Dashboard tiles.</div>
+    {/* Page header — common to all tabs */}
+    <div style={{marginBottom:8}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Mold Inventory</h1>
+      <div style={{fontSize:13,color:'#625650',marginTop:4,maxWidth:680}}>Physical mold counts — system of record. Updates here flow to Mold Capacity, AI Scheduler, and Dashboard tiles.</div>
+    </div>
+    {/* Summary strip — recomputed each render from the four datasets */}
+    <div style={{fontSize:12,color:'#9E9B96',marginBottom:14}}>
+      {summaryPosts.toLocaleString()} posts · {summaryRails.toLocaleString()} rails · {summaryCaps.toLocaleString()} caps · {summaryPanelRows.toLocaleString()} panel mold rows
+    </div>
+    {/* Admin lock — read-only mode for non-admins applies to every tab */}
+    {!isAdmin&&(
+      <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 14px',marginBottom:14,background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:8,fontSize:12,color:'#625650'}}>
+        <span aria-hidden="true">🔒</span>
+        <span>Read-only — admin access required to edit, add, or delete mold records.</span>
       </div>
-      <button onClick={()=>{setAddForm({style_name:'',mold_type:'panel',total_molds:'',notes:''});setShowAdd(true);}} style={btnP}>+ Add Mold Type</button>
+    )}
+    {/* Tab nav */}
+    <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
+      {tabBtn('panels','🧱 Panels')}
+      {tabBtn('posts','🪵 Posts')}
+      {tabBtn('rails','🪜 Rails')}
+      {tabBtn('caps','🪺 Caps')}
+    </div>
+
+    {/* ═══ PANELS TAB (existing matrix view, preserved) ═══ */}
+    {tab==='panels'&&<>
+    <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+      <button onClick={()=>{setAddForm({style_name:'',mold_type:'panel',total_molds:'',notes:''});setShowAdd(true);}} disabled={!isAdmin} style={{...btnP,opacity:isAdmin?1:0.5,cursor:isAdmin?'pointer':'not-allowed'}}>+ Add Mold Type</button>
     </div>
     <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',color:'#1E3A8A',fontSize:12,marginBottom:24,display:'flex',gap:8,alignItems:'flex-start'}}>
       <span aria-hidden="true">ℹ️</span>
@@ -11087,7 +11155,7 @@ function MoldInventoryPage(){
                   {shared?<span style={{color:'#C8C4BD',fontSize:14}} title="This style shares molds with another — edit the parent style instead">—</span>:renderCount(r,'total_molds')}
                 </td>
                 <td style={{...tdS,minWidth:200}}>{renderNotes(r)}</td>
-                <td style={tdS}><button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button></td>
+                <td style={tdS}>{isAdmin?<button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} mold record`}>🗑</button>:<span style={{color:'#C8C4BD'}}>—</span>}</td>
               </tr>;
             })}
           </tbody>
@@ -11127,7 +11195,636 @@ function MoldInventoryPage(){
         </div>
       </div>
     </div>}
+    </>}
+
+    {/* ═══ POSTS TAB ═══ */}
+    {tab==='posts'&&<MoldPostsTab rows={posts} setRows={setPosts} isAdmin={isAdmin} loading={loading} styleOptions={styleOptions}/>}
+
+    {/* ═══ RAILS TAB ═══ */}
+    {tab==='rails'&&<MoldRailsTab rows={rails} setRows={setRails} isAdmin={isAdmin} loading={loading} styleOptions={styleOptions}/>}
+
+    {/* ═══ CAPS TAB ═══ */}
+    {tab==='caps'&&<MoldCapsTab rows={caps} setRows={setCaps} isAdmin={isAdmin} loading={loading} styleOptions={styleOptions}/>}
   </div>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MoldPostsTab — per-style/height post mold counts (line/corner/stop).
+// All three numeric cells inline-editable; (style_name, height_ft) is
+// the unique key, so changing those requires delete + add. Optimistic
+// update with rollback on PATCH/POST/DELETE failure.
+// ─────────────────────────────────────────────────────────────────────────
+function MoldPostsTab({rows,setRows,isAdmin,loading,styleOptions}){
+  const[showAdd,setShowAdd]=useState(false);
+  const[addForm,setAddForm]=useState({style_name:'',style_custom:'',height_ft:'8',height_custom:'',line_count:'',corner_count:'',stop_count:'',notes:''});
+  const[adding,setAdding]=useState(false);
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[delBusy,setDelBusy]=useState(false);
+
+  const totalPosts=rows.reduce((s,r)=>s+n(r.line_count)+n(r.corner_count)+n(r.stop_count),0);
+  const sorted=useMemo(()=>[...rows].sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')||n(a.height_ft)-n(b.height_ft)),[rows]);
+
+  const saveCount=async(id,field,raw)=>{
+    const num=parseInt(raw,10);
+    if(!Number.isFinite(num)||num<0){toast.error('Count must be 0 or greater');return;}
+    const before=rows.find(r=>r.id===id);
+    if(!before||num===n(before[field]))return;
+    const prevVal=n(before[field]);
+    setRows(rs=>rs.map(r=>r.id===id?{...r,[field]:num,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_post',id,{[field]:num,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,[field]:prevVal}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const saveNotes=async(id,raw)=>{
+    const v=raw||'';
+    const before=rows.find(r=>r.id===id);
+    if(!before||v===(before.notes||''))return;
+    const prevVal=before.notes||'';
+    setRows(rs=>rs.map(r=>r.id===id?{...r,notes:v,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_post',id,{notes:v,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,notes:prevVal}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const submitAdd=async()=>{
+    const sn=(addForm.style_name==='__custom__'?addForm.style_custom:addForm.style_name).trim();
+    const hRaw=addForm.height_ft==='custom'?addForm.height_custom:addForm.height_ft;
+    const h=parseFloat(hRaw);
+    if(!sn){toast.error('Style is required');return;}
+    if(!Number.isFinite(h)||h<=0){toast.error('Height must be a positive number');return;}
+    if(rows.some(r=>r.style_name===sn&&n(r.height_ft)===h)){toast.error(`${sn} @ ${h}' already exists — edit it instead`);return;}
+    const line=parseInt(addForm.line_count||'0',10)||0;
+    const corner=parseInt(addForm.corner_count||'0',10)||0;
+    const stop=parseInt(addForm.stop_count||'0',10)||0;
+    if([line,corner,stop].some(v=>!Number.isFinite(v)||v<0)){toast.error('Counts must be 0 or greater');return;}
+    setAdding(true);
+    const body={style_name:sn,height_ft:h,line_count:line,corner_count:corner,stop_count:stop,notes:addForm.notes||null};
+    try{
+      const res=await fetch(`${SB}/rest/v1/mold_inventory_post`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
+      const txt=await res.text();
+      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
+      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      if(newRow)setRows(rs=>[...rs,newRow]);
+      toast.success('Post mold record added');
+      setShowAdd(false);
+      setAddForm({style_name:'',style_custom:'',height_ft:'8',height_custom:'',line_count:'',corner_count:'',stop_count:'',notes:''});
+    }catch(e){toast.error('Add failed: '+e.message);}
+    setAdding(false);
+  };
+  const doDelete=async()=>{
+    if(!confirmDel)return;
+    setDelBusy(true);
+    const id=confirmDel.id;
+    const removed=confirmDel;
+    setRows(rs=>rs.filter(r=>r.id!==id));
+    try{
+      const r=await sbDel('mold_inventory_post',id);
+      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      toast.success('Removed');
+      setConfirmDel(null);
+    }catch(e){
+      setRows(rs=>[...rs,removed].sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')||n(a.height_ft)-n(b.height_ft)));
+      toast.error('Delete failed: '+e.message);
+    }
+    setDelBusy(false);
+  };
+
+  const numInputStyle={width:'70px',textAlign:'center',padding:'6px 4px',border:'1px solid #D6D3CE',borderRadius:6,fontFamily:'Inter',fontWeight:600,fontSize:14};
+  const ro=isAdmin?{}:{background:'#F4F4F2',cursor:'not-allowed',color:'#625650'};
+  const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
+  const thNum={...thS,textAlign:'center'};
+  const fmtUpd=(ts)=>ts?new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+
+  return <>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:10}}>
+      <div style={{fontSize:13,color:'#625650'}}>
+        <b style={{color:'#1A1A1A',fontFamily:'Inter'}}>Post Mold Inventory</b> · {totalPosts.toLocaleString()} total posts across {rows.length} style/height combo{rows.length===1?'':'s'}
+      </div>
+      <button onClick={()=>setShowAdd(true)} disabled={!isAdmin} style={{...btnP,opacity:isAdmin?1:0.5,cursor:isAdmin?'pointer':'not-allowed'}}>+ Add Post Row</button>
+    </div>
+    <div style={{...card,padding:0,overflow:'hidden'}}>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={5} cols={5}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Style</th>
+            <th style={thNum}>Height</th>
+            <th style={thNum}>Line</th>
+            <th style={thNum}>Corner</th>
+            <th style={thNum}>Stop</th>
+            <th style={thNum}>Total</th>
+            <th style={thS}>Notes</th>
+            <th style={thS}>Updated</th>
+            <th style={{...thS,width:60}}>Actions</th>
+          </tr></thead>
+          <tbody>
+            {sorted.length===0?<tr><td colSpan={9} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No post mold rows yet — click + Add Post Row to begin.</td></tr>:sorted.map(r=>{
+              const total=n(r.line_count)+n(r.corner_count)+n(r.stop_count);
+              return <tr key={r.id}>
+                <td style={{...tdS,fontWeight:600}}>{r.style_name}</td>
+                <td style={{...tdS,textAlign:'center',fontFamily:'Inter'}}>{n(r.height_ft)}'</td>
+                {['line_count','corner_count','stop_count'].map(field=>(
+                  <td key={field} style={{...tdS,textAlign:'center'}}>
+                    <input
+                      key={`${r.id}-${field}-${n(r[field])}`}
+                      type="number" min="0" step="1"
+                      defaultValue={n(r[field])}
+                      onBlur={(e)=>{if(isAdmin)saveCount(r.id,field,e.target.value);}}
+                      onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
+                      readOnly={!isAdmin}
+                      style={{...numInputStyle,...ro}}
+                    />
+                  </td>
+                ))}
+                <td style={{...tdS,textAlign:'center',fontFamily:'Inter',fontWeight:800,color:'#1A1A1A'}}>{total}</td>
+                <td style={{...tdS,minWidth:200}}>
+                  <textarea
+                    key={`notes-${r.id}-${r.updated_at}`}
+                    defaultValue={r.notes||''}
+                    onBlur={(e)=>{if(isAdmin)saveNotes(r.id,e.target.value);}}
+                    rows={2}
+                    readOnly={!isAdmin}
+                    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical',...ro}}
+                  />
+                </td>
+                <td style={{...tdS,fontSize:11,color:'#9E9B96',whiteSpace:'nowrap'}}>{fmtUpd(r.updated_at)}</td>
+                <td style={tdS}>{isAdmin?<button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} ${n(r.height_ft)}ft posts`}>🗑</button>:<span style={{color:'#C8C4BD'}}>—</span>}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {showAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!adding&&setShowAdd(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(520px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:14}}>Add Post Mold Row</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style *</label>
+            <select value={addForm.style_name} onChange={e=>setAddForm(f=>({...f,style_name:e.target.value}))} style={{...inputS,width:'100%'}}>
+              <option value="">— Pick a style —</option>
+              {styleOptions.map(s=><option key={s} value={s}>{s}</option>)}
+              <option value="__custom__">+ Custom (free-text)…</option>
+            </select>
+            {addForm.style_name==='__custom__'&&(
+              <input value={addForm.style_custom} onChange={e=>setAddForm(f=>({...f,style_custom:e.target.value}))} placeholder="New style name" style={{...inputS,width:'100%',marginTop:6}}/>
+            )}
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Height *</label>
+            <select value={addForm.height_ft} onChange={e=>setAddForm(f=>({...f,height_ft:e.target.value}))} style={{...inputS,width:'100%'}}>
+              <option value="8">8'</option>
+              <option value="10">10'</option>
+              <option value="12">12'</option>
+              <option value="custom">Custom…</option>
+            </select>
+            {addForm.height_ft==='custom'&&(
+              <input type="number" min="0" step="0.5" value={addForm.height_custom} onChange={e=>setAddForm(f=>({...f,height_custom:e.target.value}))} placeholder="ft" style={{...inputS,width:'100%',marginTop:6}}/>
+            )}
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Line</label><input type="number" min="0" value={addForm.line_count} onChange={e=>setAddForm(f=>({...f,line_count:e.target.value}))} style={inputS} placeholder="0"/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Corner</label><input type="number" min="0" value={addForm.corner_count} onChange={e=>setAddForm(f=>({...f,corner_count:e.target.value}))} style={inputS} placeholder="0"/></div>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Stop</label><input type="number" min="0" value={addForm.stop_count} onChange={e=>setAddForm(f=>({...f,stop_count:e.target.value}))} style={inputS} placeholder="0"/></div>
+        </div>
+        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={addForm.notes} onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowAdd(false)} disabled={adding} style={btnS}>Cancel</button>
+          <button onClick={submitAdd} disabled={adding} style={{...btnP,background:'#065F46'}}>{adding?'Saving...':'Save'}</button>
+        </div>
+      </div>
+    </div>}
+
+    {confirmDel&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!delBusy&&setConfirmDel(null)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(440px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:10}}>Remove post row?</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:18}}>Remove all <b style={{color:'#1A1A1A'}}>{n(confirmDel.line_count)+n(confirmDel.corner_count)+n(confirmDel.stop_count)}</b> {confirmDel.style_name} {n(confirmDel.height_ft)}ft posts from inventory?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setConfirmDel(null)} disabled={delBusy} style={btnS}>Cancel</button>
+          <button onClick={doDelete} disabled={delBusy} style={{...btnP,background:'#991B1B'}}>{delBusy?'Removing...':'Remove'}</button>
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MoldRailsTab — per-style rail mold counts. Type and height (when set)
+// are part of the unique key so they're locked once added; only count and
+// notes are inline-editable.
+// ─────────────────────────────────────────────────────────────────────────
+const RAIL_TYPE_LABEL={reg:'Standard',long:'Long',center:'Center',top:'Top',bottom:'Bottom'};
+const RAIL_TYPES=['reg','long','center','top','bottom'];
+function MoldRailsTab({rows,setRows,isAdmin,loading,styleOptions}){
+  const[showAdd,setShowAdd]=useState(false);
+  const[addForm,setAddForm]=useState({style_name:'',style_custom:'',rail_type:'reg',has_height:false,height_ft:'',count:'',notes:''});
+  const[adding,setAdding]=useState(false);
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[delBusy,setDelBusy]=useState(false);
+
+  const totalRails=rows.reduce((s,r)=>s+n(r.count),0);
+  const sorted=useMemo(()=>[...rows].sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')||((a.height_ft==null?-1:n(a.height_ft))-(b.height_ft==null?-1:n(b.height_ft)))||(a.rail_type||'').localeCompare(b.rail_type||'')),[rows]);
+
+  const saveCount=async(id,raw)=>{
+    const num=parseInt(raw,10);
+    if(!Number.isFinite(num)||num<0){toast.error('Count must be 0 or greater');return;}
+    const before=rows.find(r=>r.id===id);
+    if(!before||num===n(before.count))return;
+    const prev=n(before.count);
+    setRows(rs=>rs.map(r=>r.id===id?{...r,count:num,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_rail',id,{count:num,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,count:prev}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const saveNotes=async(id,raw)=>{
+    const v=raw||'';
+    const before=rows.find(r=>r.id===id);
+    if(!before||v===(before.notes||''))return;
+    const prev=before.notes||'';
+    setRows(rs=>rs.map(r=>r.id===id?{...r,notes:v,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_rail',id,{notes:v,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,notes:prev}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const submitAdd=async()=>{
+    const sn=(addForm.style_name==='__custom__'?addForm.style_custom:addForm.style_name).trim();
+    if(!sn){toast.error('Style is required');return;}
+    if(!RAIL_TYPES.includes(addForm.rail_type)){toast.error('Pick a rail type');return;}
+    let height=null;
+    if(addForm.has_height){
+      const h=parseFloat(addForm.height_ft);
+      if(!Number.isFinite(h)||h<=0){toast.error('Height must be a positive number');return;}
+      height=h;
+    }
+    if(rows.some(r=>r.style_name===sn&&(r.height_ft??null)===height&&r.rail_type===addForm.rail_type)){toast.error(`This style/type/height combo already exists — edit it instead`);return;}
+    const cnt=parseInt(addForm.count||'0',10)||0;
+    if(!Number.isFinite(cnt)||cnt<0){toast.error('Count must be 0 or greater');return;}
+    setAdding(true);
+    const body={style_name:sn,rail_type:addForm.rail_type,height_ft:height,count:cnt,notes:addForm.notes||null};
+    try{
+      const res=await fetch(`${SB}/rest/v1/mold_inventory_rail`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
+      const txt=await res.text();
+      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
+      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      if(newRow)setRows(rs=>[...rs,newRow]);
+      toast.success('Rail mold record added');
+      setShowAdd(false);
+      setAddForm({style_name:'',style_custom:'',rail_type:'reg',has_height:false,height_ft:'',count:'',notes:''});
+    }catch(e){toast.error('Add failed: '+e.message);}
+    setAdding(false);
+  };
+  const doDelete=async()=>{
+    if(!confirmDel)return;
+    setDelBusy(true);
+    const id=confirmDel.id;const removed=confirmDel;
+    setRows(rs=>rs.filter(r=>r.id!==id));
+    try{
+      const r=await sbDel('mold_inventory_rail',id);
+      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      toast.success('Removed');setConfirmDel(null);
+    }catch(e){
+      setRows(rs=>[...rs,removed]);
+      toast.error('Delete failed: '+e.message);
+    }
+    setDelBusy(false);
+  };
+
+  const numInputStyle={width:'80px',textAlign:'center',padding:'8px 6px',border:'1px solid #D6D3CE',borderRadius:6,fontFamily:'Inter',fontWeight:700,fontSize:15};
+  const ro=isAdmin?{}:{background:'#F4F4F2',cursor:'not-allowed',color:'#625650'};
+  const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
+  const thNum={...thS,textAlign:'center'};
+  const fmtUpd=(ts)=>ts?new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+
+  return <>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:10}}>
+      <div style={{fontSize:13,color:'#625650'}}>
+        <b style={{color:'#1A1A1A',fontFamily:'Inter'}}>Rail Mold Inventory</b> · {totalRails.toLocaleString()} total rails across {rows.length} entr{rows.length===1?'y':'ies'}
+      </div>
+      <button onClick={()=>setShowAdd(true)} disabled={!isAdmin} style={{...btnP,opacity:isAdmin?1:0.5,cursor:isAdmin?'pointer':'not-allowed'}}>+ Add Rail Row</button>
+    </div>
+    <div style={{...card,padding:0,overflow:'hidden'}}>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={5} cols={4}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Style</th>
+            <th style={thNum}>Height</th>
+            <th style={thS}>Type</th>
+            <th style={thNum}>Count</th>
+            <th style={thS}>Notes</th>
+            <th style={thS}>Updated</th>
+            <th style={{...thS,width:60}}>Actions</th>
+          </tr></thead>
+          <tbody>
+            {sorted.length===0?<tr><td colSpan={7} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No rail mold rows yet — click + Add Rail Row to begin.</td></tr>:sorted.map(r=>(
+              <tr key={r.id}>
+                <td style={{...tdS,fontWeight:600}}>{r.style_name}</td>
+                <td style={{...tdS,textAlign:'center',fontFamily:'Inter',color:r.height_ft==null?'#9E9B96':'#1A1A1A'}} title={r.height_ft==null?'All heights':''}>{r.height_ft==null?'—':`${n(r.height_ft)}'`}</td>
+                <td style={tdS}>{RAIL_TYPE_LABEL[r.rail_type]||r.rail_type}</td>
+                <td style={{...tdS,textAlign:'center'}}>
+                  <input
+                    key={`${r.id}-count-${n(r.count)}`}
+                    type="number" min="0" step="1"
+                    defaultValue={n(r.count)}
+                    onBlur={(e)=>{if(isAdmin)saveCount(r.id,e.target.value);}}
+                    onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
+                    readOnly={!isAdmin}
+                    style={{...numInputStyle,...ro}}
+                  />
+                </td>
+                <td style={{...tdS,minWidth:200}}>
+                  <textarea
+                    key={`notes-${r.id}-${r.updated_at}`}
+                    defaultValue={r.notes||''}
+                    onBlur={(e)=>{if(isAdmin)saveNotes(r.id,e.target.value);}}
+                    rows={2}
+                    readOnly={!isAdmin}
+                    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical',...ro}}
+                  />
+                </td>
+                <td style={{...tdS,fontSize:11,color:'#9E9B96',whiteSpace:'nowrap'}}>{fmtUpd(r.updated_at)}</td>
+                <td style={tdS}>{isAdmin?<button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} ${RAIL_TYPE_LABEL[r.rail_type]||r.rail_type} rail`}>🗑</button>:<span style={{color:'#C8C4BD'}}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {showAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!adding&&setShowAdd(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(520px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:14}}>Add Rail Mold Row</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style *</label>
+            <select value={addForm.style_name} onChange={e=>setAddForm(f=>({...f,style_name:e.target.value}))} style={{...inputS,width:'100%'}}>
+              <option value="">— Pick a style —</option>
+              {styleOptions.map(s=><option key={s} value={s}>{s}</option>)}
+              <option value="__custom__">+ Custom (free-text)…</option>
+            </select>
+            {addForm.style_name==='__custom__'&&(
+              <input value={addForm.style_custom} onChange={e=>setAddForm(f=>({...f,style_custom:e.target.value}))} placeholder="New style name" style={{...inputS,width:'100%',marginTop:6}}/>
+            )}
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Type *</label>
+            <select value={addForm.rail_type} onChange={e=>setAddForm(f=>({...f,rail_type:e.target.value}))} style={{...inputS,width:'100%'}}>
+              {RAIL_TYPES.map(t=><option key={t} value={t}>{RAIL_TYPE_LABEL[t]}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#625650',cursor:'pointer'}}>
+            <input type="checkbox" checked={addForm.has_height} onChange={e=>setAddForm(f=>({...f,has_height:e.target.checked,height_ft:e.target.checked?f.height_ft:''}))}/>
+            Specific height (otherwise applies to all heights)
+          </label>
+          {addForm.has_height&&(
+            <input type="number" min="0" step="0.5" value={addForm.height_ft} onChange={e=>setAddForm(f=>({...f,height_ft:e.target.value}))} placeholder="ft" style={{...inputS,marginTop:6,maxWidth:140}}/>
+          )}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Count</label><input type="number" min="0" value={addForm.count} onChange={e=>setAddForm(f=>({...f,count:e.target.value}))} style={inputS} placeholder="0"/></div>
+        </div>
+        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={addForm.notes} onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowAdd(false)} disabled={adding} style={btnS}>Cancel</button>
+          <button onClick={submitAdd} disabled={adding} style={{...btnP,background:'#065F46'}}>{adding?'Saving...':'Save'}</button>
+        </div>
+      </div>
+    </div>}
+
+    {confirmDel&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!delBusy&&setConfirmDel(null)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(440px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:10}}>Remove rail row?</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:18}}>Remove all <b style={{color:'#1A1A1A'}}>{n(confirmDel.count)}</b> {confirmDel.style_name} {RAIL_TYPE_LABEL[confirmDel.rail_type]||confirmDel.rail_type}{confirmDel.height_ft!=null?` ${n(confirmDel.height_ft)}ft`:''} rails from inventory?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setConfirmDel(null)} disabled={delBusy} style={btnS}>Cancel</button>
+          <button onClick={doDelete} disabled={delBusy} style={{...btnP,background:'#991B1B'}}>{delBusy?'Removing...':'Remove'}</button>
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MoldCapsTab — same shape as Rails, with cap_type values line/stop/corner.
+// ─────────────────────────────────────────────────────────────────────────
+const CAP_TYPE_LABEL={line:'Line',stop:'Stop',corner:'Corner'};
+const CAP_TYPES=['line','stop','corner'];
+function MoldCapsTab({rows,setRows,isAdmin,loading,styleOptions}){
+  const[showAdd,setShowAdd]=useState(false);
+  const[addForm,setAddForm]=useState({style_name:'',style_custom:'',cap_type:'line',has_height:false,height_ft:'',count:'',notes:''});
+  const[adding,setAdding]=useState(false);
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[delBusy,setDelBusy]=useState(false);
+
+  const totalCaps=rows.reduce((s,r)=>s+n(r.count),0);
+  const sorted=useMemo(()=>[...rows].sort((a,b)=>(a.style_name||'').localeCompare(b.style_name||'')||((a.height_ft==null?-1:n(a.height_ft))-(b.height_ft==null?-1:n(b.height_ft)))||(a.cap_type||'').localeCompare(b.cap_type||'')),[rows]);
+
+  const saveCount=async(id,raw)=>{
+    const num=parseInt(raw,10);
+    if(!Number.isFinite(num)||num<0){toast.error('Count must be 0 or greater');return;}
+    const before=rows.find(r=>r.id===id);
+    if(!before||num===n(before.count))return;
+    const prev=n(before.count);
+    setRows(rs=>rs.map(r=>r.id===id?{...r,count:num,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_cap',id,{count:num,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,count:prev}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const saveNotes=async(id,raw)=>{
+    const v=raw||'';
+    const before=rows.find(r=>r.id===id);
+    if(!before||v===(before.notes||''))return;
+    const prev=before.notes||'';
+    setRows(rs=>rs.map(r=>r.id===id?{...r,notes:v,updated_at:new Date().toISOString()}:r));
+    try{
+      await sbPatch('mold_inventory_cap',id,{notes:v,updated_at:new Date().toISOString()});
+      toast.success('Saved');
+    }catch(e){
+      setRows(rs=>rs.map(r=>r.id===id?{...r,notes:prev}:r));
+      toast.error('Save failed: '+e.message);
+    }
+  };
+  const submitAdd=async()=>{
+    const sn=(addForm.style_name==='__custom__'?addForm.style_custom:addForm.style_name).trim();
+    if(!sn){toast.error('Style is required');return;}
+    if(!CAP_TYPES.includes(addForm.cap_type)){toast.error('Pick a cap type');return;}
+    let height=null;
+    if(addForm.has_height){
+      const h=parseFloat(addForm.height_ft);
+      if(!Number.isFinite(h)||h<=0){toast.error('Height must be a positive number');return;}
+      height=h;
+    }
+    if(rows.some(r=>r.style_name===sn&&(r.height_ft??null)===height&&r.cap_type===addForm.cap_type)){toast.error('This style/type/height combo already exists — edit it instead');return;}
+    const cnt=parseInt(addForm.count||'0',10)||0;
+    if(!Number.isFinite(cnt)||cnt<0){toast.error('Count must be 0 or greater');return;}
+    setAdding(true);
+    const body={style_name:sn,cap_type:addForm.cap_type,height_ft:height,count:cnt,notes:addForm.notes||null};
+    try{
+      const res=await fetch(`${SB}/rest/v1/mold_inventory_cap`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
+      const txt=await res.text();
+      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
+      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      if(newRow)setRows(rs=>[...rs,newRow]);
+      toast.success('Cap mold record added');
+      setShowAdd(false);
+      setAddForm({style_name:'',style_custom:'',cap_type:'line',has_height:false,height_ft:'',count:'',notes:''});
+    }catch(e){toast.error('Add failed: '+e.message);}
+    setAdding(false);
+  };
+  const doDelete=async()=>{
+    if(!confirmDel)return;
+    setDelBusy(true);
+    const id=confirmDel.id;const removed=confirmDel;
+    setRows(rs=>rs.filter(r=>r.id!==id));
+    try{
+      const r=await sbDel('mold_inventory_cap',id);
+      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      toast.success('Removed');setConfirmDel(null);
+    }catch(e){
+      setRows(rs=>[...rs,removed]);
+      toast.error('Delete failed: '+e.message);
+    }
+    setDelBusy(false);
+  };
+
+  const numInputStyle={width:'80px',textAlign:'center',padding:'8px 6px',border:'1px solid #D6D3CE',borderRadius:6,fontFamily:'Inter',fontWeight:700,fontSize:15};
+  const ro=isAdmin?{}:{background:'#F4F4F2',cursor:'not-allowed',color:'#625650'};
+  const tdS={padding:'10px 10px',borderBottom:'1px solid #F1EFEC',fontSize:13,verticalAlign:'top'};
+  const thS={textAlign:'left',padding:'10px 10px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap'};
+  const thNum={...thS,textAlign:'center'};
+  const fmtUpd=(ts)=>ts?new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+
+  return <>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:10}}>
+      <div style={{fontSize:13,color:'#625650'}}>
+        <b style={{color:'#1A1A1A',fontFamily:'Inter'}}>Cap Mold Inventory</b> · {totalCaps.toLocaleString()} total caps across {rows.length} entr{rows.length===1?'y':'ies'}
+      </div>
+      <button onClick={()=>setShowAdd(true)} disabled={!isAdmin} style={{...btnP,opacity:isAdmin?1:0.5,cursor:isAdmin?'pointer':'not-allowed'}}>+ Add Cap Row</button>
+    </div>
+    <div style={{...card,padding:0,overflow:'hidden'}}>
+      {loading?<div style={{padding:24}}><SkeletonRows rows={5} cols={4}/></div>:<div style={{overflow:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            <th style={thS}>Style</th>
+            <th style={thNum}>Height</th>
+            <th style={thS}>Type</th>
+            <th style={thNum}>Count</th>
+            <th style={thS}>Notes</th>
+            <th style={thS}>Updated</th>
+            <th style={{...thS,width:60}}>Actions</th>
+          </tr></thead>
+          <tbody>
+            {sorted.length===0?<tr><td colSpan={7} style={{padding:40,textAlign:'center',color:'#9E9B96',fontSize:13}}>No cap mold rows yet — click + Add Cap Row to begin.</td></tr>:sorted.map(r=>(
+              <tr key={r.id}>
+                <td style={{...tdS,fontWeight:600}}>{r.style_name}</td>
+                <td style={{...tdS,textAlign:'center',fontFamily:'Inter',color:r.height_ft==null?'#9E9B96':'#1A1A1A'}} title={r.height_ft==null?'All heights':''}>{r.height_ft==null?'—':`${n(r.height_ft)}'`}</td>
+                <td style={tdS}>{CAP_TYPE_LABEL[r.cap_type]||r.cap_type}</td>
+                <td style={{...tdS,textAlign:'center'}}>
+                  <input
+                    key={`${r.id}-count-${n(r.count)}`}
+                    type="number" min="0" step="1"
+                    defaultValue={n(r.count)}
+                    onBlur={(e)=>{if(isAdmin)saveCount(r.id,e.target.value);}}
+                    onKeyDown={(e)=>{if(e.key==='Enter')e.target.blur();}}
+                    readOnly={!isAdmin}
+                    style={{...numInputStyle,...ro}}
+                  />
+                </td>
+                <td style={{...tdS,minWidth:200}}>
+                  <textarea
+                    key={`notes-${r.id}-${r.updated_at}`}
+                    defaultValue={r.notes||''}
+                    onBlur={(e)=>{if(isAdmin)saveNotes(r.id,e.target.value);}}
+                    rows={2}
+                    readOnly={!isAdmin}
+                    style={{width:'100%',minWidth:200,padding:'6px 8px',border:'1px solid #D6D3CE',borderRadius:4,fontFamily:'Inter',fontSize:12,resize:'vertical',...ro}}
+                  />
+                </td>
+                <td style={{...tdS,fontSize:11,color:'#9E9B96',whiteSpace:'nowrap'}}>{fmtUpd(r.updated_at)}</td>
+                <td style={tdS}>{isAdmin?<button onClick={()=>setConfirmDel(r)} style={{background:'#FFF',border:'1px solid #FCA5A5',borderRadius:6,padding:'4px 8px',color:'#991B1B',fontWeight:700,fontSize:11,cursor:'pointer'}} aria-label={`Delete ${r.style_name} ${CAP_TYPE_LABEL[r.cap_type]||r.cap_type} cap`}>🗑</button>:<span style={{color:'#C8C4BD'}}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {showAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!adding&&setShowAdd(false)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(520px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:14}}>Add Cap Mold Row</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Style *</label>
+            <select value={addForm.style_name} onChange={e=>setAddForm(f=>({...f,style_name:e.target.value}))} style={{...inputS,width:'100%'}}>
+              <option value="">— Pick a style —</option>
+              {styleOptions.map(s=><option key={s} value={s}>{s}</option>)}
+              <option value="__custom__">+ Custom (free-text)…</option>
+            </select>
+            {addForm.style_name==='__custom__'&&(
+              <input value={addForm.style_custom} onChange={e=>setAddForm(f=>({...f,style_custom:e.target.value}))} placeholder="New style name" style={{...inputS,width:'100%',marginTop:6}}/>
+            )}
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Type *</label>
+            <select value={addForm.cap_type} onChange={e=>setAddForm(f=>({...f,cap_type:e.target.value}))} style={{...inputS,width:'100%'}}>
+              {CAP_TYPES.map(t=><option key={t} value={t}>{CAP_TYPE_LABEL[t]}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#625650',cursor:'pointer'}}>
+            <input type="checkbox" checked={addForm.has_height} onChange={e=>setAddForm(f=>({...f,has_height:e.target.checked,height_ft:e.target.checked?f.height_ft:''}))}/>
+            Specific height (otherwise applies to all heights)
+          </label>
+          {addForm.has_height&&(
+            <input type="number" min="0" step="0.5" value={addForm.height_ft} onChange={e=>setAddForm(f=>({...f,height_ft:e.target.value}))} placeholder="ft" style={{...inputS,marginTop:6,maxWidth:140}}/>
+          )}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,marginBottom:12}}>
+          <div><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Count</label><input type="number" min="0" value={addForm.count} onChange={e=>setAddForm(f=>({...f,count:e.target.value}))} style={inputS} placeholder="0"/></div>
+        </div>
+        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Notes</label><textarea value={addForm.notes} onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowAdd(false)} disabled={adding} style={btnS}>Cancel</button>
+          <button onClick={submitAdd} disabled={adding} style={{...btnP,background:'#065F46'}}>{adding?'Saving...':'Save'}</button>
+        </div>
+      </div>
+    </div>}
+
+    {confirmDel&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>!delBusy&&setConfirmDel(null)}>
+      <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(440px,96vw)',boxShadow:'0 8px 30px rgba(0,0,0,0.15)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:'Inter',fontSize:17,fontWeight:800,marginBottom:10}}>Remove cap row?</div>
+        <div style={{fontSize:13,color:'#625650',lineHeight:1.6,marginBottom:18}}>Remove all <b style={{color:'#1A1A1A'}}>{n(confirmDel.count)}</b> {confirmDel.style_name} {CAP_TYPE_LABEL[confirmDel.cap_type]||confirmDel.cap_type}{confirmDel.height_ft!=null?` ${n(confirmDel.height_ft)}ft`:''} caps from inventory?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={()=>setConfirmDel(null)} disabled={delBusy} style={btnS}>Cancel</button>
+          <button onClick={doDelete} disabled={delBusy} style={{...btnP,background:'#991B1B'}}>{delBusy?'Removing...':'Remove'}</button>
+        </div>
+      </div>
+    </div>}
+  </>;
 }
 
 function WeatherDaysPage({jobs}){
