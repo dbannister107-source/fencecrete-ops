@@ -12459,25 +12459,84 @@ function PMReportPhotos({photos, jobNumber, onChange}){
 function PMDailyReportPage({jobs}){
   useCatalog(); // subscribe for canonical style/color catalog re-render
   const isMobile=useIsMobile();
+  const auth=useAuth();
+  const isAdmin=auth?.profile?.role==='admin';
+  const currentUserEmail=(auth?.user?.email||'').toLowerCase().trim();
   const[tab,setTab]=useState('new');const[toast,setToast]=useState(null);const[reports,setReports]=useState([]);const[detailRpt,setDetailRpt]=useState(null);const[loading,setLoading]=useState(false);
   const[selPM,setSelPM]=useState(()=>localStorage.getItem('selected_pm')||'');
   const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);const[jobError,setJobError]=useState(false);
   const[showAllPMs,setShowAllPMs]=useState(false);
+  const[editingReport,setEditingReport]=useState(null);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
+  // Texas-based: edit window is "same day in America/Chicago".
+  const ctDateStr=(ts)=>{try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ts));}catch(e){return '';}};
+  const ctTimeStr=(ts)=>{try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'numeric',minute:'2-digit'}).format(new Date(ts));}catch(e){return '';}};
+  const canEditReport=(rpt)=>{
+    if(!rpt)return false;
+    if(isAdmin)return true;
+    const ts=rpt.submitted_at||rpt.created_at;
+    if(!ts)return false;
+    return ctDateStr(ts)===ctDateStr(Date.now());
+  };
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
+  const reportToForm=(r)=>{
+    const str=(v)=>(v==null?'':String(v));
+    return{
+      job_number:r.job_number||'',
+      repair_location:r.repair_location||'',
+      job_type:r.job_type||'Commercial',
+      crew:r.crew||'',
+      num_employees:str(r.employee_count),
+      daily_target:r.daily_target||'',
+      gate_style:r.gate_style||'Precast',
+      gate_height:str(r.gate_height),
+      num_gates_installed:str(r.gates_installed),
+      num_holes_dug:str(r.holes_dug),
+      num_posts_placed:str(r.posts_placed),
+      lf_panels_installed:str(r.lf_panels_installed),
+      fence_style:r.fence_style||'Precast',
+      fence_height:str(r.fence_height),
+      num_cut_sections:str(r.cut_sections),
+      num_sections_leveled:str(r.sections_leveled),
+      lf_panels_washed:str(r.lf_panels_washed),
+      precast_style_onsite:r.precast_style_onsite||'',
+      drill_piercing_lf:str(r.drill_piercing_lf),
+      num_columns_laid_out:str(r.columns_laid_out),
+      num_columns_34_built:str(r.columns_three_quarter),
+      num_columns_capped:str(r.columns_capped),
+      lf_panels_shoulder:str(r.lf_panels_shoulder),
+      lf_panels_completed:str(r.lf_panels_capped),
+      lf_precast:str(r.lf_precast),
+      lf_single_wythe:str(r.lf_single_wythe),
+      lf_wrought_iron:str(r.lf_wrought_iron),
+      machinery_used:r.machinery_used||'',
+      soil_type:r.soil_type||'Soil',
+      soil_quality:str(r.soil_quality)||'3',
+      terrain_rating:str(r.terrain_rating)||'3',
+      weather_condition:r.weather_condition||'',
+      weather_temp_f:str(r.weather_temp_f),
+      weather_notes:r.weather_notes||'',
+      delay_reason:r.delay_reason||'None',
+      delay_time:r.delay_time||'None',
+      lf_impacted_delays:str(r.lf_impacted_by_delays),
+      num_defective_panels:str(r.defective_panels),
+      num_defective_posts:str(r.defective_posts),
+      other_defective_materials:r.other_defective||'',
+      delay_notes:r.delay_notes||'',
+      general_notes:r.general_notes||'',
+      submitted_by:r.submitted_by||'',
+      report_date:r.report_date||todayISO,
+      photos:Array.isArray(r.photos)?r.photos:[],
+    };
+  };
   const[form,setForm]=useState(emptyForm);
   const[collapsed,setCollapsed]=useState({});
   const SECTIONS=[
-    {key:'job',title:'Job Info',fields:['job_number','repair_location','crew','num_employees','daily_target']},
-    {key:'photos',title:'Photos',fields:['photos']},
-    {key:'gates',title:'Gates',fields:['gate_height','num_gates_installed']},
-    {key:'posts',title:'Posts & Foundation',fields:['num_holes_dug','num_posts_placed']},
-    {key:'panels',title:'Panels & Fence',fields:['lf_panels_installed','fence_height','num_cut_sections','num_sections_leveled','lf_panels_washed','precast_style_onsite']},
-    {key:'sw',title:'Single Wythe Fields',fields:['drill_piercing_lf','num_columns_laid_out','num_columns_34_built','num_columns_capped','lf_panels_shoulder','lf_panels_completed']},
-    {key:'site',title:'Site Conditions',fields:['machinery_used']},
-    {key:'weather',title:'Weather Conditions',fields:['weather_condition','weather_temp_f','weather_notes']},
-    {key:'delays',title:'Delays',fields:['lf_impacted_delays','num_defective_panels','num_defective_posts','other_defective_materials','delay_notes']},
+    {key:'job',title:'Job Info',fields:['job_number','repair_location','crew','num_employees','daily_target','fence_height','gate_height','precast_style_onsite','photos']},
+    {key:'production',title:'Production Output',fields:['lf_panels_installed','lf_panels_shoulder','lf_panels_completed','lf_panels_washed','lf_precast','lf_single_wythe','lf_wrought_iron','drill_piercing_lf','num_holes_dug','num_posts_placed','num_gates_installed','num_cut_sections','num_sections_leveled','num_columns_laid_out','num_columns_34_built','num_columns_capped']},
+    {key:'conditions',title:'Conditions & Delays',fields:['machinery_used','delay_reason','delay_time','lf_impacted_delays','delay_notes','weather_condition','weather_temp_f','weather_notes','num_defective_panels','num_defective_posts','other_defective_materials']},
+    {key:'notes',title:'Notes & Submit',fields:['general_notes']},
   ];
   const sectionFilled=(s)=>s.fields.some(f=>{const v=form[f];if(Array.isArray(v))return v.length>0;return v!==''&&v!==undefined&&v!==null&&v!=='0'&&v!==0;});
   const sectionsFilledCount=SECTIONS.filter(sectionFilled).length;
@@ -12489,6 +12548,24 @@ function PMDailyReportPage({jobs}){
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
+  const startEditReport=(rpt)=>{
+    if(!canEditReport(rpt)){setToast({message:'Edit window closed (admin can override)',isError:true});return;}
+    setEditingReport(rpt);
+    setForm(reportToForm(rpt));
+    setSelJobId(rpt.job_id||'');
+    setJobTotals(null);
+    setJobError(false);
+    setDetailRpt(null);
+    setTab('new');
+  };
+  const cancelEdit=()=>{
+    setEditingReport(null);
+    setForm(emptyForm());
+    setSelJobId('');
+    setJobTotals(null);
+    setJobError(false);
+    setTab('history');
+  };
   const submitReport=async()=>{
     if(!selJobId){setJobError(true);setToast({message:'Please select a job before submitting',isError:true});return;}
     setJobError(false);
@@ -12521,6 +12598,9 @@ function PMDailyReportPage({jobs}){
       columns_capped:n(form.num_columns_capped),
       lf_panels_shoulder:n(form.lf_panels_shoulder),
       lf_panels_capped:n(form.lf_panels_completed),
+      lf_precast:n(form.lf_precast),
+      lf_single_wythe:n(form.lf_single_wythe),
+      lf_wrought_iron:n(form.lf_wrought_iron),
       machinery_used:form.machinery_used,
       soil_type:form.soil_type,
       soil_quality:parseInt(form.soil_quality)||0,
@@ -12535,36 +12615,62 @@ function PMDailyReportPage({jobs}){
       weather_condition:form.weather_condition||null,
       weather_temp_f:form.weather_temp_f?n(form.weather_temp_f):null,
       weather_notes:form.weather_notes||null,
+      general_notes:form.general_notes||null,
       submitted_by:selPM||form.submitted_by,
       photos:Array.isArray(form.photos)&&form.photos.length?form.photos:null,
     };
     if(form.crew)localStorage.setItem('last_crew',form.crew);
     if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
+    const isEdit=!!editingReport;
     try{
-      const res=await fetch(`${SB}/rest/v1/pm_daily_reports`,{method:'POST',headers:H,body:JSON.stringify(body)});
-      if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
-      setToast({message:'Report submitted',isError:false});
+      if(isEdit){
+        if(!canEditReport(editingReport))throw new Error('Edit window closed');
+        const patchBody={
+          ...body,
+          last_edited_at:new Date().toISOString(),
+          last_edited_by:currentUserEmail||(selPM||form.submitted_by||''),
+          edit_count:(editingReport.edit_count||0)+1,
+        };
+        await sbPatch('pm_daily_reports',editingReport.id,patchBody);
+        setToast({message:'Report updated',isError:false});
+      }else{
+        const insertBody={...body,submitted_at:new Date().toISOString()};
+        const res=await fetch(`${SB}/rest/v1/pm_daily_reports`,{method:'POST',headers:H,body:JSON.stringify(insertBody)});
+        if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
+        setToast({message:'Report submitted',isError:false});
+      }
+      setEditingReport(null);
       setSelJobId('');setJobTotals(null);setForm(emptyForm());
       setTimeout(()=>{setTab('history');fetchReports();},600);
     }catch(err){
       console.error('PM Daily Report submit failed:',err,'body:',body);
-      setToast({message:`Submit failed: ${err.message||err}`,isError:true});
+      setToast({message:`${isEdit?'Update':'Submit'} failed: ${err.message||err}`,isError:true});
     }
   };
   const mInp={...inputS,minHeight:44,fontSize:16};const mSel={...mInp};const mTxt={...mInp,resize:'vertical'};
   const secStyle={fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10,marginTop:20,padding:'6px 10px',background:'#FDF4F4',borderRadius:6};
   const lblStyle={display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600};
   const gridR='repeat(auto-fit,minmax(240px,1fr))';
+  const unitHint=(label)=><div style={{fontSize:11,color:'#9E9B96',marginTop:4,fontWeight:500,fontStyle:'italic'}}>{label}</div>;
   // Detail view
-  if(detailRpt)return(<div>
+  if(detailRpt){
+    const editAllowed=canEditReport(detailRpt);
+    const editTooltip=editAllowed?(isAdmin&&ctDateStr(detailRpt.submitted_at||detailRpt.created_at)!==ctDateStr(Date.now())?'Admin override — every edit is logged':''):'Edit window closed (admin can override)';
+    const editedShort=detailRpt.last_edited_by?String(detailRpt.last_edited_by).split('@')[0]+'@':'';
+    return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <button onClick={()=>setDetailRpt(null)} style={{background:'none',border:'none',color:'#8A261D',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>← Back to History</button>
-    <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:16}}>PM Daily Report — {fD(detailRpt.created_at)}</h2>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap',marginBottom:16}}>
+      <h2 style={{fontFamily:'Syne',fontSize:20,fontWeight:900}}>PM Daily Report — {fD(detailRpt.report_date||detailRpt.submitted_at||detailRpt.created_at)}</h2>
+      <button onClick={()=>startEditReport(detailRpt)} disabled={!editAllowed} title={editTooltip} style={{...btnS,opacity:editAllowed?1:0.5,cursor:editAllowed?'pointer':'not-allowed',color:'#8A261D',borderColor:'#E5C4C4'}}>✎ Edit</button>
+    </div>
+    {detailRpt.edit_count>0&&<div style={{background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#92400E',marginBottom:12,fontWeight:600}}>✎ Edited {ctTimeStr(detailRpt.last_edited_at)}{editedShort?` by ${editedShort}`:''} · {detailRpt.edit_count} edit{detailRpt.edit_count>1?'s':''}</div>}
     <div style={{...card,marginBottom:16}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,fontSize:13}}>
         {[['Job Number',detailRpt.job_number],['Job Type',detailRpt.job_type],['Crew',detailRpt.crew],['Employees',detailRpt.employee_count],['Fence Style',detailRpt.fence_style],['Precast Style on Site',detailRpt.precast_style_onsite],['LF Panels Installed',detailRpt.lf_panels_installed],['LF Panels Washed',detailRpt.lf_panels_washed],['Gates Installed',detailRpt.gates_installed],['Posts Placed',detailRpt.posts_placed],['Holes Dug',detailRpt.holes_dug],['Weather',detailRpt.weather_condition],['Temperature (°F)',detailRpt.weather_temp_f],['Weather Notes',detailRpt.weather_notes],['Delay Reason',detailRpt.delay_reason],['Delay Time',detailRpt.delay_time],['Submitted By',detailRpt.submitted_by]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>{l}</div><div style={{fontWeight:600}}>{v||'—'}</div></div>)}
       </div>
       {detailRpt.delay_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Delay Notes</div><div style={{fontSize:13}}>{detailRpt.delay_notes}</div></div>}
+      {detailRpt.general_notes&&<div style={{marginTop:12,padding:10,background:'#F9F8F6',borderRadius:8}}><div style={{fontSize:10,color:'#9E9B96',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>General Notes</div><div style={{fontSize:13}}>{detailRpt.general_notes}</div></div>}
       {Array.isArray(detailRpt.photos)&&detailRpt.photos.length>0&&<div style={{marginTop:16,paddingTop:14,borderTop:'1px solid #E5E3E0'}}>
         <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Photos ({detailRpt.photos.length})</div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
@@ -12574,7 +12680,7 @@ function PMDailyReportPage({jobs}){
         </div>
       </div>}
     </div>
-  </div>);
+  </div>);}
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
@@ -12589,16 +12695,20 @@ function PMDailyReportPage({jobs}){
     {selPM&&tab==='history'&&<div>
       <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}><button onClick={()=>setShowAllPMs(false)} style={fpill(!showAllPMs)}>My Reports</button><button onClick={()=>setShowAllPMs(true)} style={fpill(showAllPMs)}>All PMs</button><span style={{fontSize:12,color:'#625650'}}>{filteredReports.length} reports</span></div>
       {loading?<div style={{}}><SkeletonRows rows={5} cols={3}/></div>:filteredReports.length===0?<div style={{textAlign:'center',padding:40}}><div style={{fontSize:28,marginBottom:8}}>📋</div><div style={{color:'#9E9B96',fontSize:14,marginBottom:12}}>No reports submitted yet</div><button onClick={()=>setTab('new')} style={{...btnP,fontSize:12}}>+ New Report</button></div>:<div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 300px)'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'12px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{filteredReports.map(r=><tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',minHeight:48}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-            <td style={{padding:'14px 10px'}}>{fD(r.report_date||r.created_at)}</td>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}><tr>{['Date','Job Number','Job Type','Crew','LF Installed','Submitted By','',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'12px 10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <tbody>{filteredReports.map(r=>{
+            const editOk=canEditReport(r);
+            const editedShort=r.last_edited_by?String(r.last_edited_by).split('@')[0]+'@':'';
+            return<tr key={r.id} onClick={()=>setDetailRpt(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer',minHeight:48}} onMouseEnter={e=>e.currentTarget.style.background='#FDF9F6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <td style={{padding:'14px 10px'}}>{fD(r.report_date||r.created_at)}{r.edit_count>0&&<div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:2}}>✎ Edited {ctTimeStr(r.last_edited_at)}{editedShort?` by ${editedShort}`:''}</div>}</td>
             <td style={{padding:'14px 10px',fontWeight:500}}>{r.job_number||'—'}</td>
             <td style={{padding:'14px 10px'}}>{r.job_type||'—'}</td>
             <td style={{padding:'14px 10px'}}>{r.crew||'—'}</td>
             <td style={{padding:'14px 10px',fontWeight:700}}>{n(r.lf_panels_installed).toLocaleString()}</td>
             <td style={{padding:'14px 10px'}}>{r.submitted_by||'—'}{Array.isArray(r.photos)&&r.photos.length>0&&<span title={`${r.photos.length} photo${r.photos.length>1?'s':''}`} style={{marginLeft:8,fontSize:14}}>📷<span style={{fontSize:11,color:'#625650',marginLeft:2}}>{r.photos.length}</span></span>}</td>
+            <td style={{padding:'14px 10px',width:80}} onClick={e=>e.stopPropagation()}><button onClick={()=>startEditReport(r)} disabled={!editOk} title={editOk?(isAdmin&&ctDateStr(r.submitted_at||r.created_at)!==ctDateStr(Date.now())?'Admin override — every edit is logged':'Edit this report'):'Edit window closed (admin can override)'} style={{background:editOk?'#FFF':'#F4F4F2',border:'1px solid '+(editOk?'#E5C4C4':'#E5E3E0'),borderRadius:6,padding:'6px 10px',color:editOk?'#8A261D':'#9E9B96',fontWeight:700,fontSize:12,cursor:editOk?'pointer':'not-allowed',whiteSpace:'nowrap'}}>✎ Edit</button></td>
             <td style={{padding:'14px 10px',textAlign:'right',color:'#8A261D',fontSize:20,fontWeight:700,width:32}}>›</td>
-          </tr>)}</tbody></table>
+          </tr>;})}</tbody></table>
       </div>}
     </div>}
     {selPM&&tab==='new'&&(()=>{
@@ -12611,6 +12721,14 @@ function PMDailyReportPage({jobs}){
           <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}><div style={{width:`${(sectionsFilledCount/SECTIONS.length)*100}%`,height:'100%',background:'#8A261D',transition:'width .2s'}}/></div>
         </div>
       </div>
+      {editingReport&&<div style={{background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+        <div style={{fontSize:13,fontWeight:600,color:'#92400E'}}>
+          ✎ Editing report from {fD(editingReport.report_date||editingReport.submitted_at||editingReport.created_at)}
+          {(editingReport.edit_count||0)>0?` · ${editingReport.edit_count} prior edit${editingReport.edit_count>1?'s':''}`:''}
+          {isAdmin&&ctDateStr(editingReport.submitted_at||editingReport.created_at)!==ctDateStr(Date.now())?' · Admin override (logged)':''}
+        </div>
+        <button onClick={cancelEdit} style={{...btnS,color:'#92400E',borderColor:'#FDE68A'}}>Cancel Edit</button>
+      </div>}
       <PMReportSection {...secProps('job')} title="Job Info">
         <div style={{marginBottom:12}}><label style={lblStyle}>Select Job <span style={{color:'#8A261D'}}>*</span></label>
           <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={{...mSel,...(jobError?{borderColor:'#8A261D',background:'#FDF4F4'}:{})}}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
@@ -12623,90 +12741,103 @@ function PMDailyReportPage({jobs}){
           <div><div style={{fontSize:10,color:'#0369A1',fontWeight:600,textTransform:'uppercase'}}>Reports Filed</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18,color:'#0C4A6E'}}>{jobTotals.count}</div></div>
         </div>}
         {selJobId&&(()=>{const sj=jobs.find(j=>j.id===selJobId);return sj?<div style={{display:'flex',gap:12,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}><span>Market: <span style={pill(MC[sj.market]||'#625650',MB[sj.market]||'#F4F4F2')}>{MS[sj.market]||sj.market||'—'}</span></span><span>Fence Type: <strong>{sj.fence_type||'—'}</strong></span></div>:null;})()}
+        <div style={{display:'flex',gap:8,alignItems:'flex-end',marginBottom:12}}>
+          <div style={{flex:1,maxWidth:240}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
+          <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
+        </div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={mSel}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Crew</label><input value={form.crew} onChange={e=>set('crew',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={mInp}/></div>
-        </div>
-        <div style={{display:'flex',gap:8,alignItems:'flex-end',marginTop:12}}>
-          <div style={{flex:1}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
-          <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('photos')} title="Photos">
-        <PMReportPhotos
-          photos={form.photos||[]}
-          jobNumber={form.job_number||'unknown'}
-          onChange={p=>set('photos',p)}
-        />
-      </PMReportSection>
-      <PMReportSection {...secProps('gates')} title="Gates">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('posts')} title="Posts & Foundation">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/></div>
-        </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('panels')} title="Panels & Fence">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Linear Feet of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Fence Height (ft)</label><input type="number" value={form.fence_height} onChange={e=>set('fence_height',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Precast Style at Time of Visit</label><select value={form.precast_style_onsite||''} onChange={e=>set('precast_style_onsite',e.target.value)} style={{...mSel,...(form.precast_style_onsite&&!isCanonicalStyle(form.precast_style_onsite)?{fontStyle:'italic'}:{})}}><option value="">— Select Style —</option>{styleOptionsFor(form.precast_style_onsite,'PC').map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}</select></div>
         </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('sw')} title="Single Wythe Fields">
-        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/></div>
+        <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Daily Progress Photo</div>
+          <PMReportPhotos
+            photos={form.photos||[]}
+            jobNumber={form.job_number||'unknown'}
+            onChange={p=>set('photos',p)}
+          />
         </div>
       </PMReportSection>
-      <PMReportSection {...secProps('site')} title="Site Conditions">
+      <PMReportSection {...secProps('production')} title="Production Output">
+        <div style={secStyle}>Linear feet</div>
+        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
+          <div><label style={lblStyle}>LF of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Precast</label><input type="number" value={form.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Single Wythe</label><input type="number" value={form.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Wrought Iron</label><input type="number" value={form.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+        </div>
+        <div style={{...secStyle,color:'#1D4ED8',background:'#DBEAFE'}}>Counts</div>
+        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
+          <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+        </div>
+      </PMReportSection>
+      <PMReportSection {...secProps('conditions')} title="Conditions & Delays">
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Types of Machinery Used</label><input value={form.machinery_used} onChange={e=>set('machinery_used',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Soil Type</label><select value={form.soil_type} onChange={e=>set('soil_type',e.target.value)} style={mSel}>{['Soil','Rock'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Soil Quality</label><select value={form.soil_quality} onChange={e=>set('soil_quality',e.target.value)} style={mSel}>{['1 - Worst','2','3','4','5 - Best'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Terrain Rating</label><select value={form.terrain_rating} onChange={e=>set('terrain_rating',e.target.value)} style={mSel}>{['1 - Most Difficult','2','3','4','5 - Easiest'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         </div>
-      </PMReportSection>
-      <PMReportSection {...secProps('weather')} title="Weather Conditions">
+        <div style={secStyle}>Delays</div>
+        <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
+          <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={mSel}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={mSel}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+        </div>
+        <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
+        <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Problem Photo (material / equipment / site issue)</div>
+          <PMReportPhotos
+            photos={form.photos||[]}
+            jobNumber={form.job_number||'unknown'}
+            onChange={p=>set('photos',p)}
+          />
+        </div>
+        <div style={{...secStyle,color:'#0369A1',background:'#E0F2FE'}}>Weather</div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Weather Condition</label><select value={form.weather_condition} onChange={e=>set('weather_condition',e.target.value)} style={mSel}><option value="">— Select —</option>{['Clear','Partly Cloudy','Overcast','Light Rain','Heavy Rain','Light Wind','High Wind','Extreme Heat','Fog','Other'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Temperature (°F)</label><input type="number" value={form.weather_temp_f} onChange={e=>set('weather_temp_f',e.target.value)} placeholder="°F" style={mInp}/></div>
         </div>
         <div style={{marginTop:12}}><label style={lblStyle}>Weather Notes</label><textarea value={form.weather_notes} onChange={e=>set('weather_notes',e.target.value)} rows={2} placeholder="Describe conditions affecting work" style={{...mInp,resize:'vertical'}}/></div>
-      </PMReportSection>
-      <PMReportSection {...secProps('delays')} title="Delays">
+        <div style={{...secStyle,color:'#991B1B',background:'#FEE2E2'}}>Defects</div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={mSel}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={mSel}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Other Defective Materials</label><input value={form.other_defective_materials} onChange={e=>set('other_defective_materials',e.target.value)} style={mInp}/></div>
         </div>
-        <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
+      </PMReportSection>
+      <PMReportSection {...secProps('notes')} title="Notes & Submit">
+        <div>
+          <label style={lblStyle}>General Notes</label>
+          <textarea value={form.general_notes} onChange={e=>set('general_notes',e.target.value)} rows={4} placeholder="Anything else worth flagging today (site access, customer comments, crew callouts, etc.)" style={mTxt}/>
+          <div style={{fontSize:11,color:'#9E9B96',marginTop:4,fontStyle:'italic'}}>Anything else worth flagging today (site access, customer comments, crew callouts, etc.)</div>
+        </div>
       </PMReportSection>
       {/* Sticky submit bar — fixed to viewport bottom */}
       <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8A261D',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
         <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
-        <button onClick={submitReport} disabled={!selJobId} title={!selJobId?'Select a job to enable submit':''} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:selJobId?'#8A261D':'#9E9B96',color:'#fff',cursor:selJobId?'pointer':'not-allowed',opacity:selJobId?1:0.7}}>Submit Report</button>
+        {editingReport&&<button onClick={cancelEdit} style={{...btnS,minHeight:48,fontSize:14,whiteSpace:'nowrap'}}>Cancel</button>}
+        <button onClick={submitReport} disabled={!selJobId} title={!selJobId?'Select a job to enable submit':''} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:selJobId?'#8A261D':'#9E9B96',color:'#fff',cursor:selJobId?'pointer':'not-allowed',opacity:selJobId?1:0.7}}>{editingReport?'Save Changes':'Submit Report'}</button>
       </div>
     </div>;})()}
   </div>);
