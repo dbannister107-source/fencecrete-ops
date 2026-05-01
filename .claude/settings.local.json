@@ -49,7 +49,11 @@
       "Bash(git pull *)",
       "Bash(git stash *)",
       "Bash(git rebase *)",
-      "Bash(GIT_EDITOR=true git rebase *)"
+      "Bash(GIT_EDITOR=true git rebase *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git reset *)",
+      "Bash(git rm *)"
     ]
   }
 }
