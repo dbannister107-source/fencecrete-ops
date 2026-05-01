@@ -6482,6 +6482,13 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   // Bill submissions across all months — used by the Bill Sheet History report
   const[bsHistorySubs,setBsHistorySubs]=useState([]);
   useEffect(()=>{sbGet('pm_bill_submissions','select=id,job_id,billing_month,submitted_by,submitted_at,ar_reviewed,ar_reviewed_at,no_bill_required,invoiced_amount,total_lf&order=submitted_at.desc&limit=10000').then(d=>{if(Array.isArray(d))setBsHistorySubs(d);}).catch(e=>console.error('[Reports] bill submissions fetch failed:',e));},[]);
+  // Customer Concentration view (Phase 3a follow-up, 2026-04-30) — pre-aggregated
+  // per-customer metrics joined to jobs/companies. One row per linked company
+  // plus one synthetic row for the unmatched bucket. View excludes residential
+  // and zero-ACV jobs server-side.
+  const[concentrationRows,setConcentrationRows]=useState(null);
+  const[concentrationErr,setConcentrationErr]=useState(null);
+  useEffect(()=>{sbGet('v_customer_concentration','select=*&order=total_acv.desc').then(d=>{if(Array.isArray(d))setConcentrationRows(d);else{console.error('[Reports] concentration fetch returned non-array:',d);setConcentrationErr('Unexpected response shape');}}).catch(e=>{console.error('[Reports] concentration fetch failed:',e);setConcentrationErr(e.message||'Fetch failed');});},[]);
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -6525,6 +6532,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
     {id:'lf_drift',title:'LF Data Quality Check',desc:'Jobs where header LF values disagree with Line Items — flags stale data for cleanup',icon:'🔍'},
     {id:'bill_sheet_history',title:'Bill Sheet History',desc:'PM × month grid — submissions, reviewed count, $ billed, and submission timing across all months',icon:'📚'},
+    {id:'customer_concentration',title:'Customer Concentration',desc:'Top customers by ACV with billed-% color coding, top-N concentration, unlinked exposure, and click-through to Customer Master',icon:'🏢'},
   ];
   const salesReports=[
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
@@ -7601,6 +7609,165 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{marginTop:12,fontSize:11,color:'#9E9B96',lineHeight:1.6}}>
           <b>Days late</b> = days from end of billing month to submission date. Negative = submitted before month end.
           PMs typically have a few days into the new month before submissions are considered late; 0–3 days is normal.
+        </div>
+      </div>;
+    }
+    if(activeRpt==='customer_concentration'){
+      // Loading + error states keyed off the parent-scope state we set up above.
+      if(concentrationErr)return<div style={{padding:24,color:'#991B1B',fontSize:13}}>Could not load Customer Concentration: {concentrationErr}</div>;
+      if(concentrationRows===null)return<div style={{padding:24,color:'#9E9B96',fontSize:13}}>Loading concentration data…</div>;
+      const rows=concentrationRows;
+      // Linked-only slice for KPI tiles, bar chart, and concentration math.
+      // The unlinked synthetic row (is_unlinked=true) is shown only in the
+      // banner + table — it has no rank and would skew share calculations.
+      const linkedRows=rows.filter(r=>!r.is_unlinked);
+      const unlinkedRow=rows.find(r=>r.is_unlinked);
+      const linkedCount=linkedRows.length;
+      const linkedRevenue=linkedRows.reduce((s,r)=>s+n(r.total_acv),0);
+      const sortedByRank=[...linkedRows].sort((a,b)=>n(a.rank_by_acv||9999)-n(b.rank_by_acv||9999));
+      const top5Rev=sortedByRank.slice(0,5).reduce((s,r)=>s+n(r.total_acv),0);
+      const top10Rev=sortedByRank.slice(0,10).reduce((s,r)=>s+n(r.total_acv),0);
+      const top5Share=linkedRevenue>0?(top5Rev/linkedRevenue*100):0;
+      const top10Share=linkedRevenue>0?(top10Rev/linkedRevenue*100):0;
+      // Top-15 by ACV for the bar chart (linked only). Truncate the long
+      // customer names so the X-axis stays readable.
+      const truncate=(s,max)=>{const str=String(s||'');return str.length>max?str.slice(0,max-1)+'…':str;};
+      const chartData=sortedByRank.slice(0,15).map(r=>({
+        name:truncate(r.customer_name,20),
+        fullName:r.customer_name,
+        market:r.market||'OOS',
+        acv:n(r.total_acv),
+      }));
+      // Format $1.2M / $850k / $42 — the existing $k helper already handles
+      // both M and k breakpoints. We use it for tiles, table cells, banner.
+      const fmtAcv=$k;
+      // pct_billed → traffic-light color. Null = gray (no billed data yet).
+      const billedColor=(p)=>{if(p==null)return'#9E9B96';const v=Number(p);if(v<30)return'#991B1B';if(v<60)return'#B45309';return'#065F46';};
+      // Click handlers: linked rows → focus that company on Companies & Docs;
+      // the UNLINKED row + the warning banner → land on Reconcile (where the
+      // user actually does the work).
+      const goToCompany=(companyId)=>{try{localStorage.setItem('fc_customer_master_focus_company',companyId);}catch(e){}if(onNav)onNav('customer_master');};
+      const goToReconcile=()=>{try{localStorage.setItem('fc_customer_master_focus_tab','reconcile');}catch(e){}if(onNav)onNav('customer_master');};
+      const exportRows=rows.map(r=>({
+        Rank:r.is_unlinked?'':r.rank_by_acv,
+        Customer:r.customer_name,
+        Market:r.market||'',
+        Jobs:r.job_count,
+        ActiveJobs:r.active_jobs,
+        ACV:Math.round(n(r.total_acv)),
+        Billed:Math.round(n(r.total_billed)),
+        Unbilled:Math.round(n(r.total_unbilled)),
+        BilledPct:r.pct_billed==null?'':Number(r.pct_billed).toFixed(1),
+        PctOfRev:r.pct_of_linked_revenue==null?'':Number(r.pct_of_linked_revenue).toFixed(2),
+        ExemptJobs:r.exempt_jobs||0,
+        ExemptACV:Math.round(n(r.exempt_acv)),
+        Repeat:r.is_repeat_customer?'YES':'',
+        FirstContract:r.first_contract_date||'',
+        LastContract:r.last_contract_date||'',
+      }));
+      const exportFile=`customer_concentration_${new Date().toISOString().slice(0,10)}.csv`;
+      const tile=(label,value,sub)=>(
+        <div style={{...card,padding:14}}>
+          <div style={{fontSize:10,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>{label}</div>
+          <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:'#1A1A1A',marginTop:4}}>{value}</div>
+          {sub&&<div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>{sub}</div>}
+        </div>
+      );
+      const billedPctCell=(p)=>{
+        if(p==null)return<span style={{color:'#9E9B96',fontWeight:600}}>—</span>;
+        return<span style={{color:billedColor(p),fontWeight:700}}>{Number(p).toFixed(1)}%</span>;
+      };
+      const exemptCell=(r)=>{
+        if(!r.exempt_jobs||r.exempt_jobs===0)return<span style={{color:'#9E9B96'}}>—</span>;
+        return<span style={{fontSize:11,color:'#625650'}}>{r.exempt_jobs}j · {fmtAcv(n(r.exempt_acv))}</span>;
+      };
+      return<div>
+        {/* Header + export */}
+        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:14}}>
+          <button onClick={()=>downloadCSV(exportFile,exportRows)} style={btnP}>Export CSV</button>
+        </div>
+        {/* KPI tiles */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+          {tile('Linked customers',linkedCount.toLocaleString(),unlinkedRow?`+ 1 unmatched bucket (${n(unlinkedRow.job_count)} jobs)`:'all jobs linked')}
+          {tile('Linked revenue',fmtAcv(linkedRevenue),'sum of adj_contract_value, residential excluded')}
+          {tile('Top 5 share',`${top5Share.toFixed(1)}%`,`${fmtAcv(top5Rev)} of linked revenue`)}
+          {tile('Top 10 share',`${top10Share.toFixed(1)}%`,`${fmtAcv(top10Rev)} of linked revenue`)}
+        </div>
+        {/* Unlinked exposure banner — only when the synthetic row exists */}
+        {unlinkedRow&&n(unlinkedRow.total_acv)>0&&(
+          <div
+            onClick={goToReconcile}
+            title="Open Customer Master Reconcile to fix"
+            style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',marginBottom:16,background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:10,cursor:'pointer',fontSize:13}}
+          >
+            <span style={{fontSize:18}}>⚠</span>
+            <div style={{flex:1,color:'#92400E'}}>
+              <b>{fmtAcv(n(unlinkedRow.total_acv))}</b> of revenue from <b>{n(unlinkedRow.job_count)}</b> unmatched jobs. Reconcile in Customer Master to remove this blind spot.
+            </div>
+            <span style={{color:'#92400E',fontWeight:800}}>→</span>
+          </div>
+        )}
+        {/* Bar chart — top 15 linked by ACV */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Top 15 customers by ACV</div>
+          {chartData.length===0?(
+            <div style={{padding:30,textAlign:'center',color:'#9E9B96',fontSize:12,background:'#F9F8F6',borderRadius:8}}>No linked customers yet.</div>
+          ):(
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData} margin={{top:10,right:16,bottom:60,left:0}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F0EFEB"/>
+                <XAxis dataKey="name" tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={70}/>
+                <YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/>
+                <Tooltip
+                  formatter={(v)=>[fmtAcv(v),'ACV']}
+                  labelFormatter={(_lbl,payload)=>{const p=payload&&payload[0]&&payload[0].payload;return p?`${p.fullName} (${p.market})`:_lbl;}}
+                  contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8,fontSize:12}}
+                />
+                <Bar dataKey="acv" radius={[4,4,0,0]}>
+                  {chartData.map((d,i)=><Cell key={i} fill={MC[d.market]||'#8A261D'}/>)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        {/* Full table */}
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:'2px solid #E5E3E0'}}>
+                {['#','Customer','Market','Jobs','ACV','Billed %','% of Rev','Exempt','Repeat'].map((h,i)=>(
+                  <th key={h} style={{textAlign:i<2?'left':'right',padding:'8px 10px',color:'#625650',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r=>{
+                const clickable=!r.is_unlinked&&!!r.company_id;
+                const onClick=r.is_unlinked?goToReconcile:(clickable?()=>goToCompany(r.company_id):undefined);
+                return<tr
+                  key={r.is_unlinked?'__unlinked__':r.company_id||r.customer_name}
+                  onClick={onClick}
+                  style={{borderBottom:'1px solid #F4F4F2',cursor:onClick?'pointer':'default',background:r.is_unlinked?'#FFFBEB':'transparent'}}
+                  onMouseEnter={e=>{if(onClick)e.currentTarget.style.background=r.is_unlinked?'#FEF3C7':'#FAFAFA';}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=r.is_unlinked?'#FFFBEB':'transparent';}}
+                >
+                  <td style={{padding:'8px 10px',textAlign:'left',fontFamily:'Inter',fontWeight:700,color:'#625650',width:40}}>{r.is_unlinked?'':r.rank_by_acv}</td>
+                  <td style={{padding:'8px 10px',fontWeight:600,color:r.is_unlinked?'#92400E':'#1A1A1A',fontStyle:r.is_unlinked?'italic':'normal',maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r.customer_name}>{r.customer_name}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right'}}>{r.market?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700,background:MB[r.market]||'#F4F4F2',color:MC[r.market]||'#625650'}}>{MS[r.market]||r.market}</span>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{r.job_count}{r.active_jobs!=null&&r.active_jobs<r.job_count?<span style={{color:'#9E9B96',fontSize:10}}> ({r.active_jobs} active)</span>:null}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{fmtAcv(n(r.total_acv))}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{billedPctCell(r.pct_billed)}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',color:'#625650'}}>{r.pct_of_linked_revenue==null?<span style={{color:'#9E9B96'}}>—</span>:`${Number(r.pct_of_linked_revenue).toFixed(2)}%`}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right'}}>{exemptCell(r)}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right'}}>{r.is_repeat_customer?<span style={{display:'inline-block',padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:800,background:'#FDE68A',color:'#92400E'}}>★ REPEAT</span>:''}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+          {rows.length===0&&<div style={{padding:30,textAlign:'center',color:'#9E9B96',fontSize:12}}>No customer data yet.</div>}
+        </div>
+        <div style={{marginTop:14,fontSize:11,color:'#9E9B96',lineHeight:1.6}}>
+          Source: <code>v_customer_concentration</code>. Excludes residential and zero-ACV jobs. Click a row to open that customer in Customer Master; the unmatched row jumps to Reconcile.
         </div>
       </div>;
     }
