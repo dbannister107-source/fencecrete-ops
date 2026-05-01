@@ -270,7 +270,17 @@ const downloadCSV = (filename, rows) => {
   const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-const fD = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : '—';
+// Bare 'YYYY-MM-DD' (Postgres DATE column) is interpreted as midnight UTC by JS,
+// which renders one day earlier in negative-UTC-offset timezones (e.g. Central).
+// Force noon-local for date-only strings; pass anything else (Date, ISO with time,
+// timestamptz) through unchanged. Use this for any DATE column display.
+const formatDateOnly = (d, opts={month:'short',day:'numeric',year:'2-digit'}) => {
+  if(d==null||d==='')return'—';
+  const s=typeof d==='string'?d:'';
+  const dt=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T12:00:00'):new Date(d);
+  return isNaN(dt)?'—':dt.toLocaleDateString('en-US',opts);
+};
+const fD = d => formatDateOnly(d);
 const fmtPct = v => (!v && v !== 0) ? '—' : `${(parseFloat(v) * 100).toFixed(1)}%`;
 const relT = d => { if(!d) return '—'; const ms=Date.now()-new Date(d).getTime(), m=ms/60000; if(m<60) return `${Math.floor(m)}m ago`; const h=m/60; if(h<24) return `${Math.floor(h)}h ago`; const dy=h/24; if(dy<2) return 'Yesterday'; if(dy<7) return `${Math.floor(dy)}d ago`; return fD(d); };
 
@@ -2310,8 +2320,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 ['Block / Section',s.block_section],
                 ['Legal (other)',s.legal_other],
                 ['Job Number',s.accounting_job_number],
-                ['Fence Install Date',s.fence_install_date?new Date(s.fence_install_date).toLocaleDateString('en-US'):null],
-                ['Project Completion',s.est_completion_date?new Date(s.est_completion_date).toLocaleDateString('en-US'):null],
+                ['Fence Install Date',s.fence_install_date?formatDateOnly(s.fence_install_date,{}):null],
+                ['Project Completion',s.est_completion_date?formatDateOnly(s.est_completion_date,{}):null],
               ]},
               {title:'Property Owner',rows:[
                 ['Company',s.owner_company],
@@ -5033,7 +5043,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
                 <th style={{width:32}}></th>
               </tr></thead>
               <tbody>{invEntries.map((e,i)=>{const isOB=e.notes&&e.notes.includes('Opening Balance');return<tr key={e.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAFA'}}>
-                <td style={{padding:'5px 6px'}}>{e.invoice_date?new Date(e.invoice_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</td>
+                <td style={{padding:'5px 6px'}}>{formatDateOnly(e.invoice_date,{month:'short',day:'numeric',year:'numeric'})}</td>
                 <td style={{padding:'5px 6px',color:'#625650'}}>{e.billing_month||'—'}</td>
                 <td style={{padding:'5px 6px',color:'#625650'}}>{e.invoice_number||'—'}</td>
                 <td style={{padding:'5px 6px',textAlign:'right',fontWeight:700,color:'#065F46'}}>{$(e.invoice_amount)}</td>
@@ -12479,7 +12489,7 @@ function PMDailyReportPage({jobs}){
     if(!ts)return false;
     return ctDateStr(ts)===ctDateStr(Date.now());
   };
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:localStorage.getItem('last_crew')||'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
   const reportToForm=(r)=>{
     const str=(v)=>(v==null?'':String(v));
     return{
@@ -12619,7 +12629,6 @@ function PMDailyReportPage({jobs}){
       submitted_by:selPM||form.submitted_by,
       photos:Array.isArray(form.photos)&&form.photos.length?form.photos:null,
     };
-    if(form.crew)localStorage.setItem('last_crew',form.crew);
     if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
     const isEdit=!!editingReport;
     try{
@@ -17132,7 +17141,7 @@ function InspectionHistoryView({crd}){
           const ss=statusStyle(r.overall_status);
           const findings=r.defects_found||r.notes||'';
           return <tr key={r.id} style={{borderBottom:'1px solid #F4F4F2',background:i%2===0?'#FFF':'#FAFAF8'}}>
-            <td style={{padding:'10px 12px',fontWeight:600,whiteSpace:'nowrap'}}>{r.inspection_date?new Date(r.inspection_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—'}</td>
+            <td style={{padding:'10px 12px',fontWeight:600,whiteSpace:'nowrap'}}>{formatDateOnly(r.inspection_date)}</td>
             <td style={{padding:'10px 12px'}}>{eq?<><div style={{fontFamily:'monospace',fontWeight:700,fontSize:11}}>{eq.unit_number}</div><div style={{fontSize:10,color:'#9E9B96'}}>{eq.make_model||eq.equipment_type}</div></>:<span style={{color:'#9E9B96'}}>—</span>}</td>
             <td style={{padding:'10px 12px',color:'#625650',textTransform:'capitalize'}}>{r.inspection_type||'—'}</td>
             <td style={{padding:'10px 12px',color:'#625650'}}>{r.inspector_name||'—'}</td>
@@ -17736,7 +17745,7 @@ function FleetPage({jobs}){
         </div>}
         {detail.reg_expiry&&<div style={{background:'#FAEEDA',borderRadius:8,padding:'12px',marginBottom:12,borderLeft:'4px solid #D97706'}}>
           <div style={{fontSize:10,color:'#854F0B',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>Registration Expiry</div>
-          <div style={{fontWeight:700}}>{new Date(detail.reg_expiry).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+          <div style={{fontWeight:700}}>{formatDateOnly(detail.reg_expiry,{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
         </div>}
         {detail.notes&&<div style={{background:'#F9F8F6',borderRadius:8,padding:'12px',marginBottom:12}}>
           <div style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>Notes</div>
