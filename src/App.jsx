@@ -8215,7 +8215,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
 function ReportsPage(props){return <ErrorBoundary label="Reports Page"><ReportsPageInner {...props}/></ErrorBoundary>;}
 
 /* ═══ MATERIAL CALCULATOR PAGE ═══ */
-function MaterialCalcPage({jobs,preJob}){
+function MaterialCalcPage({jobs,preJob,onNav}){
   // Subscribe so dropdowns re-render when STYLE_CATALOG / COLOR_CATALOG /
   // COLOR_ALIAS_MAP hydrate; `version` also drives the color-alias retry effect.
   const catalog=useCatalog();
@@ -8248,6 +8248,33 @@ function MaterialCalcPage({jobs,preJob}){
   const[plantCfg,setPlantCfg]=useState({});
 
   useEffect(()=>{sbGet('material_calc_styles','is_active=eq.true&order=style_name').then(d=>setCalcStyles(d||[]));},[]);
+  // Capacity-awareness sidebar (2026-04-30) — pulls per-style inventory + realized
+  // daily capacity from v_style_capacity_lookup. View prefers a height-specific
+  // row; if the style is height-agnostic in mold_inventory_post (e.g. Vertical
+  // Wood 6'), the row has height_ft IS NULL and we fall back to that.
+  // Joins via the legacy material_calc_styles.style_name (calcCfg.style_name) —
+  // selStyle is canonical, the view is keyed on the legacy name.
+  const[capacity,setCapacity]=useState(null);
+  const[capacityLoading,setCapacityLoading]=useState(false);
+  useEffect(()=>{
+    if(!selStyle){setCapacity(null);return;}
+    const lookupName=(calcCfg&&calcCfg.style_name)||selStyle;
+    const h=n(height);
+    setCapacityLoading(true);
+    const heightFilter=h>0?`or=(height_ft.eq.${h},height_ft.is.null)&`:'';
+    sbGet('v_style_capacity_lookup',`style_name=eq.${encodeURIComponent(lookupName)}&${heightFilter}select=*`)
+      .then(d=>{
+        if(!Array.isArray(d)){setCapacity(null);return;}
+        // Prefer the exact height row; fall back to the height-agnostic
+        // (height_ft IS NULL) row. If neither matches, we leave capacity null
+        // and the section renders the "no capacity data" muted note.
+        const exact=h>0?d.find(r=>n(r.height_ft)===h):null;
+        const generic=d.find(r=>r.height_ft===null);
+        setCapacity(exact||generic||null);
+      })
+      .catch(e=>{console.warn('[MaterialCalc] capacity fetch failed:',e);setCapacity(null);})
+      .finally(()=>setCapacityLoading(false));
+  },[selStyle,height,calcCfg]);
   // Resolve the selected canonical style to a material_calc_styles row.
   // Order of preference:
   //   1. canonical → CANONICAL_TO_MATERIAL_CALC[canonical] → exact match on style_name
@@ -8594,6 +8621,133 @@ function MaterialCalcPage({jobs,preJob}){
           </div>
         </div>
       </div>
+      {/* ─── 📦 Capacity Check (Phase 3a follow-up, 2026-04-30) ───
+           Sidebar/section that compares the planned run's demand against
+           current mold inventory + realized daily capacity. Read-only,
+           informational; never blocks the calculator. Hidden until the
+           user has selected a style and entered LF (i.e. once `result`
+           is populated). */}
+      {(()=>{
+        if(!result||!selStyle||!n(lf))return null;
+        // Component needs use the user's overrides if any, falling back to
+        // the calculator's computed values (same pattern the demand cards
+        // and Save handler use).
+        const needPanels=(ov('regularPanels',result.regularPanels)||0)+(ov('halfPanels',result.halfPanels)||0)+(ov('topPanels',result.topPanels)||0)+(ov('bottomPanels',result.bottomPanels)||0);
+        const needPosts=ov('linePosts',result.linePosts)+ov('cornerPosts',result.cornerPosts)+ov('stopPosts',result.stopPosts);
+        const needRails=result.isRanch?ov('totalRails',result.totalRails):(ov('capRails',result.capRails)+ov('bottomRails',result.bottomRails)+ov('middleRails',result.middleRails)+ov('topRails',result.topRails));
+        const needCaps=ov('lineCaps',result.lineCaps)+ov('stopCaps',result.stopCaps);
+        const titleClick=()=>{
+          if(!onNav)return;
+          // Drop a hash anchor so the Reports page lands on the right card.
+          // Same slug pattern Reports uses internally (toSlug: _ → -).
+          try{window.location.hash='#/reports/mold-capacity-bottlenecks';}catch(e){}
+          onNav('reports');
+        };
+        const titleBar=(
+          <div onClick={titleClick} style={{padding:'10px 16px',background:'#1A1A1A',color:'#FFF',borderRadius:'10px 10px 0 0',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,cursor:onNav?'pointer':'default',fontFamily:'Inter',fontWeight:800,fontSize:13,textTransform:'uppercase',letterSpacing:0.5}}>
+            <span>📦 Capacity Check</span>
+            {onNav&&<span style={{fontSize:10,fontWeight:700,opacity:0.85}}>open Mold Capacity report →</span>}
+          </div>
+        );
+        if(capacityLoading){
+          return <div style={{...card,padding:0,marginTop:16,overflow:'hidden'}}>
+            {titleBar}
+            <div style={{padding:16,color:'#9E9B96',fontSize:12}}>Loading capacity…</div>
+          </div>;
+        }
+        if(!capacity){
+          return <div style={{...card,padding:0,marginTop:16,overflow:'hidden'}}>
+            {titleBar}
+            <div style={{padding:16,color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>
+              No capacity data available for this style. Add mold counts in <b>Mold Inventory</b> to enable capacity check.
+            </div>
+          </div>;
+        }
+        const cap=capacity;
+        // Status thresholds per spec:
+        //   need > avail              → 🔴 (insufficient inventory)
+        //   need ≤ avail, days < 7    → 🟢
+        //   need ≤ avail, 7 ≤ days≤14 → 🟡
+        //   need ≤ avail, days > 14   → 🟠
+        // Days unknown (per_day_realized = 0 or null) defaults to 🟢 once the
+        // inventory check passes — we can't say it's tight if we have no rate.
+        const compute=(need,avail,perDay,label)=>{
+          const days=perDay>0?need/perDay:null;
+          let status;
+          if(need>avail)status='red';
+          else if(days==null)status='green';
+          else if(days<7)status='green';
+          else if(days<=14)status='yellow';
+          else status='orange';
+          let daysStr;
+          if(days==null)daysStr='—';
+          else if(days<1)daysStr='<1 day';
+          else if(days<5)daysStr=`~${days.toFixed(1)} days`;
+          else daysStr=`~${Math.round(days)} days`;
+          const labelMap={red:'🔴',yellow:'🟡',orange:'🟠',green:'🟢'};
+          return {label,need,avail,perDay,days,daysStr,status,statusLabel:labelMap[status]};
+        };
+        const rows=[
+          compute(needPanels,n(cap.panels_owned),n(cap.panels_per_day_realized),'Panels'),
+          compute(needPosts,n(cap.posts_total_at_height),n(cap.posts_per_day_realized),'Posts'),
+          compute(needRails,n(cap.rails_total),n(cap.rails_per_day_realized),'Rails'),
+          compute(needCaps,n(cap.caps_total),n(cap.caps_per_day_realized),'Caps'),
+        ];
+        const reds=rows.filter(r=>r.status==='red');
+        const tights=rows.filter(r=>r.status==='yellow'||r.status==='orange');
+        // Banner picks the worst red (largest overage) for the headline; if
+        // nothing's red but ≥2 components are tight, we warn that the run
+        // will dominate plant time.
+        let banner=null;
+        if(reds.length>0){
+          const worst=[...reds].sort((a,b)=>(b.need-b.avail)-(a.need-a.avail))[0];
+          banner={kind:'red',msg:`⚠ Planned run exceeds ${worst.label.toLowerCase()} inventory by ${(worst.need-worst.avail).toLocaleString()} units. Consider splitting the job or scheduling around other planned runs.`};
+        }else if(tights.length>=2){
+          const maxDays=Math.max(...rows.filter(r=>r.days!=null).map(r=>r.days),0);
+          banner={kind:'yellow',msg:`Capacity tight — this run will dominate the plant for ~${Math.round(maxDays)} days.`};
+        }
+        const statusBg={green:'#D1FAE5',yellow:'#FEF3C7',orange:'#FED7AA',red:'#FEE2E2'};
+        const statusFg={green:'#065F46',yellow:'#92400E',orange:'#9A3412',red:'#991B1B'};
+        const thS={textAlign:'left',padding:'8px 14px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4,background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'};
+        const thNum={...thS,textAlign:'right'};
+        const thCenter={...thS,textAlign:'center'};
+        return <div style={{...card,padding:0,marginTop:16,overflow:'hidden'}}>
+          {titleBar}
+          {banner&&<div style={{padding:'10px 16px',background:banner.kind==='red'?'#FEE2E2':'#FEF3C7',borderBottom:`1px solid ${banner.kind==='red'?'#FCA5A5':'#FCD34D'}`,fontSize:12,fontWeight:600,color:banner.kind==='red'?'#991B1B':'#92400E'}}>
+            {banner.msg}
+          </div>}
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr>
+                <th style={thS}>Component</th>
+                <th style={thNum}>Needed</th>
+                <th style={thNum}>Available</th>
+                <th style={thNum}>Days at capacity</th>
+                <th style={thCenter}>Status</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r=>{
+                  // Spec: if inventory = 0 but need > 0, show specific copy
+                  // in place of the days estimate (which would be Infinity).
+                  const noInventory=r.need>0&&r.avail===0;
+                  return <tr key={r.label} style={{borderBottom:'1px solid #F4F4F2'}}>
+                    <td style={{padding:'10px 14px',fontWeight:600,color:'#1A1A1A'}}>{r.label}</td>
+                    <td style={{padding:'10px 14px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{r.need.toLocaleString()}</td>
+                    <td style={{padding:'10px 14px',textAlign:'right',fontFamily:'Inter',color:r.avail===0?'#991B1B':'#1A1A1A'}}>{r.avail.toLocaleString()}</td>
+                    <td style={{padding:'10px 14px',textAlign:'right',color:noInventory?'#991B1B':'#625650',fontStyle:noInventory?'italic':'normal'}}>{noInventory?`No ${r.label.toLowerCase()} molds in inventory for this style`:r.daysStr}</td>
+                    <td style={{padding:'10px 14px',textAlign:'center'}}>
+                      <span style={{display:'inline-block',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,background:statusBg[r.status],color:statusFg[r.status]}} title={r.status}>{r.statusLabel}</span>
+                    </td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:'8px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2'}}>
+            Read-only. Compares the planned run against current mold inventory and realized daily capacity (single shift, 5-day week). Saving the production order is not blocked.
+          </div>
+        </div>;
+      })()}
       {/* v2.1: Materials Required — concrete totals with Regular + Drainage panel split, rebar/PVC/silicone, gate hardware */}
       {(()=>{
         const cfg=calcCfg||{};
@@ -20889,7 +21043,7 @@ function AppShell(){
             {page==='reports'&&<ReportsPage jobs={jobs} onNav={navigateTo} onOpenJob={j=>{setOpenJob(j);navigateTo('projects');}} refreshKey={refreshKey}/>}
             {page==='import_projects'&&<ImportProjectsPage jobs={jobs} onRefresh={fetchJobs} onNav={navigateTo}/>}
             {page==='change_orders'&&<ChangeOrdersPage jobs={jobs}/>}
-            {page==='material_calc'&&<MaterialCalcPage jobs={jobs}/>}
+            {page==='material_calc'&&<MaterialCalcPage jobs={jobs} onNav={navigateTo}/>}
             {page==='mold_inventory'&&<MoldInventoryPage/>}
             {page==='plant_maintenance'&&<PlantMaintenancePage/>}
             {page==='production_orders'&&<ProductionPlanningPage jobs={jobs} setJobs={setJobs} onNav={navigateTo} refreshKey={refreshKey}/>}
