@@ -20376,7 +20376,7 @@ function AppShell(){
             {page==='admin'&&isAdmin&&<div style={{...card,padding:40,textAlign:'center'}}><div style={{fontFamily:'Syne',fontSize:24,fontWeight:900,marginBottom:8,color:'#8A261D'}}>🔐 User Management</div><div style={{fontSize:13,color:'#625650',marginBottom:6}}>Admin-only. Coming next — invite users, change roles, reset passwords.</div><div style={{fontSize:12,color:'#9E9B96'}}>For now, manage users from the Supabase Dashboard → Authentication → Users.</div></div>}
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
             {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
-            {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage/></ErrorBoundary>}
+            {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage currentUserEmail={currentUserEmail} currentUserName={profile?.full_name||null}/></ErrorBoundary>}
           </>}
         </div>
       </div>

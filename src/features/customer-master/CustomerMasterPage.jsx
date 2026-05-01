@@ -25,7 +25,7 @@
 // finder + per-market breakdown + top unmatched list.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { sbGet } from '../../shared/sb';
+import { sbGet, H } from '../../shared/sb';
 
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
@@ -83,10 +83,14 @@ const similarity = (a, b) => {
   return Math.min(1, jaccard + firstBonus);
 };
 
-export default function CustomerMasterPage() {
-  const [tab, setTab] = useState('diagnostic'); // 'diagnostic' | 'reconcile'
+export default function CustomerMasterPage({ currentUserEmail = '', currentUserName = null } = {}) {
+  const [tab, setTab] = useState('diagnostic'); // 'diagnostic' | 'reconcile' | 'companies'
   const [jobs, setJobs] = useState([]);
   const [companies, setCompanies] = useState([]);
+  // Live (non-deleted) company_attachment rows: just id + company_id, used to
+  // compute per-company doc counts on the Companies & Docs tab. Full doc rows
+  // (with category, filename, etc) are fetched lazily when a card expands.
+  const [allCompanyDocs, setAllCompanyDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -94,12 +98,14 @@ export default function CustomerMasterPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [jobsData, companiesData] = await Promise.all([
+      const [jobsData, companiesData, docsData] = await Promise.all([
         sbGet('jobs', 'select=id,job_number,job_name,customer_name,market,status,company_id,is_residential,net_contract_value&order=customer_name.asc'),
         sbGet('companies', 'select=id,name,company_type,market,active,address,city,state&order=name.asc'),
+        sbGet('company_attachments', 'select=id,company_id&deleted_at=is.null'),
       ]);
       setJobs(Array.isArray(jobsData) ? jobsData : []);
       setCompanies(Array.isArray(companiesData) ? companiesData : []);
+      setAllCompanyDocs(Array.isArray(docsData) ? docsData : []);
     } catch (e) {
       console.error('[CustomerMaster] fetch failed:', e);
       setError(e.message || 'Failed to load');
@@ -165,7 +171,9 @@ export default function CustomerMasterPage() {
           <div style={{ fontSize: 13, color: '#625650' }}>
             {tab === 'diagnostic'
               ? 'Read-only diagnostic of customer↔company link state.'
-              : `Reconcile ${unmatchedGroups.length} unmatched customer name${unmatchedGroups.length === 1 ? '' : 's'} (${stats.unmatched} job${stats.unmatched === 1 ? '' : 's'}).`}
+              : tab === 'reconcile'
+                ? `Reconcile ${unmatchedGroups.length} unmatched customer name${unmatchedGroups.length === 1 ? '' : 's'} (${stats.unmatched} job${stats.unmatched === 1 ? '' : 's'}).`
+                : 'Per-company document library. One upload fans out to every linked job (now and future) when auto-attach is on.'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -181,6 +189,12 @@ export default function CustomerMasterPage() {
             color: tab === 'reconcile' ? '#FFF' : '#625650',
             borderColor: tab === 'reconcile' ? '#8A261D' : '#E5E3E0',
           }}>🔧 Reconcile {stats.unmatched > 0 && `(${stats.unmatched})`}</button>
+          <button onClick={() => setTab('companies')} style={{
+            ...btnS,
+            background: tab === 'companies' ? '#8A261D' : '#FFF',
+            color: tab === 'companies' ? '#FFF' : '#625650',
+            borderColor: tab === 'companies' ? '#8A261D' : '#E5E3E0',
+          }}>📎 Companies &amp; Docs</button>
         </div>
       </div>
 
@@ -192,6 +206,17 @@ export default function CustomerMasterPage() {
         <ReconcileView
           unmatchedGroups={unmatchedGroups}
           companies={companies}
+          onRefresh={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
+
+      {tab === 'companies' && (
+        <CompaniesAndDocsView
+          companies={companies}
+          jobs={jobs}
+          allCompanyDocs={allCompanyDocs}
+          currentUserEmail={currentUserEmail}
+          currentUserName={currentUserName}
           onRefresh={() => setRefreshKey((k) => k + 1)}
         />
       )}
@@ -1077,6 +1102,528 @@ function ReconcileRow({ group, companies, busy, selected, onToggleSelected, onLi
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button onClick={() => onCreateNew(createDraft)} disabled={busy || !createDraft.name.trim()} style={btnP}>
                 Create + Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// COMPANIES & DOCS VIEW (Phase 3a — 2026-04-30)
+// ============================================================
+// Per-company document library. The DB backend (table, fan-out triggers,
+// private Storage bucket) shipped earlier today; this is the UI layer.
+// Each card lists the company's linked jobs and uploaded documents, with
+// an upload form whose default `auto_attach_to_new_jobs` flag depends on
+// document category (legal docs default ON; other / credit_application
+// default OFF). The fan-out trigger handles existing-job back-fill.
+//
+// One-card-open-at-a-time. Multiple-open felt noisy in the prototype and
+// blew up scroll position on long lists. Single-open with a quick toggle
+// turned out to match how Amiee/Virginia actually work the queue.
+
+const DOC_CATEGORIES = [
+  { value: 'tax_exemption_cert', label: 'Tax Exemption Certificate', autoAttachDefault: true },
+  { value: 'w9', label: 'W-9', autoAttachDefault: true },
+  { value: 'insurance_cert', label: 'Insurance Certificate', autoAttachDefault: true },
+  { value: 'master_service_agreement', label: 'Master Service Agreement', autoAttachDefault: true },
+  { value: 'nda', label: 'NDA', autoAttachDefault: true },
+  { value: 'credit_application', label: 'Credit Application', autoAttachDefault: false },
+  { value: 'other', label: 'Other', autoAttachDefault: false },
+];
+const CATEGORY_LABELS = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.value, c.label]));
+const CATEGORY_AUTO_ATTACH = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.value, c.autoAttachDefault]));
+const COMPANIES_VIEW_MARKETS = ['SA', 'HOU', 'AUS', 'DFW'];
+
+const SB_URL = 'https://bdnwjokehfxudheshmmj.supabase.co';
+const COMPANY_BUCKET = 'company-attachments';
+
+// Encode storage path segment-by-segment so '/' separators stay literal in the
+// URL. Same fix as the Documents-tab signing endpoint earlier today — collapsing
+// slashes via encodeURIComponent breaks the Storage signing endpoint's lookup.
+const encodeStoragePath = (p) => (p || '').split('/').map(encodeURIComponent).join('/');
+
+// Strip characters that have caused Storage upload failures (% mostly, plus the
+// usual URL specials). Same character set as App.jsx sanitizeForStorage to keep
+// behavior consistent across the codebase.
+const sanitizeFilename = (name) => {
+  if (!name) return 'file';
+  const dotIdx = name.lastIndexOf('.');
+  const stem = dotIdx > 0 ? name.slice(0, dotIdx) : name;
+  const ext = dotIdx > 0 ? name.slice(dotIdx + 1) : '';
+  const cleanStem = stem.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
+  const cleanExt = ext.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 16);
+  return cleanExt ? `${cleanStem}.${cleanExt}` : cleanStem;
+};
+
+const fmtDate = (iso) => {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (e) { return iso; }
+};
+
+const fmtBytes = (b) => {
+  if (!b || b < 0) return '—';
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1073741824) return `${(b / 1048576).toFixed(1)} MB`;
+  return `${(b / 1073741824).toFixed(1)} GB`;
+};
+
+function CompaniesAndDocsView({ companies, jobs, allCompanyDocs, currentUserEmail, currentUserName, onRefresh }) {
+  const [search, setSearch] = useState('');
+  const [marketFilter, setMarketFilter] = useState('all');
+  const [showAll, setShowAll] = useState(false); // default: only with linked jobs
+  const [expandedId, setExpandedId] = useState(null);
+
+  // Counts derived from already-loaded jobs + allCompanyDocs (one extra round-
+  // trip on tab open paid in the parent loadData; expanded cards lazily fetch
+  // the full job/doc rows for that one company).
+  const jobCountsByCompany = useMemo(() => {
+    const m = new Map();
+    jobs.forEach((j) => { if (j.company_id) m.set(j.company_id, (m.get(j.company_id) || 0) + 1); });
+    return m;
+  }, [jobs]);
+  const docCountsByCompany = useMemo(() => {
+    const m = new Map();
+    allCompanyDocs.forEach((d) => { if (d.company_id) m.set(d.company_id, (m.get(d.company_id) || 0) + 1); });
+    return m;
+  }, [allCompanyDocs]);
+
+  const totalCompanies = companies.length;
+  const companiesWithJobs = useMemo(() => companies.filter((c) => (jobCountsByCompany.get(c.id) || 0) > 0).length, [companies, jobCountsByCompany]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let f = companies;
+    if (!showAll) f = f.filter((c) => (jobCountsByCompany.get(c.id) || 0) > 0);
+    if (marketFilter !== 'all') f = f.filter((c) => c.market === marketFilter);
+    if (q) f = f.filter((c) => (c.name || '').toLowerCase().includes(q));
+    return f;
+  }, [companies, jobCountsByCompany, search, marketFilter, showAll]);
+
+  return (
+    <div style={card}>
+      {/* Header row */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          placeholder="Search companies…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ ...inputS, flex: '1 1 220px', minWidth: 200 }}
+        />
+        <select value={marketFilter} onChange={(e) => setMarketFilter(e.target.value)} style={inputS}>
+          <option value="all">All markets</option>
+          {COMPANIES_VIEW_MARKETS.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <div style={{ display: 'inline-flex', border: '1px solid #E5E3E0', borderRadius: 8, overflow: 'hidden' }}>
+          <button
+            onClick={() => setShowAll(false)}
+            style={{ padding: '7px 12px', border: 'none', background: !showAll ? '#1A1A1A' : '#FFF', color: !showAll ? '#FFF' : '#625650', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Only with linked jobs ({companiesWithJobs})
+          </button>
+          <button
+            onClick={() => setShowAll(true)}
+            style={{ padding: '7px 12px', border: 'none', borderLeft: '1px solid #E5E3E0', background: showAll ? '#1A1A1A' : '#FFF', color: showAll ? '#FFF' : '#625650', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Show all {totalCompanies}
+          </button>
+        </div>
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ padding: 40, textAlign: 'center', color: '#9E9B96', fontSize: 13 }}>
+          {totalCompanies === 0 ? 'No companies in master yet.' : 'No companies match this filter.'}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {filtered.map((c) => (
+          <CompanyCard
+            key={c.id}
+            company={c}
+            jobCount={jobCountsByCompany.get(c.id) || 0}
+            docCount={docCountsByCompany.get(c.id) || 0}
+            isExpanded={expandedId === c.id}
+            onToggle={() => setExpandedId((prev) => (prev === c.id ? null : c.id))}
+            currentUserEmail={currentUserEmail}
+            currentUserName={currentUserName}
+            onCountsChanged={onRefresh}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, currentUserEmail, currentUserName, onCountsChanged }) {
+  const [companyJobs, setCompanyJobs] = useState(null); // null = not loaded
+  const [companyDocs, setCompanyDocs] = useState(null);
+  const [loadingExpand, setLoadingExpand] = useState(false);
+  const [loadErr, setLoadErr] = useState(null);
+  const [showAllJobs, setShowAllJobs] = useState(false);
+
+  // Upload form
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadCategory, setUploadCategory] = useState('');
+  const [uploadDescription, setUploadDescription] = useState('');
+  const [uploadAutoAttachOverride, setUploadAutoAttachOverride] = useState(null); // null = use category default
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState(null);
+  const [uploadToast, setUploadToast] = useState(null);
+  const fileInputRef = React.useRef(null);
+
+  // Soft-delete confirmation modal
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const effectiveAutoAttach = uploadAutoAttachOverride !== null
+    ? uploadAutoAttachOverride
+    : (uploadCategory ? CATEGORY_AUTO_ATTACH[uploadCategory] : false);
+
+  const loadDetail = useCallback(async () => {
+    setLoadingExpand(true);
+    setLoadErr(null);
+    try {
+      const [jRows, dRows] = await Promise.all([
+        sbGet('jobs', `company_id=eq.${company.id}&select=id,job_number,job_name,status&order=job_number.desc`),
+        sbGet('company_attachments', `company_id=eq.${company.id}&deleted_at=is.null&select=*&order=uploaded_at.desc`),
+      ]);
+      setCompanyJobs(Array.isArray(jRows) ? jRows : []);
+      setCompanyDocs(Array.isArray(dRows) ? dRows : []);
+    } catch (e) {
+      console.error('[CompanyCard] expand fetch failed:', e);
+      setLoadErr(e.message || 'Failed to load');
+    } finally {
+      setLoadingExpand(false);
+    }
+  }, [company.id]);
+
+  useEffect(() => {
+    if (isExpanded && companyJobs === null) loadDetail();
+  }, [isExpanded, companyJobs, loadDetail]);
+
+  const openSignedUrl = async (doc) => {
+    try {
+      const encoded = encodeStoragePath(doc.storage_path);
+      const res = await fetch(`${SB_URL}/storage/v1/object/sign/${COMPANY_BUCKET}/${encoded}`, {
+        method: 'POST',
+        headers: H,
+        body: JSON.stringify({ expiresIn: 300 }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Sign failed (${res.status}): ${txt.slice(0, 160)}`);
+      }
+      const data = await res.json();
+      const url = `${SB_URL}/storage/v1${data.signedURL || data.signedUrl}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error('[CompanyCard] sign URL failed:', e);
+      alert('Could not open file: ' + e.message);
+    }
+  };
+
+  const onCategoryChange = (val) => {
+    setUploadCategory(val);
+    // Reset override so the new category's default applies. User can still
+    // manually flip the toggle afterwards.
+    setUploadAutoAttachOverride(null);
+  };
+
+  const doUpload = async () => {
+    if (!uploadFile || !uploadCategory) return;
+    setUploading(true);
+    setUploadErr(null);
+    setUploadToast(null);
+    try {
+      // Storage upload: company_id/category/{timestamp}_{sanitized_filename}
+      const cleanName = sanitizeFilename(uploadFile.name);
+      const stamp = Date.now();
+      const path = `${company.id}/${uploadCategory}/${stamp}_${cleanName}`;
+      const putRes = await fetch(`${SB_URL}/storage/v1/object/${COMPANY_BUCKET}/${encodeStoragePath(path)}`, {
+        method: 'POST',
+        headers: { ...H, 'Content-Type': uploadFile.type || 'application/octet-stream', 'x-upsert': 'false' },
+        body: uploadFile,
+      });
+      if (!putRes.ok) {
+        const txt = await putRes.text();
+        throw new Error(`Storage upload failed (${putRes.status}): ${txt.slice(0, 200)}`);
+      }
+      const meta = {
+        company_id: company.id,
+        filename: uploadFile.name,
+        storage_path: path,
+        mime_type: uploadFile.type || null,
+        file_size_bytes: uploadFile.size,
+        category: uploadCategory,
+        description: uploadDescription ? uploadDescription.slice(0, 500) : null,
+        auto_attach_to_new_jobs: !!effectiveAutoAttach,
+        uploaded_by_email: currentUserEmail || null,
+        uploaded_by_name: currentUserName || null,
+      };
+      const insRes = await fetch(`${SB_URL}/rest/v1/company_attachments`, {
+        method: 'POST',
+        headers: { ...H, Prefer: 'return=representation' },
+        body: JSON.stringify(meta),
+      });
+      if (!insRes.ok) {
+        const txt = await insRes.text();
+        // Best-effort cleanup of the orphaned Storage object
+        try { await fetch(`${SB_URL}/storage/v1/object/${COMPANY_BUCKET}/${encodeStoragePath(path)}`, { method: 'DELETE', headers: H }); } catch (_) {}
+        throw new Error(`Database insert failed (${insRes.status}): ${txt.slice(0, 200)}`);
+      }
+      const inserted = JSON.parse(await insRes.text());
+      const newRow = Array.isArray(inserted) ? inserted[0] : inserted;
+
+      // Wait briefly for the AFTER-INSERT fan-out trigger to populate
+      // project_attachments (trg_company_attachment_fan_out_ai), then count
+      // them so the success toast can tell the user the leverage they got.
+      // 500ms is comfortably more than typical Postgres trigger latency. Fan-out
+      // count is a nice-to-have; if the query fails we still report success.
+      let fanOutCount = null;
+      if (newRow && newRow.id && effectiveAutoAttach) {
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          const fanRows = await sbGet('project_attachments', `source_table=eq.company_attachments&source_id=eq.${newRow.id}&select=id`);
+          fanOutCount = Array.isArray(fanRows) ? fanRows.length : null;
+        } catch (e) { /* best effort */ }
+      }
+
+      // Refresh local doc list and parent counts
+      await loadDetail();
+      onCountsChanged && onCountsChanged();
+
+      // Reset form
+      setUploadFile(null);
+      setUploadCategory('');
+      setUploadDescription('');
+      setUploadAutoAttachOverride(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+
+      const msg = fanOutCount !== null
+        ? `Uploaded. Auto-attached to ${fanOutCount} existing job${fanOutCount === 1 ? '' : 's'}.`
+        : 'Uploaded.';
+      setUploadToast({ kind: 'success', msg });
+    } catch (e) {
+      console.error('[CompanyCard] upload failed:', e);
+      setUploadErr(e.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteCandidate) return;
+    setDeleting(true);
+    try {
+      const nowIso = new Date().toISOString();
+      // 1) Soft-delete the company_attachment row.
+      const r1 = await fetch(`${SB_URL}/rest/v1/company_attachments?id=eq.${deleteCandidate.id}`, {
+        method: 'PATCH',
+        headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({ deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'user' }),
+      });
+      if (!r1.ok && r1.status !== 204) {
+        const txt = await r1.text();
+        throw new Error(`Delete failed (${r1.status}): ${txt.slice(0, 200)}`);
+      }
+      // 2) Cascade to project_attachments. The DB does not currently ship a
+      //    delete-cascade trigger (only the after-insert fan-out exists), so
+      //    we explicitly tombstone every project_attachments row that was
+      //    created from this company doc. Idempotent: if a future trigger
+      //    handles this, the WHERE deleted_at IS NULL clause prevents double-
+      //    stamping deleted_at.
+      try {
+        await fetch(`${SB_URL}/rest/v1/project_attachments?source_table=eq.company_attachments&source_id=eq.${deleteCandidate.id}&deleted_at=is.null`, {
+          method: 'PATCH',
+          headers: { ...H, Prefer: 'return=minimal' },
+          body: JSON.stringify({ deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'cascade_company_attachment' }),
+        });
+      } catch (e) { console.warn('[CompanyCard] cascade delete soft-failed:', e); }
+
+      await loadDetail();
+      onCountsChanged && onCountsChanged();
+      setDeleteCandidate(null);
+    } catch (e) {
+      console.error('[CompanyCard] delete failed:', e);
+      alert('Delete failed: ' + (e.message || 'unknown error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div style={{ border: '1px solid #E5E3E0', borderRadius: 10, background: isExpanded ? '#FFF' : '#FAFAFA', overflow: 'hidden' }}>
+      {/* Collapsed header (always visible) */}
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 14px',
+          background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>🏢 {company.name}</span>
+            {company.market && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#F4F4F2', color: '#625650' }}>{company.market}</span>
+            )}
+            {!company.active && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#FEE2E2', color: '#991B1B' }}>INACTIVE</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: '#625650', marginTop: 3 }}>
+            {jobCount} linked job{jobCount === 1 ? '' : 's'} · {docCount} doc{docCount === 1 ? '' : 's'}
+          </div>
+        </div>
+        <span style={{ fontSize: 14, color: '#9E9B96', flexShrink: 0 }}>{isExpanded ? '▾' : '▸'}</span>
+      </button>
+
+      {/* Expanded body */}
+      {isExpanded && (
+        <div style={{ padding: '0 14px 14px', borderTop: '1px solid #F4F4F2' }}>
+          {loadingExpand && <div style={{ padding: 16, color: '#9E9B96', fontSize: 12 }}>Loading…</div>}
+          {loadErr && <div style={{ padding: 12, color: '#991B1B', fontSize: 12 }}>Error: {loadErr}</div>}
+
+          {!loadingExpand && !loadErr && (
+            <>
+              {/* Linked jobs section */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Linked jobs ({companyJobs?.length || 0})
+                </div>
+                {(!companyJobs || companyJobs.length === 0) ? (
+                  <div style={{ fontSize: 12, color: '#9E9B96', fontStyle: 'italic', padding: 6 }}>No linked jobs yet.</div>
+                ) : (
+                  <div style={{ background: '#F9F8F6', border: '1px solid #E5E3E0', borderRadius: 6, padding: 6 }}>
+                    {(showAllJobs ? companyJobs : companyJobs.slice(0, 10)).map((j) => (
+                      <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', fontSize: 12, borderBottom: '1px solid #F0EFEB' }}>
+                        <span style={{ fontFamily: 'Inter', fontWeight: 700, color: '#1A1A1A', minWidth: 70 }}>{j.job_number || '—'}</span>
+                        <span style={{ flex: 1, color: '#625650', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.job_name || '—'}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#9E9B96', textTransform: 'uppercase' }}>{j.status || '—'}</span>
+                      </div>
+                    ))}
+                    {companyJobs.length > 10 && !showAllJobs && (
+                      <button onClick={() => setShowAllJobs(true)} style={{ ...btnS, marginTop: 6, fontSize: 11, width: '100%' }}>
+                        View all {companyJobs.length}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Documents section */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Documents ({companyDocs?.length || 0})
+                </div>
+                {(!companyDocs || companyDocs.length === 0) ? (
+                  <div style={{ fontSize: 12, color: '#9E9B96', fontStyle: 'italic', padding: 6 }}>No documents uploaded yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {companyDocs.map((d) => (
+                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 12, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#EDE9FE', color: '#6D28D9', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          {CATEGORY_LABELS[d.category] || d.category}
+                        </span>
+                        <span style={{ flex: 1, fontWeight: 600, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.filename}>{d.filename}</span>
+                        <span style={{ fontSize: 10, color: '#9E9B96', whiteSpace: 'nowrap' }}>{fmtDate(d.uploaded_at)}</span>
+                        <span style={{ fontSize: 10, color: '#9E9B96', whiteSpace: 'nowrap' }} title={d.uploaded_by_email || ''}>{d.uploaded_by_name || d.uploaded_by_email || '—'}</span>
+                        {d.auto_attach_to_new_jobs && (
+                          <span title="Auto-attaches to all new jobs for this company" style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#D1FAE5', color: '#065F46' }}>✓ AUTO</span>
+                        )}
+                        <button onClick={() => openSignedUrl(d)} title="View file" style={{ background: 'none', border: '1px solid #E5E3E0', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 11 }}>🔗 View</button>
+                        <button onClick={() => setDeleteCandidate(d)} title="Delete" style={{ background: 'none', border: '1px solid #FCA5A5', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 11, color: '#991B1B' }}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Upload form */}
+              <div style={{ marginTop: 16, padding: 12, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E', marginBottom: 8, textTransform: 'uppercase' }}>+ Upload company document</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 10, color: '#92400E', marginBottom: 2, fontWeight: 600 }}>File (PDF) *</label>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      style={{ ...inputS, width: '100%', padding: 4 }}
+                    />
+                    {uploadFile && <div style={{ fontSize: 10, color: '#625650', marginTop: 2 }}>{fmtBytes(uploadFile.size)}</div>}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 10, color: '#92400E', marginBottom: 2, fontWeight: 600 }}>Category *</label>
+                    <select value={uploadCategory} onChange={(e) => onCategoryChange(e.target.value)} style={{ ...inputS, width: '100%' }}>
+                      <option value="">— Pick category —</option>
+                      {DOC_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'block', fontSize: 10, color: '#92400E', marginBottom: 2, fontWeight: 600 }}>Description (optional)</label>
+                  <input
+                    value={uploadDescription}
+                    onChange={(e) => setUploadDescription(e.target.value)}
+                    placeholder="e.g. expires 2027-01-01"
+                    style={{ ...inputS, width: '100%' }}
+                  />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#92400E', cursor: uploadCategory ? 'pointer' : 'not-allowed', marginBottom: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!effectiveAutoAttach}
+                    disabled={!uploadCategory}
+                    onChange={(e) => setUploadAutoAttachOverride(e.target.checked)}
+                  />
+                  <span><b>Auto-attach to new jobs</b> for this company {uploadCategory && <span style={{ color: '#9E9B96' }}>(default {CATEGORY_AUTO_ATTACH[uploadCategory] ? 'on' : 'off'} for {CATEGORY_LABELS[uploadCategory]})</span>}</span>
+                </label>
+                {uploadErr && (
+                  <div style={{ marginBottom: 8, padding: '6px 10px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 6, fontSize: 11, color: '#991B1B' }}>{uploadErr}</div>
+                )}
+                {uploadToast && (
+                  <div style={{ marginBottom: 8, padding: '6px 10px', background: '#D1FAE5', border: '1px solid #86EFAC', borderRadius: 6, fontSize: 11, color: '#065F46', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{uploadToast.msg}</span>
+                    <button onClick={() => setUploadToast(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 14, padding: 0 }}>×</button>
+                  </div>
+                )}
+                <button
+                  onClick={doUpload}
+                  disabled={!uploadFile || !uploadCategory || uploading}
+                  style={{ ...btnP, opacity: (!uploadFile || !uploadCategory || uploading) ? 0.5 : 1 }}
+                >
+                  {uploading ? 'Uploading…' : 'Upload'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteCandidate && (
+        <div
+          onClick={() => !deleting && setDeleteCandidate(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#FFF', borderRadius: 12, maxWidth: 480, width: '100%', padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+            <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Delete document?</div>
+            <div style={{ fontSize: 13, color: '#625650', lineHeight: 1.5, marginBottom: 14 }}>
+              Delete <b>{deleteCandidate.filename}</b>? It will be removed from the company AND from all jobs it was auto-attached to. The file stays recoverable for 30 days.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setDeleteCandidate(null)} disabled={deleting} style={btnS}>Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting} style={{ ...btnP, background: '#991B1B', opacity: deleting ? 0.6 : 1 }}>
+                {deleting ? 'Deleting…' : '🗑 Delete'}
               </button>
             </div>
           </div>
