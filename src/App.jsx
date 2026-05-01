@@ -6489,6 +6489,32 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   const[concentrationRows,setConcentrationRows]=useState(null);
   const[concentrationErr,setConcentrationErr]=useState(null);
   useEffect(()=>{sbGet('v_customer_concentration','select=*&order=total_acv.desc').then(d=>{if(Array.isArray(d))setConcentrationRows(d);else{console.error('[Reports] concentration fetch returned non-array:',d);setConcentrationErr('Unexpected response shape');}}).catch(e=>{console.error('[Reports] concentration fetch failed:',e);setConcentrationErr(e.message||'Fetch failed');});},[]);
+  // Mold Capacity & Bottlenecks (2026-04-30) — three pre-aggregated views
+  // shipped same session. Single Promise.all: capacity is per-style with
+  // posts/rails/caps mold counts + bottleneck component, demand is per-style
+  // pipeline LF (incl. UNMAPPED bucket), pressure is per-family rolling LF
+  // with bottleneck-aware throughput. UI lives entirely in renderReport().
+  const[moldCapacity,setMoldCapacity]=useState(null);
+  const[moldDemand,setMoldDemand]=useState(null);
+  const[moldPressure,setMoldPressure]=useState(null);
+  const[moldErr,setMoldErr]=useState(null);
+  useEffect(()=>{
+    Promise.all([
+      sbGet('v_mold_capacity','select=*&order=style_family.asc,style_name.asc'),
+      sbGet('v_mold_demand','select=*&order=lf_total.desc'),
+      sbGet('v_mold_pressure','select=*&order=lf_total.desc'),
+    ]).then(([cap,dem,pre])=>{
+      if(!Array.isArray(cap)||!Array.isArray(dem)||!Array.isArray(pre)){
+        console.error('[Reports] mold views returned non-array',{cap,dem,pre});
+        setMoldErr('Unexpected response shape from mold views');
+        return;
+      }
+      setMoldCapacity(cap);setMoldDemand(dem);setMoldPressure(pre);
+    }).catch(e=>{console.error('[Reports] mold views fetch failed:',e);setMoldErr(e.message||'Fetch failed');});
+  },[]);
+  // Expansion + scroll-anchor state for the family groups in section 3.
+  const[expandedMoldFamilies,setExpandedMoldFamilies]=useState(()=>new Set());
+  const moldFamilyRefs=useRef({});
   // Local filters for new reports
   const[wfMkt,setWfMkt]=useState(null);
   const[wfPeriod,setWfPeriod]=useState('all');
@@ -6532,7 +6558,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
     {id:'lf_drift',title:'LF Data Quality Check',desc:'Jobs where header LF values disagree with Line Items — flags stale data for cleanup',icon:'🔍'},
     {id:'bill_sheet_history',title:'Bill Sheet History',desc:'PM × month grid — submissions, reviewed count, $ billed, and submission timing across all months',icon:'📚'},
-    {id:'customer_concentration',title:'Customer Concentration',desc:'Top customers by ACV with billed-% color coding, top-N concentration, unlinked exposure, and click-through to Customer Master',icon:'🏢'},
+    {id:'customer_concentration',title:'Customer Concentration',desc:'Top customers by ACV with billed-% color coding, top-N concentration, unlinked exposure, and click-through to Customer Master',icon:'📊'},
   ];
   const salesReports=[
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
@@ -6540,6 +6566,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   ];
   const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
   const productionReports=[
+    {id:'mold_capacity_bottlenecks',title:'Mold Capacity & Bottlenecks',desc:'Bottleneck-aware capacity intelligence: factors in posts, rails, and caps (not just panels). Surfaces which styles are component-constrained and ranks pipeline pressure by family.',icon:'🏭'},
     {id:'prod_backlog',title:'Production Backlog by Style',desc:'LF, panels, CYD, and estimated production days for all queued and in-production jobs grouped by style.'},
     {id:'prod_missing',title:'Jobs Not Ready for Production',desc:'Active jobs missing material calculation, style, or color — blocking them from being added to a production plan.'},
     {id:'prod_outlook',title:'Production Schedule Outlook',desc:'Projected ready date per job vs install start date — flags jobs at risk of missing their install window.'},
@@ -7636,16 +7663,24 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         name:truncate(r.customer_name,20),
         fullName:r.customer_name,
         market:r.market||'OOS',
+        jobs:r.job_count,
         acv:n(r.total_acv),
       }));
-      // Format $1.2M / $850k / $42 — the existing $k helper already handles
-      // both M and k breakpoints. We use it for tiles, table cells, banner.
-      const fmtAcv=$k;
+      // ACV format spec: <$1k → "$X" (no suffix), <$1M → "$X.Xk", ≥$1M → "$X.Xm".
+      // Lowercase k/m to match the rest of the report's typographic style and
+      // distinct from the $k helper used elsewhere ($K uppercase, no decimal).
+      const fmtAcv=(v)=>{const x=Math.abs(Number(v)||0);if(x>=1e6)return `$${(x/1e6).toFixed(1)}m`;if(x>=1e3)return `$${(x/1e3).toFixed(1)}k`;return `$${Math.round(x)}`;};
+      // Bar-chart color palette per spec: HOU=blue, SA=green, AUS=orange,
+      // DFW=purple. Differs from the codebase-wide MC[] palette by design —
+      // this chart wants high contrast and the "default" market interpretations
+      // expected by execs reading concentration. Markets outside these four
+      // (CS / OOS / null) fall back to brand red.
+      const concentrationMarketColor={HOU:'#1D4ED8',SA:'#065F46',AUS:'#F59E0B',DFW:'#7C3AED'};
       // pct_billed → traffic-light color. Null = gray (no billed data yet).
       const billedColor=(p)=>{if(p==null)return'#9E9B96';const v=Number(p);if(v<30)return'#991B1B';if(v<60)return'#B45309';return'#065F46';};
-      // Click handlers: linked rows → focus that company on Companies & Docs;
-      // the UNLINKED row + the warning banner → land on Reconcile (where the
-      // user actually does the work).
+      // Click handlers: linked rows → focus that company on Companies & Docs.
+      // UNLINKED row is NOT clickable per spec — banner is the path to
+      // Reconcile, the table row is read-only context.
       const goToCompany=(companyId)=>{try{localStorage.setItem('fc_customer_master_focus_company',companyId);}catch(e){}if(onNav)onNav('customer_master');};
       const goToReconcile=()=>{try{localStorage.setItem('fc_customer_master_focus_tab','reconcile');}catch(e){}if(onNav)onNav('customer_master');};
       const exportRows=rows.map(r=>({
@@ -7717,14 +7752,14 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               <BarChart data={chartData} margin={{top:10,right:16,bottom:60,left:0}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F0EFEB"/>
                 <XAxis dataKey="name" tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={70}/>
-                <YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>$k(v)}/>
+                <YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtAcv(v)}/>
                 <Tooltip
                   formatter={(v)=>[fmtAcv(v),'ACV']}
-                  labelFormatter={(_lbl,payload)=>{const p=payload&&payload[0]&&payload[0].payload;return p?`${p.fullName} (${p.market})`:_lbl;}}
+                  labelFormatter={(_lbl,payload)=>{const p=payload&&payload[0]&&payload[0].payload;return p?`${p.fullName} · ${p.market} · ${p.jobs} job${p.jobs===1?'':'s'}`:_lbl;}}
                   contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8,fontSize:12}}
                 />
                 <Bar dataKey="acv" radius={[4,4,0,0]}>
-                  {chartData.map((d,i)=><Cell key={i} fill={MC[d.market]||'#8A261D'}/>)}
+                  {chartData.map((d,i)=><Cell key={i} fill={concentrationMarketColor[d.market]||'#8A261D'}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -7741,14 +7776,20 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               </tr>
             </thead>
             <tbody>
-              {rows.map(r=>{
+              {/* Force UNLINKED to the top regardless of its total_acv — spec
+                  treats it as a banner-equivalent context row, not a normal
+                  participant in the ACV ranking. Linked rows below preserve
+                  the view's total_acv-desc order. */}
+              {[...rows].sort((a,b)=>(a.is_unlinked?-1:0)-(b.is_unlinked?-1:0)).map(r=>{
+                // Per spec, only LINKED rows with a company_id are clickable;
+                // UNLINKED is read-only (the banner above is the call to action).
                 const clickable=!r.is_unlinked&&!!r.company_id;
-                const onClick=r.is_unlinked?goToReconcile:(clickable?()=>goToCompany(r.company_id):undefined);
+                const onClick=clickable?()=>goToCompany(r.company_id):undefined;
                 return<tr
                   key={r.is_unlinked?'__unlinked__':r.company_id||r.customer_name}
                   onClick={onClick}
                   style={{borderBottom:'1px solid #F4F4F2',cursor:onClick?'pointer':'default',background:r.is_unlinked?'#FFFBEB':'transparent'}}
-                  onMouseEnter={e=>{if(onClick)e.currentTarget.style.background=r.is_unlinked?'#FEF3C7':'#FAFAFA';}}
+                  onMouseEnter={e=>{if(onClick)e.currentTarget.style.background='#FAFAFA';}}
                   onMouseLeave={e=>{e.currentTarget.style.background=r.is_unlinked?'#FFFBEB':'transparent';}}
                 >
                   <td style={{padding:'8px 10px',textAlign:'left',fontFamily:'Inter',fontWeight:700,color:'#625650',width:40}}>{r.is_unlinked?'':r.rank_by_acv}</td>
@@ -7767,7 +7808,337 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
           {rows.length===0&&<div style={{padding:30,textAlign:'center',color:'#9E9B96',fontSize:12}}>No customer data yet.</div>}
         </div>
         <div style={{marginTop:14,fontSize:11,color:'#9E9B96',lineHeight:1.6}}>
-          Source: <code>v_customer_concentration</code>. Excludes residential and zero-ACV jobs. Click a row to open that customer in Customer Master; the unmatched row jumps to Reconcile.
+          Source: <code>v_customer_concentration</code>. Excludes residential and zero-ACV jobs. Click a linked row to open that customer in Customer Master.
+        </div>
+      </div>;
+    }
+    if(activeRpt==='mold_capacity_bottlenecks'){
+      // Loading + error states keyed off the parent-scope state above.
+      if(moldErr)return<div style={{padding:24,color:'#991B1B',fontSize:13}}>Could not load mold views: {moldErr}</div>;
+      if(moldCapacity===null||moldDemand===null||moldPressure===null)return<div style={{padding:24,color:'#9E9B96',fontSize:13}}>Loading mold capacity data…</div>;
+      // Display-label map for style_family — short DB enum → human label.
+      // Anything not in the map (incl '** UNMAPPED **') passes through as-is
+      // so future families don't 404 in the UI before this map is updated.
+      const FAMILY_LABEL={
+        stone_textured:'Stone-Textured',
+        wood_grained:'Wood-Grained',
+        cmu:'CMU Block',
+        smooth:'Smooth',
+        hybrid:'Hybrid',
+        ranch:'Ranch',
+      };
+      const familyLabel=(f)=>FAMILY_LABEL[f]||f||'(no family)';
+      // Color tables. Pressure band → fill colors for the bars + family
+      // header tints; bottleneck component → red text on the limiting
+      // mold-count column in the per-style cards.
+      const pressureBg={
+        critical_bottleneck:'#FEE2E2',tight:'#FEF3C7',comfortable:'#DBEAFE',
+        slack:'#D1FAE5',no_capacity_data:'#F4F4F2',
+      };
+      const pressureFg={
+        critical_bottleneck:'#991B1B',tight:'#B45309',comfortable:'#185FA5',
+        slack:'#065F46',no_capacity_data:'#625650',
+      };
+      const pressureBarLight={
+        critical_bottleneck:'#FCA5A5',tight:'#FCD34D',comfortable:'#93C5FD',
+        slack:'#86EFAC',no_capacity_data:'#D1CEC9',
+      };
+      const pressureBarDark={
+        critical_bottleneck:'#DC2626',tight:'#B45309',comfortable:'#1D4ED8',
+        slack:'#065F46',no_capacity_data:'#625650',
+      };
+      const pressureLabel={
+        critical_bottleneck:'CRITICAL',tight:'TIGHT',comfortable:'COMFORTABLE',
+        slack:'SLACK',no_capacity_data:'NO DATA',
+      };
+      // data_quality badge palette per spec — estimated is yellow (not blue).
+      const dqColor={
+        confirmed:{bg:'#D1FAE5',fg:'#065F46',label:'CONFIRMED'},
+        estimated:{bg:'#FEF3C7',fg:'#92400E',label:'ESTIMATED'},
+        shares_pool:{bg:'#F4F4F2',fg:'#625650',label:'SHARES POOL'},
+        missing_count:{bg:'#FEE2E2',fg:'#991B1B',label:'MISSING COUNTS'},
+      };
+      const isUnmappedFamily=(f)=>!f||f==='** UNMAPPED **';
+      // Section 1: which families are bottlenecked enough to surface in the
+      // banner. UNMAPPED is excluded from the banner — it shows up in
+      // the pressure bars + demand table where the user can see the gap and
+      // act on it via Customer Master.
+      const banneredFamilies=moldPressure.filter(p=>!isUnmappedFamily(p.style_family)&&(p.pressure_band==='critical_bottleneck'||p.pressure_band==='tight'));
+      // Per-style "Realized" rate per spec: bottlenecked × (8/24) × (5/7) =
+      // single 8-hr shift × 5-day week against a 24/7 theoretical baseline.
+      // SHIFT_FACTOR ≈ 0.238. We compute realized for both panels/day and
+      // LF/day so the per-style card can show both columns.
+      const SHIFT_FACTOR=(8/24)*(5/7);
+      // Group capacity by family for section 3.
+      const capacityByFamily=(()=>{
+        const m=new Map();
+        moldCapacity.forEach(r=>{
+          const f=r.style_family||'(no family)';
+          if(!m.has(f))m.set(f,[]);
+          m.get(f).push(r);
+        });
+        return m;
+      })();
+      const familyOrder=Array.from(capacityByFamily.keys()).sort((a,b)=>{
+        // Sort by family pressure band severity, then by lf_total desc, so
+        // bottlenecked families show up first. Families absent from
+        // moldPressure (rare — manual styles with no demand) drop to the end.
+        const pa=moldPressure.find(p=>p.style_family===a);
+        const pb=moldPressure.find(p=>p.style_family===b);
+        const order={critical_bottleneck:0,tight:1,comfortable:2,slack:3,no_capacity_data:4};
+        const oa=pa?order[pa.pressure_band]??5:5;
+        const ob=pb?order[pb.pressure_band]??5:5;
+        if(oa!==ob)return oa-ob;
+        return n(pb&&pb.lf_total)-n(pa&&pa.lf_total);
+      });
+      const expandFamily=(f)=>setExpandedMoldFamilies(prev=>{const next=new Set(prev);next.add(f);return next;});
+      const toggleFamily=(f)=>setExpandedMoldFamilies(prev=>{const next=new Set(prev);if(next.has(f))next.delete(f);else next.add(f);return next;});
+      const scrollToFamily=(f)=>{
+        expandFamily(f);
+        // Defer scroll one tick so the family expands (and grows the page) before we measure.
+        setTimeout(()=>{const el=moldFamilyRefs.current[f];if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});},50);
+      };
+      // CSV exporters — full row dumps so the analyst can pivot in Sheets.
+      const exportCapacity=()=>{
+        const rows=moldCapacity.map(r=>({
+          StyleFamily:r.style_family||'',StyleName:r.style_name||'',Alias:r.mold_inventory_alias||'',
+          DirectMolds:r.direct_molds||0,EffectivePoolMolds:r.effective_pool_molds||0,SharesPool:r.shares_pool?'Y':'',
+          PanelsPerMold:r.panels_per_mold==null?'':r.panels_per_mold,
+          CureHours:r.cure_time_hours==null?'':r.cure_time_hours,
+          PanelLF:r.panel_lf==null?'':r.panel_lf,
+          PostsTotal:r.posts_total||0,PostsLine:r.posts_line||0,PostsCorner:r.posts_corner||0,PostsStop:r.posts_stop||0,
+          RailsTotal:r.rails_total||0,RailsReg:r.rails_reg||0,RailsLong:r.rails_long||0,
+          CapsTotal:r.caps_total||0,CapsLine:r.caps_line||0,CapsStop:r.caps_stop||0,
+          PanelsPerDayTheoretical:r.theoretical_panels_per_day==null?'':r.theoretical_panels_per_day,
+          PostsPerDayTheoretical:r.posts_per_day_theo==null?'':r.posts_per_day_theo,
+          RailsPerDayTheoretical:r.rails_per_day_theo==null?'':r.rails_per_day_theo,
+          CapsPerDayTheoretical:r.caps_per_day_theo==null?'':r.caps_per_day_theo,
+          BottleneckedPanelsPerDay:r.bottlenecked_panels_per_day==null?'':r.bottlenecked_panels_per_day,
+          BottleneckedLfPerDay:r.bottlenecked_lf_per_day==null?'':r.bottlenecked_lf_per_day,
+          BottleneckComponent:r.bottleneck_component||'',
+          MaxFenceHeightFt:r.max_fence_height_ft==null?'':r.max_fence_height_ft,
+          DrainageEligible:r.drainage_eligible?'Y':'',
+          DataQuality:r.data_quality||'',
+        }));
+        downloadCSV(`mold_capacity_${new Date().toISOString().slice(0,10)}.csv`,rows);
+      };
+      const exportDemand=()=>{
+        const rows=moldDemand.map(r=>({
+          StyleName:r.style_name||'',Jobs:r.jobs_in_pipeline||0,
+          LfQueue:r.lf_in_queue||0,LfInstall:r.lf_in_install||0,LfOtherActive:r.lf_in_other_active||0,LfTotal:r.lf_total||0,
+          PanelsNeeded:r.approx_panels_needed==null?'':r.approx_panels_needed,
+          ColorVariants:r.color_variants||0,RawStringsSample:r.raw_strings_sample||'',
+        }));
+        downloadCSV(`mold_demand_${new Date().toISOString().slice(0,10)}.csv`,rows);
+      };
+      // For pressure bars: bar width is proportional to lf_total. Compute
+      // max once so each row's bar gets a consistent scale.
+      const maxPressureLf=Math.max(1,...moldPressure.map(p=>n(p.lf_total)));
+      const fmtNum=(v)=>v==null?'—':Number(v).toLocaleString();
+      const fmtNum1=(v)=>v==null?'—':(Math.round(Number(v)*10)/10).toLocaleString();
+      const fmtRound=(v)=>v==null?'—':Math.round(Number(v)).toLocaleString();
+      return<div>
+        {/* Subtitle + exports */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:12,flexWrap:'wrap'}}>
+          <div style={{fontSize:12,color:'#625650',maxWidth:640,lineHeight:1.5}}>
+            Production capacity intelligence. Bottleneck-aware: factors in posts, rails, caps — not just panels. Single shift / 5-day week assumption.
+          </div>
+          <div style={{display:'flex',gap:8,flexShrink:0}}>
+            <button onClick={exportCapacity} style={btnS}>Export Capacity</button>
+            <button onClick={exportDemand} style={btnS}>Export Demand</button>
+          </div>
+        </div>
+        {/* SECTION 1 — Bottleneck banner */}
+        <div style={{marginBottom:20}}>
+          {banneredFamilies.length===0?(
+            <div style={{padding:'14px 18px',background:'#D1FAE5',border:'1px solid #86EFAC',borderRadius:10,fontSize:13,fontWeight:600,color:'#065F46'}}>
+              ✓ All mappable demand within comfortable capacity
+            </div>
+          ):(
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {banneredFamilies.map(p=>{
+                const critical=p.pressure_band==='critical_bottleneck';
+                return<div
+                  key={p.style_family}
+                  onClick={()=>scrollToFamily(p.style_family)}
+                  style={{cursor:'pointer',padding:'14px 18px',borderRadius:10,fontSize:13,display:'flex',alignItems:'center',gap:12,
+                    background:critical?'#FEE2E2':'#FEF3C7',border:`1px solid ${critical?'#FCA5A5':'#FCD34D'}`,color:critical?'#991B1B':'#92400E'}}
+                >
+                  <span style={{fontSize:18}}>🚨</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800}}><b>{familyLabel(p.style_family)}</b> is bottlenecked on <b>{p.family_bottleneck||'capacity'}</b></div>
+                    <div style={{fontSize:12,marginTop:2}}>
+                      {p.weeks_of_pipeline_realized==null?'No realized capacity data':`${fmtNum1(p.weeks_of_pipeline_realized)} wk of pipeline at current capacity`}
+                      {' · '}{fmtNum(p.lf_total)} LF across {p.jobs_count} jobs
+                    </div>
+                  </div>
+                  <span style={{fontWeight:800}}>view detail →</span>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+        {/* SECTION 2 — Pressure bars */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Pipeline pressure by family</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {moldPressure.map(p=>{
+              const unmapped=isUnmappedFamily(p.style_family);
+              const band=p.pressure_band||'no_capacity_data';
+              const widthPct=Math.max(2,(n(p.lf_total)/maxPressureLf)*100);
+              const queueShare=n(p.lf_total)>0?(n(p.lf_in_queue)/n(p.lf_total)):0;
+              const installShare=n(p.lf_total)>0?(n(p.lf_in_install)/n(p.lf_total)):0;
+              const queueWidth=widthPct*queueShare;
+              const installWidth=widthPct*installShare;
+              const otherWidth=widthPct-queueWidth-installWidth;
+              return<div key={p.style_family} style={{display:'grid',gridTemplateColumns:'180px 1fr 220px',gap:10,alignItems:'center',fontSize:12}}>
+                {/* Left: family + band pill */}
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:700,color:unmapped?'#92400E':'#1A1A1A',fontStyle:unmapped?'italic':'normal',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.style_family}>{familyLabel(p.style_family)}</div>
+                  <div style={{display:'inline-block',padding:'1px 6px',marginTop:2,borderRadius:4,fontSize:9,fontWeight:700,letterSpacing:0.4,background:unmapped?'#FEF3C7':pressureBg[band],color:unmapped?'#92400E':pressureFg[band]}}>
+                    {unmapped?'UNMAPPED':pressureLabel[band]||band}
+                  </div>
+                </div>
+                {/* Middle: stacked bar */}
+                <div style={{position:'relative',height:22,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}>
+                  {unmapped?(
+                    <div style={{position:'absolute',inset:0,width:`${widthPct}%`,background:'#FEF3C7',borderRight:'1px solid #FCD34D'}}/>
+                  ):(<>
+                    <div style={{position:'absolute',top:0,bottom:0,left:0,width:`${queueWidth}%`,background:pressureBarLight[band]}} title={`In queue: ${fmtNum(p.lf_in_queue)} LF`}/>
+                    <div style={{position:'absolute',top:0,bottom:0,left:`${queueWidth}%`,width:`${installWidth}%`,background:pressureBarDark[band]}} title={`In install: ${fmtNum(p.lf_in_install)} LF`}/>
+                    {otherWidth>0.5&&<div style={{position:'absolute',top:0,bottom:0,left:`${queueWidth+installWidth}%`,width:`${otherWidth}%`,background:pressureBarLight[band],opacity:0.4}} title="Other active LF"/>}
+                  </>)}
+                </div>
+                {/* Right: annotation */}
+                <div style={{fontSize:11,color:'#625650',textAlign:'right'}}>
+                  {unmapped?(
+                    <span style={{color:'#92400E',fontWeight:600}}>⚠ {fmtNum(p.lf_total)} LF unmapped — line items missing usable style</span>
+                  ):(
+                    <>
+                      <span style={{fontWeight:700,color:'#1A1A1A'}}>{fmtNum(p.lf_total)} LF</span>
+                      {' · '}
+                      {p.weeks_of_pipeline_realized==null?<span style={{color:'#9E9B96'}}>no capacity data</span>:<span><b>{fmtNum1(p.weeks_of_pipeline_realized)} wk</b>{p.family_bottleneck?` · ${p.family_bottleneck} bottleneck`:''}</span>}
+                    </>
+                  )}
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        {/* SECTION 3 — Capacity detail per family */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Capacity detail by family</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {familyOrder.map(family=>{
+              const styles=capacityByFamily.get(family)||[];
+              const expanded=expandedMoldFamilies.has(family);
+              const familyPressure=moldPressure.find(p=>p.style_family===family);
+              const pool=styles[0]?n(styles[0].effective_pool_molds):0;
+              const familyBottleneck=familyPressure?familyPressure.family_bottleneck:null;
+              return<div key={family} ref={el=>{moldFamilyRefs.current[family]=el;}} style={{border:'1px solid #E5E3E0',borderRadius:10,background:expanded?'#FFF':'#FAFAFA',overflow:'hidden'}}>
+                <button onClick={()=>toggleFamily(family)} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'10px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:800,fontSize:14,color:'#1A1A1A'}}>{familyLabel(family)}</div>
+                    <div style={{fontSize:11,color:'#625650',marginTop:2}}>
+                      {styles.length} style{styles.length===1?'':'s'} · pool: {pool} mold{pool===1?'':'s'}
+                      {familyBottleneck?` · bottleneck: ${familyBottleneck}`:''}
+                    </div>
+                  </div>
+                  <span style={{fontSize:14,color:'#9E9B96',flexShrink:0}}>{expanded?'▾':'▸'}</span>
+                </button>
+                {expanded&&(
+                  <div style={{padding:'4px 14px 14px',borderTop:'1px solid #F4F4F2',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:10}}>
+                    {styles.map(s=>{
+                      const dq=dqColor[s.data_quality]||{bg:'#F4F4F2',fg:'#625650',label:(s.data_quality||'').toUpperCase()};
+                      const bn=s.bottleneck_component||'no_data';
+                      // Per-style realized = bottlenecked × shift factor (8/24)*(5/7).
+                      // Computed in both panels/day and LF/day so we can render both
+                      // columns in the dual capacity rows below.
+                      const realizedPanels=s.bottlenecked_panels_per_day==null?null:n(s.bottlenecked_panels_per_day)*SHIFT_FACTOR;
+                      const realizedLf=s.bottlenecked_lf_per_day==null?null:n(s.bottlenecked_lf_per_day)*SHIFT_FACTOR;
+                      const colorIfBN=(comp)=>bn===comp?{color:'#991B1B',fontWeight:800}:{color:'#1A1A1A'};
+                      const cell=(label,value,bnTarget)=>(
+                        <div style={{textAlign:'center',padding:'6px 4px',background:bn===bnTarget?'#FEE2E2':'#F9F8F6',borderRadius:6}}>
+                          <div style={{fontSize:9,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.4}}>{label}</div>
+                          <div style={{fontFamily:'Inter',fontSize:18,marginTop:2,...colorIfBN(bnTarget)}}>{fmtNum(value)}</div>
+                        </div>
+                      );
+                      // Capacity row helper — left label, right "{panels}/day {lf} LF/day".
+                      const capRow=(label,panels,lf,extra,emphasize)=>(
+                        <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
+                          <span style={{color:'#625650'}}>{label}</span>
+                          <span style={{fontFamily:'Inter',fontWeight:emphasize?700:600,color:emphasize?'#991B1B':'#1A1A1A'}}>
+                            {fmtRound(panels)}/day &nbsp; {fmtRound(lf)} LF/day{extra?` ${extra}`:''}
+                          </span>
+                        </div>
+                      );
+                      return<div key={s.style_name} style={{padding:12,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                          <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A'}} title={s.mold_inventory_alias||s.style_name}>{s.style_name}</div>
+                          <span style={{display:'inline-block',padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:700,background:dq.bg,color:dq.fg,letterSpacing:0.4}}>{dq.label}</span>
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4,marginBottom:10}}>
+                          {cell('Panels',s.effective_pool_molds,'panels')}
+                          {cell('Posts',s.posts_total,'posts')}
+                          {cell('Rails',s.rails_total,'rails')}
+                          {cell('Caps',s.caps_total,'caps')}
+                        </div>
+                        <div style={{fontSize:12,lineHeight:1.7}}>
+                          {capRow('Panels-only:',s.theoretical_panels_per_day,s.theoretical_lf_per_day,null,false)}
+                          {capRow('Bottlenecked:',s.bottlenecked_panels_per_day,s.bottlenecked_lf_per_day,bn&&bn!=='no_data'?`(${bn})`:null,true)}
+                          {capRow('Realized:',realizedPanels,realizedLf,null,false)}
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                )}
+              </div>;
+            })}
+          </div>
+        </div>
+        {/* SECTION 4 — Demand roll-up table */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Demand roll-up by style</div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid #E5E3E0'}}>
+                  {['Style','Jobs','LF Queue','LF Install','Total LF','Panels Needed','Color Variants'].map((h,i)=>(
+                    <th key={h} style={{textAlign:i===0?'left':'right',padding:'8px 10px',color:'#625650',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {moldDemand.map(d=>{
+                  const unmapped=d.style_name==='** UNMAPPED **';
+                  const rowBg=unmapped?'#FFFBEB':'transparent';
+                  return<React.Fragment key={d.style_name}>
+                    <tr style={{borderBottom:unmapped&&d.raw_strings_sample?'none':'1px solid #F4F4F2',background:rowBg}}>
+                      <td style={{padding:'8px 10px',fontWeight:600,color:unmapped?'#92400E':'#1A1A1A',fontStyle:unmapped?'italic':'normal',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={d.style_name}>{d.style_name}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{d.jobs_in_pipeline}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',color:'#625650'}}>{fmtNum(d.lf_in_queue)}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',color:'#625650'}}>{fmtNum(d.lf_in_install)}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{fmtNum(d.lf_total)}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{fmtNum(d.approx_panels_needed)}</td>
+                      <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{d.color_variants||0}</td>
+                    </tr>
+                    {unmapped&&d.raw_strings_sample&&(
+                      <tr style={{background:rowBg,borderBottom:'1px solid #F4F4F2'}}>
+                        <td colSpan={7} style={{padding:'2px 10px 8px 22px',fontSize:11,color:'#92400E',fontStyle:'italic',whiteSpace:'normal',wordBreak:'break-word'}}>
+                          raw strings: <span style={{color:'#9E9B96'}}>{d.raw_strings_sample}</span>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>;
+                })}
+                {moldDemand.length===0&&<tr><td colSpan={7} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No demand data.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {/* Explanatory note */}
+        <div style={{marginTop:16,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,fontSize:11,color:'#9E9B96',lineHeight:1.7}}>
+          <b style={{color:'#625650'}}>Capacity assumptions:</b> 16-hr cure, 12 panels/mold, 8-hr shift, 5-day week. Bottleneck = min(panels, rails, caps). Family pressure assumes you can prioritize the worst-bottlenecked style first; running multiple shared-pool styles in parallel is not possible. UNMAPPED demand cannot be sized until line item style names are normalized. Single-wythe (true masonry) work is intentionally not in this model — it has a separate labor-bound capacity profile TBD.
         </div>
       </div>;
     }
