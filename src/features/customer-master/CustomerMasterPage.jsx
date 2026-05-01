@@ -160,6 +160,34 @@ export default function CustomerMasterPage({ currentUserEmail = '', currentUserN
       .sort((a, b) => b.count - a.count || b.ncv - a.ncv);
   }, [jobs]);
 
+  // Drive-by hints from elsewhere in the app (Reports → Customer Concentration
+  // row clicks, banner clicks) drop a localStorage breadcrumb before
+  // navigating here. Read once on mount and clear so refreshing the page
+  // doesn't re-jump the user.
+  //   fc_customer_master_focus_tab     → 'diagnostic' | 'reconcile' | 'companies'
+  //   fc_customer_master_focus_company → uuid; also auto-pre-expands that card
+  //                                       on the Companies & Docs tab
+  const [initialFocusCompanyId, setInitialFocusCompanyId] = useState(null);
+  useEffect(() => {
+    try {
+      const tabHint = localStorage.getItem('fc_customer_master_focus_tab');
+      const coHint = localStorage.getItem('fc_customer_master_focus_company');
+      if (tabHint) {
+        localStorage.removeItem('fc_customer_master_focus_tab');
+        if (tabHint === 'diagnostic' || tabHint === 'reconcile' || tabHint === 'companies') {
+          setTab(tabHint);
+        }
+      } else if (coHint) {
+        // Company hint without an explicit tab → land on Companies & Docs.
+        setTab('companies');
+      }
+      if (coHint) {
+        localStorage.removeItem('fc_customer_master_focus_company');
+        setInitialFocusCompanyId(coHint);
+      }
+    } catch (e) { /* localStorage blocked, ignore */ }
+  }, []);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#9E9B96' }}>Loading customer master state…</div>;
   if (error) return <div style={{ ...card, color: '#991B1B' }}><div style={{ fontWeight: 800 }}>Error loading data</div><div style={{ fontSize: 12 }}>{error}</div></div>;
 
@@ -217,6 +245,7 @@ export default function CustomerMasterPage({ currentUserEmail = '', currentUserN
           allCompanyDocs={allCompanyDocs}
           currentUserEmail={currentUserEmail}
           currentUserName={currentUserName}
+          initialFocusCompanyId={initialFocusCompanyId}
           onRefresh={() => setRefreshKey((k) => k + 1)}
         />
       )}
@@ -1174,11 +1203,21 @@ const fmtBytes = (b) => {
   return `${(b / 1073741824).toFixed(1)} GB`;
 };
 
-function CompaniesAndDocsView({ companies, jobs, allCompanyDocs, currentUserEmail, currentUserName, onRefresh }) {
+function CompaniesAndDocsView({ companies, jobs, allCompanyDocs, currentUserEmail, currentUserName, initialFocusCompanyId, onRefresh }) {
   const [search, setSearch] = useState('');
   const [marketFilter, setMarketFilter] = useState('all');
   const [showAll, setShowAll] = useState(false); // default: only with linked jobs
-  const [expandedId, setExpandedId] = useState(null);
+  // If we landed via a focus hint (e.g. Customer Concentration row click), the
+  // target may live outside the default "with jobs" filter — flip showAll so
+  // the card is actually rendered/visible.
+  const [expandedId, setExpandedId] = useState(initialFocusCompanyId || null);
+  useEffect(() => {
+    if (!initialFocusCompanyId) return;
+    const target = companies.find((c) => c.id === initialFocusCompanyId);
+    if (target && (jobs.filter((j) => j.company_id === target.id).length === 0)) {
+      setShowAll(true);
+    }
+  }, [initialFocusCompanyId, companies, jobs]);
 
   // Counts derived from already-loaded jobs + allCompanyDocs (one extra round-
   // trip on tab open paid in the parent loadData; expanded cards lazily fetch
