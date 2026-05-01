@@ -21690,6 +21690,44 @@ const initialsOf = (name, email) => {
 };
 const roleColorFor = (role) => ROLE_META[role] || { label: role || 'User', c:'#625650', bg:'#F4F4F2' };
 
+// Public landing page shown on forms.fencecrete.com when no PIS token is in
+// the URL hash. Includes phone + physical address so the page reads as a
+// legitimate business form to phishing classifiers (the original trigger for
+// splitting the PIS form onto its own domain).
+function PISLandingPage(){
+  return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div style={{width:'100%',maxWidth:600}}>
+      <div style={{textAlign:'center',marginBottom:24}}>
+        <img src="/logo.png" alt="Fencecrete" style={{maxWidth:260,width:'100%',height:'auto',display:'block',margin:'0 auto'}}/>
+      </div>
+      <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:14,padding:32,boxShadow:'0 4px 24px rgba(0,0,0,0.06)'}}>
+        <div style={{textAlign:'center',marginBottom:22}}>
+          <div style={{fontFamily:'Syne',fontSize:22,fontWeight:900,color:'#1A1A1A',marginBottom:6}}>Fencecrete America, Inc.</div>
+          <div style={{fontSize:13,color:'#625650',lineHeight:1.5}}>Manufacturers of precast concrete fencing<br/>and masonry wall systems</div>
+        </div>
+        <div style={{height:1,background:'#E5E3E0',margin:'0 auto 22px',maxWidth:360}}/>
+        <div style={{fontSize:14,color:'#1A1A1A',lineHeight:1.65,marginBottom:14}}>
+          This page is used to collect Project Information Sheets from project owners, general contractors, and bonding agents.
+        </div>
+        <div style={{fontSize:14,color:'#1A1A1A',lineHeight:1.65,marginBottom:14}}>
+          Access requires a personalized invitation link sent via email.
+        </div>
+        <div style={{fontSize:14,color:'#1A1A1A',lineHeight:1.65,marginBottom:8}}>
+          If you received an invitation, click the link in your email. If you have questions about a Fencecrete project, please call:
+        </div>
+        <div style={{textAlign:'center',margin:'18px 0'}}>
+          <a href="tel:+12104927911" style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:'#8A261D',textDecoration:'none',letterSpacing:0.3}}>(210) 492-7911</a>
+        </div>
+        <div style={{height:1,background:'#E5E3E0',margin:'18px auto',maxWidth:360}}/>
+        <div style={{textAlign:'center',fontSize:11,color:'#9E9B96',lineHeight:1.7}}>
+          <a href="https://www.fencecrete.com" style={{color:'#9E9B96',textDecoration:'none'}}>www.fencecrete.com</a>
+          <div>15089 Tradesmen Drive, San Antonio, TX 78249</div>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 function LoginPage(){
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
@@ -22086,6 +22124,11 @@ function AppShell(){
 
 /* ═══ AUTH GATE — wraps AppShell with session check ═══ */
 export default function App(){
+  // Hostname-based split: forms.fencecrete.com serves the public PIS form
+  // only (no login, no nav). ops.fencecrete.com and the legacy vercel.app
+  // host serve the full ops platform. Existing tokens already in customer
+  // inboxes use #/pis/{token} on the legacy host — they auto-redirect below.
+  const isFormsHost = typeof window !== 'undefined' && window.location.hostname === 'forms.fencecrete.com';
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -22173,7 +22216,15 @@ export default function App(){
   // Public PIS route — render outside auth wrapper. Must come AFTER all hooks
   // have run (rules of hooks) but BEFORE the loading/auth gates so external
   // recipients without a Fencecrete login can still complete the form.
-  if (pisToken) return <PISFormPage token={pisToken} />;
+  // forms.fencecrete.com → render the form (or landing page if no token).
+  // ops.fencecrete.com / vercel.app → redirect any incoming hash-format PIS
+  // link to forms.fencecrete.com so legacy tokens in customer inboxes still
+  // resolve to a working form.
+  if (isFormsHost) return pisToken ? <PISFormPage token={pisToken} /> : <PISLandingPage />;
+  if (pisToken) {
+    window.location.replace(`https://forms.fencecrete.com/#/pis/${pisToken}`);
+    return null;
+  }
   if (loading) {
     return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
