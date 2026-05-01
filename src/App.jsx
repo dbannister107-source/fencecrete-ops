@@ -9017,6 +9017,14 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   const[moldInventory,setMoldInventory]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
   const[calcStyles,setCalcStyles]=useState([]);
+  // Capacity Pressure overlay (2026-04-30) — fetches v_style_capacity_lookup
+  // once on mount. The view returns ~30 rows, so client-side joins against
+  // grouped plan lines are cheap. Refetched only when the page mounts.
+  const[capacityLookup,setCapacityLookup]=useState([]);
+  const[capacityStripCollapsed,setCapacityStripCollapsed]=useState(false);
+  useEffect(()=>{
+    sbGet('v_style_capacity_lookup','select=*').then(d=>{if(Array.isArray(d))setCapacityLookup(d);}).catch(e=>console.warn('[ProductionPlanning] capacity lookup fetch failed:',e));
+  },[]);
   // Generate 4-week production schedule using Claude AI
   const generateAISchedule = async () => {
     setAiGenerating(true);
@@ -9639,6 +9647,162 @@ Generate the optimal 4-week production schedule following all rules.`;
         </div>
       </div>
     </div>
+
+    {/* ─── 📊 CAPACITY PRESSURE STRIP (Phase 3a follow-up, 2026-04-30) ───
+         Read-only overlay above the daily plan. Groups plan_lines by
+         (style, height), joins with v_style_capacity_lookup, computes per-
+         component % utilization, picks the worst component as the row's
+         bottleneck. Three header tiles (total utilization, over-committed
+         row count, slack row count) give a one-glance read of the day. */}
+    {(()=>{
+      // Group plan lines by style + height. Sum the planned_* aggregates
+      // that already live on each line (calculated when the plan is saved).
+      const groups=new Map();
+      planLines.forEach(l=>{
+        const styleKey=l.style||'';
+        const heightKey=l.height==null||l.height===''?'':String(l.height);
+        const key=`${styleKey}|${heightKey}`;
+        if(!groups.has(key))groups.set(key,{style:l.style||'',height:l.height||'',planned:{panels:0,posts:0,rails:0,caps:0}});
+        const g=groups.get(key);
+        g.planned.panels+=n(l.planned_panels);
+        g.planned.posts+=n(l.planned_posts);
+        g.planned.rails+=n(l.planned_rails);
+        g.planned.caps+=n(l.planned_caps);
+      });
+      // Resolve canonical → legacy style name for the v_style_capacity_lookup
+      // join. The view is keyed on the legacy material_calc_styles.style_name.
+      const lookupNameFor=(s)=>{
+        if(!s)return null;
+        const legacy=CANONICAL_TO_MATERIAL_CALC[s];
+        if(legacy)return legacy;
+        if(legacy===null)return null;
+        return s;
+      };
+      const findCapRow=(styleName,heightVal)=>{
+        const lookupName=lookupNameFor(styleName);
+        if(!lookupName)return null;
+        const h=n(heightVal);
+        const candidates=capacityLookup.filter(r=>r.style_name===lookupName);
+        if(candidates.length===0)return null;
+        const exact=h>0?candidates.find(r=>n(r.height_ft)===h):null;
+        const generic=candidates.find(r=>r.height_ft===null);
+        return exact||generic||null;
+      };
+      // Build per-row util rows. For each component, compute % = planned ÷ avail.
+      // Pick the worst (highest) % as the row's bottleneck.
+      const computeRow=(g)=>{
+        const cap=findCapRow(g.style,g.height);
+        if(!cap)return {...g,cap:null,components:null,worstPct:null,worstComp:null,status:'no_data'};
+        const components=[
+          {key:'panels',label:'panels',need:g.planned.panels,avail:n(cap.panels_owned)},
+          {key:'posts',label:'posts',need:g.planned.posts,avail:n(cap.posts_total_at_height)},
+          {key:'rails',label:'rails',need:g.planned.rails,avail:n(cap.rails_total)},
+          {key:'caps',label:'caps',need:g.planned.caps,avail:n(cap.caps_total)},
+        ].map(c=>{
+          // Only score components with planned > 0; a 0-planned component
+          // can't be a bottleneck even if avail = 0 (we're not running it).
+          if(c.need<=0)return {...c,pct:null};
+          if(c.avail<=0)return {...c,pct:Infinity};
+          return {...c,pct:(c.need/c.avail)*100};
+        });
+        const scored=components.filter(c=>c.pct!==null);
+        if(scored.length===0)return {...g,cap,components,worstPct:0,worstComp:null,status:'green'};
+        const worst=scored.reduce((a,b)=>(b.pct>a.pct?b:a),scored[0]);
+        let status;
+        if(worst.pct===Infinity||worst.pct>100)status='red';
+        else if(worst.pct>=85)status='orange';
+        else if(worst.pct>=50)status='blue';
+        else status='green';
+        return {...g,cap,components,worstPct:worst.pct,worstComp:worst.label,status};
+      };
+      const rows=Array.from(groups.values()).map(computeRow);
+      // Sort: worst (highest %) first; rows with no data go last.
+      rows.sort((a,b)=>{
+        const ax=a.status==='no_data'?-1:(a.worstPct===Infinity?Number.MAX_SAFE_INTEGER:n(a.worstPct));
+        const bx=b.status==='no_data'?-1:(b.worstPct===Infinity?Number.MAX_SAFE_INTEGER:n(b.worstPct));
+        return bx-ax;
+      });
+      // Header tiles. Total utilization is the mean of bottleneck % across
+      // rows that have capacity data; rows with no data don't contribute.
+      const dataRows=rows.filter(r=>r.status!=='no_data');
+      const finiteUtilRows=dataRows.filter(r=>r.worstPct!==Infinity);
+      const totalUtil=finiteUtilRows.length>0?finiteUtilRows.reduce((s,r)=>s+r.worstPct,0)/finiteUtilRows.length:0;
+      const hasInfinite=dataRows.some(r=>r.worstPct===Infinity);
+      const overRows=dataRows.filter(r=>r.worstPct===Infinity||r.worstPct>100).length;
+      const slackRows=dataRows.filter(r=>r.worstPct!==Infinity&&r.worstPct<50).length;
+      const statusBg={red:'#FEE2E2',orange:'#FED7AA',blue:'#DBEAFE',green:'#D1FAE5',no_data:'#F4F4F2'};
+      const statusFg={red:'#991B1B',orange:'#9A3412',blue:'#1D4ED8',green:'#065F46',no_data:'#9E9B96'};
+      const fmtPct=(v)=>v===null||v===undefined?'—':v===Infinity?'∞':`${Math.round(v)}%`;
+      const fmtCounts=(p,c)=>`Pn:${p.panels} Po:${p.posts} R:${p.rails} C:${p.caps}`;
+      const fmtAvail=(c)=>{
+        if(!c)return '—';
+        return `Pn:${n(c.panels_owned)} Po:${n(c.posts_total_at_height)} R:${n(c.rails_total)} C:${n(c.caps_total)}`;
+      };
+      const dateLabel=planDate===tomorrowISO?'Tomorrow':fmtDateLabel(planDate);
+      return <div style={{...card,padding:0,marginBottom:14,overflow:'hidden',borderTop:'3px solid #185FA5'}}>
+        {/* Title bar with collapse toggle */}
+        <div onClick={()=>setCapacityStripCollapsed(c=>!c)} style={{padding:'10px 16px',background:'#1A1A1A',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,cursor:'pointer',fontFamily:'Inter',fontWeight:800,fontSize:13,letterSpacing:0.5}}>
+          <span>📊 CAPACITY PRESSURE — {dateLabel}{rows.length>0?` · ${rows.length} style${rows.length===1?'':'s'}`:''}</span>
+          <span style={{fontSize:11,fontWeight:700,opacity:0.8}}>{capacityStripCollapsed?'▸ expand':'▾ collapse'}</span>
+        </div>
+        {!capacityStripCollapsed&&<>
+        {planLines.length===0?(
+          <div style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>
+            No production planned for this date.
+          </div>
+        ):(<>
+          {/* Header tiles */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:0,borderBottom:'1px solid #E5E3E0'}}>
+            <div style={{padding:'12px 16px',borderRight:'1px solid #E5E3E0'}}>
+              <div style={{fontSize:9,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Total Utilization</div>
+              <div style={{fontFamily:'Inter',fontSize:24,fontWeight:900,color:'#1A1A1A',marginTop:2}}>{finiteUtilRows.length>0?`${Math.round(totalUtil)}%`:hasInfinite?'∞':'—'}</div>
+              <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>average of bottleneck % across {dataRows.length} {dataRows.length===1?'row':'rows'}</div>
+            </div>
+            <div style={{padding:'12px 16px',borderRight:'1px solid #E5E3E0'}}>
+              <div style={{fontSize:9,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Over-Committed Rows</div>
+              <div style={{fontFamily:'Inter',fontSize:24,fontWeight:900,color:overRows>0?'#991B1B':'#1A1A1A',marginTop:2}}>{overRows}</div>
+              <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{overRows>0?'bottleneck > 100%':'no row exceeds capacity'}</div>
+            </div>
+            <div style={{padding:'12px 16px'}}>
+              <div style={{fontSize:9,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>Slack Rows</div>
+              <div style={{fontFamily:'Inter',fontSize:24,fontWeight:900,color:slackRows>0?'#065F46':'#1A1A1A',marginTop:2}}>{slackRows}</div>
+              <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{slackRows>0?'bottleneck < 50%':'plant is engaged'}</div>
+            </div>
+          </div>
+          {/* Per-style table */}
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr>
+                {['Style','Planned','Available','% Utilized','Bottleneck'].map((h,i)=>(
+                  <th key={h} style={{textAlign:i<2?'left':i===4?'left':'right',padding:'8px 14px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {rows.map((r,i)=>{
+                  const styleLabel=r.style?(r.height?`${r.style} ${r.height}'`:r.style):'(no style)';
+                  return <tr key={i} style={{borderBottom:'1px solid #F4F4F2'}}>
+                    <td style={{padding:'8px 14px',fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap'}}>{styleLabel}</td>
+                    <td style={{padding:'8px 14px',fontFamily:'Inter',color:'#625650',whiteSpace:'nowrap'}}>{fmtCounts(r.planned)}</td>
+                    <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'Inter',color:r.cap?'#625650':'#9E9B96',fontStyle:r.cap?'normal':'italic',whiteSpace:'nowrap'}}>{r.cap?fmtAvail(r.cap):'No capacity data'}</td>
+                    <td style={{padding:'8px 14px',textAlign:'right'}}>
+                      {r.status==='no_data'?<span style={{color:'#9E9B96'}}>—</span>:(
+                        <span style={{display:'inline-block',padding:'2px 10px',borderRadius:4,fontSize:11,fontWeight:800,background:statusBg[r.status],color:statusFg[r.status]}}>{fmtPct(r.worstPct)}</span>
+                      )}
+                    </td>
+                    <td style={{padding:'8px 14px',color:r.worstComp?statusFg[r.status]:'#9E9B96',fontWeight:r.worstComp?700:400,fontStyle:r.worstComp?'normal':'italic'}}>{r.worstComp||'—'}</td>
+                  </tr>;
+                })}
+                {rows.length===0&&<tr><td colSpan={5} style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>No production planned for this date.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:'8px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2'}}>
+            Read-only signal. Compares planned panels/posts/rails/caps against current mold inventory. Pn = panels, Po = posts, R = rails, C = caps. Does not block planning.
+          </div>
+        </>)}
+        </>}
+      </div>;
+    })()}
 
     {/* TWO COLUMN LAYOUT */}
     <div style={{display:'grid',gridTemplateColumns:v.mobile||v.tablet?'1fr':'40% 60%',gap:16,alignItems:'start'}}>
