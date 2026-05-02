@@ -12486,6 +12486,172 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// ═══ CREW LEADER ASSIGNMENT WORKFLOW ═══
+// Bulk assignment screen for Carlos. Goal: assign crew_leader_id to every
+// active install (and production-stage) job in 2 minutes. Optimized for
+// keyboard speed: filter, market-grouped dropdowns, optimistic update,
+// progress counter. Designed to be opened once a week to keep Gantt fresh.
+function CrewLeaderAssignmentPage(){
+  const auth=useAuth();
+  const isAdmin=auth?.profile?.role==='admin';
+  const canEdit=isAdmin||['billing','pm'].includes(auth?.profile?.role);
+  const[jobs,setJobs]=useState([]);
+  const[leaders,setLeaders]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[search,setSearch]=useState('');
+  const[mktFilter,setMktFilter]=useState('');
+  const[statusFilter,setStatusFilter]=useState('active');  // 'active' | 'production' | 'all'
+  const[onlyMissing,setOnlyMissing]=useState(true);
+  const[saving,setSaving]=useState({});
+  const[toastMsg,setToastMsg]=useState(null);
+  const showToast=(m,err=false)=>{setToastMsg({message:m,isError:err});};
+
+  const fetchData=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const[j,cl]=await Promise.all([
+        sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,pm,est_start_date,crew_leader_id&status=in.(production_queue,in_production,material_ready,active_install)&order=market.asc,est_start_date.asc'),
+        sbGet('crew_leaders','select=*&active=eq.true&order=market.asc,name.asc'),
+      ]);
+      setJobs(Array.isArray(j)?j:[]);
+      setLeaders(Array.isArray(cl)?cl:[]);
+    }catch(e){showToast('Load failed: '+e.message,true);}
+    setLoading(false);
+  },[]);
+  useEffect(()=>{fetchData();},[fetchData]);
+
+  // Mapping market short→long for filtering crew_leaders
+  const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
+  const SHORT_TO_LONG={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station'};
+  const SUB_MARKETS=new Set(['DFW','AUS','CS']);
+
+  const filtered=useMemo(()=>{
+    let r=jobs;
+    if(statusFilter==='active')r=r.filter(j=>j.status==='active_install');
+    else if(statusFilter==='production')r=r.filter(j=>['production_queue','in_production','material_ready'].includes(j.status));
+    if(mktFilter)r=r.filter(j=>j.market===mktFilter);
+    if(onlyMissing)r=r.filter(j=>!j.crew_leader_id);
+    if(search.trim()){
+      const q=search.toLowerCase();
+      r=r.filter(j=>(j.job_name||'').toLowerCase().includes(q)||(j.job_number||'').toLowerCase().includes(q)||(j.pm||'').toLowerCase().includes(q));
+    }
+    return r;
+  },[jobs,mktFilter,statusFilter,onlyMissing,search]);
+
+  // Per-job leader options (market-filtered, sub markets default to SA)
+  const leaderOptionsForJob=(job)=>{
+    const long=SHORT_TO_LONG[job.market];
+    const isSub=SUB_MARKETS.has(job.market);
+    const target=isSub?'San Antonio':long;
+    return target?leaders.filter(cl=>cl.market===target):leaders;
+  };
+
+  const assign=async(job,leaderId)=>{
+    if(!canEdit)return;
+    setSaving(s=>({...s,[job.id]:true}));
+    try{
+      await sbPatch('jobs',job.id,{crew_leader_id:leaderId||null});
+      setJobs(js=>js.map(j=>j.id===job.id?{...j,crew_leader_id:leaderId||null}:j));
+    }catch(e){showToast('Save failed: '+e.message,true);}
+    setSaving(s=>{const n={...s};delete n[job.id];return n;});
+  };
+
+  // Summary counts
+  const counts=useMemo(()=>{
+    const all=jobs.length;
+    const assigned=jobs.filter(j=>j.crew_leader_id).length;
+    const active=jobs.filter(j=>j.status==='active_install').length;
+    const activeAssigned=jobs.filter(j=>j.status==='active_install'&&j.crew_leader_id).length;
+    return{all,assigned,active,activeAssigned,unassigned:all-assigned};
+  },[jobs]);
+
+  const cellInp={padding:'6px 8px',fontSize:13,border:'1px solid #E5E3E0',borderRadius:6,background:'#FFF'};
+  const fmtLF=v=>v==null?'—':v>=1000?((v/1000).toFixed(1)+'k LF'):(Math.round(v)+' LF');
+  const fmtD=d=>d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+  const STATUS_COLORS={active_install:'#FEE2E2 #991B1B',material_ready:'#D1FAE5 #065F46',in_production:'#FEF3C7 #92400E',production_queue:'#DBEAFE #1E40AF'};
+
+  if(!canEdit){
+    return<div style={{...card,padding:40,textAlign:'center'}}>
+      <div style={{fontFamily:'Syne',fontSize:18,fontWeight:800,marginBottom:8}}>Access restricted</div>
+      <div style={{fontSize:13,color:'#625650'}}>Crew leader assignment requires admin, billing, or pm role.</div>
+    </div>;
+  }
+
+  return<div>
+    {toastMsg&&<Toast message={toastMsg.message} isError={toastMsg.isError} onDone={()=>setToastMsg(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:12}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Crew Leader Assignment</h1>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>
+          <b>{counts.activeAssigned}/{counts.active}</b> active install jobs assigned · <b>{counts.assigned}/{counts.all}</b> production+install total · <b>{counts.unassigned}</b> remaining
+        </div>
+      </div>
+      <button onClick={fetchData} style={{...btnS,fontSize:12}}>↻ Refresh</button>
+    </div>
+
+    {/* Progress bar */}
+    <div style={{...card,padding:14,marginBottom:14}}>
+      <div style={{height:8,background:'#F4F4F2',borderRadius:4,overflow:'hidden'}}>
+        <div style={{height:'100%',width:`${counts.all>0?(counts.assigned/counts.all)*100:0}%`,background:counts.assigned===counts.all?'#0F6E56':'#8A261D',transition:'width 0.3s'}}/>
+      </div>
+      <div style={{fontSize:11,color:'#625650',marginTop:6,fontWeight:600}}>
+        {counts.all>0?Math.round((counts.assigned/counts.all)*100):0}% coverage on production + active install jobs
+      </div>
+    </div>
+
+    {/* Filters */}
+    <div style={{display:'flex',gap:10,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+      <div style={{display:'flex',gap:4}}>
+        {[['active','Active install only'],['production','Production stage'],['all','All']].map(([v,l])=><button key={v} onClick={()=>setStatusFilter(v)} style={{padding:'6px 12px',borderRadius:6,border:`1px solid ${statusFilter===v?'#8A261D':'#E5E3E0'}`,background:statusFilter===v?'#8A261D':'#FFF',color:statusFilter===v?'#FFF':'#1A1A1A',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l}</button>)}
+      </div>
+      <select value={mktFilter} onChange={e=>setMktFilter(e.target.value)} style={{...cellInp,width:160}}>
+        <option value="">All markets</option>
+        <option value="HOU">Houston</option>
+        <option value="SA">San Antonio</option>
+        <option value="AUS">Austin</option>
+        <option value="DFW">DFW</option>
+        <option value="CS">College Station</option>
+      </select>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search job, PM…" style={{...cellInp,width:240}}/>
+      <label style={{fontSize:12,color:'#625650',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+        <input type="checkbox" checked={onlyMissing} onChange={e=>setOnlyMissing(e.target.checked)}/>
+        Only unassigned
+      </label>
+    </div>
+
+    {loading?<div style={{...card,padding:40,textAlign:'center',color:'#625650'}}>Loading…</div>:
+     filtered.length===0?<div style={{...card,padding:40,textAlign:'center',color:'#0F6E56',fontWeight:600}}>
+       ✓ {onlyMissing?'No unassigned jobs match these filters.':'No jobs match these filters.'}
+     </div>:
+     <div style={{display:'flex',flexDirection:'column',gap:8}}>
+       {filtered.map(j=>{
+         const opts=leaderOptionsForJob(j);
+         const isSub=SUB_MARKETS.has(j.market);
+         const [bg,fg]=(STATUS_COLORS[j.status]||'#F4F4F2 #625650').split(' ');
+         return<div key={j.id} style={{...card,padding:14,display:'grid',gridTemplateColumns:'1.5fr 0.6fr 1fr 0.8fr 0.8fr 1.5fr 0.4fr',gap:12,alignItems:'center'}}>
+           <div>
+             <div style={{fontWeight:700,fontSize:13}}>{j.job_number} · {j.job_name||'—'}</div>
+             <div style={{fontSize:11,color:'#9E9B96'}}>{j.style||'(no style)'}</div>
+           </div>
+           <div><span style={{background:bg,color:fg,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700}}>{j.status}</span></div>
+           <div><div style={{fontSize:12,fontWeight:600}}>{SHORT_TO_LONG[j.market]||j.market}</div>{isSub&&<div style={{fontSize:10,color:'#92400E'}}>subs+SA pool</div>}</div>
+           <div style={{fontSize:12,fontWeight:600}}>{fmtLF(j.total_lf)}</div>
+           <div style={{fontSize:12}}>{fmtD(j.est_start_date)}</div>
+           <div>
+             <select value={j.crew_leader_id||''} onChange={e=>assign(j,e.target.value)} style={{...cellInp,width:'100%'}}>
+               <option value="">— Unassigned —</option>
+               {opts.length===0&&<option disabled>No leaders for {SHORT_TO_LONG[j.market]||j.market}</option>}
+               {opts.map(cl=><option key={cl.id} value={cl.id}>{cl.name}</option>)}
+             </select>
+             <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{j.pm||'—'}</div>
+           </div>
+           <div style={{fontSize:18,textAlign:'center'}}>{saving[j.id]?'⏳':j.crew_leader_id?'✓':''}</div>
+         </div>;
+       })}
+     </div>}
+  </div>;
+}
+
 // ═══ DEMAND PLANNER CO-PILOT (rule-based v0) ═══
 // Reads the same data the dashboard renders and surfaces:
 //   1. Today's exceptions — what's broken or trending wrong
@@ -12494,11 +12660,16 @@ function PMReportPhotos({photos, jobNumber, onChange}){
 // Designed so the rules become the prompt when we wire LLM v1.
 function DemandPlannerCopilot({tab,data}){
   const[expanded,setExpanded]=useState(true);
+  const[qaOpen,setQaOpen]=useState(false);
+  const[messages,setMessages]=useState([]);  // [{role:'user'|'assistant',content:string}]
+  const[input,setInput]=useState('');
+  const[asking,setAsking]=useState(false);
+  const[lastUsage,setLastUsage]=useState(null);
+
   const insights=useMemo(()=>{
     const out=[];
     const{openJobs,activeInstallJobs,plantLoad,crewLoadByMarket,materialRisk,pipelineForecast,ganttRows,calibration,reports,scheduleByWeek}=data;
 
-    // ─── Critical exceptions (red) ───
     if(materialRisk.filter(j=>j.days_to_start<3).length>0){
       const urgent=materialRisk.filter(j=>j.days_to_start<3);
       out.push({severity:'critical',icon:'🚨',title:`${urgent.length} job${urgent.length>1?'s':''} starting in <3 days without material`,body:`${urgent.map(j=>j.job_number).join(', ')}. These jobs will slip unless plant prioritizes.`,action:'Review Material Readiness tab; escalate to Max'});
@@ -12516,7 +12687,6 @@ function DemandPlannerCopilot({tab,data}){
       });
     }
 
-    // ─── Warnings (amber) ───
     const conflictRows=ganttRows.rows.filter(r=>r.conflicts>0);
     if(conflictRows.length>0){
       out.push({severity:'warning',icon:'📋',title:`${conflictRows.length} crew leader${conflictRows.length>1?'s':''} double-booked`,body:`${conflictRows.map(r=>r.leader.name).slice(0,3).join(', ')}${conflictRows.length>3?` +${conflictRows.length-3} more`:''}. Overlapping est_start → est_complete windows.`,action:'Open Leader Gantt; reschedule overlapping jobs'});
@@ -12531,7 +12701,6 @@ function DemandPlannerCopilot({tab,data}){
       out.push({severity:'warning',icon:'📦',title:`${soon.length} job${soon.length>1?'s':''} starting in 3-7 days, no material yet`,body:`${soon.slice(0,3).map(j=>j.job_number).join(', ')}${soon.length>3?` +${soon.length-3} more`:''}. Plant has runway but it's tight.`,action:'Confirm production status with Max'});
     }
 
-    // ─── Opportunities (blue) ───
     const eligibleCalib=calibration.filter(c=>c.measured_reports>=20&&Math.abs(c.delta||0)>15);
     if(eligibleCalib.length>0){
       eligibleCalib.forEach(c=>{
@@ -12539,7 +12708,6 @@ function DemandPlannerCopilot({tab,data}){
       });
     }
 
-    // ─── Forecasting calls ───
     if(pipelineForecast.totals.expected>0){
       const next3mo=pipelineForecast.months.slice(0,3).reduce((s,m)=>s+m.expected_value,0);
       const monthlyRunRate=next3mo/3;
@@ -12552,18 +12720,91 @@ function DemandPlannerCopilot({tab,data}){
       out.push({severity:'info',icon:'🗓️',title:`${pipelineForecast.totals.no_date} proposals with no expected close date`,body:`$${(pipelineForecast.totals.no_date_value/1000).toFixed(0)}k of pipeline value invisible to forecast. Reps haven't entered close dates.`,action:'Sales hygiene: require close date on proposal_sent stage'});
     }
 
-    // ─── Coverage gaps (gray) ───
     if(reports.length===0||reports.length<activeInstallJobs.length*5){
       out.push({severity:'gap',icon:'⚙️',title:`PM Daily Report coverage thin: ${reports.length} reports vs ${activeInstallJobs.length} active jobs`,body:`Calibration tab can't trust measured install rates yet. This is the highest-leverage data investment for the planner.`,action:'Carlos owns PM compliance; tie to PM scorecards'});
     }
 
     const noCrewLeaderJobs=activeInstallJobs.filter(j=>!j.crew_leader_id).length;
     if(noCrewLeaderJobs>0){
-      out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Carlos can produce a who-is-running-what list and we backfill in 30 minutes.`,action:'Carlos: list current crew assignments; David runs SQL backfill'});
+      out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Use the Crew Assignment page to bulk-assign in 2 minutes.`,action:'Carlos: open Crew Assignment page → assign remaining jobs'});
     }
 
     return out;
   },[data]);
+
+  // Build a compact snapshot for the LLM. Keep payload < ~30k chars.
+  const buildSnapshot=()=>{
+    return{
+      summary:{
+        open_jobs:data.openJobs.length,
+        production_jobs:data.productionJobs.length,
+        active_install_jobs:data.activeInstallJobs.length,
+        backlog_lf:data.openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0),
+        contract_value:data.openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0),
+      },
+      plant_load:data.plantLoad.map(p=>({style:p.style,jobs:p.jobs,backlog_lf:Math.round(p.backlog_lf),molds:p.molds,weeks_to_clear:p.weeks_to_clear?Number(p.weeks_to_clear.toFixed(1)):null,has_mold_data:p.has_mold_data})),
+      crew_load:data.crewLoadByMarket.map(r=>({market:r.market,label:r.label,active_lf:Math.round(r.active_lf),active_jobs:r.active_jobs,leaders:r.leaders,uses_subs:r.uses_subs,total_install_days:r.total_install_days?Math.round(r.total_install_days):null,weeks_per_leader:r.weeks_per_leader?Number(r.weeks_per_leader.toFixed(1)):null})),
+      schedule_13wk:data.scheduleByWeek.weeks.map(w=>({week:w.label,starting:w.installs_starting.length,lf_starting:Math.round(w.lf_starting),completing:w.installs_completing.length,lf_completing:Math.round(w.lf_completing),revenue_completing:Math.round(w.$_completing)})),
+      schedule_unscheduled:{jobs:data.scheduleByWeek.unscheduled_jobs,lf:Math.round(data.scheduleByWeek.unscheduled_lf)},
+      pipeline:{
+        active_proposals:data.pipelineForecast.totals.count,
+        total_proposal_value:Math.round(data.pipelineForecast.totals.raw),
+        expected_value:Math.round(data.pipelineForecast.totals.expected),
+        no_close_date_count:data.pipelineForecast.totals.no_date,
+        no_close_date_value:Math.round(data.pipelineForecast.totals.no_date_value),
+        by_month:data.pipelineForecast.months.filter(m=>m.proposals_count>0).map(m=>({month:m.label,proposals:m.proposals_count,proposal_value:Math.round(m.proposals_value),expected_value:Math.round(m.expected_value)})),
+      },
+      cash_conversion:{
+        by_market:data.cashByMarket.map(r=>({market:r.market,ltb:Math.round(r.ltb),weekly_run_rate:Math.round(r.weekly_run_rate),weeks_of_ltb:r.weeks_of_ltb?Number(r.weeks_of_ltb.toFixed(1)):null})),
+        aging:data.agingBuckets,
+      },
+      material_risks:data.materialRisk.slice(0,15).map(j=>({job:j.job_number,name:j.job_name,market:j.market,style:j.style,lf:j.total_lf,status:j.status,days_to_start:j.days_to_start,pm:j.pm})),
+      gantt_conflicts:data.ganttRows.rows.filter(r=>r.conflicts>0).map(r=>({leader:r.leader.name,market:r.leader.market,conflicts:r.conflicts,jobs:r.jobs.length})),
+      calibration:data.calibration.map(c=>({category:c.category_label,default_rate:c.lf_per_day,measured_reports:c.measured_reports,measured_rate:c.measured_rate?Math.round(c.measured_rate):null,delta:c.delta?Math.round(c.delta):null})),
+      data_coverage:{
+        pm_daily_reports:data.reports.length,
+        active_jobs_with_crew_leader:data.activeInstallJobs.filter(j=>j.crew_leader_id).length,
+        active_jobs_total:data.activeInstallJobs.length,
+        leaders_w2:data.crewLeaders.length,
+      },
+      current_tab:tab,
+    };
+  };
+
+  const send=async(text)=>{
+    const q=(text||input).trim();
+    if(!q||asking)return;
+    setInput('');
+    const userMsg={role:'user',content:q};
+    const newConv=[...messages,userMsg];
+    setMessages(newConv);
+    setAsking(true);
+    try{
+      const res=await fetch(`${SB}/functions/v1/demand-copilot`,{
+        method:'POST',
+        headers:H,
+        body:JSON.stringify({question:q,snapshot:buildSnapshot(),conversation:messages}),
+      });
+      const d=await res.json();
+      if(d.error){
+        setMessages(c=>[...c,{role:'assistant',content:`⚠️ ${d.error}`}]);
+      }else{
+        setMessages(c=>[...c,{role:'assistant',content:d.answer||'(empty)'}]);
+        if(d.tokens_in)setLastUsage({in:d.tokens_in,out:d.tokens_out});
+      }
+    }catch(e){
+      setMessages(c=>[...c,{role:'assistant',content:`⚠️ Connection error: ${e.message}`}]);
+    }
+    setAsking(false);
+  };
+
+  const PROMPTED_QUESTIONS=[
+    "What's the biggest bottleneck right now?",
+    "Why is Houston so overloaded?",
+    "What if we add 2 Houston crew leaders?",
+    "Which 3 jobs should we push to next quarter?",
+    "Are we tracking to the $60M trajectory?",
+  ];
 
   const sevColor={critical:'#8A261D',warning:'#B45309',info:'#185FA5',gap:'#625650'};
   const sevBg={critical:'#FEE2E2',warning:'#FEF3C7',info:'#DBEAFE',gap:'#F4F4F2'};
@@ -12576,7 +12817,7 @@ function DemandPlannerCopilot({tab,data}){
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:18}}>🤖</span>
         <span style={{fontFamily:'Syne',fontSize:14,fontWeight:800}}>Demand Planner Co-Pilot</span>
-        <span style={{fontSize:11,color:'#9E9B96',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:4,padding:'2px 6px',fontWeight:600}}>v0 · rules-based</span>
+        <span style={{fontSize:11,color:'#9E9B96',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:4,padding:'2px 6px',fontWeight:600}}>v1 · rules + Claude</span>
       </div>
       <div style={{display:'flex',gap:6,alignItems:'center',fontSize:11,fontWeight:700}}>
         {counts.critical>0&&<span style={{background:sevBg.critical,color:sevColor.critical,padding:'2px 8px',borderRadius:4}}>{counts.critical} critical</span>}
@@ -12587,6 +12828,8 @@ function DemandPlannerCopilot({tab,data}){
       </div>
     </div>
     {expanded&&<div style={{padding:'14px 18px'}}>
+
+      {/* Rule-based insights */}
       {sorted.length===0?<div style={{padding:14,textAlign:'center',color:'#0F6E56',fontWeight:600}}>✓ No exceptions detected. Plant, crews, schedule, and pipeline are all within tolerance.</div>:
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {sorted.map((ins,i)=><div key={i} style={{display:'flex',gap:12,padding:12,background:'#FFF',border:`1px solid ${sevBg[ins.severity]}`,borderLeft:`4px solid ${sevColor[ins.severity]}`,borderRadius:6}}>
@@ -12598,8 +12841,38 @@ function DemandPlannerCopilot({tab,data}){
           </div>
         </div>)}
       </div>}
+
+      {/* Q&A toggle */}
+      <button onClick={()=>setQaOpen(!qaOpen)} style={{...btnP,marginTop:14,fontSize:13,padding:'10px 16px',width:'100%'}}>
+        {qaOpen?'▾ Hide Q&A':'💬 Ask the Co-Pilot a question'}
+      </button>
+
+      {qaOpen&&<div style={{marginTop:14,padding:14,background:'#FFF',borderRadius:8,border:'1px solid #E5E3E0'}}>
+        {messages.length===0&&<div>
+          <div style={{fontSize:11,color:'#9E9B96',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Try asking:</div>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {PROMPTED_QUESTIONS.map((q,i)=><button key={i} onClick={()=>send(q)} style={{textAlign:'left',padding:'8px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,fontSize:12,color:'#1A1A1A',cursor:'pointer'}}>{q}</button>)}
+          </div>
+        </div>}
+
+        {messages.length>0&&<div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:12,maxHeight:500,overflowY:'auto'}}>
+          {messages.map((m,i)=><div key={i} style={{padding:10,background:m.role==='user'?'#F9F8F6':'#FDF4F4',borderRadius:6,borderLeft:`3px solid ${m.role==='user'?'#9E9B96':'#8A261D'}`}}>
+            <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase',marginBottom:4}}>{m.role==='user'?'You':'Co-Pilot'}</div>
+            <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{m.content}</div>
+          </div>)}
+          {asking&&<div style={{padding:10,background:'#FDF4F4',borderRadius:6,fontSize:13,color:'#9E9B96',fontStyle:'italic'}}>thinking…</div>}
+        </div>}
+
+        <div style={{display:'flex',gap:8}}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Ask anything about demand, capacity, schedule, cash…" disabled={asking} style={{flex:1,padding:'10px 12px',fontSize:13,border:'1px solid #E5E3E0',borderRadius:6}}/>
+          <button onClick={()=>send()} disabled={asking||!input.trim()} style={{...btnP,padding:'10px 18px',fontSize:13,opacity:(asking||!input.trim())?0.5:1,cursor:(asking||!input.trim())?'not-allowed':'pointer'}}>Send</button>
+          {messages.length>0&&<button onClick={()=>{setMessages([]);setLastUsage(null);}} style={{...btnS,padding:'10px 14px',fontSize:13}}>Clear</button>}
+        </div>
+        {lastUsage&&<div style={{fontSize:10,color:'#9E9B96',marginTop:6,textAlign:'right'}}>last: {lastUsage.in} in / {lastUsage.out} out tokens · ~${(lastUsage.in*0.0000008+lastUsage.out*0.000004).toFixed(4)}</div>}
+      </div>}
+
       <div style={{fontSize:10,color:'#9E9B96',marginTop:12,paddingTop:10,borderTop:'1px solid #E5E3E0',fontStyle:'italic',lineHeight:1.5}}>
-        Currently rule-based. Each insight comes from a deterministic check on the dashboard data. v1 will pipe these signals into Claude (claude-haiku-4-5) for natural-language explanations and what-if analysis. The rules above become the system prompt.
+        Insights above are deterministic rules. Q&A is powered by claude-haiku-4-5 reading the same dashboard data — read-only analysis, no autonomous actions.
       </div>
     </div>}
   </div>;
@@ -22046,6 +22319,7 @@ const PAGE_LABELS={
   my_plate:'My Plate',
   sharepoint_links:'SharePoint Links',
   crew_leaders_admin:'Crew Leaders',
+  crew_assignment:'Crew Assignment',
   demand_planning:'Demand Planning',
 };
 
@@ -22664,7 +22938,7 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'},{key:'my_plate',label:'My Plate',icon:'🍽️'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
-  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'demand_planning',label:'Demand Planning',icon:'📊'},{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
+  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'demand_planning',label:'Demand Planning',icon:'📊'},{key:'crew_assignment',label:'Crew Assignment',icon:'👷'},{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'cv_reconciliation',label:'Contract Reconciliation',icon:'⚖️'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
@@ -23214,6 +23488,7 @@ function AppShell(){
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='demand_planning'&&<ErrorBoundary label="Demand Planning"><DemandPlanningPage/></ErrorBoundary>}
+            {page==='crew_assignment'&&<ErrorBoundary label="Crew Assignment"><CrewLeaderAssignmentPage/></ErrorBoundary>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='specialty_visits'&&<ErrorBoundary label="Specialty Install"><SpecialtyVisitsPage jobs={jobs}/></ErrorBoundary>}
