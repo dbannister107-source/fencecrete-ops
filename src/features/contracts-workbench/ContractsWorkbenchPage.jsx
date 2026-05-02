@@ -53,7 +53,8 @@ const AUTO_LABELS = {
   height_set: 'Height set',
   total_lf_set: 'LF entered',
   contract_value_set: 'Contract value',
-  line_items_entered: 'Line items',
+  line_items_entered: 'Line items entered',
+  line_items_match_contract: 'Line items reconcile to contract',
 };
 
 // Manual checklist items (must match v_contract_readiness item_keys)
