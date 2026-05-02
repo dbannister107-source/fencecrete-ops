@@ -13277,6 +13277,7 @@ function CoPilotHome({onNav}){
   const[invoices,setInvoices]=useState([]);
   const[installRates,setInstallRates]=useState([]);
   const[molds,setMolds]=useState([]);
+  const[readiness,setReadiness]=useState([]);
 
   useEffect(()=>{
     Promise.all([
@@ -13289,7 +13290,8 @@ function CoPilotHome({onNav}){
       sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
       sbGet('proposal_validations','select=id,validated_at,validated_by_email,passed&order=validated_at.desc&limit=200'),
       sbGet('leads','select=id,sales_rep,stage,proposal_sent_date,proposal_value&proposal_sent_date=gte.'+new Date(Date.now()-30*86400000).toISOString().slice(0,10)),
-    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30])=>{
+      sbGet('v_contract_readiness','select=job_id,job_number,job_name,status,is_ready,auto_checks,manual_items&status=in.(contract_review)'),
+    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30,rdy])=>{
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
@@ -13299,6 +13301,7 @@ function CoPilotHome({onNav}){
       setLeads(Array.isArray(ld)?ld:[]);
       setValidations(Array.isArray(pv)?pv:[]);
       setRecentProposals(Array.isArray(ls30)?ls30:[]);
+      setReadiness(Array.isArray(rdy)?rdy:[]);
       setLoading(false);
     }).catch(e=>{setErr(e.message);setLoading(false);});
   },[]);
@@ -13468,10 +13471,43 @@ function CoPilotHome({onNav}){
       total_validations:validations.length,
     };
 
+    // Contract Readiness summary — only contract_review jobs are fetched.
+    // Bucket them: ready (gate would let them through), blocked-by-auto (data
+    // missing on the job itself), blocked-by-manual (rep hasn't checked items).
+    // Used by Co-Pilot rules below; full list available for LLM Q&A snapshot.
+    const contractReadiness=(()=>{
+      const list=Array.isArray(readiness)?readiness:[];
+      const ready=list.filter(r=>r.is_ready);
+      const blocked=list.filter(r=>!r.is_ready);
+      const blocked_by_auto=blocked.filter(r=>{
+        const ac=r.auto_checks||{};
+        return Object.values(ac).some(v=>v===false);
+      });
+      const blocked_by_manual_only=blocked.filter(r=>{
+        const ac=r.auto_checks||{};
+        const allAutoOk=Object.values(ac).every(v=>v===true);
+        return allAutoOk;
+      });
+      return{
+        total:list.length,
+        ready:ready.length,
+        blocked:blocked.length,
+        blocked_by_auto:blocked_by_auto.length,
+        blocked_by_manual_only:blocked_by_manual_only.length,
+        ready_jobs:ready.slice(0,5).map(r=>({job_number:r.job_number,job_name:r.job_name})),
+        blocked_jobs:blocked.slice(0,10).map(r=>({
+          job_number:r.job_number,
+          job_name:r.job_name,
+          missing_auto:Object.entries(r.auto_checks||{}).filter(([,v])=>!v).map(([k])=>k),
+        })),
+      };
+    })();
+
     return{
       openJobs,productionJobs,activeInstallJobs,
       plantLoad,crewLoadByMarket,scheduleByWeek,cashByMarket,agingBuckets,
       materialRisk,pipelineForecast,ganttRows,calibration,
+      contractReadiness,
       reports,crewLeaders,leads,
       validationStats,
     };
@@ -13576,6 +13612,25 @@ function DemandPlannerCopilot({tab,data}){
       }
     }
 
+    // Contract Readiness — surfaces both adoption signal (jobs ready to
+    // advance from contract_review) and the friction point (jobs blocked
+    // by missing data or unchecked manual items). The forcing-function
+    // trigger blocks the status transition; Co-Pilot makes the queue
+    // visible so nothing sits silently.
+    if(data.contractReadiness){
+      const cr=data.contractReadiness;
+      if(cr.ready>0){
+        out.push({severity:'info',icon:'✅',title:`${cr.ready} job${cr.ready>1?'s':''} ready to advance to production_queue`,body:`Contract readiness checklist complete: ${cr.ready_jobs.map(j=>j.job_number).join(', ')}. Open each in Projects and bump status. The database gate will allow these through.`});
+      }
+      if(cr.blocked_by_auto>0){
+        const sample=cr.blocked_jobs.slice(0,3).map(j=>`${j.job_number} (missing ${j.missing_auto.slice(0,2).join(', ')})`).join('; ');
+        out.push({severity:'warning',icon:'📝',title:`${cr.blocked_by_auto} contract_review job${cr.blocked_by_auto>1?'s':''} blocked by missing job data`,body:`${sample}${cr.blocked_jobs.length>3?` and ${cr.blocked_jobs.length-3} more`:''}. These need data filled in (style, color, height, line items) before contracts can advance.`});
+      }
+      if(cr.blocked_by_manual_only>0){
+        out.push({severity:'gap',icon:'☑️',title:`${cr.blocked_by_manual_only} job${cr.blocked_by_manual_only>1?'s':''} blocked only by unchecked manual items`,body:`Job data is complete but the sales rep hasn't ticked the readiness checklist (PIS, deposit, payment terms, etc.). Open each job's Contract tab and complete the checklist.`});
+      }
+    }
+
     if(noCrewLeaderJobs>0){
       out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Use the Crew Assignment page to bulk-assign in 2 minutes.`,action:'Carlos: open Crew Assignment page → assign remaining jobs'});
     }
@@ -13612,6 +13667,14 @@ function DemandPlannerCopilot({tab,data}){
       material_risks:data.materialRisk.slice(0,15).map(j=>({job:j.job_number,name:j.job_name,market:j.market,style:j.style,lf:j.total_lf,status:j.status,days_to_start:j.days_to_start,pm:j.pm})),
       gantt_conflicts:data.ganttRows.rows.filter(r=>r.conflicts>0).map(r=>({leader:r.leader.name,market:r.leader.market,conflicts:r.conflicts,jobs:r.jobs.length})),
       calibration:data.calibration.map(c=>({category:c.category_label,default_rate:c.lf_per_day,measured_reports:c.measured_reports,measured_rate:c.measured_rate?Math.round(c.measured_rate):null,delta:c.delta?Math.round(c.delta):null})),
+      contract_readiness:data.contractReadiness?{
+        total_in_review:data.contractReadiness.total,
+        ready_to_advance:data.contractReadiness.ready,
+        blocked_by_missing_data:data.contractReadiness.blocked_by_auto,
+        blocked_by_unchecked_manual_items:data.contractReadiness.blocked_by_manual_only,
+        ready_jobs:data.contractReadiness.ready_jobs,
+        blocked_jobs:data.contractReadiness.blocked_jobs,
+      }:null,
       data_coverage:{
         pm_daily_reports:data.reports.length,
         active_jobs_with_crew_leader:data.activeInstallJobs.filter(j=>j.crew_leader_id).length,
