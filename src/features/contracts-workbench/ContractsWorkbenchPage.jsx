@@ -66,7 +66,7 @@ const MANUAL_ITEMS = [
   { key: 'wet_signatures', label: 'Wet signatures' },
 ];
 
-export default function ContractsWorkbenchPage({ currentUserEmail, onNav }) {
+export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOnly = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -106,6 +106,7 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav }) {
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   const toggleItem = async (jobId, itemKey, action) => {
+    if (readOnly) return;  // view-only users cannot mutate readiness items
     const k = `${jobId}:${itemKey}`;
     setSavingItems((p) => new Set(p).add(k));
     try {
@@ -213,7 +214,10 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav }) {
         <div>
           <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 800, margin: 0, color: '#1A1A1A' }}>Contracts Workbench</h1>
           <div style={{ fontSize: 12, color: '#625650', marginTop: 4 }}>
-            All jobs in <code style={{ background: '#F4F4F2', padding: '2px 6px', borderRadius: 4, fontSize: 11 }}>contract_review</code>. Tick manual items inline; auto-checks update from job data.
+            {readOnly
+              ? <>All jobs in <code style={{ background: '#F4F4F2', padding: '2px 6px', borderRadius: 4, fontSize: 11 }}>contract_review</code>. <span style={{ color: '#7C3AED', fontWeight: 700 }}>View-only</span> — Amiee or contracts@ can tick manual items.</>
+              : <>All jobs in <code style={{ background: '#F4F4F2', padding: '2px 6px', borderRadius: 4, fontSize: 11 }}>contract_review</code>. Tick manual items inline; auto-checks update from job data.</>
+            }
           </div>
         </div>
         <button onClick={fetchRows} style={btnS}>↻ Refresh</button>
@@ -368,9 +372,9 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav }) {
                                       <input
                                         type="checkbox"
                                         checked={ok}
-                                        disabled={isSaving}
+                                        disabled={isSaving || readOnly}
                                         onChange={(e) => toggleItem(r.job_id, it.key, e.target.checked ? 'check' : 'uncheck')}
-                                        style={{ width: 16, height: 16, accentColor: '#065F46', cursor: isSaving ? 'wait' : 'pointer' }}
+                                        style={{ width: 16, height: 16, accentColor: '#065F46', cursor: readOnly ? 'not-allowed' : (isSaving ? 'wait' : 'pointer'), opacity: readOnly ? 0.6 : 1 }}
                                       />
                                       <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 600, color: ok ? '#065F46' : '#1A1A1A' }}>{it.label}</div>
@@ -381,7 +385,7 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav }) {
                                         )}
                                         {na && <div style={{ fontSize: 10, color: '#625650', marginTop: 2 }}>marked N/A</div>}
                                       </div>
-                                      {!checked && (
+                                      {!checked && !readOnly && (
                                         <button
                                           onClick={() => toggleItem(r.job_id, it.key, na ? 'uncheck' : 'not_applicable')}
                                           disabled={isSaving}

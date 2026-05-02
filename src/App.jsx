@@ -90,12 +90,30 @@ const INSTALL_DATE_EDIT_EMAILS = new Set([
   'yuda@fencecrete.com',
   'nathan@fencecrete.com',
   'ryne@fencecrete.com',
+  'mdean@fencecrete.com',  // Mike Dean — Dallas (added 2026-05-02)
   // PMs
   'ray@fencecrete.com',
   'manuel@fencecrete.com',
   'jr@fencecrete.com',
   'doug@fencecrete.com',
 ]);
+
+// Contracts Workbench: full edit access via canEditProjects (Amiee, Alex,
+// David, Carlos, contracts@). Sales reps get VIEW-ONLY access — they can
+// see what's blocking their own contracts and pressure the right person,
+// but can't tick the manual items themselves (those are Amiee's call).
+const WORKBENCH_VIEW_EMAILS = new Set([
+  'matt@fencecrete.com',
+  'laura@fencecrete.com',
+  'yuda@fencecrete.com',
+  'nathan@fencecrete.com',
+  'ryne@fencecrete.com',
+  'mdean@fencecrete.com',  // Mike Dean — Dallas (added 2026-05-02)
+]);
+const canViewWorkbench = (email) => {
+  const e = (email||'').toLowerCase().trim();
+  return EDIT_EMAILS.has(e) || WORKBENCH_VIEW_EMAILS.has(e);
+};
 const canEditInstallDate = (email) => {
   const e = (email||'').toLowerCase().trim();
   return EDIT_EMAILS.has(e) || STATUS_EDIT_EMAILS.has(e) || REOPEN_EMAILS.has(e) || INSTALL_DATE_EDIT_EMAILS.has(e);
@@ -24191,10 +24209,10 @@ const NAV_GROUPS=[
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
   {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'demand_planning',label:'Demand Planning',icon:'📊'},{key:'crew_assignment',label:'Crew Assignment',icon:'👷'},{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
-  {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'},{key:'contracts_workbench',label:'Contracts Workbench',icon:'📋'}]},
+  {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'cv_reconciliation',label:'Contract Reconciliation',icon:'⚖️'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
-  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'proposal_validator',label:'Proposal Validator',icon:'✅'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'contracts_workbench',label:'Contracts Workbench',icon:'📋'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'proposal_validator',label:'Proposal Validator',icon:'✅'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -24761,7 +24779,7 @@ function AppShell(){
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
             {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
             {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage currentUserEmail={currentUserEmail} currentUserName={profile?.full_name||null}/></ErrorBoundary>}
-            {page==='contracts_workbench'&&canEditProjects(currentUserEmail)&&<ErrorBoundary label="Contracts Workbench"><ContractsWorkbenchPage currentUserEmail={currentUserEmail} onNav={navigateTo}/></ErrorBoundary>}
+            {page==='contracts_workbench'&&canViewWorkbench(currentUserEmail)&&<ErrorBoundary label="Contracts Workbench"><ContractsWorkbenchPage currentUserEmail={currentUserEmail} onNav={navigateTo} readOnly={!canEditProjects(currentUserEmail)}/></ErrorBoundary>}
             {page==='crew_leaders_admin'&&isAdmin&&<ErrorBoundary label="Crew Leaders"><CrewLeadersAdminPage/></ErrorBoundary>}
           </>}
         </div>
