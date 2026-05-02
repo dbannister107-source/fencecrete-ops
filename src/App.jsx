@@ -12497,20 +12497,23 @@ function DemandPlanningPage(){
   const[molds,setMolds]=useState([]);
   const[crewLeaders,setCrewLeaders]=useState([]);
   const[invoices,setInvoices]=useState([]);
+  const[installRates,setInstallRates]=useState([]);
   const[error,setError]=useState(null);
 
   useEffect(()=>{
     setLoading(true);
     Promise.all([
-      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,ytd_invoiced,left_to_bill,contract_date,est_start_date,pm,crew_leader_id'),
+      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,ytd_invoiced,left_to_bill,contract_date,est_start_date,est_complete_date,install_duration_days,install_rate_override,pm,crew_leader_id'),
       sbGet('mold_inventory','select=style_name,mold_type,total_molds&mold_type=eq.panel'),
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=invoice_amount,invoice_date,job_id&order=invoice_date.desc'),
-    ]).then(([j,m,cl,inv])=>{
+      sbGet('install_rates','select=*&order=category.asc'),
+    ]).then(([j,m,cl,inv,ir])=>{
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
       setInvoices(Array.isArray(inv)?inv:[]);
+      setInstallRates(Array.isArray(ir)?ir:[]);
       setLoading(false);
     }).catch(e=>{setError(e.message);setLoading(false);});
   },[]);
@@ -12560,20 +12563,22 @@ function DemandPlanningPage(){
     const out={};
     activeInstallJobs.forEach(j=>{
       const mkt=j.market||'(unknown)';
-      if(!out[mkt])out[mkt]={market:mkt,label:SHORT_TO_LABEL[mkt]||mkt,active_lf:0,active_jobs:0,leaders:0,uses_subs:false};
+      if(!out[mkt])out[mkt]={market:mkt,label:SHORT_TO_LABEL[mkt]||mkt,active_lf:0,active_jobs:0,leaders:0,total_install_days:0,uses_subs:false};
       out[mkt].active_lf+=Number(j.total_lf)||0;
       out[mkt].active_jobs+=1;
+      out[mkt].total_install_days+=Number(j.install_duration_days)||0;
     });
     crewLeaders.forEach(cl=>{
       const short=MKT_LONG_TO_SHORT[cl.market];
       if(!short)return;
-      if(!out[short])out[short]={market:short,label:cl.market,active_lf:0,active_jobs:0,leaders:0,uses_subs:false};
+      if(!out[short])out[short]={market:short,label:cl.market,active_lf:0,active_jobs:0,leaders:0,total_install_days:0,uses_subs:false};
       out[short].leaders+=1;
     });
-    // Mark sub markets
     ['DFW','AUS','CS'].forEach(m=>{if(out[m])out[m].uses_subs=true;});
     Object.values(out).forEach(r=>{
       r.lf_per_leader=r.leaders>0?(r.active_lf/r.leaders):null;
+      r.days_per_leader=r.leaders>0?(r.total_install_days/r.leaders):null;
+      r.weeks_per_leader=r.days_per_leader!=null?(r.days_per_leader/5):null;  // 5 working days/wk
     });
     return Object.values(out).sort((a,b)=>b.active_lf-a.active_lf);
   },[activeInstallJobs,crewLeaders]);
@@ -12606,6 +12611,50 @@ function DemandPlanningPage(){
     });
     return Object.values(out).sort((a,b)=>b.ltb-a.ltb);
   },[openJobs,invoices]);
+
+  // 13-week schedule: project install completion week-by-week using
+  // est_start_date + install_duration_days. Bucket jobs into Sunday-anchored
+  // weeks. Jobs missing start date are stratified into "unscheduled".
+  const scheduleByWeek=useMemo(()=>{
+    const weeks=[];
+    const today=new Date();
+    today.setHours(0,0,0,0);
+    // Anchor to Sunday of this week
+    const startOfThisWeek=new Date(today);
+    startOfThisWeek.setDate(today.getDate()-today.getDay());
+    for(let i=0;i<13;i++){
+      const wk=new Date(startOfThisWeek);
+      wk.setDate(startOfThisWeek.getDate()+i*7);
+      const wkEnd=new Date(wk);wkEnd.setDate(wk.getDate()+7);
+      weeks.push({
+        idx:i,start:wk,end:wkEnd,
+        label:wk.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
+        installs_starting:[],installs_completing:[],lf_starting:0,lf_completing:0,$_completing:0,
+      });
+    }
+    let unscheduled_jobs=0,unscheduled_lf=0;
+    openJobs.forEach(j=>{
+      if(!j.est_start_date||!j.install_duration_days){
+        unscheduled_jobs++;unscheduled_lf+=Number(j.total_lf)||0;
+        return;
+      }
+      const start=new Date(j.est_start_date);
+      const complete=j.est_complete_date?new Date(j.est_complete_date):null;
+      // Find which week start falls into
+      const startWk=weeks.find(w=>start>=w.start&&start<w.end);
+      if(startWk){
+        startWk.installs_starting.push(j);
+        startWk.lf_starting+=Number(j.total_lf)||0;
+      }
+      const compWk=complete?weeks.find(w=>complete>=w.start&&complete<w.end):null;
+      if(compWk){
+        compWk.installs_completing.push(j);
+        compWk.lf_completing+=Number(j.total_lf)||0;
+        compWk.$_completing+=Number(j.adj_contract_value)||0;
+      }
+    });
+    return{weeks,unscheduled_jobs,unscheduled_lf};
+  },[openJobs]);
 
   // Aging buckets (job-age based, contract_date)
   const agingBuckets=useMemo(()=>{
@@ -12644,12 +12693,13 @@ function DemandPlanningPage(){
           {openJobs.length} open jobs · {fmtLF(openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0))} backlog · {fmt$(openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0))} contract value
         </div>
       </div>
-      <div style={{fontSize:11,color:'#9E9B96'}}>v0 · supply-side visibility</div>
+      <div style={{fontSize:11,color:'#9E9B96'}}>v0.2 · install-duration model live</div>
     </div>
 
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
       {tabBtn('plant','Plant Load')}
       {tabBtn('crew','Crew Load')}
+      {tabBtn('schedule','13-Week Schedule')}
       {tabBtn('cash','Cash Conversion')}
     </div>
 
@@ -12693,26 +12743,65 @@ function DemandPlanningPage(){
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
             <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
-              {['Market','Active LF','Jobs','Crew Leaders','LF / Leader','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+              {['Market','Active LF','Jobs','Crew Leaders','Install-Days Backlog','Days/Leader','Weeks/Leader'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
             </tr></thead>
             <tbody>
               {crewLoadByMarket.map(r=><tr key={r.market} style={{borderBottom:'1px solid #F4F4F2'}}>
-                <td style={{padding:'10px 12px',fontWeight:600}}>{r.label}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{r.label}{r.uses_subs&&<div style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>subs handle bulk</div>}</td>
                 <td style={{padding:'10px 12px',fontWeight:600}}>{fmtLF(r.active_lf)}</td>
                 <td style={{padding:'10px 12px'}}>{r.active_jobs}</td>
                 <td style={{padding:'10px 12px'}}>{r.uses_subs?<span style={{color:'#9E9B96'}}>{r.leaders} (W-2 only)</span>:r.leaders}</td>
-                <td style={{padding:'10px 12px',fontWeight:700,color:r.lf_per_leader>5000?'#8A261D':r.lf_per_leader>2500?'#B45309':'#1A1A1A'}}>{r.lf_per_leader!=null?fmtLF(r.lf_per_leader):'—'}</td>
-                <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.uses_subs?'Subcontractors handle bulk; W-2 leaders are SA crews driving up':''}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{r.total_install_days!=null?Math.round(r.total_install_days)+' days':'—'}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:r.days_per_leader>30?'#8A261D':r.days_per_leader>15?'#B45309':'#1A1A1A'}}>{r.days_per_leader!=null?Math.round(r.days_per_leader)+' d':'—'}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:r.weeks_per_leader>6?'#8A261D':r.weeks_per_leader>3?'#B45309':'#1A1A1A'}}>{r.weeks_per_leader!=null?fmtN(r.weeks_per_leader)+' wk':'—'}</td>
               </tr>)}
             </tbody>
           </table>
         </div>
         <div style={captionStyle}>
-          LF per leader = active install LF ÷ # of W-2 crew leaders in that market. <b>Higher = more concentration risk.</b> A leader can typically install 800-1500 LF/week (style-dependent), so dividing this column by ~1000 gives weeks of work in flight per leader.
+          Install-Days Backlog = sum of <code>install_duration_days</code> across active install jobs (computed from each job's LF ÷ style-specific install rate). Days/Leader = backlog ÷ # of W-2 crew leaders. <b>This is a real measurement, not an assumption.</b> Rates calibrate as PM Daily Reports accumulate.
         </div>
       </div>
-      {crewLoadByMarket.find(r=>r.market==='HOU'&&r.lf_per_leader>5000)&&<div style={{...noteStyle,background:'#FEE2E2',borderColor:'#FCA5A5',color:'#991B1B'}}>
-        <b>⚠️ Houston concentration risk:</b> {fmtLF(crewLoadByMarket.find(r=>r.market==='HOU')?.active_lf)} of active install across {crewLoadByMarket.find(r=>r.market==='HOU')?.leaders} W-2 crew leaders ({fmtLF(crewLoadByMarket.find(r=>r.market==='HOU')?.lf_per_leader)} per leader). Single-point-of-failure exposure.
+      {crewLoadByMarket.find(r=>r.market==='HOU'&&r.weeks_per_leader>6)&&<div style={{...noteStyle,background:'#FEE2E2',borderColor:'#FCA5A5',color:'#991B1B'}}>
+        <b>⚠️ Houston concentration risk:</b> {Math.round(crewLoadByMarket.find(r=>r.market==='HOU')?.total_install_days||0)} install-days across {crewLoadByMarket.find(r=>r.market==='HOU')?.leaders} W-2 crew leaders ({fmtN(crewLoadByMarket.find(r=>r.market==='HOU')?.weeks_per_leader)} weeks per leader). Single-point-of-failure exposure.
+      </div>}
+    </div>}
+
+    {/* ─── 13-WEEK SCHEDULE TAB ─── */}
+    {tab==='schedule'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Projected Install Glide Path — Next 13 Weeks</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Week','Starting','LF Starting','Completing','LF Completing','Revenue Completing'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {scheduleByWeek.weeks.map(w=><tr key={w.idx} style={{borderBottom:'1px solid #F4F4F2',background:w.idx===0?'#FDF4F4':'#FFF'}}>
+                <td style={{padding:'10px 12px',fontWeight:w.idx===0?700:600,color:w.idx===0?'#8A261D':'#1A1A1A'}}>{w.idx===0?'This week — ':''}{w.label}</td>
+                <td style={{padding:'10px 12px'}}>{w.installs_starting.length||<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{w.lf_starting>0?fmtLF(w.lf_starting):<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'10px 12px'}}>{w.installs_completing.length||<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{w.lf_completing>0?fmtLF(w.lf_completing):<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:w.$_completing>0?'#0F6E56':'#9E9B96'}}>{w.$_completing>0?fmt$(w.$_completing):'—'}</td>
+              </tr>)}
+              <tr style={{background:'#F9F8F6',fontWeight:700,borderTop:'2px solid #E5E3E0'}}>
+                <td style={{padding:'10px 12px'}}>13-Week Total</td>
+                <td style={{padding:'10px 12px'}}>{scheduleByWeek.weeks.reduce((s,w)=>s+w.installs_starting.length,0)}</td>
+                <td style={{padding:'10px 12px'}}>{fmtLF(scheduleByWeek.weeks.reduce((s,w)=>s+w.lf_starting,0))}</td>
+                <td style={{padding:'10px 12px'}}>{scheduleByWeek.weeks.reduce((s,w)=>s+w.installs_completing.length,0)}</td>
+                <td style={{padding:'10px 12px'}}>{fmtLF(scheduleByWeek.weeks.reduce((s,w)=>s+w.lf_completing,0))}</td>
+                <td style={{padding:'10px 12px',color:'#0F6E56'}}>{fmt$(scheduleByWeek.weeks.reduce((s,w)=>s+w.$_completing,0))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          Forecast based on each job's <code>est_start_date</code> + computed <code>install_duration_days</code> (from style-specific install rate). Revenue completing = adj_contract_value of jobs projected to finish that week.
+        </div>
+      </div>
+      {scheduleByWeek.unscheduled_jobs>0&&<div style={{...noteStyle,marginTop:14}}>
+        <b>{scheduleByWeek.unscheduled_jobs} jobs ({fmtLF(scheduleByWeek.unscheduled_lf)})</b> excluded from glide path — missing est_start_date or install_duration_days. These jobs are real backlog that isn't yet on the schedule. Owner: PMs need to assign start dates during contract review.
       </div>}
     </div>}
 
@@ -12761,7 +12850,7 @@ function DemandPlanningPage(){
       <ul style={{fontSize:12,color:'#625650',lineHeight:1.8,margin:0,paddingLeft:20}}>
         <li><b>Mold turn rate instrumentation</b> (Max, ~2 weeks): replaces the "1 turn/day" assumption with measured cycle time per style</li>
         <li><b>PM Daily Report compliance</b> (Carlos, ongoing): once 80% of active jobs have daily LF reports, crew capacity rates become per-leader calibrated</li>
-        <li><b>install_duration_days field</b> (David): enables real schedule generation — currently no job has an estimated complete date</li>
+        <li><b><s>install_duration_days field</s></b> ✅ shipped — every job now has a computed install duration & complete date based on style-specific install rates. Override per job via PM input. Rates calibrate as PM Daily Reports accumulate.</li>
         <li><b>Style canonicalization</b> ({missingStyle} jobs missing style): closes the data gap that's understating plant load</li>
         <li><b>Crew leader assignment</b> (Carlos + PMs): currently 0 of {openJobs.length} active jobs have crew_leader_id — without it, crew utilization can't be measured per leader</li>
       </ul>
