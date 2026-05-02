@@ -12466,6 +12466,26 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// Crew Leader dropdown — used by PM Daily Report. Loads roster lazily;
+// filters by jobMarket unless 'Show all markets' is toggled.
+function CrewLeaderSelect({value,onChange,jobMarket,style}){
+  const[leaders,setLeaders]=useState([]);
+  const[showAll,setShowAll]=useState(false);
+  useEffect(()=>{sbGet('crew_leaders','select=*&active=eq.true&order=market.asc,name.asc').then(d=>setLeaders(d||[]));},[]);
+  const filtered=showAll?leaders:leaders.filter(cl=>!jobMarket||cl.market===jobMarket);
+  return(<div>
+    <select value={value||''} onChange={e=>{const id=e.target.value;const cl=leaders.find(x=>x.id===id);onChange(id,cl?cl.name:'');}} style={style}>
+      <option value="">— Select —</option>
+      {filtered.length===0&&<option disabled>No crew leaders for {jobMarket||'this market'}</option>}
+      {filtered.map(cl=><option key={cl.id} value={cl.id}>{cl.name}{showAll?` (${cl.market})`:''}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')}`:''}</option>)}
+    </select>
+    <label style={{fontSize:11,color:'#625650',display:'flex',alignItems:'center',gap:4,marginTop:4,cursor:'pointer'}}>
+      <input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)} style={{margin:0}}/>
+      Show all markets
+    </label>
+  </div>);
+}
+
 function PMDailyReportPage({jobs}){
   useCatalog(); // subscribe for canonical style/color catalog re-render
   const isMobile=useIsMobile();
@@ -12489,7 +12509,7 @@ function PMDailyReportPage({jobs}){
     if(!ts)return false;
     return ctDateStr(ts)===ctDateStr(Date.now());
   };
-  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
+  const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:'',crew_leader_id:'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
   const reportToForm=(r)=>{
     const str=(v)=>(v==null?'':String(v));
     return{
@@ -12497,6 +12517,7 @@ function PMDailyReportPage({jobs}){
       repair_location:r.repair_location||'',
       job_type:r.job_type||'Commercial',
       crew:r.crew||'',
+      crew_leader_id:r.crew_leader_id||'',
       num_employees:str(r.employee_count),
       daily_target:r.daily_target||'',
       gate_style:r.gate_style||'Precast',
@@ -12554,7 +12575,7 @@ function PMDailyReportPage({jobs}){
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
   const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.pm===selPM),[jobs,selPM]);
-  const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
+  const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');set('crew_leader_id',job.crew_leader_id||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
@@ -12588,6 +12609,7 @@ function PMDailyReportPage({jobs}){
       repair_location:form.repair_location,
       job_type:form.job_type,
       crew:form.crew,
+      crew_leader_id:form.crew_leader_id||null,
       employee_count:n(form.num_employees),
       daily_target:form.daily_target,
       gate_style:form.gate_style,
@@ -12758,7 +12780,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={mSel}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Crew</label><input value={form.crew} onChange={e=>set('crew',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Crew Leader</label><CrewLeaderSelect value={form.crew_leader_id} onChange={(id,name)=>{setForm(p=>({...p,crew_leader_id:id||'',crew:name||''}));}} jobMarket={(()=>{const j=jobs.find(j=>j.id===selJobId);return j?j.market:'';})()} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={mInp}/></div>
           <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -13575,6 +13597,18 @@ function MapPage({ jobs, onNav }) {
     return m;
   }, [crews]);
 
+  // Crew leader roster (W-2 only; subs handled separately in the future)
+  const [crewLeaders, setCrewLeaders] = useState([]);
+  const [showAllCrewLeaders, setShowAllCrewLeaders] = useState(false);
+  useEffect(() => {
+    sbGet('crew_leaders', 'select=*&active=eq.true&order=market.asc,name.asc').then(d => setCrewLeaders(d || []));
+  }, []);
+  const crewLeaderById = useMemo(() => {
+    const m = {};
+    crewLeaders.forEach(cl => { m[cl.id] = cl; });
+    return m;
+  }, [crewLeaders]);
+
   // ═══ DERIVED ═══
   const ACTIVE_INSTALL_STATUSES = ['production_queue','in_production','material_ready','active_install','fence_complete'];
 
@@ -14109,6 +14143,17 @@ function MapPage({ jobs, onNav }) {
     }
   };
 
+  const assignCrewLeader = async (jobId, leaderId) => {
+    try {
+      await sbPatch('jobs', jobId, { crew_leader_id: leaderId || null });
+      if (selected && selected.id === jobId) {
+        setSelected({ ...selected, crew_leader_id: leaderId || null });
+      }
+    } catch (e) {
+      console.error('[MapPage] assignCrewLeader failed:', e);
+    }
+  };
+
   // ═══ RENDER ═══
   const HORIZON_OPTIONS = [
     { val: 'this_week', label: 'This Week', group: 'wk' },
@@ -14443,6 +14488,29 @@ function MapPage({ jobs, onNav }) {
               {selected.crew_id && crewById[selected.crew_id] && <div style={{ marginTop: 6, fontSize: 11, color: '#625650' }}>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: crewById[selected.crew_id].color_hex, border: '1px solid #1A1A1A', marginRight: 6, verticalAlign: 'middle' }} />
                 Foreman: {crewById[selected.crew_id].lead_foreman || '(unassigned)'}
+              </div>}
+            </div>
+
+            {/* Crew Leader assignment (W-2 roster) */}
+            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5 }}>Crew Leader</div>
+                <label style={{ fontSize: 10, color: '#625650', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showAllCrewLeaders} onChange={e => setShowAllCrewLeaders(e.target.checked)} style={{ margin: 0 }} />
+                  Show all markets
+                </label>
+              </div>
+              {(() => {
+                const jobMarket = selected.market || '';
+                const filtered = showAllCrewLeaders ? crewLeaders : crewLeaders.filter(cl => !jobMarket || cl.market === jobMarket);
+                return <select value={selected.crew_leader_id || ''} onChange={e => assignCrewLeader(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
+                  <option value="">— Unassigned —</option>
+                  {filtered.length === 0 && <option disabled>No crew leaders for {jobMarket}</option>}
+                  {filtered.map(cl => <option key={cl.id} value={cl.id}>{cl.name}{showAllCrewLeaders ? ` (${cl.market})` : ''}{cl.role && cl.role !== 'Crew Leader' ? ` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/, '')}` : ''}</option>)}
+                </select>;
+              })()}
+              {selected.crew_leader_id && crewLeaderById[selected.crew_leader_id] && <div style={{ marginTop: 6, fontSize: 11, color: '#625650' }}>
+                {crewLeaderById[selected.crew_leader_id].role} · {crewLeaderById[selected.crew_leader_id].market}
               </div>}
             </div>
             <button onClick={() => onNav && onNav('projects', selected)} style={{ ...btnS, marginTop: 12, width: '100%', fontSize: 12 }}>Open in Projects →</button>
