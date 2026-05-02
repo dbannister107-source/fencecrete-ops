@@ -13950,8 +13950,8 @@ function MapPage({ jobs, onNav }) {
         if (!matchesAny && !matchesSpecific) return false;
       }
       if (crewF !== 'All') {
-        if (crewF === '__unassigned__' && j.crew_id) return false;
-        if (crewF !== '__unassigned__' && j.crew_id !== crewF) return false;
+        if (crewF === '__unassigned__' && j.crew_leader_id) return false;
+        if (crewF !== '__unassigned__' && j.crew_leader_id !== crewF) return false;
       }
       return true;
     });
@@ -14126,8 +14126,14 @@ function MapPage({ jobs, onNav }) {
   // ═══ COLOR LOGIC ═══
   const colorForJob = useCallback((j) => {
     if (colorMode === 'crew') {
-      if (!j.crew_id) return '#9CA3AF'; // gray for unassigned
-      return crewById[j.crew_id]?.color_hex || '#9CA3AF';
+      if (!j.crew_leader_id) return '#9CA3AF'; // gray for unassigned
+      // Stable color per leader: hash uuid → HSL. Same leader always gets
+      // the same pin color across page loads without needing a stored value.
+      const uuid = j.crew_leader_id;
+      let h = 0;
+      for (let i = 0; i < uuid.length; i++) h = (h * 31 + uuid.charCodeAt(i)) & 0xffffffff;
+      const hue = Math.abs(h) % 360;
+      return `hsl(${hue}, 65%, 45%)`;
     }
     if (colorMode === 'market') {
       return MKT_PIN[j.market] || '#9CA3AF';
@@ -14140,7 +14146,7 @@ function MapPage({ jobs, onNav }) {
     if (r === 'production_risk') return '#EAB308';// yellow
     if (r === 'ready') return '#16A34A';          // green
     return '#9CA3AF';
-  }, [colorMode, crewById, getReadiness]);
+  }, [colorMode, getReadiness]);
 
   // ═══ MAP REF + LIFECYCLE ═══
   const mapContainerRef = useRef(null);
@@ -14321,7 +14327,12 @@ function MapPage({ jobs, onNav }) {
 
   // Fetch unique PMs & products for the filter dropdowns
   const pmOptions = useMemo(() => {
-    const s = new Set(); jobs.forEach(j => { if (j.pm) s.add(j.pm); });
+    // Union of PMs actually assigned to jobs + the master PM_LIST. Ensures
+    // newly-onboarded PMs (e.g., Hugo, Israel) appear in the filter even
+    // before they own any jobs in the system.
+    const s = new Set();
+    jobs.forEach(j => { if (j.pm) s.add(j.pm); });
+    PM_LIST.forEach(p => s.add(p.id));
     return ['All', ...[...s].sort()];
   }, [jobs]);
   const productOptions = useMemo(() => {
@@ -14330,11 +14341,11 @@ function MapPage({ jobs, onNav }) {
   }, [jobs]);
   const crewOptions = useMemo(() => {
     return [
-      { id: 'All', name: 'All Crews' },
+      { id: 'All', name: 'All Crew Leaders' },
       { id: '__unassigned__', name: 'Unassigned' },
-      ...crews
+      ...crewLeaders.map(cl => ({ id: cl.id, name: cl.name, market: cl.market, role: cl.role })),
     ];
-  }, [crews]);
+  }, [crewLeaders]);
 
   // ═══ HANDLERS ═══
   const flyToJob = (j) => {
@@ -14461,7 +14472,7 @@ function MapPage({ jobs, onNav }) {
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Color By</div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {[['status','Readiness'],['crew','Crew'],['market','Market']].map(([v,lab]) => <button key={v} onClick={() => setColorMode(v)} style={{
+          {[['status','Readiness'],['crew','Crew Lead'],['market','Market']].map(([v,lab]) => <button key={v} onClick={() => setColorMode(v)} style={{
             padding: '6px 12px', borderRadius: 8,
             border: `1px solid ${colorMode === v ? '#1A1A1A' : '#E5E3E0'}`,
             background: colorMode === v ? '#1A1A1A' : '#FFF',
@@ -14567,8 +14578,8 @@ function MapPage({ jobs, onNav }) {
         </select>
       </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontWeight: 700, color: '#625650' }}>Crew</span>
-        <select value={crewF} onChange={e => setCrewF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 140 }}>
+        <span style={{ fontWeight: 700, color: '#625650' }}>Crew Lead</span>
+        <select value={crewF} onChange={e => setCrewF(e.target.value)} style={{ ...inputS, padding: '4px 8px', fontSize: 12, width: 180 }}>
           {crewOptions.map(c => <option key={c.id} value={c.id}>{c.name}{c.market ? ` (${c.market})` : ''}</option>)}
         </select>
       </label>
@@ -14637,11 +14648,16 @@ function MapPage({ jobs, onNav }) {
             </div>
           </>}
           {colorMode === 'crew' && <>
-            <div style={{ fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9, marginBottom: 4 }}>Crews ({crews.length})</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: 400 }}>
-              {crews.map(c => <span key={c.id} title={c.name} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 5, background: c.color_hex, border: '1px solid #1A1A1A' }} />{c.name}
-              </span>)}
+            <div style={{ fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9, marginBottom: 4 }}>Crew Leaders ({crewLeaders.length})</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: 480, maxHeight: 96, overflowY: 'auto' }}>
+              {crewLeaders.map(cl => {
+                let h = 0; for (let i = 0; i < cl.id.length; i++) h = (h * 31 + cl.id.charCodeAt(i)) & 0xffffffff;
+                const hue = Math.abs(h) % 360;
+                const color = `hsl(${hue}, 65%, 45%)`;
+                return <span key={cl.id} title={`${cl.name} · ${cl.market}`} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: color, border: '1px solid #1A1A1A' }} />{cl.name.split(' ')[0]}
+                </span>;
+              })}
               <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 5, background: '#9CA3AF', border: '1px solid #1A1A1A' }} />Unassigned
               </span>
@@ -14695,19 +14711,6 @@ function MapPage({ jobs, onNav }) {
                 </div>
               </div>
             </div>
-            {/* Crew assignment */}
-            <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Crew Assignment</div>
-              <select value={selected.crew_id || ''} onChange={e => assignCrew(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
-                <option value="">— Unassigned —</option>
-                {crews.map(c => <option key={c.id} value={c.id}>{c.name}{c.market ? ` (${c.market})` : ''}</option>)}
-              </select>
-              {selected.crew_id && crewById[selected.crew_id] && <div style={{ marginTop: 6, fontSize: 11, color: '#625650' }}>
-                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: crewById[selected.crew_id].color_hex, border: '1px solid #1A1A1A', marginRight: 6, verticalAlign: 'middle' }} />
-                Foreman: {crewById[selected.crew_id].lead_foreman || '(unassigned)'}
-              </div>}
-            </div>
-
             {/* Crew Leader assignment (W-2 roster) */}
             <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
