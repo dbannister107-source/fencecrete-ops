@@ -25,6 +25,7 @@ import MyPlatePage from './features/my-plate/MyPlatePage';
 import PISFormPage from './features/pis/PISFormPage';
 import SharePointLinksPage from './features/sharepoint-links/SharePointLinksPage';
 import CustomerMasterPage from './features/customer-master/CustomerMasterPage';
+import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWorkbenchPage';
 // Module-level setter exported by shared/sb.js so feature modules' H stays
 // in sync with App.jsx's H whenever auth state changes. Called alongside
 // every applyAuthToken() call below.
@@ -4046,7 +4047,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const now=new Date();const compThisMonth=jobs.filter(j=>j.complete_date&&new Date(j.complete_date).getMonth()===now.getMonth()&&new Date(j.complete_date).getFullYear()===now.getFullYear()).length;
   const largest=[...active].sort((a,b)=>n(b.adj_contract_value||b.contract_value)-n(a.adj_contract_value||a.contract_value))[0];
   const oldestUnbilled=alerts[0];
-  const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
+  const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','changed_by=not.in.(system_auto_fix,desktop)&order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
   // Capacity snapshot (mold + batch CY) for today — correct math: panels × cy × 1.4, mold capacity = molds × panels × 0.88
   const[capSnap,setCapSnap]=useState({panelsPlanned:0,panelCapacity:0,cyPlanned:0,cyCap:52.8});
   useEffect(()=>{(async()=>{try{
@@ -13629,6 +13630,22 @@ function DemandPlannerCopilot({tab,data}){
       if(cr.blocked_by_manual_only>0){
         out.push({severity:'gap',icon:'☑️',title:`${cr.blocked_by_manual_only} job${cr.blocked_by_manual_only>1?'s':''} blocked only by unchecked manual items`,body:`Job data is complete but the sales rep hasn't ticked the readiness checklist (PIS, deposit, payment terms, etc.). Open each job's Contract tab and complete the checklist.`});
       }
+    }
+
+    // Schedule slip — active_install jobs whose est_complete_date has
+    // passed. PMs don't reliably update est_complete_date themselves, so
+    // these are visible only by surfacing them. Bucketed by PM.
+    const today=new Date();today.setHours(0,0,0,0);
+    const lateInstalls=activeInstallJobs.filter(j=>{
+      if(!j.est_complete_date)return false;
+      const d=new Date(j.est_complete_date);
+      return d<today;
+    });
+    if(lateInstalls.length>0){
+      const byPm={};
+      lateInstalls.forEach(j=>{const k=j.pm||'(no PM)';byPm[k]=(byPm[k]||0)+1;});
+      const pmList=Object.entries(byPm).sort((a,b)=>b[1]-a[1]).map(([pm,n])=>`${pm} (${n})`).join(', ');
+      out.push({severity:'warning',icon:'⏰',title:`${lateInstalls.length} active install job${lateInstalls.length>1?'s':''} past estimated completion date`,body:`Schedule slip: ${pmList}. PMs need to either complete the job in OPS or update the est_complete_date if it's been pushed.`});
     }
 
     if(noCrewLeaderJobs>0){
@@ -23509,6 +23526,7 @@ const PAGE_LABELS={
   crew_leaders_admin:'Crew Leaders',
   crew_assignment:'Crew Assignment',
   demand_planning:'Demand Planning',
+  contracts_workbench:'Contracts Workbench',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -24127,7 +24145,7 @@ const NAV_GROUPS=[
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
   {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'demand_planning',label:'Demand Planning',icon:'📊'},{key:'crew_assignment',label:'Crew Assignment',icon:'👷'},{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
-  {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'}]},
+  {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'},{key:'contracts_workbench',label:'Contracts Workbench',icon:'📋'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'cv_reconciliation',label:'Contract Reconciliation',icon:'⚖️'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
   {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'proposal_validator',label:'Proposal Validator',icon:'✅'},{key:'contacts',label:'Contacts',icon:'👤'}]},
@@ -24697,6 +24715,7 @@ function AppShell(){
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
             {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
             {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage currentUserEmail={currentUserEmail} currentUserName={profile?.full_name||null}/></ErrorBoundary>}
+            {page==='contracts_workbench'&&canEditProjects(currentUserEmail)&&<ErrorBoundary label="Contracts Workbench"><ContractsWorkbenchPage currentUserEmail={currentUserEmail} onNav={navigateTo}/></ErrorBoundary>}
             {page==='crew_leaders_admin'&&isAdmin&&<ErrorBoundary label="Crew Leaders"><CrewLeadersAdminPage/></ErrorBoundary>}
           </>}
         </div>
