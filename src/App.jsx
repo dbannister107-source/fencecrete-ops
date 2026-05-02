@@ -12625,6 +12625,31 @@ function ProposalValidatorPage(){
       if(d.error)throw new Error(d.error);
       setResult(d.result);
       setUsage({tokens_in:d.tokens_in,tokens_out:d.tokens_out,model:d.model});
+      // Audit log: every validation run is recorded so we can measure
+      // adoption per rep, error trends over time, and gate submission later.
+      try{
+        const r=d.result||{};
+        const errs=Array.isArray(r.errors)?r.errors:[];
+        await fetch(`${SB}/rest/v1/proposal_validations`,{
+          method:'POST',
+          headers:{...H,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body:JSON.stringify({
+            validated_by_email:auth?.user?.email||'unknown',
+            validated_by_name:auth?.profile?.name||null,
+            source:mode,
+            filename:pdfFile?.name||null,
+            passed:!!r.passed,
+            summary:r.summary||null,
+            error_count:errs.length,
+            critical_error_count:errs.filter(e=>e.severity==='critical').length,
+            recompute_delta:r.recompute_delta||null,
+            result:r,
+            tokens_in:d.tokens_in||null,
+            tokens_out:d.tokens_out||null,
+            model:d.model||null,
+          }),
+        });
+      }catch(logErr){console.warn('[ProposalValidator] audit log failed:',logErr);}
     }catch(e){setError(e.message);}
     setBusy(false);
   };
@@ -12953,6 +12978,240 @@ function DigestSender(){
   </div>;
 }
 
+// ═══ CO-PILOT HOME ═══
+// Standalone wrapper that fetches the data the Co-Pilot needs and renders it
+// at the top of the main /dashboard. Decoupled from DemandPlanningPage so the
+// home view loads fast even if the user never opens Operations.
+//
+// Design choice: we duplicate ~80 lines of fetch+memo from DemandPlanningPage
+// rather than refactoring that 51k-char component into a shared hook today.
+// When App.jsx is refactored into a parallel Next.js shell, both consumers
+// will share a useDemandPlanningSnapshot() hook in the new codebase.
+function CoPilotHome({onNav}){
+  const auth=useAuth();
+  const[loading,setLoading]=useState(true);
+  const[err,setErr]=useState(null);
+  const[jobs,setJobs]=useState([]);
+  const[crewLeaders,setCrewLeaders]=useState([]);
+  const[reports,setReports]=useState([]);
+  const[leads,setLeads]=useState([]);
+  const[validations,setValidations]=useState([]);
+  const[recentProposals,setRecentProposals]=useState([]);
+  const[invoices,setInvoices]=useState([]);
+  const[installRates,setInstallRates]=useState([]);
+  const[molds,setMolds]=useState([]);
+
+  useEffect(()=>{
+    Promise.all([
+      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,left_to_bill,ytd_invoiced,est_start_date,est_complete_date,install_duration_days,install_rate_override,crew_leader_id,pm,contract_date'),
+      sbGet('mold_inventory','select=*'),
+      sbGet('crew_leaders','select=*&active=eq.true'),
+      sbGet('invoice_entries','select=job_id,invoice_amount,invoice_date&order=invoice_date.desc&limit=2000'),
+      sbGet('install_rates','select=*&order=category.asc'),
+      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date&lf_panels_installed=gt.0'),
+      sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
+      sbGet('proposal_validations','select=id,validated_at,validated_by_email,passed&order=validated_at.desc&limit=200'),
+      sbGet('leads','select=id,sales_rep,stage,proposal_sent_date,proposal_value&proposal_sent_date=gte.'+new Date(Date.now()-30*86400000).toISOString().slice(0,10)),
+    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30])=>{
+      setJobs(Array.isArray(j)?j:[]);
+      setMolds(Array.isArray(m)?m:[]);
+      setCrewLeaders(Array.isArray(cl)?cl:[]);
+      setInvoices(Array.isArray(inv)?inv:[]);
+      setInstallRates(Array.isArray(ir)?ir:[]);
+      setReports(Array.isArray(r)?r:[]);
+      setLeads(Array.isArray(ld)?ld:[]);
+      setValidations(Array.isArray(pv)?pv:[]);
+      setRecentProposals(Array.isArray(ls30)?ls30:[]);
+      setLoading(false);
+    }).catch(e=>{setErr(e.message);setLoading(false);});
+  },[]);
+
+  // ─── Compute the same shape DemandPlanningPage computes ─── only the fields the Co-Pilot reads.
+  const data=useMemo(()=>{
+    const CLOSED=new Set(['closed','cancelled','canceled']);
+    const openJobs=jobs.filter(j=>!CLOSED.has(j.status));
+    const productionJobs=openJobs.filter(j=>['production_queue','in_production','material_ready'].includes(j.status));
+    const activeInstallJobs=openJobs.filter(j=>j.status==='active_install');
+
+    // Plant load by style
+    const styleAgg={};
+    openJobs.forEach(j=>{
+      const s=j.style||'(no style)';
+      if(!styleAgg[s])styleAgg[s]={style:s,jobs:0,backlog_lf:0};
+      styleAgg[s].jobs+=1;
+      styleAgg[s].backlog_lf+=Number(j.total_lf)||0;
+    });
+    const moldByStyle={};
+    molds.forEach(m=>{
+      const key=(m.style_alias||m.style||'').toLowerCase();
+      if(!key)return;
+      moldByStyle[key]=(moldByStyle[key]||0)+(Number(m.panel_mold_count)||0);
+    });
+    const plantLoad=Object.values(styleAgg).map(s=>{
+      const moldCount=moldByStyle[s.style.toLowerCase()]||0;
+      const has_mold_data=moldCount>0;
+      // Rough: 50 LF per mold per day, 5 days/wk
+      const weekly_capacity=moldCount*50*5;
+      const weeks_to_clear=weekly_capacity>0?(s.backlog_lf/weekly_capacity):null;
+      return{...s,molds:moldCount,has_mold_data,weeks_to_clear};
+    }).sort((a,b)=>b.backlog_lf-a.backlog_lf);
+
+    // Crew load by market
+    const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
+    const SHORT_TO_LONG={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station'};
+    const SUB_MARKETS=new Set(['DFW','AUS','CS']);
+    const crewByMkt={};
+    activeInstallJobs.forEach(j=>{
+      const mkt=j.market||'unknown';
+      if(!crewByMkt[mkt])crewByMkt[mkt]={market:mkt,label:SHORT_TO_LONG[mkt]||mkt,active_lf:0,active_jobs:0,total_install_days:0,leaders:0,uses_subs:SUB_MARKETS.has(mkt)};
+      crewByMkt[mkt].active_lf+=Number(j.total_lf)||0;
+      crewByMkt[mkt].active_jobs+=1;
+      crewByMkt[mkt].total_install_days+=Number(j.install_duration_days)||0;
+    });
+    crewLeaders.forEach(cl=>{
+      const short=MKT_LONG_TO_SHORT[cl.market];
+      if(!short)return;
+      if(!crewByMkt[short])crewByMkt[short]={market:short,label:cl.market,active_lf:0,active_jobs:0,total_install_days:0,leaders:0,uses_subs:SUB_MARKETS.has(short)};
+      crewByMkt[short].leaders+=1;
+    });
+    const crewLoadByMarket=Object.values(crewByMkt).map(r=>{
+      const days_per_leader=r.leaders>0?(r.total_install_days/r.leaders):null;
+      const weeks_per_leader=days_per_leader?(days_per_leader/5):null;
+      return{...r,weeks_per_leader};
+    }).sort((a,b)=>b.active_lf-a.active_lf);
+
+    // Material risk
+    const today=new Date();today.setHours(0,0,0,0);
+    const materialRisk=openJobs.filter(j=>{
+      if(!j.est_start_date)return false;
+      const start=new Date(j.est_start_date);
+      const days=Math.ceil((start-today)/(1000*60*60*24));
+      return days>=-7&&days<=14&&!['material_ready','active_install'].includes(j.status);
+    }).map(j=>{
+      const start=new Date(j.est_start_date);
+      return{...j,days_to_start:Math.ceil((start-today)/(1000*60*60*24))};
+    }).sort((a,b)=>a.days_to_start-b.days_to_start);
+
+    // Pipeline forecast
+    let pipeline_value=0,pipeline_expected=0,no_date=0,no_date_value=0;
+    const monthsMap={};
+    leads.forEach(l=>{
+      const v=Number(l.proposal_value||l.estimated_value)||0;
+      pipeline_value+=v;
+      pipeline_expected+=v*((Number(l.win_probability)||0)/100);
+      if(!l.expected_close_date){no_date+=1;no_date_value+=v;return;}
+      const d=new Date(l.expected_close_date);
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if(!monthsMap[k])monthsMap[k]={key:k,label:d.toLocaleDateString('en-US',{month:'short',year:'numeric'}),proposals_count:0,proposals_value:0,expected_value:0};
+      monthsMap[k].proposals_count+=1;
+      monthsMap[k].proposals_value+=v;
+      monthsMap[k].expected_value+=v*((Number(l.win_probability)||0)/100);
+    });
+    const pipelineForecast={
+      months:Object.values(monthsMap).sort((a,b)=>a.key.localeCompare(b.key)),
+      totals:{count:leads.length,raw:pipeline_value,expected:pipeline_expected,no_date,no_date_value},
+    };
+
+    // Schedule by week (next 13 weeks)
+    const horizonStart=new Date(today);horizonStart.setDate(today.getDate()-today.getDay()); // Sunday
+    const weeks=[];
+    for(let w=0;w<13;w++){
+      const ws=new Date(horizonStart);ws.setDate(ws.getDate()+w*7);
+      const we=new Date(ws);we.setDate(we.getDate()+6);
+      weeks.push({label:ws.toLocaleDateString('en-US',{month:'numeric',day:'numeric'}),ws,we,installs_starting:[],installs_completing:[],lf_starting:0,lf_completing:0,$_completing:0});
+    }
+    let unscheduled_jobs=0,unscheduled_lf=0;
+    openJobs.forEach(j=>{
+      if(!j.est_start_date||!j.install_duration_days){unscheduled_jobs+=1;unscheduled_lf+=Number(j.total_lf)||0;return;}
+      const start=new Date(j.est_start_date);
+      const end=j.est_complete_date?new Date(j.est_complete_date):new Date(start.getTime()+j.install_duration_days*86400000);
+      weeks.forEach(w=>{
+        if(start>=w.ws&&start<=w.we){w.installs_starting.push(j);w.lf_starting+=Number(j.total_lf)||0;}
+        if(end>=w.ws&&end<=w.we){w.installs_completing.push(j);w.lf_completing+=Number(j.total_lf)||0;w.$_completing+=Number(j.adj_contract_value)||0;}
+      });
+    });
+    const scheduleByWeek={weeks,unscheduled_jobs,unscheduled_lf};
+
+    // Cash conversion by market
+    const cashByMkt={};
+    openJobs.forEach(j=>{
+      const mkt=j.market||'unknown';
+      if(!cashByMkt[mkt])cashByMkt[mkt]={market:mkt,ltb:0,weekly_run_rate:0};
+      cashByMkt[mkt].ltb+=Number(j.left_to_bill)||0;
+    });
+    // Approx weekly run rate from invoice history (last 90 days)
+    const ninetyAgo=new Date();ninetyAgo.setDate(ninetyAgo.getDate()-90);
+    invoices.forEach(inv=>{
+      if(!inv.invoice_date||new Date(inv.invoice_date)<ninetyAgo)return;
+      const j=jobs.find(jj=>jj.id===inv.job_id);if(!j)return;
+      const mkt=j.market||'unknown';if(!cashByMkt[mkt])return;
+      cashByMkt[mkt].weekly_run_rate+=(Number(inv.invoice_amount)||0)/13; // 13 weeks in 90 days
+    });
+    const cashByMarket=Object.values(cashByMkt).map(r=>({
+      ...r,
+      weeks_of_ltb:r.weekly_run_rate>0?(r.ltb/r.weekly_run_rate):null,
+    })).sort((a,b)=>b.ltb-a.ltb);
+
+    // Calibration (simplified)
+    const reportsByCat={};
+    reports.forEach(r=>{
+      const fs=(r.fence_style||'').toLowerCase();
+      let cat='precast';
+      if(fs.includes('single wythe'))cat='masonry';
+      else if(fs.includes('wrought'))cat='wrought_iron';
+      else if(fs.includes('architectural')||fs.includes('lattice'))cat='architectural';
+      if(!reportsByCat[cat])reportsByCat[cat]={cat,reports:0,total_lf:0};
+      reportsByCat[cat].reports+=1;
+      reportsByCat[cat].total_lf+=Number(r.lf_panels_installed)||0;
+    });
+    const calibration=installRates.map(ir=>{
+      const m=reportsByCat[ir.category]||{};
+      const measured_rate=m.reports>0?(m.total_lf/m.reports):null;
+      return{...ir,category_label:ir.category.replace('_',' '),measured_reports:m.reports||0,measured_total_lf:m.total_lf||0,measured_rate,delta:measured_rate?measured_rate-Number(ir.lf_per_day):null};
+    });
+
+    // Aging buckets (shortcut)
+    const agingBuckets=[];
+
+    // Gantt rows (empty if no crew_leader_id, which is current state)
+    const ganttRows={rows:[],horizonStart,horizonEnd:new Date(horizonStart.getTime()+13*7*86400000),totalDays:13*7};
+
+    // Proposal validation health: how many proposals were sent in last 30 days
+    // vs how many distinct validations were run? Adoption gap = leakage risk.
+    const proposalsSent30d=recentProposals.filter(l=>l.stage==='proposal_sent'||l.stage==='won'||l.stage==='lost').length;
+    const proposalsValue30d=recentProposals.reduce((s,l)=>s+(Number(l.proposal_value)||0),0);
+    const validations30d=validations.filter(v=>(new Date(v.validated_at).getTime())>(Date.now()-30*86400000));
+    const validationStats={
+      proposals_sent_30d:proposalsSent30d,
+      proposal_value_30d:proposalsValue30d,
+      validations_run_30d:validations30d.length,
+      validations_passed_30d:validations30d.filter(v=>v.passed).length,
+      validations_failed_30d:validations30d.filter(v=>!v.passed).length,
+      adoption_pct:proposalsSent30d>0?Math.round((validations30d.length/proposalsSent30d)*100):0,
+      total_validations:validations.length,
+    };
+
+    return{
+      openJobs,productionJobs,activeInstallJobs,
+      plantLoad,crewLoadByMarket,scheduleByWeek,cashByMarket,agingBuckets,
+      materialRisk,pipelineForecast,ganttRows,calibration,
+      reports,crewLeaders,leads,
+      validationStats,
+    };
+  },[jobs,molds,crewLeaders,invoices,installRates,reports,leads,validations,recentProposals]);
+
+  if(loading)return<div style={{padding:14,fontSize:13,color:'#9E9B96',textAlign:'center'}}>Loading insights…</div>;
+  if(err)return<div style={{padding:14,fontSize:13,color:'#8A261D',background:'#FEE2E2',borderRadius:6}}>Co-Pilot offline: {err}</div>;
+
+  // Render the same Co-Pilot panel used in Demand Planning, but with a "Open Demand Planning" link
+  return<div style={{marginBottom:24}}>
+    <DemandPlannerCopilot tab="dashboard" data={data}/>
+    <div style={{textAlign:'right',marginTop:8}}>
+      <button onClick={()=>onNav&&onNav('demand_planning')} style={{...btnS,fontSize:11,padding:'4px 10px'}}>Open Demand Planning →</button>
+    </div>
+  </div>;
+}
+
 // ═══ DEMAND PLANNER CO-PILOT (rule-based v0) ═══
 // Reads the same data the dashboard renders and surfaces:
 //   1. Today's exceptions — what's broken or trending wrong
@@ -13026,6 +13285,20 @@ function DemandPlannerCopilot({tab,data}){
     }
 
     const noCrewLeaderJobs=activeInstallJobs.filter(j=>!j.crew_leader_id).length;
+    // Proposal validator adoption — Matt's 64.8% math error rate from memory
+    // is the largest known EBITDA leak. If reps aren't running validations, we
+    // surface it.
+    if(data.validationStats){
+      const vs=data.validationStats;
+      if(vs.proposals_sent_30d>=5&&vs.adoption_pct<50){
+        out.push({severity:'critical',icon:'🧮',title:`Only ${vs.adoption_pct}% of recent proposals were math-validated`,body:`${vs.validations_run_30d} validations vs. ${vs.proposals_sent_30d} proposals sent in last 30 days ($${(vs.proposal_value_30d/1e6).toFixed(1)}M value). Per memory, math error rates run 25-65% by rep. Each unvalidated proposal is a margin leak risk.`,action:'Make Proposal Validator mandatory before send (Sales→Proposal Validator)'});
+      }
+      if(vs.validations_failed_30d>=3){
+        const failPct=Math.round(vs.validations_failed_30d/vs.validations_run_30d*100);
+        out.push({severity:'warning',icon:'❌',title:`${vs.validations_failed_30d} of ${vs.validations_run_30d} recent validations FAILED (${failPct}%)`,body:`Validator caught math errors in ${failPct}% of submissions. Track which reps and why — root cause is likely template, copy-paste, or unit-price typo.`,action:'Review failed validation results with the rep who submitted'});
+      }
+    }
+
     if(noCrewLeaderJobs>0){
       out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Use the Crew Assignment page to bulk-assign in 2 minutes.`,action:'Carlos: open Crew Assignment page → assign remaining jobs'});
     }
@@ -23996,7 +24269,7 @@ function AppShell(){
             <SkeletonKpis n={v.mobile?2:4}/>
             <div style={{...card,padding:0}}><SkeletonRows rows={6} cols={v.mobile?3:6}/></div>
           </div>:<>
-            {page==='dashboard'&&<Dashboard jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
+            {page==='dashboard'&&<><CoPilotHome onNav={navigateTo}/><Dashboard jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/></>}
             {page==='estimating'&&<EstimatingPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
             {page==='map'&&<MapPage jobs={jobs} onNav={(pg,job)=>{if(job){setOpenJob(job);}navigateTo(pg);}}/>}
             {page==='projects'&&<ProjectsPage jobs={jobs} onRefresh={fetchJobs} openJob={openJob} refreshKey={refreshKey} onNav={navigateTo}/>}
