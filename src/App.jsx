@@ -40,6 +40,10 @@ import {
   MANUAL_LABELS as READINESS_MANUAL_LABELS,
 } from './shared/readiness';
 
+// Shared upload utilities (HEIC->JPEG conversion + paste-to-upload hook).
+// Used by both EditPanel Documents tab and PMReportPhotos.
+import { convertHeicIfNeeded, usePasteUpload } from './shared/upload';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -1979,37 +1983,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
 
   // Drop handler for the upload zone. Iterates files and uploads each.
-  // HEIC → JPEG conversion. iOS devices photograph in HEIC by default and
-  // desktop browsers can't render it. Detect by extension or MIME, convert
-  // client-side via heic2any (lazy-imported, only fetched when a HEIC is
-  // actually selected). Returns the converted JPEG File, the original file
-  // if no conversion needed, or null if conversion failed.
-  const convertHeicIfNeeded=async(file)=>{
-    if(!file)return file;
-    const name=(file.name||'').toLowerCase();
-    const isHeic=name.endsWith('.heic')||name.endsWith('.heif')||file.type==='image/heic'||file.type==='image/heif';
-    if(!isHeic)return file;
-    try{
-      const{default:heic2any}=await import('heic2any');
-      const blob=await heic2any({blob:file,toType:'image/jpeg',quality:0.9});
-      const out=Array.isArray(blob)?blob[0]:blob;
-      const newName=file.name.replace(/\.(heic|heif)$/i,'.jpg');
-      return new File([out],newName,{type:'image/jpeg',lastModified:Date.now()});
-    }catch(e){
-      console.error('[Documents HEIC convert]',e);
-      setAttachmentsToast({kind:'error',msg:`Could not convert ${file.name} from HEIC. Try JPEG instead.`});
-      return null;
-    }
-  };
-
   const handleFiles=async(fileList)=>{
     if(!fileList||fileList.length===0)return;
     setAttachmentsToast(null);
     const files=Array.from(fileList);
     let okCount=0,failCount=0;
     for(const raw of files){
-      const f=await convertHeicIfNeeded(raw);
-      if(!f){failCount++;continue;}
+      let f;
+      try { f = await convertHeicIfNeeded(raw); }
+      catch (e) {
+        console.error('[Documents HEIC convert]', e);
+        setAttachmentsToast({kind:'error',msg:`Could not convert ${raw.name} from HEIC. Try JPEG instead.`});
+        failCount++;
+        continue;
+      }
       const r=await uploadAttachment(f,uploadCategory,uploadDescription);
       if(r&&r.ok)okCount++;else failCount++;
     }
@@ -2020,33 +2007,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     setUploadDescription('');
   };
 
-  // Paste-from-clipboard for the Documents tab. Active only when the tab is
-  // open and the user has edit perms. Ignores paste events targeting form
-  // fields so users can still paste text into the description input. Uses a
-  // ref so handleFiles can be redefined each render without rebinding.
-  const handleFilesRef=useRef(null);
-  useEffect(()=>{handleFilesRef.current=handleFiles;});
-  useEffect(()=>{
-    if(tab!=='documents'||!canEdit)return;
-    const onPaste=(e)=>{
-      const t=e.target;
-      if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
-      const items=e.clipboardData?.items||[];
-      const files=[];
-      for(const item of items){
-        if(item.kind==='file'){
-          const f=item.getAsFile();
-          if(f)files.push(f);
-        }
-      }
-      if(files.length){
-        e.preventDefault();
-        handleFilesRef.current?.(files);
-      }
-    };
-    document.addEventListener('paste',onPaste);
-    return()=>document.removeEventListener('paste',onPaste);
-  },[tab,canEdit]);
+  // Paste-from-clipboard for the Documents tab — extracted to shared hook.
+  usePasteUpload({ active: tab === 'documents' && canEdit, onFiles: handleFiles });
 
   const sendPisRequest=async()=>{
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
@@ -12674,8 +12636,14 @@ function PMReportPhotos({photos, jobNumber, onChange}){
       const folder = String(jobNumber || '_unsorted')
         .toLowerCase()
         .replace(/[^a-z0-9_-]/g, '_') || '_unsorted';
+      // Convert HEIC -> JPEG before upload so PMs uploading from iPhones
+      // get a file the rest of the app can render. JPEGs and other types
+      // pass through untouched. See src/shared/upload.js.
       const urls = await Promise.all(
-        take.map(f => uploadPhoto(f, 'pm-daily-reports', folder))
+        take.map(async f => {
+          const converted = await convertHeicIfNeeded(f);
+          return uploadPhoto(converted, 'pm-daily-reports', folder);
+        })
       );
       onChange([...list, ...urls]);
     } catch (e) {
