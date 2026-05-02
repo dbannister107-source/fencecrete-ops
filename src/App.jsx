@@ -1772,10 +1772,25 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     setAttachmentsLoading(true);
     try{
       const rows=await sbGet('project_attachments',`job_id=eq.${job.id}&deleted_at=is.null&order=uploaded_at.desc&limit=500`);
-      setAttachments(Array.isArray(rows)?rows:[]);
+      const list=Array.isArray(rows)?rows:[];
+      setAttachments(list);
       // Sync header count to actual list length (covers cases where the
       // count fetch raced with an upload/delete that the user just performed).
-      setHeaderDocCount(Array.isArray(rows)?rows.length:0);
+      setHeaderDocCount(list.length);
+      // Fire-and-update signed URLs for image rows so they render as
+      // thumbnails in the list. URLs expire in 5 min — if the user idles
+      // past that, the thumbnails go broken but the View button (which
+      // re-signs on click) still works. Acceptable tradeoff for v1.
+      const imageRows=list.filter(r=>(r.mime_type||'').startsWith('image/'));
+      if(imageRows.length>0){
+        const results=await Promise.all(imageRows.map(async r=>{
+          try{const url=await getSignedUrl(r);return{id:r.id,url};}catch{return null;}
+        }));
+        const byId=new Map(results.filter(Boolean).map(r=>[r.id,r.url]));
+        if(byId.size>0){
+          setAttachments(prev=>prev.map(p=>byId.has(p.id)?{...p,_thumbnail_url:byId.get(p.id)}:p));
+        }
+      }
     }catch(e){console.error('[Documents load]',e);setAttachmentsToast({kind:'error',msg:'Could not load documents'});}
     setAttachmentsLoading(false);
   },[job?.id]);
@@ -1955,12 +1970,37 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
 
   // Drop handler for the upload zone. Iterates files and uploads each.
+  // HEIC → JPEG conversion. iOS devices photograph in HEIC by default and
+  // desktop browsers can't render it. Detect by extension or MIME, convert
+  // client-side via heic2any (lazy-imported, only fetched when a HEIC is
+  // actually selected). Returns the converted JPEG File, the original file
+  // if no conversion needed, or null if conversion failed.
+  const convertHeicIfNeeded=async(file)=>{
+    if(!file)return file;
+    const name=(file.name||'').toLowerCase();
+    const isHeic=name.endsWith('.heic')||name.endsWith('.heif')||file.type==='image/heic'||file.type==='image/heif';
+    if(!isHeic)return file;
+    try{
+      const{default:heic2any}=await import('heic2any');
+      const blob=await heic2any({blob:file,toType:'image/jpeg',quality:0.9});
+      const out=Array.isArray(blob)?blob[0]:blob;
+      const newName=file.name.replace(/\.(heic|heif)$/i,'.jpg');
+      return new File([out],newName,{type:'image/jpeg',lastModified:Date.now()});
+    }catch(e){
+      console.error('[Documents HEIC convert]',e);
+      setAttachmentsToast({kind:'error',msg:`Could not convert ${file.name} from HEIC. Try JPEG instead.`});
+      return null;
+    }
+  };
+
   const handleFiles=async(fileList)=>{
     if(!fileList||fileList.length===0)return;
     setAttachmentsToast(null);
     const files=Array.from(fileList);
     let okCount=0,failCount=0;
-    for(const f of files){
+    for(const raw of files){
+      const f=await convertHeicIfNeeded(raw);
+      if(!f){failCount++;continue;}
       const r=await uploadAttachment(f,uploadCategory,uploadDescription);
       if(r&&r.ok)okCount++;else failCount++;
     }
@@ -1970,6 +2010,34 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     else setAttachmentsToast({kind:'partial',msg:`${okCount} uploaded · ${failCount} failed`});
     setUploadDescription('');
   };
+
+  // Paste-from-clipboard for the Documents tab. Active only when the tab is
+  // open and the user has edit perms. Ignores paste events targeting form
+  // fields so users can still paste text into the description input. Uses a
+  // ref so handleFiles can be redefined each render without rebinding.
+  const handleFilesRef=useRef(null);
+  useEffect(()=>{handleFilesRef.current=handleFiles;});
+  useEffect(()=>{
+    if(tab!=='documents'||!canEdit)return;
+    const onPaste=(e)=>{
+      const t=e.target;
+      if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+      const items=e.clipboardData?.items||[];
+      const files=[];
+      for(const item of items){
+        if(item.kind==='file'){
+          const f=item.getAsFile();
+          if(f)files.push(f);
+        }
+      }
+      if(files.length){
+        e.preventDefault();
+        handleFilesRef.current?.(files);
+      }
+    };
+    document.addEventListener('paste',onPaste);
+    return()=>document.removeEventListener('paste',onPaste);
+  },[tab,canEdit]);
 
   const sendPisRequest=async()=>{
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
@@ -2728,7 +2796,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <div style={{fontSize:13,color:'#625650',marginBottom:8,fontWeight:600}}>
                 {draggingOver?'Drop to upload':<>Drag files here or <button onClick={()=>fileInputRef.current?.click()} style={{background:'none',border:'none',color:'#8A261D',fontWeight:700,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:'inherit'}}>browse</button></>}
               </div>
-              <div style={{fontSize:10,color:'#9E9B96'}}>PDF · Images · Office docs · DWG/DXF · 25 MB max per file</div>
+              <div style={{fontSize:10,color:'#9E9B96'}}>PDF · Images (HEIC OK — auto-converts) · Office docs · DWG/DXF · 25 MB max · Paste screenshots with ⌘/Ctrl+V</div>
             </div>
             {uploadQueue.length>0&&<div style={{marginTop:10,display:'flex',flexDirection:'column',gap:4}}>
               {uploadQueue.map(q=><div key={q.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#FFF',padding:'6px 10px',borderRadius:6,fontSize:11,border:'1px solid #E5E3E0'}}>
@@ -2770,7 +2838,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                   const cat=DOC_CATEGORIES.find(c=>c.key===a.category)||DOC_CATEGORIES.find(c=>c.key==='other');
                   const isImage=(a.mime_type||'').startsWith('image/');
                   return<div key={a.id} style={{display:'flex',gap:10,alignItems:'center',padding:'10px 12px',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,transition:'border-color .12s'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderColor='#E5E3E0'}>
-                    <div style={{fontSize:24,width:36,textAlign:'center',flexShrink:0}}>{mimeIcon(a.mime_type,a.filename)}</div>
+                    <div style={{width:36,height:36,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      {a._thumbnail_url
+                        ?<img src={a._thumbnail_url} alt="" title="Click to open" onClick={async()=>{try{const u=await getSignedUrl(a);window.open(u,'_blank');}catch(e){setAttachmentsToast({kind:'error',msg:`Could not open: ${e.message}`});}}} style={{width:36,height:36,objectFit:'cover',borderRadius:4,border:'1px solid #E5E3E0',cursor:'pointer'}}/>
+                        :<span style={{fontSize:24}}>{mimeIcon(a.mime_type,a.filename)}</span>}
+                    </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,flexWrap:'wrap'}}>
                         <span style={{fontSize:13,fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}} title={a.filename}>{a.filename}</span>

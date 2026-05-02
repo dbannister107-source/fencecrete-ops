@@ -117,6 +117,7 @@ Never set these directly. If you need a different value, change the upstream inp
 
 ### Recently shipped (2026-05-02)
 - **Customer-linked contract gate fixed.** `v_contract_readiness.auto_checks.customer_linked` now checks `company_id IS NOT NULL OR is_residential = TRUE` (previously only checked the free-text `customer_name` string, which never failed). 21 contract_review jobs newly blocked from advancing status until reconciled in Customer Master. Migration: `20260502_fix_customer_linked_gate.sql`. UI label updated to "Linked to company".
+- **Documents tab: HEIC support, paste-to-upload, inline thumbnails.** iOS HEIC photos auto-convert to JPEG client-side via `heic2any` (~338 KB lazy chunk, only loads when a HEIC is actually picked — main bundle unchanged). Cmd/Ctrl+V on the Documents tab uploads pasted screenshots/images. Image rows render small thumbnails (signed URLs, 5-min expiry — refresh the tab if they go stale). No edge function — all client-side. Touched: `src/App.jsx` around line 1770 (loadAttachments thumbnail augmentation) and 1958 (handleFiles HEIC interception + paste listener).
 
 ### Known data hygiene issues (don't bulk-fix without explicit approval)
 - 178 jobs have `contract_executed=false` (flag never backfilled) — silent SQL backfill OK
