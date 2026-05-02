@@ -12586,8 +12586,140 @@ function CalibrateButton({onDone}){
 // customer accepts an arithmetic error, or quote too high and lose the deal.
 // Per memory, Matt's proposal math error rate is 64.8%. Catching these
 // before send is the single highest-leverage check on the platform.
+
+// ValidatorHistoryView — audit log of every Proposal Validator run.
+// Surfaces adoption % per user, pass/fail breakdown, total $ caught, and
+// click-to-inspect the full result jsonb for any past run.
+function ValidatorHistoryView(){
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[err,setErr]=useState(null);
+  const[selected,setSelected]=useState(null);
+  const[range,setRange]=useState(30);  // days
+
+  useEffect(()=>{
+    setLoading(true);
+    const since=new Date(Date.now()-range*86400000).toISOString();
+    sbGet('proposal_validations',`select=*&validated_at=gte.${since}&order=validated_at.desc&limit=500`)
+      .then(d=>{setRows(Array.isArray(d)?d:[]);setLoading(false);})
+      .catch(e=>{setErr(e.message);setLoading(false);});
+  },[range]);
+
+  const stats=useMemo(()=>{
+    const total=rows.length;
+    const passed=rows.filter(r=>r.passed).length;
+    const failed=total-passed;
+    const totalDelta=rows.filter(r=>!r.passed&&r.recompute_delta).reduce((s,r)=>s+Math.abs(Number(r.recompute_delta)||0),0);
+    const byUser={};
+    rows.forEach(r=>{
+      const k=r.validated_by_email||'unknown';
+      if(!byUser[k])byUser[k]={user:k,name:r.validated_by_name||k,total:0,passed:0,failed:0,delta:0};
+      byUser[k].total+=1;
+      if(r.passed)byUser[k].passed+=1;
+      else{byUser[k].failed+=1;byUser[k].delta+=Math.abs(Number(r.recompute_delta)||0);}
+    });
+    return{
+      total,passed,failed,totalDelta,
+      passRate:total>0?Math.round(passed/total*100):0,
+      byUser:Object.values(byUser).sort((a,b)=>b.total-a.total),
+    };
+  },[rows]);
+
+  const fmt$=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+  if(loading)return<div style={{padding:20,color:'#9E9B96'}}>Loading…</div>;
+  if(err)return<div style={{padding:14,color:'#8A261D',background:'#FEE2E2',borderRadius:6}}>Error: {err}</div>;
+
+  return<div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
+      <div style={{display:'flex',gap:6}}>
+        {[7,30,90].map(d=><button key={d} onClick={()=>setRange(d)} style={{padding:'6px 14px',borderRadius:6,border:`1px solid ${range===d?'#8A261D':'#E5E3E0'}`,background:range===d?'#8A261D':'#FFF',color:range===d?'#FFF':'#1A1A1A',fontSize:12,fontWeight:700,cursor:'pointer'}}>Last {d} days</button>)}
+      </div>
+      <div style={{fontSize:12,color:'#625650'}}>{stats.total} validation{stats.total!==1?'s':''} run · {stats.passRate}% passed</div>
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:12,marginBottom:14}}>
+      <div style={{...card,padding:14,borderLeft:'4px solid #8A261D'}}>
+        <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Runs</div>
+        <div style={{fontSize:22,fontWeight:800,marginTop:4}}>{stats.total}</div>
+      </div>
+      <div style={{...card,padding:14,borderLeft:'4px solid #0F6E56'}}>
+        <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Passed</div>
+        <div style={{fontSize:22,fontWeight:800,marginTop:4,color:'#0F6E56'}}>{stats.passed}</div>
+      </div>
+      <div style={{...card,padding:14,borderLeft:'4px solid #B45309'}}>
+        <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Failed</div>
+        <div style={{fontSize:22,fontWeight:800,marginTop:4,color:'#B45309'}}>{stats.failed}</div>
+      </div>
+      <div style={{...card,padding:14,borderLeft:'4px solid #1A1A1A'}}>
+        <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>$ Caught</div>
+        <div style={{fontSize:22,fontWeight:800,marginTop:4}}>{fmt$(stats.totalDelta)}</div>
+      </div>
+    </div>
+
+    {stats.byUser.length>0&&<div style={{...card,padding:20,marginBottom:14}}>
+      <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Adoption by User</div>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+          {['User','Total Runs','Passed','Failed','Pass Rate','$ Caught'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {stats.byUser.map(u=>{
+            const passRate=u.total>0?Math.round(u.passed/u.total*100):0;
+            return<tr key={u.user} style={{borderBottom:'1px solid #F4F4F2'}}>
+              <td style={{padding:'8px 12px',fontWeight:700}}>{u.name}<div style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>{u.user}</div></td>
+              <td style={{padding:'8px 12px'}}>{u.total}</td>
+              <td style={{padding:'8px 12px',color:'#065F46',fontWeight:700}}>{u.passed}</td>
+              <td style={{padding:'8px 12px',color:'#991B1B',fontWeight:700}}>{u.failed}</td>
+              <td style={{padding:'8px 12px'}}><span style={{background:passRate>=80?'#D1FAE5':passRate>=50?'#FEF3C7':'#FEE2E2',color:passRate>=80?'#065F46':passRate>=50?'#92400E':'#991B1B',padding:'2px 8px',borderRadius:99,fontWeight:700,fontSize:11}}>{passRate}%</span></td>
+              <td style={{padding:'8px 12px',fontWeight:600}}>{fmt$(u.delta)}</td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>}
+
+    <div style={{...card,padding:20}}>
+      <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>All Runs</div>
+      {rows.length===0?<div style={{padding:14,textAlign:'center',color:'#9E9B96',fontSize:13}}>No validations yet in this window.</div>:
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+            {['When','Who','Source','Verdict','Errors','Δ $','Summary'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {rows.map(r=><tr key={r.id} onClick={()=>setSelected(r)} style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}}>
+              <td style={{padding:'8px 10px'}}>{new Date(r.validated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td>
+              <td style={{padding:'8px 10px'}}>{r.validated_by_name||r.validated_by_email}</td>
+              <td style={{padding:'8px 10px',fontSize:11}}>{r.source==='pdf'?'📄 '+(r.filename||'PDF'):r.source==='bypass'?'⚠️ bypass':'📋 text'}</td>
+              <td style={{padding:'8px 10px'}}><span style={{background:r.passed?'#D1FAE5':'#FEE2E2',color:r.passed?'#065F46':'#991B1B',padding:'2px 8px',borderRadius:99,fontWeight:700,fontSize:11}}>{r.passed?'✓ PASS':'✗ FAIL'}</span></td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:r.error_count>0?'#8A261D':'#9E9B96'}}>{r.error_count||'—'}{r.critical_error_count?` (${r.critical_error_count} crit)`:''}</td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:r.recompute_delta?'#8A261D':'#9E9B96'}}>{r.recompute_delta?fmt$(Math.abs(r.recompute_delta)):'—'}</td>
+              <td style={{padding:'8px 10px',color:'#625650',fontSize:11,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.summary}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+
+    {selected&&<div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:8,padding:20,maxWidth:800,maxHeight:'80vh',overflowY:'auto',width:'100%'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:18,fontWeight:800}}>Validation #{selected.id.slice(0,8)}</div>
+            <div style={{fontSize:12,color:'#9E9B96',marginTop:2}}>{new Date(selected.validated_at).toLocaleString()} by {selected.validated_by_name||selected.validated_by_email}</div>
+          </div>
+          <button onClick={()=>setSelected(null)} style={{...btnS,fontSize:12}}>Close</button>
+        </div>
+        <pre style={{background:'#F9F8F6',padding:14,borderRadius:6,fontSize:11,fontFamily:'monospace',overflow:'auto'}}>{JSON.stringify(selected.result,null,2)}</pre>
+      </div>
+    </div>}
+  </div>;
+}
+
 function ProposalValidatorPage(){
   const auth=useAuth();
+  const[view,setView]=useState('run');  // 'run' | 'history'
   const[mode,setMode]=useState('text');  // 'text' | 'pdf'
   const[text,setText]=useState('');
   const[pdfFile,setPdfFile]=useState(null);
@@ -12659,6 +12791,15 @@ function ProposalValidatorPage(){
   const fmt$=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   return<div>
+    <div style={{marginBottom:14,display:'flex',gap:6,padding:6,background:'#F4F4F2',borderRadius:8,width:'fit-content'}}>
+      {[['run','Run validator'],['history','History']].map(([v,l])=>
+        <button key={v} onClick={()=>setView(v)} style={{padding:'6px 14px',borderRadius:6,border:'none',background:view===v?'#FFF':'transparent',color:view===v?'#1A1A1A':'#625650',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:view===v?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>{l}</button>)}
+    </div>
+
+    {view==='history'&&<ValidatorHistoryView/>}
+
+    {view==='run'&&<>
+
     <div style={{marginBottom:20}}>
       <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Proposal Validator</h1>
       <div style={{fontSize:13,color:'#625650',marginTop:6,maxWidth:720,lineHeight:1.5}}>
@@ -12778,6 +12919,8 @@ function ProposalValidatorPage(){
         {usage.model} · {usage.tokens_in} in / {usage.tokens_out} out · ~${(usage.tokens_in*0.000003+usage.tokens_out*0.000015).toFixed(4)}
       </div>}
     </div>}
+
+    </>}
   </div>;
 }
 
@@ -17586,6 +17729,50 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
   };
   const saveProposal=async(data)=>{
     const lead=propModal;const nowIso=new Date().toISOString();
+    // ─── VALIDATION GATE ───
+    // Before promoting to proposal_sent, require the rep has run at least one
+    // PASSING validation in the last 14 days. The gate is soft (confirm) — we
+    // slow them down and log every bypass to proposal_validations so we can
+    // see who's skipping. This is the forcing function for the math error rate.
+    try{
+      const repEmail=(auth?.user?.email||'').toLowerCase();
+      const since=new Date(Date.now()-14*86400000).toISOString();
+      const recent=await sbGet('proposal_validations',`select=id,passed,validated_at&validated_by_email=eq.${encodeURIComponent(repEmail)}&validated_at=gte.${since}&order=validated_at.desc&limit=20`);
+      const recentPass=Array.isArray(recent)&&recent.some(r=>r.passed===true);
+      if(!recentPass){
+        const proceed=window.confirm(
+          'PROPOSAL VALIDATOR CHECK\n\n'+
+          'You have not run a passing validation in the last 14 days.\n\n'+
+          'Per company policy, every proposal should be math-checked through the Proposal Validator before it is sent to the customer.\n\n'+
+          'Click CANCEL to validate first (recommended), or OK to bypass.\n\n'+
+          'Bypasses are logged.'
+        );
+        if(!proceed){
+          setToast('Cancelled — please run the Proposal Validator before sending');
+          return;
+        }
+        // Log the bypass so it appears in the History tab
+        try{
+          await fetch(`${SB}/rest/v1/proposal_validations`,{
+            method:'POST',
+            headers:{...H,'Content-Type':'application/json','Prefer':'return=minimal'},
+            body:JSON.stringify({
+              validated_by_email:repEmail,
+              validated_by_name:auth?.profile?.name||null,
+              source:'bypass',
+              lead_id:lead.id,
+              passed:false,
+              summary:`BYPASS: Rep skipped validation when promoting "${(lead.company_name||'lead').replace(/[\\"]/g,'')}" to proposal_sent.`,
+              error_count:1,
+              critical_error_count:1,
+              result:{bypass:true,lead_id:lead.id,reason:'no_recent_passing_validation'},
+            }),
+          });
+        }catch(_){}
+      }
+    }catch(_){
+      // Fail open — never block legit work because of a gate-check error
+    }
     await sbPatch('leads',lead.id,{...data,stage:'proposal_sent',updated_at:nowIso,stage_entered_at:nowIso});
     setPropModal(null);await fetchLeads();setToast('Moved to Proposal Sent');
   };
