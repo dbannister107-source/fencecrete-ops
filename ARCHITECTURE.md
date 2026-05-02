@@ -97,6 +97,28 @@ Use this table when you have a new feature in mind:
 These are *acknowledged* deferred work — recorded so the next person doesn't think we forgot:
 
 - **Hurricane port plan**: Port App.jsx to Next.js + Hurricane shell. Page-by-page migration, not big-bang. The Co-Pilot edge function and Supabase schema do not need to change. Estimate: 3-4 months part-time.
+- **Identity-column normalization (the relational debt)**: The entity-relationship spine is solid — 29 of 30 child tables with `job_id` have a real FK to `jobs.id`, so billing, line items, COs, daily reports, and attachments cannot orphan. The gap is on the *human-facing identity columns*, which are stored as free text instead of FK references to existing tables. Specifically:
+
+  | Column | Distinct values | Should FK to | Existing table rows |
+  |---|---|---|---|
+  | `jobs.pm` | 4 | `crew_leaders` or `user_profiles` | 26 / 25 |
+  | `jobs.customer_name` | 136 | `companies` | 141 |
+  | `jobs.sales_rep` | 3 | `user_profiles` | 25 |
+  | `jobs.style` | 23 (58 jobs missing) | `styles` | exists |
+  | `leads.sales_rep` | 5 | `user_profiles` | 25 |
+  | `leads.company_name` | 84 | `companies` | 141 |
+
+  Real consequences today: customer concentration math depends on fuzzy text matching (Lennar vs Lennar Homes vs LENNAR), reassigning a PM is a 175-row text update instead of one ID change, and sales rep performance dashboards undercount whenever rep names drift. Right now this is held together by typing discipline — every successful join is a coincidence, not a guarantee.
+
+  Fix is not a single migration — it requires per-column reconciliation (deduping the text values, mapping each one to a parent row, then converting the column to an FK). Best done incrementally, easiest column first:
+
+  1. **`jobs.style` → `styles.id`** (4 hrs). 23 distinct values → ~17 canonical styles. Lowest risk; style values are already partially normalized via `style_aliases`.
+  2. **`jobs.sales_rep` + `leads.sales_rep` → `user_profiles.id`** (2 hrs). Tiny fan-out (3-5 distinct values), high payoff for sales dashboards.
+  3. **`jobs.pm` → `crew_leaders.id` or `user_profiles.id`** (3 hrs). Decide whether PM = leader or office user first.
+  4. **`jobs.customer_name` + `leads.company_name` → `companies.id`** (1-2 days). The big one — 136 + 84 distinct text values to reconcile against 141 companies, with fuzzy-match assist needed.
+
+  Total estimate: ~3 working days spread across a few sessions. **Do this BEFORE the NetSuite + Intrasyn migration in Q4 2026** — clean substrate is worth 10x its cost during ERP cutover. Doing it after will mean re-mapping in NetSuite and losing the historical join keys.
+
 - **Real RBAC + tightened RLS**: Today we use email allowlists and string role checks in App.jsx. Postgres-side, RLS is "enabled" on most tables but every public table has a `"public access" USING (true) WITH CHECK (true)` policy — meaning the anon key (which ships in the client bundle) can read/write anything. This works because the app runs on a single trusted org, but it's the largest open security debt in the platform. Real fix: replace blanket policies with role-narrow ones, gate audit/HR tables (proposal_validations, crew_leaders, user_profiles) on auth.role(), and move sensitive operations behind edge functions with verify_jwt=true.
 - **Background processing**: Replace pg_cron with a proper job queue (Inngest, Defer, or Trigger.dev) for jobs that need retries / observability.
 - **Test coverage**: Currently zero. Hurricane port is the right time to introduce Vitest + Playwright.
