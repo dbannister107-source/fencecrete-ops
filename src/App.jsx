@@ -1448,6 +1448,48 @@ function LineItemsEditor({job,onChange,registerSave}){
 function ActivityHistory({jobId}){const[logs,setLogs]=useState([]);const[ld,setLd]=useState(true);useEffect(()=>{sbGet('activity_log',`job_id=eq.${jobId}&order=created_at.desc&limit=50`).then(d=>{setLogs(d||[]);setLd(false);});},[jobId]);if(ld)return<div style={{padding:20,color:'#9E9B96'}}>Loading...</div>;if(!logs.length)return<div style={{padding:20,color:'#9E9B96'}}>No activity yet</div>;return<div>{logs.map(l=><div key={l.id} style={{padding:'8px 0',borderBottom:'1px solid #E5E3E0',display:'flex',gap:10,alignItems:'flex-start'}}><span style={{...pill(ACT_C[l.action]||'#625650',(ACT_C[l.action]||'#625650')+'18'),fontSize:10,whiteSpace:'nowrap',marginTop:2}}>{(l.action||'').replace(/_/g,' ')}</span><div style={{flex:1}}><div style={{fontSize:12}}>{l.field_name==='status'?`Status: ${l.old_value} → ${l.new_value}`:l.action==='job_created'?`Created: ${l.new_value}`:l.field_name==='notes'?'Notes updated':`${l.field_name}: updated`}</div><div style={{fontSize:10,color:'#9E9B96'}} title={new Date(l.created_at).toLocaleString()}>{relT(l.created_at)} · {l.changed_by}</div></div></div>)}</div>;}
 
 /* ═══ EDIT PANEL ═══ */
+// JobDiagnostic — read-only AI explanation of why a job is where it is.
+// Reads activity_log + change_orders + pm_daily_reports for the job.
+// Embedded in the EditPanel under the Schedule section.
+function JobDiagnostic({jobId}){
+  const[busy,setBusy]=useState(false);
+  const[explanation,setExplanation]=useState(null);
+  const[error,setError]=useState(null);
+  const[summary,setSummary]=useState(null);
+  const run=async()=>{
+    if(!jobId)return;
+    setBusy(true);setError(null);
+    try{
+      const res=await fetch(`${SB}/functions/v1/job-explainer`,{
+        method:'POST',
+        headers:H,
+        body:JSON.stringify({job_id:jobId}),
+      });
+      const d=await res.json();
+      if(d.error)throw new Error(d.error);
+      setExplanation(d.explanation);
+      setSummary(d.data_summary);
+    }catch(e){setError(e.message);}
+    setBusy(false);
+  };
+  return<div style={{marginTop:14,padding:14,background:'#FAFAF8',border:'1px solid #E5E3E0',borderRadius:8}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+      <div>
+        <div style={{fontFamily:'Syne',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>🤖 Diagnose this job</div>
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>AI reads activity, change orders, and PM reports to explain status</div>
+      </div>
+      <button onClick={run} disabled={busy||!jobId} style={{...btnP,fontSize:12,padding:'8px 14px',opacity:(busy||!jobId)?0.5:1,cursor:(busy||!jobId)?'wait':'pointer'}}>{busy?'Analyzing…':explanation?'Re-run':'Diagnose'}</button>
+    </div>
+    {error&&<div style={{padding:10,background:'#FEE2E2',color:'#991B1B',borderRadius:6,fontSize:12}}>{error}</div>}
+    {explanation&&<div style={{padding:14,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,fontSize:12,lineHeight:1.6,whiteSpace:'pre-wrap',color:'#1A1A1A',marginTop:8}}>
+      {explanation}
+      {summary&&<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #F4F4F2',fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>
+        Read {summary.activity_events} activity events · {summary.change_orders} change orders · {summary.pm_reports} PM reports
+      </div>}
+    </div>}
+  </div>;
+}
+
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const isMobile = useIsMobile();
   const auth = useAuth();
@@ -3551,6 +3593,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{f.install_duration_days&&f.total_lf?<span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>({Math.round((Number(f.total_lf)||0)/Number(f.install_duration_days)*1)/1} LF/day)</span>:''}</div></div>
         <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
+      {sec==='schedule'&&job?.id&&<JobDiagnostic jobId={job.id}/>}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
         {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
@@ -12534,6 +12577,185 @@ function CalibrateButton({onDone}){
   </div>;
 }
 
+// ═══ PROPOSAL VALIDATOR ═══
+// Sales rep pastes proposal text or uploads a PDF. We send to proposal-validator
+// edge function (Claude Sonnet) which extracts line items, recomputes math,
+// and flags errors before the proposal goes to the customer.
+//
+// Why this matters: bad proposals leak margin two ways — undercharge if the
+// customer accepts an arithmetic error, or quote too high and lose the deal.
+// Per memory, Matt's proposal math error rate is 64.8%. Catching these
+// before send is the single highest-leverage check on the platform.
+function ProposalValidatorPage(){
+  const auth=useAuth();
+  const[mode,setMode]=useState('text');  // 'text' | 'pdf'
+  const[text,setText]=useState('');
+  const[pdfFile,setPdfFile]=useState(null);
+  const[pdfBase64,setPdfBase64]=useState(null);
+  const[busy,setBusy]=useState(false);
+  const[result,setResult]=useState(null);
+  const[error,setError]=useState(null);
+  const[usage,setUsage]=useState(null);
+
+  const onPickFile=async(e)=>{
+    const f=e.target.files?.[0];
+    if(!f)return;
+    if(f.type!=='application/pdf'){setError('Please pick a PDF file');return;}
+    if(f.size>10*1024*1024){setError('PDF too large (>10MB)');return;}
+    setError(null);
+    setPdfFile(f);
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const b64=reader.result.split(',')[1];
+      setPdfBase64(b64);
+    };
+    reader.readAsDataURL(f);
+  };
+
+  const validate=async()=>{
+    setError(null);setResult(null);setBusy(true);
+    try{
+      const body=mode==='text'?{text}:{pdfBase64,filename:pdfFile?.name};
+      const res=await fetch(`${SB}/functions/v1/proposal-validator`,{
+        method:'POST',
+        headers:H,
+        body:JSON.stringify(body),
+      });
+      const d=await res.json();
+      if(d.error)throw new Error(d.error);
+      setResult(d.result);
+      setUsage({tokens_in:d.tokens_in,tokens_out:d.tokens_out,model:d.model});
+    }catch(e){setError(e.message);}
+    setBusy(false);
+  };
+
+  const reset=()=>{setText('');setPdfFile(null);setPdfBase64(null);setResult(null);setError(null);setUsage(null);};
+
+  const fmt$=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  return<div>
+    <div style={{marginBottom:20}}>
+      <h1 style={{fontFamily:'Syne',fontSize:24,fontWeight:800,margin:0}}>Proposal Validator</h1>
+      <div style={{fontSize:13,color:'#625650',marginTop:6,maxWidth:720,lineHeight:1.5}}>
+        Run a math check on every proposal <b>before</b> it goes to the customer. Catches arithmetic errors, tax miscalculations, totals that don't reconcile, and pricing outside Fencecrete's typical ranges. Powered by Claude Sonnet — careful with numbers.
+      </div>
+    </div>
+
+    {!result&&<div style={{...card,padding:20}}>
+      {/* Mode toggle */}
+      <div style={{display:'flex',gap:6,marginBottom:14}}>
+        {[['text','📋 Paste text'],['pdf','📄 Upload PDF']].map(([v,l])=><button key={v} onClick={()=>{setMode(v);setText('');setPdfFile(null);setPdfBase64(null);setResult(null);}} style={{padding:'8px 16px',borderRadius:6,border:`1px solid ${mode===v?'#8A261D':'#E5E3E0'}`,background:mode===v?'#8A261D':'#FFF',color:mode===v?'#FFF':'#1A1A1A',fontSize:13,fontWeight:700,cursor:'pointer'}}>{l}</button>)}
+      </div>
+
+      {mode==='text'&&<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Paste the proposal text here. Include line items, quantities, unit prices, subtotals, tax, and grand total." style={{width:'100%',minHeight:280,padding:12,fontSize:13,fontFamily:'monospace',border:'1px solid #E5E3E0',borderRadius:6,resize:'vertical',boxSizing:'border-box'}}/>}
+
+      {mode==='pdf'&&<div>
+        <input type="file" accept="application/pdf" onChange={onPickFile} style={{padding:'8px 12px',border:'1px dashed #E5E3E0',borderRadius:6,width:'100%',background:'#F9F8F6',cursor:'pointer'}}/>
+        {pdfFile&&<div style={{marginTop:10,padding:10,background:'#F4F4F2',borderRadius:6,fontSize:12,color:'#625650'}}>📄 {pdfFile.name} ({(pdfFile.size/1024).toFixed(0)} KB)</div>}
+      </div>}
+
+      <div style={{display:'flex',gap:10,marginTop:14,alignItems:'center'}}>
+        <button onClick={validate} disabled={busy||(mode==='text'?!text.trim():!pdfBase64)} style={{...btnP,fontSize:14,padding:'12px 24px',opacity:(busy||(mode==='text'?!text.trim():!pdfBase64))?0.5:1,cursor:(busy||(mode==='text'?!text.trim():!pdfBase64))?'not-allowed':'pointer'}}>{busy?'Validating…':'Run Validation'}</button>
+        {(text||pdfFile)&&<button onClick={reset} style={{...btnS,fontSize:13,padding:'12px 18px'}}>Clear</button>}
+      </div>
+
+      {error&&<div style={{marginTop:14,padding:12,background:'#FEE2E2',color:'#991B1B',borderRadius:6,fontSize:13,fontWeight:600}}>⚠️ {error}</div>}
+
+      <div style={{marginTop:16,paddingTop:16,borderTop:'1px solid #E5E3E0',fontSize:11,color:'#9E9B96',lineHeight:1.5}}>
+        <b>What it checks:</b> Line item arithmetic (qty × unit price = total), subtotal sum, sales tax @ 8.25%, grand total reconciliation, and pricing within Fencecrete's typical ranges (precast $80-180/LF, masonry $150-300/LF, wrought iron $60-120/LF). Cost per validation: ~$0.02. Result is read-only advice — does not modify the proposal.
+      </div>
+    </div>}
+
+    {result&&<div>
+      {/* Verdict banner */}
+      <div style={{...card,padding:20,marginBottom:14,borderLeft:`6px solid ${result.passed?'#0F6E56':'#8A261D'}`,background:result.passed?'#F0FDF4':'#FEF2F2'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:14,flexWrap:'wrap'}}>
+          <div>
+            <div style={{fontFamily:'Syne',fontSize:22,fontWeight:800,color:result.passed?'#065F46':'#991B1B',marginBottom:4}}>
+              {result.passed?'✓ PASSED':'✗ FAILED'}
+            </div>
+            <div style={{fontSize:14,color:'#1A1A1A',lineHeight:1.5}}>{result.summary}</div>
+            {!result.passed&&result.recompute_delta!=null&&<div style={{fontSize:13,color:'#991B1B',fontWeight:700,marginTop:6}}>
+              Net impact if sent as-is: {fmt$(Math.abs(result.recompute_delta))} {result.recompute_delta>0?'undercharge (margin leak)':'overcharge (lose-the-deal risk)'}
+            </div>}
+          </div>
+          <button onClick={reset} style={{...btnS,fontSize:12}}>Validate Another</button>
+        </div>
+      </div>
+
+      {/* Errors */}
+      {result.errors&&result.errors.length>0&&<div style={{...card,padding:20,marginBottom:14}}>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Errors Found ({result.errors.length})</div>
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {result.errors.map((e,i)=><div key={i} style={{padding:14,border:`1px solid ${e.severity==='critical'?'#FEE2E2':'#FEF3C7'}`,borderLeft:`4px solid ${e.severity==='critical'?'#8A261D':'#B45309'}`,borderRadius:6,background:'#FFF'}}>
+            <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
+              <span style={{background:e.severity==='critical'?'#FEE2E2':'#FEF3C7',color:e.severity==='critical'?'#991B1B':'#92400E',padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700,textTransform:'uppercase'}}>{e.severity}</span>
+              <span style={{fontSize:12,fontWeight:700,color:'#625650'}}>{e.location}</span>
+            </div>
+            <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.5,marginBottom:6}}>{e.description}</div>
+            {e.suggested_fix&&<div style={{fontSize:12,color:'#0F6E56',fontWeight:600,fontStyle:'italic'}}>→ {e.suggested_fix}</div>}
+          </div>)}
+        </div>
+      </div>}
+
+      {/* Line items */}
+      {result.line_items&&result.line_items.length>0&&<div style={{...card,padding:20,marginBottom:14}}>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Line Items</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+              {['Description','Qty','Unit','Unit Price','Stated','Computed','Match'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {result.line_items.map((li,i)=><tr key={i} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'8px 12px',fontWeight:600}}>{li.description}</td>
+                <td style={{padding:'8px 12px'}}>{li.qty}</td>
+                <td style={{padding:'8px 12px'}}>{li.unit}</td>
+                <td style={{padding:'8px 12px'}}>{fmt$(li.unit_price)}</td>
+                <td style={{padding:'8px 12px'}}>{fmt$(li.stated_total)}</td>
+                <td style={{padding:'8px 12px',fontWeight:700,color:li.match?'#1A1A1A':'#8A261D'}}>{fmt$(li.computed_total)}</td>
+                <td style={{padding:'8px 12px',fontSize:14}}>{li.match?'✓':<span style={{color:'#8A261D'}}>✗</span>}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </div>}
+
+      {/* Totals reconciliation */}
+      {result.totals&&<div style={{...card,padding:20,marginBottom:14}}>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Totals Reconciliation</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+          {[['Subtotal','stated_subtotal','computed_subtotal','subtotal_match'],['Tax (8.25%)','stated_tax','computed_tax','tax_match'],['Grand Total','stated_grand_total','computed_grand_total','grand_total_match']].map(([label,sk,ck,mk])=>{
+            const match=result.totals[mk];
+            return<div key={label} style={{padding:14,border:`1px solid ${match?'#D1FAE5':'#FEE2E2'}`,borderRadius:6,background:match?'#F0FDF4':'#FEF2F2'}}>
+              <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',marginBottom:6}}>{label}</div>
+              <div style={{fontSize:11,color:'#9E9B96'}}>Stated</div>
+              <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{fmt$(result.totals[sk])}</div>
+              <div style={{fontSize:11,color:'#9E9B96'}}>Computed</div>
+              <div style={{fontSize:18,fontWeight:800,color:match?'#065F46':'#991B1B'}}>{fmt$(result.totals[ck])} {match?'✓':'✗'}</div>
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      {/* Pricing review */}
+      {result.pricing_review&&result.pricing_review.length>0&&<div style={{...card,padding:20,marginBottom:14}}>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800,marginBottom:12}}>Pricing Review</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {result.pricing_review.map((p,i)=><div key={i} style={{padding:10,background:p.in_range?'#F9F8F6':'#FEF3C7',border:'1px solid '+(p.in_range?'#E5E3E0':'#FCD34D'),borderRadius:6,fontSize:12,display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+            <div><b>{p.line}</b> {p.per_lf?<span style={{color:'#625650'}}>· {fmt$(p.per_lf)}/LF</span>:''}</div>
+            <div style={{color:p.in_range?'#0F6E56':'#92400E',fontWeight:600}}>{p.in_range?'✓ in range':'⚠️ out of range'} — {p.note||''}</div>
+          </div>)}
+        </div>
+      </div>}
+
+      {usage&&<div style={{fontSize:10,color:'#9E9B96',textAlign:'right',padding:'4px 0',fontStyle:'italic'}}>
+        {usage.model} · {usage.tokens_in} in / {usage.tokens_out} out · ~${(usage.tokens_in*0.000003+usage.tokens_out*0.000015).toFixed(4)}
+      </div>}
+    </div>}
+  </div>;
+}
+
 // ═══ CREW LEADER ASSIGNMENT WORKFLOW ═══
 // Bulk assignment screen for Carlos. Goal: assign crew_leader_id to every
 // active install (and production-stage) job in 2 minutes. Optimized for
@@ -12956,6 +13178,68 @@ function DemandPlannerCopilot({tab,data}){
       </div>
       <div style={{fontSize:10,color:'#9E9B96',marginTop:12,paddingTop:10,borderTop:'1px solid #E5E3E0',fontStyle:'italic',lineHeight:1.5}}>
         Insights above are deterministic rules. Q&A is powered by claude-haiku-4-5 reading the same dashboard data — read-only analysis, no autonomous actions.
+      </div>
+    </div>}
+  </div>;
+}
+
+// HiringWhatIf — pure client-side simulator. User adjusts +/- crew leaders
+// per market and sees impact on weeks-per-leader. No LLM needed; the math
+// is deterministic and recomputes instantly.
+function HiringWhatIf({crewLoadByMarket}){
+  const[deltas,setDeltas]=useState({});  // {market: +1, market: -1}
+  const adjust=(mkt,n)=>setDeltas(d=>({...d,[mkt]:Math.max(-99,Math.min(99,(d[mkt]||0)+n))}));
+  const reset=()=>setDeltas({});
+  const totalAdded=Object.values(deltas).reduce((s,n)=>s+(n>0?n:0),0);
+  const totalRemoved=Object.values(deltas).reduce((s,n)=>s+(n<0?-n:0),0);
+  // Cost assumption: ~$110k/yr fully loaded W-2 crew leader (wages + benefits + taxes + truck)
+  const COST_PER_LEADER_PER_YEAR=110000;
+  const annualCost=totalAdded*COST_PER_LEADER_PER_YEAR;
+
+  return<div style={{...card,padding:18,marginTop:14,background:'#F0F9FF',border:'1px solid #BFDBFE'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12,flexWrap:'wrap',gap:10}}>
+      <div>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800}}>🎯 Hiring Scenario</div>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>Simulate adding or removing crew leaders. Math is instant — no save, no commit.</div>
+      </div>
+      {(totalAdded>0||totalRemoved>0)&&<button onClick={reset} style={{...btnS,fontSize:12}}>Reset to current</button>}
+    </div>
+    <div style={{overflowX:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <thead><tr style={{background:'rgba(255,255,255,0.6)',borderBottom:'1px solid #BFDBFE'}}>
+          {['Market','Active Days','Current Leaders','Adjust','New Leaders','Current Wks/Leader','New Wks/Leader','Change'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,color:'#1E40AF',textTransform:'uppercase'}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {crewLoadByMarket.map(r=>{
+            const d=deltas[r.market]||0;
+            const newLeaders=Math.max(1,(r.leaders||0)+d);
+            const currentWPL=r.weeks_per_leader;
+            const newWPL=r.total_install_days?r.total_install_days/newLeaders/5:null;  // 5 install days/wk
+            const change=(currentWPL!=null&&newWPL!=null)?newWPL-currentWPL:null;
+            return<tr key={r.market} style={{borderBottom:'1px solid #DBEAFE'}}>
+              <td style={{padding:'8px 10px',fontWeight:700}}>{r.label||r.market}</td>
+              <td style={{padding:'8px 10px'}}>{r.total_install_days?Math.round(r.total_install_days)+' d':'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:600}}>{r.leaders||0}</td>
+              <td style={{padding:'8px 10px'}}>
+                <button onClick={()=>adjust(r.market,-1)} style={{padding:'4px 10px',border:'1px solid #BFDBFE',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:14,cursor:'pointer'}}>−</button>
+                <span style={{display:'inline-block',width:36,textAlign:'center',fontWeight:700,color:d>0?'#0F6E56':d<0?'#8A261D':'#1A1A1A'}}>{d>0?'+':''}{d}</span>
+                <button onClick={()=>adjust(r.market,1)} style={{padding:'4px 10px',border:'1px solid #BFDBFE',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:14,cursor:'pointer'}}>+</button>
+              </td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:d!==0?'#1E40AF':'#1A1A1A'}}>{newLeaders}</td>
+              <td style={{padding:'8px 10px'}}>{currentWPL!=null?currentWPL.toFixed(1)+' wk':'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:newWPL!=null?(newWPL>6?'#8A261D':newWPL>3?'#B45309':'#0F6E56'):'#9E9B96'}}>{newWPL!=null?newWPL.toFixed(1)+' wk':'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:change!=null?(change<0?'#0F6E56':change>0?'#8A261D':'#9E9B96'):'#9E9B96'}}>{change!=null?(change>0?'+':'')+change.toFixed(1)+' wk':'—'}</td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>
+    {(totalAdded>0||totalRemoved>0)&&<div style={{marginTop:14,padding:12,background:'#FFF',border:'1px solid #BFDBFE',borderRadius:6}}>
+      <div style={{fontSize:12,color:'#1E40AF',fontWeight:700,marginBottom:6}}>SCENARIO SUMMARY</div>
+      <div style={{fontSize:13,lineHeight:1.6}}>
+        {totalAdded>0&&<div>Add <b>{totalAdded}</b> crew leader{totalAdded!==1?'s':''} → estimated cost <b>${(annualCost/1000).toFixed(0)}k/year</b> ({totalAdded} × $110k fully loaded)</div>}
+        {totalRemoved>0&&<div>Remove <b>{totalRemoved}</b> crew leader{totalRemoved!==1?'s':''} → estimated savings <b>${((totalRemoved*COST_PER_LEADER_PER_YEAR)/1000).toFixed(0)}k/year</b></div>}
+        <div style={{fontSize:11,color:'#625650',marginTop:6,fontStyle:'italic'}}>$110k/yr per leader = wages + benefits + taxes + truck/fuel + tools. Rough average; tune for actual loaded cost.</div>
       </div>
     </div>}
   </div>;
@@ -13447,6 +13731,7 @@ function DemandPlanningPage(){
       {crewLoadByMarket.find(r=>r.market==='HOU'&&r.weeks_per_leader>6)&&<div style={{...noteStyle,background:'#FEE2E2',borderColor:'#FCA5A5',color:'#991B1B'}}>
         <b>⚠️ Houston concentration risk:</b> {Math.round(crewLoadByMarket.find(r=>r.market==='HOU')?.total_install_days||0)} install-days across {crewLoadByMarket.find(r=>r.market==='HOU')?.leaders} W-2 crew leaders ({fmtN(crewLoadByMarket.find(r=>r.market==='HOU')?.weeks_per_leader)} weeks per leader). Single-point-of-failure exposure.
       </div>}
+      <HiringWhatIf crewLoadByMarket={crewLoadByMarket}/>
     </div>}
 
     {/* ─── LEADER SCORECARD TAB ─── */}
@@ -22551,6 +22836,7 @@ const PAGE_LABELS={
   proposals:'Proposals',
   proposal_triage:'Proposal Triage',
   bid_advisor:'Bid Advisor',
+  proposal_validator:'Proposal Validator',
   contacts:'Contacts',
   fleet:'Fleet',
   admin:'Admin',
@@ -23183,7 +23469,7 @@ const NAV_GROUPS=[
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'cv_reconciliation',label:'Contract Reconciliation',icon:'⚖️'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
-  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'contacts',label:'Contacts',icon:'👤'}]},
+  {label:'SALES',color:'#1D4ED8',iconColor:'#93C5FD',items:[{key:'sales_dashboard',label:'Sales Dashboard',icon:'📊'},{key:'prospecting',label:'Prospecting',icon:'🎯'},{key:'pipeline',label:'Pipeline',icon:'🔁'},{key:'tasks',label:'Tasks',icon:'✅'},{key:'proposals',label:'Proposals',icon:'📄'},{key:'proposal_triage',label:'Proposal Triage',icon:'🏷️'},{key:'bid_advisor',label:'Bid Advisor',icon:'🧮'},{key:'proposal_validator',label:'Proposal Validator',icon:'✅'},{key:'contacts',label:'Contacts',icon:'👤'}]},
 ];
 
 const MOBILE_NAV=[
@@ -23730,6 +24016,7 @@ function AppShell(){
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
             {page==='demand_planning'&&<ErrorBoundary label="Demand Planning"><DemandPlanningPage/></ErrorBoundary>}
             {page==='crew_assignment'&&<ErrorBoundary label="Crew Assignment"><CrewLeaderAssignmentPage/></ErrorBoundary>}
+            {page==='proposal_validator'&&<ErrorBoundary label="Proposal Validator"><ProposalValidatorPage/></ErrorBoundary>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='specialty_visits'&&<ErrorBoundary label="Specialty Install"><SpecialtyVisitsPage jobs={jobs}/></ErrorBoundary>}
