@@ -12483,6 +12483,292 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// ═══ DEMAND PLANNING (v0) ═══
+// Track 1 visibility tool — answers three operational questions on one page:
+//   1. Plant load — are we mold-constrained on the styles we have backlog for?
+//   2. Crew load — can installs keep up with what's coming out of the plant?
+//   3. Cash conversion — how fast does sold convert to invoiced?
+// Honest-data principles: every assumption is labeled, gaps are surfaced as
+// warnings (not blanks), no predictions without confidence bands.
+function DemandPlanningPage(){
+  const[tab,setTab]=useState('plant');
+  const[loading,setLoading]=useState(true);
+  const[jobs,setJobs]=useState([]);
+  const[molds,setMolds]=useState([]);
+  const[crewLeaders,setCrewLeaders]=useState([]);
+  const[invoices,setInvoices]=useState([]);
+  const[error,setError]=useState(null);
+
+  useEffect(()=>{
+    setLoading(true);
+    Promise.all([
+      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,ytd_invoiced,left_to_bill,contract_date,est_start_date,pm,crew_leader_id'),
+      sbGet('mold_inventory','select=style_name,mold_type,total_molds&mold_type=eq.panel'),
+      sbGet('crew_leaders','select=*&active=eq.true'),
+      sbGet('invoice_entries','select=invoice_amount,invoice_date,job_id&order=invoice_date.desc'),
+    ]).then(([j,m,cl,inv])=>{
+      setJobs(Array.isArray(j)?j:[]);
+      setMolds(Array.isArray(m)?m:[]);
+      setCrewLeaders(Array.isArray(cl)?cl:[]);
+      setInvoices(Array.isArray(inv)?inv:[]);
+      setLoading(false);
+    }).catch(e=>{setError(e.message);setLoading(false);});
+  },[]);
+
+  // ── DERIVATIONS ────────────────────────────────────────────────
+  const CLOSED=new Set(['closed','cancelled']);
+  const PRODUCTION_STATUSES=new Set(['production_queue','in_production','material_ready']);
+  const openJobs=useMemo(()=>jobs.filter(j=>!CLOSED.has(j.status)),[jobs]);
+  const productionJobs=useMemo(()=>openJobs.filter(j=>PRODUCTION_STATUSES.has(j.status)),[openJobs]);
+  const activeInstallJobs=useMemo(()=>openJobs.filter(j=>j.status==='active_install'),[openJobs]);
+
+  // Style hygiene gap — counted once for the warning ribbon
+  const missingStyle=useMemo(()=>openJobs.filter(j=>!j.style||!j.style.trim()).length,[openJobs]);
+
+  // ── PLANT LOAD ──
+  // Map: style → { backlog_lf, jobs, molds }
+  const plantLoad=useMemo(()=>{
+    const moldByStyle={};
+    molds.forEach(m=>{moldByStyle[m.style_name]=(moldByStyle[m.style_name]||0)+(m.total_molds||0);});
+    const styleBacklog={};
+    productionJobs.forEach(j=>{
+      const s=j.style||'(unspecified)';
+      if(!styleBacklog[s])styleBacklog[s]={style:s,backlog_lf:0,jobs:0,molds:moldByStyle[s]||0,has_mold_data:moldByStyle[s]!=null};
+      styleBacklog[s].backlog_lf+=Number(j.total_lf)||0;
+      styleBacklog[s].jobs+=1;
+    });
+    // Compute weeks-to-clear at 1 turn/day, 5d/week assumption.
+    // Each mold produces one panel per day. Panel width varies by style; we use
+    // a global rough average of 4.5 ft/panel (54" panel width is the spec for
+    // most styles). Documented as an assumption in the UI.
+    const FT_PER_PANEL=4.5;
+    const TURNS_PER_WEEK=5;
+    Object.values(styleBacklog).forEach(r=>{
+      const weeklyCapacity=r.molds*FT_PER_PANEL*TURNS_PER_WEEK;
+      r.weekly_capacity_lf=weeklyCapacity;
+      r.weeks_to_clear=weeklyCapacity>0?(r.backlog_lf/weeklyCapacity):null;
+      r.utilization_label=weeklyCapacity===0?(r.molds===0?'no molds tracked':'no capacity'):null;
+    });
+    return Object.values(styleBacklog).sort((a,b)=>b.backlog_lf-a.backlog_lf);
+  },[productionJobs,molds]);
+
+  // ── CREW LOAD ──
+  const crewLoadByMarket=useMemo(()=>{
+    // jobs.market uses short codes: HOU/SA/AUS/DFW/CS. crew_leaders.market uses long names.
+    const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
+    const SHORT_TO_LABEL={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station',OOS:'Out of State'};
+    const out={};
+    activeInstallJobs.forEach(j=>{
+      const mkt=j.market||'(unknown)';
+      if(!out[mkt])out[mkt]={market:mkt,label:SHORT_TO_LABEL[mkt]||mkt,active_lf:0,active_jobs:0,leaders:0,uses_subs:false};
+      out[mkt].active_lf+=Number(j.total_lf)||0;
+      out[mkt].active_jobs+=1;
+    });
+    crewLeaders.forEach(cl=>{
+      const short=MKT_LONG_TO_SHORT[cl.market];
+      if(!short)return;
+      if(!out[short])out[short]={market:short,label:cl.market,active_lf:0,active_jobs:0,leaders:0,uses_subs:false};
+      out[short].leaders+=1;
+    });
+    // Mark sub markets
+    ['DFW','AUS','CS'].forEach(m=>{if(out[m])out[m].uses_subs=true;});
+    Object.values(out).forEach(r=>{
+      r.lf_per_leader=r.leaders>0?(r.active_lf/r.leaders):null;
+    });
+    return Object.values(out).sort((a,b)=>b.active_lf-a.active_lf);
+  },[activeInstallJobs,crewLeaders]);
+
+  // ── CASH CONVERSION ──
+  // 13-week invoice run rate: sum of invoice_amount where invoice_date in last 91 days, /13
+  const cashByMarket=useMemo(()=>{
+    const ninetyOneDaysAgo=new Date();ninetyOneDaysAgo.setDate(ninetyOneDaysAgo.getDate()-91);
+    const recentInv=invoices.filter(i=>i.invoice_date&&new Date(i.invoice_date)>=ninetyOneDaysAgo);
+    const invByJob={};
+    recentInv.forEach(i=>{invByJob[i.job_id]=(invByJob[i.job_id]||0)+(Number(i.invoice_amount)||0);});
+    const jobToMarket={};openJobs.forEach(j=>{jobToMarket[j.id]=j.market;});
+    const totalByMarket={};
+    Object.entries(invByJob).forEach(([jid,amt])=>{
+      const m=jobToMarket[jid]||'(unknown)';
+      totalByMarket[m]=(totalByMarket[m]||0)+amt;
+    });
+    const out={};
+    openJobs.forEach(j=>{
+      const m=j.market||'(unknown)';
+      if(!out[m])out[m]={market:m,ltb:0,recent_invoiced:0,weekly_run_rate:0};
+      out[m].ltb+=Number(j.left_to_bill)||0;
+    });
+    Object.entries(totalByMarket).forEach(([m,amt])=>{
+      if(!out[m])out[m]={market:m,ltb:0,recent_invoiced:amt,weekly_run_rate:amt/13};
+      else{out[m].recent_invoiced=amt;out[m].weekly_run_rate=amt/13;}
+    });
+    Object.values(out).forEach(r=>{
+      r.weeks_of_ltb=r.weekly_run_rate>0?(r.ltb/r.weekly_run_rate):null;
+    });
+    return Object.values(out).sort((a,b)=>b.ltb-a.ltb);
+  },[openJobs,invoices]);
+
+  // Aging buckets (job-age based, contract_date)
+  const agingBuckets=useMemo(()=>{
+    const now=new Date();
+    const buckets={'0-30':0,'31-60':0,'61-90':0,'90+':0,'no_date':0};
+    openJobs.forEach(j=>{
+      if(!j.left_to_bill)return;
+      if(!j.contract_date){buckets.no_date+=Number(j.left_to_bill)||0;return;}
+      const days=Math.floor((now-new Date(j.contract_date))/(1000*60*60*24));
+      if(days<=30)buckets['0-30']+=Number(j.left_to_bill)||0;
+      else if(days<=60)buckets['31-60']+=Number(j.left_to_bill)||0;
+      else if(days<=90)buckets['61-90']+=Number(j.left_to_bill)||0;
+      else buckets['90+']+=Number(j.left_to_bill)||0;
+    });
+    return buckets;
+  },[openJobs]);
+
+  // ── RENDER HELPERS ────────────────────────────────────────────
+  const fmt$=v=>v==null?'—':'$'+(v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(0)+'k':Math.round(v).toLocaleString());
+  const fmtLF=v=>v==null?'—':v>=1000?((v/1000).toFixed(1)+'k LF'):(Math.round(v)+' LF');
+  const fmtN=v=>v==null?'—':v.toFixed(1);
+  const tabBtn=(k,label)=><button onClick={()=>setTab(k)} style={{padding:'8px 18px',borderRadius:8,border:`1px solid ${tab===k?'#8A261D':'#E5E3E0'}`,background:tab===k?'#8A261D':'#FFF',color:tab===k?'#FFF':'#1A1A1A',fontSize:13,fontWeight:700,cursor:'pointer'}}>{label}</button>;
+  const card2={...card,padding:16};
+  const sectionHead={fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8};
+  const noteStyle={fontSize:11,color:'#92400E',background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:6,padding:'8px 12px',lineHeight:1.5,marginBottom:14};
+  const captionStyle={fontSize:11,color:'#9E9B96',marginTop:8,fontStyle:'italic',lineHeight:1.5};
+
+  if(loading)return<div style={card2}>Loading demand planning data…</div>;
+  if(error)return<div style={{...card2,color:'#8A261D'}}>Error: {error}</div>;
+
+  return<div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:12}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Demand Planning</h1>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>
+          {openJobs.length} open jobs · {fmtLF(openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0))} backlog · {fmt$(openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0))} contract value
+        </div>
+      </div>
+      <div style={{fontSize:11,color:'#9E9B96'}}>v0 · supply-side visibility</div>
+    </div>
+
+    <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+      {tabBtn('plant','Plant Load')}
+      {tabBtn('crew','Crew Load')}
+      {tabBtn('cash','Cash Conversion')}
+    </div>
+
+    {missingStyle>0&&tab==='plant'&&<div style={noteStyle}>
+      <b>Data hygiene gap:</b> {missingStyle} of {openJobs.length} open jobs ({Math.round(missingStyle/openJobs.length*100)}%) have no style assigned and are excluded from this view. Plant load below understates true demand.
+    </div>}
+
+    {/* ─── PLANT LOAD TAB ─── */}
+    {tab==='plant'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Production Backlog by Style</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Style','Jobs','Backlog LF','Panel Molds','Weekly Capacity*','Weeks to Clear*','Bottleneck'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {plantLoad.length===0&&<tr><td colSpan={7} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No production-stage jobs.</td></tr>}
+              {plantLoad.map(r=><tr key={r.style} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{r.style}</td>
+                <td style={{padding:'10px 12px'}}>{r.jobs}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{fmtLF(r.backlog_lf)}</td>
+                <td style={{padding:'10px 12px'}}>{r.has_mold_data?r.molds:<span style={{color:'#9E9B96',fontSize:11}}>untracked</span>}</td>
+                <td style={{padding:'10px 12px'}}>{r.weekly_capacity_lf>0?fmtLF(r.weekly_capacity_lf):'—'}</td>
+                <td style={{padding:'10px 12px',fontWeight:600,color:r.weeks_to_clear>8?'#8A261D':r.weeks_to_clear>4?'#B45309':'#1A1A1A'}}>{r.weeks_to_clear!=null?fmtN(r.weeks_to_clear)+' wk':'—'}</td>
+                <td style={{padding:'10px 12px',fontSize:11}}>{r.weeks_to_clear>8?<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>MOLD-CONSTRAINED</span>:r.utilization_label?<span style={{color:'#9E9B96'}}>{r.utilization_label}</span>:''}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          *Weekly capacity assumes 1 mold turn/day × 5 days/week × 4.5 ft per panel (avg). <b>This is an assumption, not a measurement.</b> Real cycle time varies with color changeover (~25 min) and curing. Once Max instruments mold turn rate (Track 2D), this column becomes calibrated.
+        </div>
+      </div>
+    </div>}
+
+    {/* ─── CREW LOAD TAB ─── */}
+    {tab==='crew'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Active Install Workload by Market</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Market','Active LF','Jobs','Crew Leaders','LF / Leader','Notes'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {crewLoadByMarket.map(r=><tr key={r.market} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{r.label}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{fmtLF(r.active_lf)}</td>
+                <td style={{padding:'10px 12px'}}>{r.active_jobs}</td>
+                <td style={{padding:'10px 12px'}}>{r.uses_subs?<span style={{color:'#9E9B96'}}>{r.leaders} (W-2 only)</span>:r.leaders}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:r.lf_per_leader>5000?'#8A261D':r.lf_per_leader>2500?'#B45309':'#1A1A1A'}}>{r.lf_per_leader!=null?fmtLF(r.lf_per_leader):'—'}</td>
+                <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.uses_subs?'Subcontractors handle bulk; W-2 leaders are SA crews driving up':''}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          LF per leader = active install LF ÷ # of W-2 crew leaders in that market. <b>Higher = more concentration risk.</b> A leader can typically install 800-1500 LF/week (style-dependent), so dividing this column by ~1000 gives weeks of work in flight per leader.
+        </div>
+      </div>
+      {crewLoadByMarket.find(r=>r.market==='HOU'&&r.lf_per_leader>5000)&&<div style={{...noteStyle,background:'#FEE2E2',borderColor:'#FCA5A5',color:'#991B1B'}}>
+        <b>⚠️ Houston concentration risk:</b> {fmtLF(crewLoadByMarket.find(r=>r.market==='HOU')?.active_lf)} of active install across {crewLoadByMarket.find(r=>r.market==='HOU')?.leaders} W-2 crew leaders ({fmtLF(crewLoadByMarket.find(r=>r.market==='HOU')?.lf_per_leader)} per leader). Single-point-of-failure exposure.
+      </div>}
+    </div>}
+
+    {/* ─── CASH CONVERSION TAB ─── */}
+    {tab==='cash'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Left to Bill — Aging by Contract Date</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:12,marginBottom:16}}>
+          {[['0-30 days','#16A34A'],['31-60 days','#EAB308'],['61-90 days','#B45309'],['90+ days','#DC2626'],['no contract date','#9E9B96']].map(([label,color])=>{
+            const key=label.split(' ')[0]==='no'?'no_date':label.split(' ')[0];
+            const v=agingBuckets[key]||0;
+            return<div key={label} style={{...card,padding:14,borderLeft:`4px solid ${color}`}}>
+              <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+              <div style={{fontSize:20,fontWeight:800,fontFamily:'Inter',marginTop:4}}>{fmt$(v)}</div>
+            </div>;
+          })}
+        </div>
+      </div>
+      <div style={{...card2,marginTop:16}}>
+        <div style={sectionHead}>Cash Conversion by Market</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Market','Left to Bill','13-wk Invoice Run','Weekly Run Rate','Weeks of LTB'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {cashByMarket.map(r=><tr key={r.market} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{r.market}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{fmt$(r.ltb)}</td>
+                <td style={{padding:'10px 12px'}}>{fmt$(r.recent_invoiced)}</td>
+                <td style={{padding:'10px 12px'}}>{fmt$(r.weekly_run_rate)}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:r.weeks_of_ltb>16?'#8A261D':r.weeks_of_ltb>8?'#B45309':'#1A1A1A'}}>{r.weeks_of_ltb!=null?fmtN(r.weeks_of_ltb)+' wk':<span style={{color:'#9E9B96'}}>no recent invoices</span>}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          Weeks of LTB = current Left-to-Bill ÷ recent weekly invoice rate. <b>The lower the better.</b> Above ~12 weeks indicates a backlog growing faster than it's being billed (potential cash conversion issue). Above ~20 weeks suggests jobs sitting in production or install queue without being invoiced.
+        </div>
+      </div>
+    </div>}
+
+    {/* Track 2 callout — what makes this better */}
+    <div style={{...card2,marginTop:24,background:'#F9F8F6'}}>
+      <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>What makes this dashboard more accurate over time</div>
+      <ul style={{fontSize:12,color:'#625650',lineHeight:1.8,margin:0,paddingLeft:20}}>
+        <li><b>Mold turn rate instrumentation</b> (Max, ~2 weeks): replaces the "1 turn/day" assumption with measured cycle time per style</li>
+        <li><b>PM Daily Report compliance</b> (Carlos, ongoing): once 80% of active jobs have daily LF reports, crew capacity rates become per-leader calibrated</li>
+        <li><b>install_duration_days field</b> (David): enables real schedule generation — currently no job has an estimated complete date</li>
+        <li><b>Style canonicalization</b> ({missingStyle} jobs missing style): closes the data gap that's understating plant load</li>
+        <li><b>Crew leader assignment</b> (Carlos + PMs): currently 0 of {openJobs.length} active jobs have crew_leader_id — without it, crew utilization can't be measured per leader</li>
+      </ul>
+    </div>
+  </div>;
+}
+
 // ═══ CREW LEADERS ADMIN PAGE ═══
 // Single-page roster manager. Inline editing on every row (name, market,
 // role, department code, pay rate). Add-new at top. Soft-deactivate via
@@ -21225,6 +21511,7 @@ const PAGE_LABELS={
   my_plate:'My Plate',
   sharepoint_links:'SharePoint Links',
   crew_leaders_admin:'Crew Leaders',
+  demand_planning:'Demand Planning',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -21842,7 +22129,7 @@ const NAV_GROUPS=[
   {label:'OVERVIEW',color:'#8A261D',iconColor:'#E07060',items:[{key:'dashboard',label:'Dashboard',icon:'🏠'},{key:'my_plate',label:'My Plate',icon:'🍽️'}]},
   {label:'PROJECTS',color:'#D97706',iconColor:'#FBBF24',items:[{key:'projects',label:'Projects',icon:'🏗'}]},
   {label:'MAP',color:'#185FA5',iconColor:'#60A5FA',items:[{key:'map',label:'Project Map',icon:'🗺'}]},
-  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
+  {label:'OPERATIONS',color:'#0F6E56',iconColor:'#34D399',items:[{key:'demand_planning',label:'Demand Planning',icon:'📊'},{key:'production',label:'Production Board',icon:'🗂'},{key:'production_planning',label:'Production Planning',icon:'⚙'},{key:'material_calc',label:'Material Calculator',icon:'🧮'},{key:'daily_report',label:'Daily Production Report',icon:'🏭'},{key:'mold_inventory',label:'Mold Inventory',icon:'🧱'}]},
   {label:'PROJECT MANAGEMENT',color:'#854F0B',iconColor:'#FCD34D',items:[{key:'pm_billing',label:'PM Bill Sheet',icon:'🧾'},{key:'pm_daily_report',label:'PM Daily Report',icon:'📝'},{key:'schedule',label:'Install Schedule',icon:'📅'},{key:'specialty_visits',label:'Specialty Install',icon:'🔧'}]},
   {label:'FINANCE',color:'#065F46',iconColor:'#6EE7B7',items:[{key:'billing',label:'Billing',icon:'💰'},{key:'reports',label:'Reports',icon:'📈'},{key:'change_orders',label:'Change Order Log',icon:'📝'},{key:'cv_reconciliation',label:'Contract Reconciliation',icon:'⚖️'},{key:'weather_days',label:'Weather Days',icon:'🌧'},{key:'import_projects',label:'Import Projects',icon:'📤'}]},
   {label:'MAINTENANCE',color:'#0F6E56',iconColor:'#34D399',items:[{key:'fleet',label:'Fleet Assets',icon:'🚛'},{key:'fleet_wo',label:'Fleet Work Orders',icon:'🔧'},{key:'plant_maintenance',label:'Plant Work Orders',icon:'🏭'}]},
@@ -22391,6 +22678,7 @@ function AppShell(){
             {page==='schedule'&&<SchedulePage jobs={jobs}/>}
             {page==='weather_days'&&<WeatherDaysPage jobs={jobs}/>}
             {page==='pm_daily_report'&&<PMDailyReportPage jobs={jobs}/>}
+            {page==='demand_planning'&&<ErrorBoundary label="Demand Planning"><DemandPlanningPage/></ErrorBoundary>}
             {page==='daily_report'&&<DailyReportPage jobs={jobs} onNav={navigateTo} refreshKey={refreshKey}/>}
             {page==='install_schedule'&&<InstallSchedulePage jobs={jobs}/>}
             {page==='specialty_visits'&&<ErrorBoundary label="Specialty Install"><SpecialtyVisitsPage jobs={jobs}/></ErrorBoundary>}
