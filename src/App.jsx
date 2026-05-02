@@ -317,6 +317,23 @@ const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toStrin
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne','Mike Dean'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'},{id:'Hugo Rodriguez',short:'Hugo',label:'Hugo Rodriguez'},{id:'Israel Santibanez',short:'Israel',label:'Israel Santibanez'}];
 const PMS=PM_LIST.map(p=>p.id);
+// Default crew-leader market for each PM, keyed by PM_LIST.id (full name).
+// Drives the PM Daily Report's Crew Leader dropdown when no job is selected
+// yet. Once a job is picked, the job's market wins. Doug serves DFW + Austin
+// (subcontractor markets) — defaults to San Antonio because SA crews drive
+// up; banner surfaces the sub reality on top of the dropdown.
+const PM_HOME_MARKET={
+  'Ray Garcia':'San Antonio',
+  'Doug Monroe':'San Antonio',
+  'Manuel Salazar':'Houston',
+  'Rafael Anaya Jr.':'Houston',
+  'Hugo Rodriguez':'Houston',
+  'Israel Santibanez':'Houston',
+};
+// PMs whose home market is supplied via subcontractors (no W-2 crew leaders
+// in those geographies). Used to render an inline note above the dropdown.
+const PM_USES_SUBS=new Set(['Doug Monroe']);
+
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
@@ -12654,14 +12671,26 @@ function CrewLeadersAdminPage(){
   </div>;
 }
 
-// Crew Leader dropdown — used by PM Daily Report. Loads roster lazily;
-// filters by jobMarket unless 'Show all markets' is toggled.
-function CrewLeaderSelect({value,onChange,jobMarket,style}){
+// Crew Leader dropdown — used by PM Daily Report. Loads roster lazily.
+// Filter precedence (when 'Show all markets' is OFF):
+//   1. job's market (if a job is selected)
+//   2. PM's home market (PM_HOME_MARKET) — used while form is being filled
+//      out before a job is picked
+// PMs in PM_USES_SUBS get a banner explaining their default market is a
+// proxy because their territory is subcontracted (Doug = DFW/Austin).
+function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
   const[leaders,setLeaders]=useState([]);
   const[showAll,setShowAll]=useState(false);
   useEffect(()=>{sbGet('crew_leaders','select=*&active=eq.true&order=market.asc,name.asc').then(d=>setLeaders(d||[]));},[]);
   const filtered=showAll?leaders:leaders.filter(cl=>!jobMarket||cl.market===jobMarket);
+  // Show sub banner only when filtering is driven by the PM (no job picked yet)
+  // AND the PM's territory is subcontracted. Once a job is selected, the job's
+  // market is authoritative and the banner becomes noise.
+  const showSubBanner=!hasJob&&pmName&&PM_USES_SUBS.has(pmName);
   return(<div>
+    {showSubBanner&&<div style={{fontSize:11,color:'#92400E',background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:6,padding:'6px 10px',marginBottom:6,lineHeight:1.4}}>
+      ⚠️ DFW/Austin installs use subcontractors — defaulting to San Antonio crews. Toggle below to see all markets.
+    </div>}
     <select value={value||''} onChange={e=>{const id=e.target.value;const cl=leaders.find(x=>x.id===id);onChange(id,cl?cl.name:'');}} style={style}>
       <option value="">— Select —</option>
       {filtered.length===0&&<option disabled>No crew leaders for {jobMarket||'this market'}</option>}
@@ -12968,7 +12997,7 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Job Number (N/A for Repair)</label><input value={form.job_number} onChange={e=>set('job_number',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={mSel}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Crew Leader</label><CrewLeaderSelect value={form.crew_leader_id} onChange={(id,name)=>{setForm(p=>({...p,crew_leader_id:id||'',crew:name||''}));}} jobMarket={(()=>{const j=jobs.find(j=>j.id===selJobId);return j?j.market:'';})()} style={mInp}/></div>
+          <div><label style={lblStyle}>Crew Leader</label><CrewLeaderSelect value={form.crew_leader_id} onChange={(id,name)=>{setForm(p=>({...p,crew_leader_id:id||'',crew:name||''}));}} jobMarket={(()=>{const j=jobs.find(j=>j.id===selJobId);return j?j.market:(PM_HOME_MARKET[selPM]||'');})()} pmName={selPM} hasJob={!!selJobId} style={mInp}/></div>
           <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={mInp}/></div>
           <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
