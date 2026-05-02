@@ -12486,6 +12486,54 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// CalibrateButton — calls the recalibrate_install_rates RPC and shows results.
+// Uses Supabase's PostgREST RPC endpoint (POST /rest/v1/rpc/{function_name}).
+function CalibrateButton({onDone}){
+  const[busy,setBusy]=useState(false);
+  const[results,setResults]=useState(null);
+  const[error,setError]=useState(null);
+  const run=async()=>{
+    setBusy(true);setError(null);
+    try{
+      const res=await fetch(`${SB}/rest/v1/rpc/recalibrate_install_rates`,{
+        method:'POST',
+        headers:{...H,'Content-Type':'application/json','Prefer':'return=representation'},
+        body:JSON.stringify({min_n:20}),
+      });
+      if(!res.ok){const txt=await res.text();throw new Error(`${res.status}: ${txt}`);}
+      const d=await res.json();
+      setResults(Array.isArray(d)?d:[]);
+    }catch(e){setError(e.message);}
+    setBusy(false);
+  };
+  return<div>
+    <button onClick={run} disabled={busy} style={{...btnP,fontSize:13,padding:'10px 20px',opacity:busy?0.5:1,cursor:busy?'wait':'pointer'}}>{busy?'Calibrating…':'⚙️ Run Calibration'}</button>
+    {error&&<div style={{marginTop:10,padding:10,background:'#FEE2E2',color:'#991B1B',borderRadius:6,fontSize:12}}>{error}</div>}
+    {results&&<div style={{marginTop:14}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+        <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+          {['Category','Prior','Measured','Delta','N','Result'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {results.map((r,i)=><tr key={i} style={{borderBottom:'1px solid #F4F4F2'}}>
+            <td style={{padding:'8px 10px',fontWeight:600}}>{r.out_category}</td>
+            <td style={{padding:'8px 10px'}}>{r.out_prior_rate}</td>
+            <td style={{padding:'8px 10px',fontWeight:600}}>{r.out_measured_rate||<span style={{color:'#9E9B96'}}>—</span>}</td>
+            <td style={{padding:'8px 10px',fontWeight:700,color:r.out_delta==null?'#9E9B96':Math.abs(r.out_delta)>30?'#8A261D':'#1A1A1A'}}>{r.out_delta!=null?(r.out_delta>0?'+':'')+r.out_delta:'—'}</td>
+            <td style={{padding:'8px 10px'}}>{r.out_reports}</td>
+            <td style={{padding:'8px 10px',fontSize:11}}>
+              {r.out_action==='calibrated'?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 8px',borderRadius:4,fontWeight:700}}>CALIBRATED</span>:
+               r.out_action==='no data'?<span style={{background:'#F4F4F2',color:'#9E9B96',padding:'2px 8px',borderRadius:4}}>NO DATA</span>:
+               <span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4}}>{r.out_action}</span>}
+            </td>
+          </tr>)}
+        </tbody>
+      </table>
+      {results.some(r=>r.out_action==='calibrated')&&<button onClick={onDone} style={{...btnP,marginTop:14,fontSize:12}}>Reload to see updated schedule</button>}
+    </div>}
+  </div>;
+}
+
 // ═══ CREW LEADER ASSIGNMENT WORKFLOW ═══
 // Bulk assignment screen for Carlos. Goal: assign crew_leader_id to every
 // active install (and production-stage) job in 2 minutes. Optimized for
@@ -12649,6 +12697,37 @@ function CrewLeaderAssignmentPage(){
          </div>;
        })}
      </div>}
+  </div>;
+}
+
+// DigestSender — manually triggers demand-digest edge function. Two modes:
+// preview (dry run, returns markdown only) and send (emails the recipients).
+function DigestSender(){
+  const[busy,setBusy]=useState(false);
+  const[preview,setPreview]=useState(null);
+  const[error,setError]=useState(null);
+  const[sentOK,setSentOK]=useState(false);
+  const call=async(dryRun)=>{
+    setBusy(true);setError(null);setSentOK(false);
+    try{
+      const res=await fetch(`${SB}/functions/v1/demand-digest`,{
+        method:'POST',
+        headers:H,
+        body:JSON.stringify(dryRun?{dryRun:true}:{}),
+      });
+      const d=await res.json();
+      if(d.error)throw new Error(d.error);
+      if(dryRun){setPreview(d.digest);}
+      else{setSentOK(true);setPreview(d.digest);}
+    }catch(e){setError(e.message);}
+    setBusy(false);
+  };
+  return<div style={{display:'inline-flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+    <button onClick={()=>call(true)} disabled={busy} style={{...btnS,fontSize:12,padding:'8px 14px',opacity:busy?0.5:1}}>{busy?'…':'Preview Digest'}</button>
+    <button onClick={()=>call(false)} disabled={busy} style={{...btnP,fontSize:12,padding:'8px 14px',opacity:busy?0.5:1}}>{busy?'…':'📧 Send Digest Now'}</button>
+    {sentOK&&<span style={{color:'#0F6E56',fontSize:11,fontWeight:700}}>✓ Sent</span>}
+    {error&&<span style={{color:'#8A261D',fontSize:11,fontWeight:700}}>{error}</span>}
+    {preview&&<div style={{flexBasis:'100%',marginTop:10,padding:14,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6,fontSize:12,lineHeight:1.6,whiteSpace:'pre-wrap',color:'#1A1A1A',fontFamily:'Inter,sans-serif'}}>{preview}<button onClick={()=>setPreview(null)} style={{display:'block',marginTop:10,fontSize:11,background:'none',border:'none',color:'#8A261D',cursor:'pointer'}}>Close preview</button></div>}
   </div>;
 }
 
@@ -12871,6 +12950,10 @@ function DemandPlannerCopilot({tab,data}){
         {lastUsage&&<div style={{fontSize:10,color:'#9E9B96',marginTop:6,textAlign:'right'}}>last: {lastUsage.in} in / {lastUsage.out} out tokens · ~${(lastUsage.in*0.0000008+lastUsage.out*0.000004).toFixed(4)}</div>}
       </div>}
 
+      <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #E5E3E0',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <DigestSender/>
+        <span style={{fontSize:11,color:'#9E9B96'}}>Composes a 200-word executive digest using current dashboard data. Sends to David, Alex, Carlos.</span>
+      </div>
       <div style={{fontSize:10,color:'#9E9B96',marginTop:12,paddingTop:10,borderTop:'1px solid #E5E3E0',fontStyle:'italic',lineHeight:1.5}}>
         Insights above are deterministic rules. Q&A is powered by claude-haiku-4-5 reading the same dashboard data — read-only analysis, no autonomous actions.
       </div>
@@ -13147,6 +13230,29 @@ function DemandPlanningPage(){
     return{rows:Object.values(byLeader).sort((a,b)=>(b.leader?.market||'').localeCompare(a.leader?.market||'')||b.jobs.length-a.jobs.length),horizonStart,horizonEnd,totalDays};
   },[activeInstallJobs,openJobs,crewLeaders]);
 
+  // Leader productivity scorecard. For each crew leader with at least 1 PM
+  // Daily Report, compute: total LF logged, # of report-days, mean LF/day,
+  // # of distinct jobs touched. Surfaces top performers + capacity headroom.
+  const leaderScorecard=useMemo(()=>{
+    const byLeader={};
+    crewLeaders.forEach(cl=>{byLeader[cl.id]={leader:cl,reports:0,total_lf:0,distinct_jobs:new Set(),first_date:null,last_date:null};});
+    reports.forEach(r=>{
+      if(!r.crew_leader_id||!byLeader[r.crew_leader_id])return;
+      const row=byLeader[r.crew_leader_id];
+      row.reports+=1;
+      row.total_lf+=Number(r.lf_panels_installed)||0;
+      if(r.job_id)row.distinct_jobs.add(r.job_id);
+      const d=r.report_date;
+      if(d&&(!row.first_date||d<row.first_date))row.first_date=d;
+      if(d&&(!row.last_date||d>row.last_date))row.last_date=d;
+    });
+    return Object.values(byLeader).map(row=>({
+      ...row,
+      distinct_jobs:row.distinct_jobs.size,
+      avg_lf_per_day:row.reports>0?(row.total_lf/row.reports):null,
+    })).sort((a,b)=>(b.avg_lf_per_day||0)-(a.avg_lf_per_day||0));
+  },[crewLeaders,reports]);
+
   // 13-week schedule: project install completion week-by-week using
   // est_start_date + install_duration_days. Bucket jobs into Sunday-anchored
   // weeks. Jobs missing start date are stratified into "unscheduled".
@@ -13236,6 +13342,7 @@ function DemandPlanningPage(){
       {tabBtn('material','Material Readiness')}
       {tabBtn('crew','Crew Load')}
       {tabBtn('gantt','Leader Gantt')}
+      {tabBtn('scorecard','Leader Scorecard')}
       {tabBtn('schedule','13-Week Schedule')}
       {tabBtn('pipeline','Pipeline → Forecast')}
       {tabBtn('calibration','Calibration')}
@@ -13340,6 +13447,52 @@ function DemandPlanningPage(){
       {crewLoadByMarket.find(r=>r.market==='HOU'&&r.weeks_per_leader>6)&&<div style={{...noteStyle,background:'#FEE2E2',borderColor:'#FCA5A5',color:'#991B1B'}}>
         <b>⚠️ Houston concentration risk:</b> {Math.round(crewLoadByMarket.find(r=>r.market==='HOU')?.total_install_days||0)} install-days across {crewLoadByMarket.find(r=>r.market==='HOU')?.leaders} W-2 crew leaders ({fmtN(crewLoadByMarket.find(r=>r.market==='HOU')?.weeks_per_leader)} weeks per leader). Single-point-of-failure exposure.
       </div>}
+    </div>}
+
+    {/* ─── LEADER SCORECARD TAB ─── */}
+    {tab==='scorecard'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Crew Leader Productivity Scorecard</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
+          Measured from PM Daily Reports where <code>crew_leader_id</code> is populated. Leaders with zero reports are at the bottom — that's a data gap, not necessarily a performance gap. Coverage improves as PMs file daily reports with leader assignments.
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Leader','Market','Role','Reports','Total LF Logged','LF / Report Day','Distinct Jobs','Date Range'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {leaderScorecard.map(r=>{
+                const hasData=r.reports>0;
+                return<tr key={r.leader.id} style={{borderBottom:'1px solid #F4F4F2',opacity:hasData?1:0.5}}>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{r.leader.name}</td>
+                  <td style={{padding:'10px 12px'}}>{r.leader.market}</td>
+                  <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.leader.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')||'—'}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{r.reports}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{hasData?fmtLF(r.total_lf):<span style={{color:'#9E9B96'}}>—</span>}</td>
+                  <td style={{padding:'10px 12px',fontWeight:700,color:hasData?(r.avg_lf_per_day>120?'#0F6E56':r.avg_lf_per_day<60?'#B45309':'#1A1A1A'):'#9E9B96'}}>{hasData?Math.round(r.avg_lf_per_day)+' LF/d':'—'}</td>
+                  <td style={{padding:'10px 12px'}}>{hasData?r.distinct_jobs:<span style={{color:'#9E9B96'}}>—</span>}</td>
+                  <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.first_date?`${r.first_date} to ${r.last_date}`:<span style={{color:'#9E9B96'}}>no reports</span>}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          LF/Report Day = total LF logged ÷ number of daily reports. <b>This is raw output, not productivity</b> — a leader on a wrought iron job will appear higher than one on masonry, regardless of skill. Use Calibration tab to see category-adjusted rates.
+        </div>
+      </div>
+      <div style={{...card2,marginTop:14}}>
+        <div style={sectionHead}>Coverage</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12}}>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Leaders with Data</div><div style={{fontSize:24,fontWeight:800}}>{leaderScorecard.filter(r=>r.reports>0).length}<span style={{fontSize:13,fontWeight:600,color:'#9E9B96'}}> / {leaderScorecard.length}</span></div></div>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Reports w/ Leader ID</div><div style={{fontSize:24,fontWeight:800}}>{reports.filter(r=>r.crew_leader_id).length}</div></div>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Reports Missing Leader ID</div><div style={{fontSize:24,fontWeight:800,color:'#B45309'}}>{reports.filter(r=>!r.crew_leader_id).length}</div></div>
+        </div>
+        <div style={captionStyle}>
+          Reports missing leader ID = filed before crew_leader_id field shipped, or PM didn't pick a leader. Future reports will have it because the dropdown is now in the form.
+        </div>
+      </div>
     </div>}
 
     {/* ─── 13-WEEK SCHEDULE TAB ─── */}
@@ -13487,6 +13640,13 @@ function DemandPlanningPage(){
         <div style={captionStyle}>
           Threshold for trusting measured rate: N ≥ 20 reports per category. Below that, sample variance is too high. Once a category has ENOUGH DATA and the delta is meaningful, Alex/Carlos can update the default in <code>install_rates</code> table.
         </div>
+      </div>
+      <div style={{...card2,marginTop:14,background:'#FDF4F4',borderColor:'#E5C4C4'}}>
+        <div style={sectionHead}>Calibrate Now</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:10,lineHeight:1.6}}>
+          Runs <code>recalibrate_install_rates(20)</code> on the database. Categories with N≥20 reports get their default rate replaced with the measured mean. <b>Job durations recompute automatically.</b> Idempotent — safe to run anytime.
+        </div>
+        <CalibrateButton onDone={()=>window.location.reload()}/>
       </div>
       <div style={{...card2,marginTop:14}}>
         <div style={sectionHead}>PM Daily Report Adoption</div>
@@ -22068,6 +22228,37 @@ function SalesDashboardPage({jobs,onNav}){
     const repClosed=repWon.length+repLost.length;
     return{rep,won:repWon.length,lost:repLost.length,open:repOpen.length,rate:repClosed?Math.round(repWon.length/repClosed*100):null,value:repWon.reduce((s,l)=>s+n(l.proposal_value||l.estimated_value),0)};
   }).filter(r=>r.won>0||r.open>0);
+  // Rep probability calibration: compare each rep's average entered win_probability
+  // (on closed leads) vs their actual win rate. Gap >15 points = systematic
+  // mis-calibration. Used to adjust pipeline-weighted forecasts and to surface
+  // process improvements (e.g., over-promising in pipeline reviews).
+  const repCalibration=useMemo(()=>{
+    return REPS.map(rep=>{
+      const closed=[...wonLeads,...lostLeads].filter(l=>l.sales_rep===rep);
+      const closedWithProb=closed.filter(l=>l.win_probability!=null&&l.win_probability>0);
+      if(closedWithProb.length===0)return null;
+      const avgEnteredProb=closedWithProb.reduce((s,l)=>s+Number(l.win_probability||0),0)/closedWithProb.length;
+      const wonOf=closed.filter(l=>l.stage==='won').length;
+      const actualRate=closed.length>0?(wonOf/closed.length)*100:0;
+      const gap=avgEnteredProb-actualRate;
+      // Pipeline value impact — how much is this rep's open pipeline overstated?
+      const repOpenLeads=leads.filter(l=>l.sales_rep===rep&&l.stage==='proposal_sent');
+      const enteredExpected=repOpenLeads.reduce((s,l)=>s+(Number(l.proposal_value||l.estimated_value)||0)*(Number(l.win_probability||0)/100),0);
+      const calibrationFactor=avgEnteredProb>0?(actualRate/avgEnteredProb):1;
+      const calibratedExpected=enteredExpected*calibrationFactor;
+      return{
+        rep,
+        n:closedWithProb.length,
+        avg_entered:avgEnteredProb,
+        actual_rate:actualRate,
+        gap,
+        open_pipeline:repOpenLeads.reduce((s,l)=>s+(Number(l.proposal_value||l.estimated_value)||0),0),
+        entered_expected:enteredExpected,
+        calibrated_expected:calibratedExpected,
+        adjustment:enteredExpected-calibratedExpected,
+      };
+    }).filter(r=>r&&r.n>=3);  // Need ≥3 closed leads to compute calibration
+  },[leads,wonLeads,lostLeads]);
   const pipelineValue=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value),0),[proposalsOpen]);
   const weightedForecast=useMemo(()=>proposalsOpen.reduce((s,l)=>s+n(l.estimated_value||l.proposal_value)*(n(l.win_probability)/100),0),[proposalsOpen]);
   const recentWon=useMemo(()=>wonLeads.filter(l=>(l.won_date||'')>=ninetyDaysAgo),[wonLeads,ninetyDaysAgo]);
@@ -22285,6 +22476,56 @@ function SalesDashboardPage({jobs,onNav}){
           </tbody>
         </table>
       </div>}
+
+      {repCalibration.length>0&&<div style={{...card,padding:20,marginTop:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800}}>Probability Calibration by Rep</div>
+          <div style={{fontSize:11,color:'#9E9B96'}}>entered win % vs. actual win rate · pipeline impact</div>
+        </div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
+          Compares each rep's average entered <code>win_probability</code> on closed deals against their actual win rate. <b>A consistent gap = systematic mis-calibration.</b> Calibration factor adjusts open pipeline downward (or upward) per rep based on their historical accuracy.
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+              {['Rep','N','Avg Entered','Actual Rate','Gap','Open Pipeline','Entered Expected','Calibrated Expected','Adjustment'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {repCalibration.sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap)).map(r=>{
+                const flag=Math.abs(r.gap)>15;
+                const overstated=r.gap>0;
+                return<tr key={r.rep} style={{borderBottom:'1px solid #F4F4F2'}}>
+                  <td style={{padding:'8px 12px',fontWeight:700}}>{r.rep}</td>
+                  <td style={{padding:'8px 12px',color:'#625650'}}>{r.n}</td>
+                  <td style={{padding:'8px 12px'}}>{r.avg_entered.toFixed(0)}%</td>
+                  <td style={{padding:'8px 12px',fontWeight:700}}>{r.actual_rate.toFixed(0)}%</td>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:flag?(overstated?'#8A261D':'#0F6E56'):'#625650'}}>{r.gap>0?'+':''}{r.gap.toFixed(0)}{flag?(overstated?' ⚠️':' ✓'):''}</td>
+                  <td style={{padding:'8px 12px'}}>{$k(r.open_pipeline)}</td>
+                  <td style={{padding:'8px 12px',color:'#625650'}}>{$k(r.entered_expected)}</td>
+                  <td style={{padding:'8px 12px',fontWeight:700}}>{$k(r.calibrated_expected)}</td>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:r.adjustment>0?'#8A261D':r.adjustment<0?'#0F6E56':'#625650'}}>{r.adjustment>0?'-':''}{$k(Math.abs(r.adjustment))}</td>
+                </tr>;
+              })}
+              {/* Totals row */}
+              <tr style={{background:'#F9F8F6',fontWeight:700,borderTop:'2px solid #E5E3E0'}}>
+                <td style={{padding:'10px 12px'}}>Total</td>
+                <td style={{padding:'10px 12px'}}>—</td>
+                <td style={{padding:'10px 12px'}}>—</td>
+                <td style={{padding:'10px 12px'}}>—</td>
+                <td style={{padding:'10px 12px'}}>—</td>
+                <td style={{padding:'10px 12px'}}>{$k(repCalibration.reduce((s,r)=>s+r.open_pipeline,0))}</td>
+                <td style={{padding:'10px 12px'}}>{$k(repCalibration.reduce((s,r)=>s+r.entered_expected,0))}</td>
+                <td style={{padding:'10px 12px'}}>{$k(repCalibration.reduce((s,r)=>s+r.calibrated_expected,0))}</td>
+                <td style={{padding:'10px 12px',color:'#8A261D'}}>-{$k(Math.max(0,repCalibration.reduce((s,r)=>s+(r.adjustment>0?r.adjustment:0),0)))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:12,fontStyle:'italic',lineHeight:1.5}}>
+          <b>How to read:</b> A rep with avg entered 60% and actual 35% has a +25 gap — they overstate by 71% (60÷35 calibration factor). Their open pipeline expected value should be marked down accordingly. <b>The Total Adjustment row is the corrected forecast for the next pipeline review.</b>
+        </div>
+      </div>}
+
     </div>
   </div>;
 }
