@@ -164,6 +164,33 @@ Findings from the 2026-05-02 architecture review. Ordered by impact, not sequenc
 
 **Architecture confirmed solid (no action needed):** Phase 3 doc fan-out is properly wired in BOTH directions — `trg_jobs_auto_attach_company_docs_ai` (jobs INSERT) AND `trg_jobs_auto_attach_company_docs_au` (jobs UPDATE when company_id changes). Zero adoption today is purely because no docs uploaded yet, not a plumbing gap.
 
+### Tech debt backlog (2026-05-02 audit)
+Findings from the 2026-05-02 tech debt audit. Some overlap with the workflow backlog above by nature; ordered by impact, not sequence.
+
+🔴 **CRITICAL**
+1. **Zero automated tests on the 24,891-line App.jsx.** Every change today (and forever, until this lands) is validated by `npm run build` + manual eyeballing. Largest concentration of risk for a single-developer codebase. Start with 5 high-value tests: `v_contract_readiness.is_ready`, `enforce_contract_readiness()` blocks, `customer_name` sync trigger fires, `convertHeicIfNeeded`, `colorForJob`. SQL via pg_tap; JS via Vitest. **First test: ~1 afternoon.**
+2. **Edge function source not in repo** — `supabase/functions/` contains only `chat-assistant/` and `dispatch_system_event/`; CLAUDE.md says ~25 deployed. Lose dashboard access = lose ~23 production functions. Pull via Supabase MCP `list_edge_functions` + `get_edge_function` (no CLI needed). **One-time: ~2 hours. Planned for 2026-05-03.**
+3. **Power Automate single point of failure for billing notifications.** "PM uploads bill sheet → Power Automate notifies Virginia/Mary" — flow lives in someone's Office account, undocumented, ungoverned. If owner leaves, AR notifications stop. Document the flow in `docs/automations.md` (1 hour) → migrate to a Supabase edge function (1 day) using the `dispatch_system_event` pattern.
+
+🟠 **HIGH**
+4. **App.jsx 24,891-line monolith** — same item as workflow backlog #3; ongoing incremental extraction.
+5. **31 npm vulnerabilities (16 high) in CRA dep chain.** Mostly transitive, mostly dev-only. Run `npm audit --json | jq '[.vulnerabilities | to_entries[] | select(.value.severity=="high")]'` to filter to actually-exploitable production paths. Hurricane port (Vite/Next) eliminates 90%.
+6. **No API abstraction — direct `fetch()` to Supabase REST in dozens of call sites in App.jsx.** `src/shared/sb.js` has `sbGet/sbPost/sbPatch/H` but App.jsx still re-rolls fetches. Fix: make `src/shared/sb.js` the only allowed entry; add an ESLint rule (or grep CI check) that fails the build on `fetch(\`${SB}/rest/v1` outside that file. ~3-4 hours migration; the lint rule is the actual unlock.
+7. **No error tracking beyond `console.error`.** Production errors invisible to dev. **Sentry free tier (5K events/month) covers 25 internal users at $0. Planned for 2026-05-03 (~1 hour).**
+
+🟡 **MEDIUM**
+8. **No type safety (CRA + plain JS).** 24k-line file with no compile-time shape checks. Hurricane port adds TypeScript. Until then, JSDoc `@typedef` on the most-used shapes (`Job`, `Lead`, `ContractReadiness`) in `src/shared/types.js` gives VSCode IntelliSense without a build step change.
+9. **Hardcoded role/permission sets** (`EDIT_EMAILS`, `STATUS_EDIT_EMAILS`, `REOPEN_EMAILS`, `PLANT_EDIT_EMAILS`, `SYSTEM_ADMIN_EMAILS` near `src/App.jsx:36`). Adding/removing a person requires a commit. Fix as part of identity-by-email FK conversion (workflow backlog #3): add a `permissions` JSONB column or `user_permissions` join table; replace the JS sets with a single fetch on app load.
+10. **Duplicated design tokens (`card`, `btnP`, `btnS`, `inputS`)** redefined inline in `App.jsx`, `CustomerMasterPage.jsx`, `ContractsWorkbenchPage.jsx`. Same drift pattern as `AUTO_LABELS` was — extract to `src/shared/ui.js`. ~1 hour, pure extraction. Best after backlog #4 makes more progress.
+
+🔵 **LOW (parking lot, not on radar unless something changes)**
+- localStorage breadcrumb pattern (`fc_customer_master_focus_*`) — fragile multi-tab
+- `!important` + `visibility: visible` in marker CSS — disappears when Mapbox #1 lands
+- `create_job_checklist()` function orphaned — drop after 2026-06-02 with `legacy_job_documents`
+- Hardcoded anon JWT in App.jsx + CustomerMasterPage.jsx — anon keys ship publicly; rotation pain only
+- Multiple money/date formatters — cosmetic drift surface
+- No CHANGELOG.md — git log + "Recently shipped" cover it
+
 ---
 
 ## Team & Routing
