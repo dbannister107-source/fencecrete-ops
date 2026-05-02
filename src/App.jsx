@@ -16899,7 +16899,13 @@ function MapPage({ jobs, onNav }) {
     {/* Map + Side panel */}
     <div style={{ display: 'flex', flex: 1, gap: 12, minHeight: 0 }}>
       <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E3E0', position: 'relative' }}>
-        <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+        <div
+          ref={mapContainerRef}
+          role="region"
+          aria-label="Map of active install jobs across Texas markets. Use arrow keys to pan, plus and minus to zoom. Job details available via the filters panel above and the side panel to the right."
+          tabIndex={0}
+          style={{ width: '100%', height: '100%' }}
+        />
         {/* Legend overlay */}
         <div style={{
           position: 'absolute', bottom: 12, left: 12, zIndex: 10,
@@ -16946,7 +16952,12 @@ function MapPage({ jobs, onNav }) {
       </div>
 
       {/* Right side panel */}
-      <div style={{ width: isMobile ? 0 : 340, display: isMobile ? 'none' : 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+      <div
+        role="region"
+        aria-label={selected ? `Selected job: ${selected.job_number || ''} ${selected.job_name || ''}` : 'In-window summary'}
+        aria-live="polite"
+        style={{ width: isMobile ? 0 : 340, display: isMobile ? 'none' : 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}
+      >
         {/* Selected job detail OR summary */}
         {selected ? (
           <div style={{ ...card, padding: 14, overflow: 'auto', flex: '1 1 auto' }}>
