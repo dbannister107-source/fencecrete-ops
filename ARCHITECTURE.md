@@ -97,7 +97,7 @@ Use this table when you have a new feature in mind:
 These are *acknowledged* deferred work — recorded so the next person doesn't think we forgot:
 
 - **Hurricane port plan**: Port App.jsx to Next.js + Hurricane shell. Page-by-page migration, not big-bang. The Co-Pilot edge function and Supabase schema do not need to change. Estimate: 3-4 months part-time.
-- **Real RBAC**: Today we use email allowlists and string role checks. Move to a proper `permissions` table with role inheritance.
+- **Real RBAC + tightened RLS**: Today we use email allowlists and string role checks in App.jsx. Postgres-side, RLS is "enabled" on most tables but every public table has a `"public access" USING (true) WITH CHECK (true)` policy — meaning the anon key (which ships in the client bundle) can read/write anything. This works because the app runs on a single trusted org, but it's the largest open security debt in the platform. Real fix: replace blanket policies with role-narrow ones, gate audit/HR tables (proposal_validations, crew_leaders, user_profiles) on auth.role(), and move sensitive operations behind edge functions with verify_jwt=true.
 - **Background processing**: Replace pg_cron with a proper job queue (Inngest, Defer, or Trigger.dev) for jobs that need retries / observability.
 - **Test coverage**: Currently zero. Hurricane port is the right time to introduce Vitest + Playwright.
 - **API typing**: Generate Supabase types from the schema; replace direct `fetch` calls with a typed client.
