@@ -4809,7 +4809,15 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
       setToast(`↺ ${sub.job_name||'Submission'} moved back to Pending`);
     }catch(err){setToast({message:err.message||'Revert failed',isError:true});}
   };
-  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});if(job){const newYTD=n(job.ytd_invoiced)+amt;const adj=n(job.adj_contract_value||job.contract_value);await sbPatch('jobs',job.id,{ytd_invoiced:newYTD,pct_billed:adj>0?Math.round(newYTD/adj*10000)/10000:0,left_to_bill:adj-newYTD,last_billed:arForm.invoice_date||new Date().toISOString().split('T')[0]});onRefresh();}setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}.${override?' Over-bill override logged.':''}`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
+  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});// POST to invoice_entries (source of truth). Trigger trg_recalc_ytd_invoiced
+// will recompute jobs.ytd_invoiced + last_billed from the sum, and
+// trigger_calculate_billing will recompute pct_billed + left_to_bill.
+// This replaces a previous direct-patch-on-jobs path that bypassed the
+// trigger and produced silent drift between jobs.ytd_invoiced and the sum
+// of invoice_entries (Emberly Sec 8-11 = $14k delta on 2026-04-22).
+const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);
+await sbPost('invoice_entries',{job_id:s.job_id,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:finalNotes,entered_by:arForm.ar_reviewed_by||'AR'});
+if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}.${override?' Over-bill override logged.':''}`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});if(!invCacheRef.current.has(sub.job_id))setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
@@ -13504,11 +13512,38 @@ function CoPilotHome({onNav}){
       };
     })();
 
+    // Billing reconciliation drift detection. Group invoices by job, compare
+    // SUM to jobs.ytd_invoiced. Drift > $1 means a write bypassed the
+    // invoice_entries → trigger pathway. Surface top 3 in Co-Pilot.
+    const billingDrift=(()=>{
+      const invByJob={};
+      (Array.isArray(invoices)?invoices:[]).forEach(e=>{
+        const v=Number(e.invoice_amount)||0;
+        invByJob[e.job_id]=(invByJob[e.job_id]||0)+v;
+      });
+      const drifted=jobs.filter(j=>{
+        const ytd=Number(j.ytd_invoiced)||0;
+        const inv=invByJob[j.id]||0;
+        return Math.abs(ytd-inv)>1;
+      }).map(j=>({
+        job_number:j.job_number,
+        job_name:j.job_name,
+        ytd:Number(j.ytd_invoiced)||0,
+        inv:invByJob[j.id]||0,
+        delta:(Number(j.ytd_invoiced)||0)-(invByJob[j.id]||0),
+      }));
+      return{
+        count:drifted.length,
+        total_delta:drifted.reduce((s,d)=>s+Math.abs(d.delta),0),
+        examples:drifted.slice(0,3),
+      };
+    })();
+
     return{
       openJobs,productionJobs,activeInstallJobs,
       plantLoad,crewLoadByMarket,scheduleByWeek,cashByMarket,agingBuckets,
       materialRisk,pipelineForecast,ganttRows,calibration,
-      contractReadiness,
+      contractReadiness,billingDrift,
       reports,crewLeaders,leads,
       validationStats,
     };
@@ -13646,6 +13681,17 @@ function DemandPlannerCopilot({tab,data}){
       lateInstalls.forEach(j=>{const k=j.pm||'(no PM)';byPm[k]=(byPm[k]||0)+1;});
       const pmList=Object.entries(byPm).sort((a,b)=>b[1]-a[1]).map(([pm,n])=>`${pm} (${n})`).join(', ');
       out.push({severity:'warning',icon:'⏰',title:`${lateInstalls.length} active install job${lateInstalls.length>1?'s':''} past estimated completion date`,body:`Schedule slip: ${pmList}. PMs need to either complete the job in OPS or update the est_complete_date if it's been pushed.`});
+    }
+
+    // Billing reconciliation drift — jobs where jobs.ytd_invoiced doesn't
+    // match SUM(invoice_entries.invoice_amount). The trigger keeps these in
+    // sync on writes via invoice_entries; drift means a code path that
+    // bypassed the trigger (e.g., the legacy markArReviewed → direct patch)
+    // wrote to ytd_invoiced without creating an invoice_entry. Counted by
+    // CoPilotHome data fetch.
+    if(data.billingDrift&&data.billingDrift.count>0){
+      const d=data.billingDrift;
+      out.push({severity:'critical',icon:'💸',title:`${d.count} job${d.count>1?'s':''} with billing reconciliation drift ($${Math.round(d.total_delta).toLocaleString()} total)`,body:`jobs.ytd_invoiced doesn't match SUM(invoice_entries) on: ${d.examples.map(e=>`${e.job_number} (${e.delta>=0?'+':''}$${Math.round(e.delta).toLocaleString()})`).join(', ')}. Each is a missing invoice_entries row that needs Jalen/Alex review.`});
     }
 
     if(noCrewLeaderJobs>0){
