@@ -3181,7 +3181,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               const ac=readiness.auto_checks||{};
               const mi=readiness.manual_items||{};
               const AUTO_LABELS={
-                customer_linked:'Customer set',
+                customer_linked:'Linked to company',
                 style_set:'Style selected',
                 color_set:'Color selected',
                 height_set:'Height set',
