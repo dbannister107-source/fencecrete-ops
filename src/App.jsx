@@ -3547,6 +3547,9 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Install Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Active Entry Date')}<input type="date" value={f.active_entry_date} onChange={e=>set('active_entry_date',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
+        <div>{fLbl('Est. Complete Date')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Auto-computed from Install Date + Install Duration. Recomputes when LF, style, install date, or duration override changes.">{f.est_complete_date?fD(f.est_complete_date):<span style={{color:'#9E9B96'}}>need install date + LF</span>}</div></div>
+        <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{f.install_duration_days&&f.total_lf?<span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>({Math.round((Number(f.total_lf)||0)/Number(f.install_duration_days)*1)/1} LF/day)</span>:''}</div></div>
+        <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
@@ -12483,6 +12486,125 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// ═══ DEMAND PLANNER CO-PILOT (rule-based v0) ═══
+// Reads the same data the dashboard renders and surfaces:
+//   1. Today's exceptions — what's broken or trending wrong
+//   2. Bottleneck recommendations — specific actions with quantified impact
+//   3. Coverage gaps — missing data that's blocking better recommendations
+// Designed so the rules become the prompt when we wire LLM v1.
+function DemandPlannerCopilot({tab,data}){
+  const[expanded,setExpanded]=useState(true);
+  const insights=useMemo(()=>{
+    const out=[];
+    const{openJobs,activeInstallJobs,plantLoad,crewLoadByMarket,materialRisk,pipelineForecast,ganttRows,calibration,reports,scheduleByWeek}=data;
+
+    // ─── Critical exceptions (red) ───
+    if(materialRisk.filter(j=>j.days_to_start<3).length>0){
+      const urgent=materialRisk.filter(j=>j.days_to_start<3);
+      out.push({severity:'critical',icon:'🚨',title:`${urgent.length} job${urgent.length>1?'s':''} starting in <3 days without material`,body:`${urgent.map(j=>j.job_number).join(', ')}. These jobs will slip unless plant prioritizes.`,action:'Review Material Readiness tab; escalate to Max'});
+    }
+
+    const houstonRow=crewLoadByMarket.find(r=>r.market==='HOU');
+    if(houstonRow&&houstonRow.weeks_per_leader>6){
+      out.push({severity:'critical',icon:'⚠️',title:`Houston concentration: ${Math.round(houstonRow.weeks_per_leader)} weeks of work per leader`,body:`${houstonRow.active_jobs} active jobs across ${houstonRow.leaders} W-2 leaders. Single leader unavailable = $${Math.round((houstonRow.active_lf||0)/1000)}k LF impact.`,action:'Hiring decision: 1-2 additional Houston crew leaders by Q3'});
+    }
+
+    const moldConstrained=plantLoad.filter(p=>p.weeks_to_clear&&p.weeks_to_clear>8);
+    if(moldConstrained.length>0){
+      moldConstrained.forEach(p=>{
+        out.push({severity:'critical',icon:'🏭',title:`${p.style} mold-constrained: ${p.weeks_to_clear.toFixed(1)} weeks to clear`,body:`${p.jobs} jobs / ${Math.round(p.backlog_lf).toLocaleString()} LF backlog against ${p.molds} panel molds. At assumed 1 turn/day, this is the ceiling.`,action:'Either acquire more molds or shift jobs to a parity style if the customer allows'});
+      });
+    }
+
+    // ─── Warnings (amber) ───
+    const conflictRows=ganttRows.rows.filter(r=>r.conflicts>0);
+    if(conflictRows.length>0){
+      out.push({severity:'warning',icon:'📋',title:`${conflictRows.length} crew leader${conflictRows.length>1?'s':''} double-booked`,body:`${conflictRows.map(r=>r.leader.name).slice(0,3).join(', ')}${conflictRows.length>3?` +${conflictRows.length-3} more`:''}. Overlapping est_start → est_complete windows.`,action:'Open Leader Gantt; reschedule overlapping jobs'});
+    }
+
+    if(scheduleByWeek.unscheduled_jobs>5){
+      out.push({severity:'warning',icon:'📅',title:`${scheduleByWeek.unscheduled_jobs} jobs missing schedule data`,body:`${Math.round(scheduleByWeek.unscheduled_lf).toLocaleString()} LF of backlog has no est_start_date or duration. These are invisible to the planner.`,action:'PMs need to fill in install dates during contract review'});
+    }
+
+    if(materialRisk.filter(j=>j.days_to_start>=3&&j.days_to_start<=7).length>0){
+      const soon=materialRisk.filter(j=>j.days_to_start>=3&&j.days_to_start<=7);
+      out.push({severity:'warning',icon:'📦',title:`${soon.length} job${soon.length>1?'s':''} starting in 3-7 days, no material yet`,body:`${soon.slice(0,3).map(j=>j.job_number).join(', ')}${soon.length>3?` +${soon.length-3} more`:''}. Plant has runway but it's tight.`,action:'Confirm production status with Max'});
+    }
+
+    // ─── Opportunities (blue) ───
+    const eligibleCalib=calibration.filter(c=>c.measured_reports>=20&&Math.abs(c.delta||0)>15);
+    if(eligibleCalib.length>0){
+      eligibleCalib.forEach(c=>{
+        out.push({severity:'info',icon:'📊',title:`${c.category_label}: measured rate ${c.delta>0?'higher':'lower'} than default by ${Math.abs(Math.round(c.delta))} LF/day`,body:`Default ${c.lf_per_day} vs measured ${Math.round(c.measured_rate)} (n=${c.measured_reports}). ${c.delta>0?'Schedules can compress':'Schedules need to extend'}.`,action:`Update install_rates default for ${c.category}`});
+      });
+    }
+
+    // ─── Forecasting calls ───
+    if(pipelineForecast.totals.expected>0){
+      const next3mo=pipelineForecast.months.slice(0,3).reduce((s,m)=>s+m.expected_value,0);
+      const monthlyRunRate=next3mo/3;
+      const annualizedFromPipeline=monthlyRunRate*12;
+      const target60M=60_000_000;
+      out.push({severity:'info',icon:'📈',title:`Pipeline trajectory: $${(annualizedFromPipeline/1e6).toFixed(1)}M annualized run rate`,body:`Probability-weighted next 3 months = $${(next3mo/1000).toFixed(0)}k. Versus $60M trajectory: ${annualizedFromPipeline>=target60M?'on track':'shortfall of $'+((target60M-annualizedFromPipeline)/1e6).toFixed(1)+'M annualized'}.`,action:'Compare against Q1 2026 actuals; check rep probability calibration'});
+    }
+
+    if(pipelineForecast.totals.no_date>10){
+      out.push({severity:'info',icon:'🗓️',title:`${pipelineForecast.totals.no_date} proposals with no expected close date`,body:`$${(pipelineForecast.totals.no_date_value/1000).toFixed(0)}k of pipeline value invisible to forecast. Reps haven't entered close dates.`,action:'Sales hygiene: require close date on proposal_sent stage'});
+    }
+
+    // ─── Coverage gaps (gray) ───
+    if(reports.length===0||reports.length<activeInstallJobs.length*5){
+      out.push({severity:'gap',icon:'⚙️',title:`PM Daily Report coverage thin: ${reports.length} reports vs ${activeInstallJobs.length} active jobs`,body:`Calibration tab can't trust measured install rates yet. This is the highest-leverage data investment for the planner.`,action:'Carlos owns PM compliance; tie to PM scorecards'});
+    }
+
+    const noCrewLeaderJobs=activeInstallJobs.filter(j=>!j.crew_leader_id).length;
+    if(noCrewLeaderJobs>0){
+      out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Carlos can produce a who-is-running-what list and we backfill in 30 minutes.`,action:'Carlos: list current crew assignments; David runs SQL backfill'});
+    }
+
+    return out;
+  },[data]);
+
+  const sevColor={critical:'#8A261D',warning:'#B45309',info:'#185FA5',gap:'#625650'};
+  const sevBg={critical:'#FEE2E2',warning:'#FEF3C7',info:'#DBEAFE',gap:'#F4F4F2'};
+  const sevOrder={critical:0,warning:1,info:2,gap:3};
+  const sorted=insights.slice().sort((a,b)=>sevOrder[a.severity]-sevOrder[b.severity]);
+  const counts={critical:sorted.filter(i=>i.severity==='critical').length,warning:sorted.filter(i=>i.severity==='warning').length,info:sorted.filter(i=>i.severity==='info').length,gap:sorted.filter(i=>i.severity==='gap').length};
+
+  return<div style={{...card,padding:0,marginTop:24,border:'2px solid #1A1A1A',background:'linear-gradient(135deg, #FAFAF8 0%, #F4F4F2 100%)'}}>
+    <div onClick={()=>setExpanded(!expanded)} style={{padding:'14px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',borderBottom:expanded?'1px solid #E5E3E0':'none'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <span style={{fontSize:18}}>🤖</span>
+        <span style={{fontFamily:'Syne',fontSize:14,fontWeight:800}}>Demand Planner Co-Pilot</span>
+        <span style={{fontSize:11,color:'#9E9B96',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:4,padding:'2px 6px',fontWeight:600}}>v0 · rules-based</span>
+      </div>
+      <div style={{display:'flex',gap:6,alignItems:'center',fontSize:11,fontWeight:700}}>
+        {counts.critical>0&&<span style={{background:sevBg.critical,color:sevColor.critical,padding:'2px 8px',borderRadius:4}}>{counts.critical} critical</span>}
+        {counts.warning>0&&<span style={{background:sevBg.warning,color:sevColor.warning,padding:'2px 8px',borderRadius:4}}>{counts.warning} warning</span>}
+        {counts.info>0&&<span style={{background:sevBg.info,color:sevColor.info,padding:'2px 8px',borderRadius:4}}>{counts.info} insight</span>}
+        {counts.gap>0&&<span style={{background:sevBg.gap,color:sevColor.gap,padding:'2px 8px',borderRadius:4}}>{counts.gap} gap</span>}
+        <span style={{marginLeft:6,fontSize:14}}>{expanded?'▾':'▸'}</span>
+      </div>
+    </div>
+    {expanded&&<div style={{padding:'14px 18px'}}>
+      {sorted.length===0?<div style={{padding:14,textAlign:'center',color:'#0F6E56',fontWeight:600}}>✓ No exceptions detected. Plant, crews, schedule, and pipeline are all within tolerance.</div>:
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {sorted.map((ins,i)=><div key={i} style={{display:'flex',gap:12,padding:12,background:'#FFF',border:`1px solid ${sevBg[ins.severity]}`,borderLeft:`4px solid ${sevColor[ins.severity]}`,borderRadius:6}}>
+          <div style={{fontSize:18,flexShrink:0}}>{ins.icon}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:3}}>{ins.title}</div>
+            <div style={{fontSize:12,color:'#625650',lineHeight:1.5,marginBottom:6}}>{ins.body}</div>
+            <div style={{fontSize:11,color:sevColor[ins.severity],fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>→ {ins.action}</div>
+          </div>
+        </div>)}
+      </div>}
+      <div style={{fontSize:10,color:'#9E9B96',marginTop:12,paddingTop:10,borderTop:'1px solid #E5E3E0',fontStyle:'italic',lineHeight:1.5}}>
+        Currently rule-based. Each insight comes from a deterministic check on the dashboard data. v1 will pipe these signals into Claude (claude-haiku-4-5) for natural-language explanations and what-if analysis. The rules above become the system prompt.
+      </div>
+    </div>}
+  </div>;
+}
+
 // ═══ DEMAND PLANNING (v0) ═══
 // Track 1 visibility tool — answers three operational questions on one page:
 //   1. Plant load — are we mold-constrained on the styles we have backlog for?
@@ -12498,6 +12620,8 @@ function DemandPlanningPage(){
   const[crewLeaders,setCrewLeaders]=useState([]);
   const[invoices,setInvoices]=useState([]);
   const[installRates,setInstallRates]=useState([]);
+  const[reports,setReports]=useState([]);
+  const[leads,setLeads]=useState([]);
   const[error,setError]=useState(null);
 
   useEffect(()=>{
@@ -12508,12 +12632,16 @@ function DemandPlanningPage(){
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=invoice_amount,invoice_date,job_id&order=invoice_date.desc'),
       sbGet('install_rates','select=*&order=category.asc'),
-    ]).then(([j,m,cl,inv,ir])=>{
+      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date&lf_panels_installed=gt.0'),
+      sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
+    ]).then(([j,m,cl,inv,ir,r,ld])=>{
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
       setInvoices(Array.isArray(inv)?inv:[]);
       setInstallRates(Array.isArray(ir)?ir:[]);
+      setReports(Array.isArray(r)?r:[]);
+      setLeads(Array.isArray(ld)?ld:[]);
       setLoading(false);
     }).catch(e=>{setError(e.message);setLoading(false);});
   },[]);
@@ -12612,6 +12740,140 @@ function DemandPlanningPage(){
     return Object.values(out).sort((a,b)=>b.ltb-a.ltb);
   },[openJobs,invoices]);
 
+  // Capacity calibration: actual LF/day from PM Daily Reports vs. install_rates default.
+  // For now we expect tiny N — purpose is to show the gap so Carlos sees data debt.
+  const calibration=useMemo(()=>{
+    // Use the same style_to_category mapping as the DB trigger (kept inline for client-side use).
+    const styleToCategory=(s)=>{
+      if(!s)return'precast';
+      const t=s.toLowerCase();
+      if(t.includes('cmu'))return'masonry';
+      if(t.includes('brick')&&!t.includes('wrought'))return'masonry';
+      if(t.includes('sw')||t.includes('single wythe'))return'masonry';
+      if(t.includes('wrought iron'))return'wrought_iron';
+      if(t.includes('architectural')||t.includes('lattice')||t.includes('combo'))return'architectural';
+      return'precast';
+    };
+    const byCat={};
+    reports.forEach(r=>{
+      // The report's fence_style is e.g. 'Precast' / 'Single Wythe' / 'Wrought Iron'
+      // — already a category-ish value. Map directly.
+      const fs=(r.fence_style||'').toLowerCase();
+      let cat='precast';
+      if(fs.includes('single wythe'))cat='masonry';
+      else if(fs.includes('wrought'))cat='wrought_iron';
+      else if(fs.includes('architectural')||fs.includes('lattice'))cat='architectural';
+      if(!byCat[cat])byCat[cat]={category:cat,reports:0,total_lf:0};
+      byCat[cat].reports+=1;
+      byCat[cat].total_lf+=Number(r.lf_panels_installed)||0;
+    });
+    Object.values(byCat).forEach(r=>{
+      r.measured_rate=r.reports>0?(r.total_lf/r.reports):null;
+    });
+    return installRates.map(ir=>{
+      const m=byCat[ir.category]||{};
+      return{
+        ...ir,
+        measured_reports:m.reports||0,
+        measured_total_lf:m.total_lf||0,
+        measured_rate:m.measured_rate,
+        delta:m.measured_rate?m.measured_rate-Number(ir.lf_per_day):null,
+      };
+    });
+  },[reports,installRates]);
+
+  // Material readiness gate: jobs with est_start_date in next 14 days that
+  // are NOT yet in material_ready or active_install. These are at risk of
+  // missing their start because plant hasn't queued them.
+  const materialRisk=useMemo(()=>{
+    const today=new Date();today.setHours(0,0,0,0);
+    const fortnight=new Date(today);fortnight.setDate(today.getDate()+14);
+    const safe=new Set(['material_ready','active_install']);
+    return openJobs
+      .filter(j=>j.est_start_date&&!safe.has(j.status))
+      .map(j=>{
+        const start=new Date(j.est_start_date);
+        const days_to_start=Math.ceil((start-today)/(1000*60*60*24));
+        return{...j,days_to_start};
+      })
+      .filter(j=>j.days_to_start>=-7&&j.days_to_start<=14)
+      .sort((a,b)=>a.days_to_start-b.days_to_start);
+  },[openJobs]);
+
+  // Pipeline → forecast: probability-weighted expected value by close month
+  // and projected install month (close + average lead time). Simple and honest:
+  // doesn't try to predict win_probability, uses what sales reps entered.
+  const pipelineForecast=useMemo(()=>{
+    const today=new Date();today.setHours(0,0,0,0);
+    const months={};
+    const monthKey=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    // Initialize next 6 months
+    for(let i=0;i<6;i++){
+      const d=new Date(today.getFullYear(),today.getMonth()+i,1);
+      months[monthKey(d)]={
+        key:monthKey(d),
+        label:d.toLocaleDateString('en-US',{month:'short',year:'numeric'}),
+        proposals_count:0,
+        proposals_value:0,
+        expected_value:0,
+        leads:[],
+      };
+    }
+    let no_close_date=0,no_close_value=0;
+    leads.forEach(l=>{
+      const value=Number(l.proposal_value||l.estimated_value)||0;
+      const prob=(Number(l.win_probability)||0)/100;
+      const expected=value*prob;
+      if(!l.expected_close_date){no_close_date+=1;no_close_value+=value;return;}
+      const closeDate=new Date(l.expected_close_date);
+      const k=monthKey(closeDate);
+      if(!months[k]){
+        months[k]={key:k,label:closeDate.toLocaleDateString('en-US',{month:'short',year:'numeric'}),proposals_count:0,proposals_value:0,expected_value:0,leads:[]};
+      }
+      months[k].proposals_count+=1;
+      months[k].proposals_value+=value;
+      months[k].expected_value+=expected;
+    });
+    const sorted=Object.values(months).sort((a,b)=>a.key.localeCompare(b.key));
+    const totals={count:leads.length,raw:leads.reduce((s,l)=>s+(Number(l.proposal_value)||0),0),expected:leads.reduce((s,l)=>s+((Number(l.proposal_value)||0)*((Number(l.win_probability)||0)/100)),0),no_date:no_close_date,no_date_value:no_close_value};
+    return{months:sorted,totals};
+  },[leads]);
+
+  // Leader Gantt: each crew leader → list of their active install jobs sorted by est_start_date.
+  // Show a simple bar timeline. Reveals double-bookings (overlapping windows).
+  const ganttRows=useMemo(()=>{
+    const leaderById={};crewLeaders.forEach(cl=>{leaderById[cl.id]=cl;});
+    const today=new Date();today.setHours(0,0,0,0);
+    const horizonStart=new Date(today);horizonStart.setDate(today.getDate()-7);  // a week of look-back
+    const horizonEnd=new Date(today);horizonEnd.setDate(today.getDate()+13*7);
+    const totalDays=Math.round((horizonEnd-horizonStart)/(1000*60*60*24));
+    const byLeader={};
+    activeInstallJobs.concat(openJobs.filter(j=>['production_queue','in_production','material_ready'].includes(j.status))).forEach(j=>{
+      if(!j.crew_leader_id)return;
+      if(!j.est_start_date||!j.install_duration_days)return;
+      const start=new Date(j.est_start_date);
+      const end=j.est_complete_date?new Date(j.est_complete_date):new Date(start.getTime()+j.install_duration_days*86400000);
+      if(end<horizonStart||start>horizonEnd)return;
+      if(!byLeader[j.crew_leader_id])byLeader[j.crew_leader_id]={leader:leaderById[j.crew_leader_id],jobs:[]};
+      byLeader[j.crew_leader_id].jobs.push({
+        id:j.id,name:j.job_name||j.job_number,number:j.job_number,
+        start,end,
+        startPct:Math.max(0,(start-horizonStart)/(1000*60*60*24)/totalDays*100),
+        widthPct:Math.min(100,(end-start)/(1000*60*60*24)/totalDays*100),
+        market:j.market,lf:j.total_lf,status:j.status,
+      });
+    });
+    // Detect overlap conflicts per leader
+    Object.values(byLeader).forEach(row=>{
+      row.jobs.sort((a,b)=>a.start-b.start);
+      row.conflicts=0;
+      for(let i=0;i<row.jobs.length-1;i++){
+        if(row.jobs[i].end>row.jobs[i+1].start){row.conflicts+=1;row.jobs[i].conflict=true;row.jobs[i+1].conflict=true;}
+      }
+    });
+    return{rows:Object.values(byLeader).sort((a,b)=>(b.leader?.market||'').localeCompare(a.leader?.market||'')||b.jobs.length-a.jobs.length),horizonStart,horizonEnd,totalDays};
+  },[activeInstallJobs,openJobs,crewLeaders]);
+
   // 13-week schedule: project install completion week-by-week using
   // est_start_date + install_duration_days. Bucket jobs into Sunday-anchored
   // weeks. Jobs missing start date are stratified into "unscheduled".
@@ -12693,13 +12955,17 @@ function DemandPlanningPage(){
           {openJobs.length} open jobs · {fmtLF(openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0))} backlog · {fmt$(openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0))} contract value
         </div>
       </div>
-      <div style={{fontSize:11,color:'#9E9B96'}}>v0.2 · install-duration model live</div>
+      <div style={{fontSize:11,color:'#9E9B96'}}>v0.3 · gantt + calibration</div>
     </div>
 
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
       {tabBtn('plant','Plant Load')}
+      {tabBtn('material','Material Readiness')}
       {tabBtn('crew','Crew Load')}
+      {tabBtn('gantt','Leader Gantt')}
       {tabBtn('schedule','13-Week Schedule')}
+      {tabBtn('pipeline','Pipeline → Forecast')}
+      {tabBtn('calibration','Calibration')}
       {tabBtn('cash','Cash Conversion')}
     </div>
 
@@ -12732,6 +12998,42 @@ function DemandPlanningPage(){
         </div>
         <div style={captionStyle}>
           *Weekly capacity assumes 1 mold turn/day × 5 days/week × 4.5 ft per panel (avg). <b>This is an assumption, not a measurement.</b> Real cycle time varies with color changeover (~25 min) and curing. Once Max instruments mold turn rate (Track 2D), this column becomes calibrated.
+        </div>
+      </div>
+    </div>}
+
+    {/* ─── MATERIAL READINESS TAB ─── */}
+    {tab==='material'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Material Readiness Gate — Jobs Starting in Next 14 Days Without Material</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
+          Jobs with est_start_date in the window that are NOT yet in <code>material_ready</code> or <code>active_install</code> status. Each row is a plant→install handoff at risk.
+        </div>
+        {materialRisk.length===0?<div style={{padding:24,textAlign:'center',color:'#0F6E56',fontWeight:600}}>✓ No material readiness risks in the next 14 days.</div>:
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Days to Start','Job','Market','Style','LF','Status','PM'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {materialRisk.map(j=>{
+                const danger=j.days_to_start<3;
+                const warn=j.days_to_start<7;
+                return<tr key={j.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+                  <td style={{padding:'10px 12px',fontWeight:700,color:danger?'#8A261D':warn?'#B45309':'#1A1A1A'}}>{j.days_to_start<0?`${-j.days_to_start}d ago`:`${j.days_to_start}d`}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{j.job_number} {j.job_name}</td>
+                  <td style={{padding:'10px 12px'}}>{j.market}</td>
+                  <td style={{padding:'10px 12px'}}>{j.style||<span style={{color:'#9E9B96'}}>—</span>}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{fmtLF(j.total_lf)}</td>
+                  <td style={{padding:'10px 12px',fontSize:11}}><span style={{background:j.status==='in_production'?'#FEF3C7':j.status==='production_queue'?'#DBEAFE':'#FEE2E2',color:j.status==='in_production'?'#92400E':j.status==='production_queue'?'#1E40AF':'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{j.status}</span></td>
+                  <td style={{padding:'10px 12px'}}>{j.pm}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>}
+        <div style={captionStyle}>
+          Red = starts in &lt;3 days, Orange = &lt;7 days. <code>contract_review</code> jobs that haven't entered production yet are the highest-risk — they need to skip the queue.
         </div>
       </div>
     </div>}
@@ -12805,6 +13107,128 @@ function DemandPlanningPage(){
       </div>}
     </div>}
 
+    {/* ─── LEADER GANTT TAB ─── */}
+    {tab==='gantt'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Crew Leader Schedule — Next 13 Weeks</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:10}}>
+          Only jobs with assigned crew leader, est_start_date, and computed duration shown. Overlapping bars = scheduling conflict.
+        </div>
+        {ganttRows.rows.length===0?<div style={{padding:24,textAlign:'center',color:'#9E9B96'}}>
+          No jobs assigned to crew leaders yet. Once Carlos backfills crew_leader_id on active jobs, this view fills in.
+        </div>:<div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {/* Header — week markers */}
+          <div style={{display:'flex',marginLeft:180,position:'relative',height:18,fontSize:9,color:'#9E9B96',fontWeight:600}}>
+            {Array.from({length:14},(_,i)=>{const d=new Date(ganttRows.horizonStart);d.setDate(d.getDate()+i*7);return<div key={i} style={{flex:1,borderLeft:'1px solid #E5E3E0',paddingLeft:4}}>{d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'})}</div>;})}
+          </div>
+          {ganttRows.rows.map(row=><div key={row.leader.id} style={{display:'flex',alignItems:'center',minHeight:32,borderBottom:'1px solid #F4F4F2'}}>
+            <div style={{width:180,flexShrink:0,fontSize:12,fontWeight:600,paddingRight:8}}>
+              {row.leader.name}
+              <div style={{fontSize:10,color:'#9E9B96',fontWeight:500}}>{row.leader.market} · {row.jobs.length} job{row.jobs.length!==1?'s':''}{row.conflicts>0&&<span style={{color:'#8A261D',fontWeight:700,marginLeft:6}}>· {row.conflicts} conflict{row.conflicts!==1?'s':''}</span>}</div>
+            </div>
+            <div style={{flex:1,position:'relative',height:24,background:'#F9F8F6',borderRadius:4}}>
+              {row.jobs.map(job=><div key={job.id} title={`${job.number} ${job.name} · ${fmtLF(job.lf)} · ${job.start.toLocaleDateString()}-${job.end.toLocaleDateString()}`} style={{position:'absolute',left:`${job.startPct}%`,width:`${Math.max(2,job.widthPct)}%`,top:2,bottom:2,background:job.conflict?'#FCA5A5':job.status==='active_install'?'#8A261D':'#185FA5',borderRadius:3,padding:'2px 6px',fontSize:10,color:'#FFF',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',cursor:'pointer'}}>{job.number}</div>)}
+            </div>
+          </div>)}
+        </div>}
+        <div style={captionStyle}>
+          Bars represent each job's est_start_date → est_complete_date. <span style={{background:'#8A261D',color:'#FFF',padding:'1px 4px',borderRadius:3,fontSize:10}}>Active install</span> · <span style={{background:'#185FA5',color:'#FFF',padding:'1px 4px',borderRadius:3,fontSize:10}}>Production stage</span> · <span style={{background:'#FCA5A5',color:'#FFF',padding:'1px 4px',borderRadius:3,fontSize:10}}>Conflict</span>
+        </div>
+      </div>
+      {ganttRows.rows.length===0&&<div style={{...noteStyle,marginTop:14}}>
+        <b>0 of {openJobs.length} open jobs</b> have a crew leader assigned. Carlos's data hygiene sprint (Track 2 punch list, item #2) is the unblocker. Once leaders are assigned, double-bookings become visible immediately.
+      </div>}
+    </div>}
+
+    {/* ─── PIPELINE → FORECAST TAB ─── */}
+    {tab==='pipeline'&&<div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:16}}>
+        <div style={{...card,padding:16,borderLeft:'4px solid #185FA5'}}>
+          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Active Proposals</div>
+          <div style={{fontSize:24,fontWeight:800,marginTop:4}}>{pipelineForecast.totals.count}</div>
+        </div>
+        <div style={{...card,padding:16,borderLeft:'4px solid #185FA5'}}>
+          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Proposal Value</div>
+          <div style={{fontSize:24,fontWeight:800,marginTop:4}}>{fmt$(pipelineForecast.totals.raw)}</div>
+        </div>
+        <div style={{...card,padding:16,borderLeft:'4px solid #0F6E56'}}>
+          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Probability-Weighted Expected</div>
+          <div style={{fontSize:24,fontWeight:800,marginTop:4,color:'#0F6E56'}}>{fmt$(pipelineForecast.totals.expected)}</div>
+        </div>
+        <div style={{...card,padding:16,borderLeft:'4px solid #B45309'}}>
+          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>No Close Date</div>
+          <div style={{fontSize:24,fontWeight:800,marginTop:4,color:'#B45309'}}>{pipelineForecast.totals.no_date}<span style={{fontSize:13,fontWeight:600,marginLeft:6}}>({fmt$(pipelineForecast.totals.no_date_value)})</span></div>
+        </div>
+      </div>
+      <div style={card2}>
+        <div style={sectionHead}>Booking Forecast by Expected Close Month</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Month','Proposals','Total Value','Expected (Prob-weighted)'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {pipelineForecast.months.filter(m=>m.proposals_count>0).map(m=><tr key={m.key} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{m.label}</td>
+                <td style={{padding:'10px 12px'}}>{m.proposals_count}</td>
+                <td style={{padding:'10px 12px',fontWeight:600}}>{fmt$(m.proposals_value)}</td>
+                <td style={{padding:'10px 12px',fontWeight:700,color:'#0F6E56'}}>{fmt$(m.expected_value)}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          Probability-weighted expected = Σ(proposal_value × win_probability). Reps' own entered probabilities. <b>Calibration question for Alex:</b> are reps' probabilities accurate? Compare against historical win rate per rep — if Matt enters 50% but actually wins 35%, his pipeline overstates by 30%.
+        </div>
+      </div>
+    </div>}
+
+    {/* ─── CALIBRATION TAB ─── */}
+    {tab==='calibration'&&<div>
+      <div style={card2}>
+        <div style={sectionHead}>Install Rate Calibration — Default vs. Measured</div>
+        <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
+          The Schedule and Crew Load tabs use the <b>Default Rate</b> column to compute install_duration_days for every job. The <b>Measured Rate</b> is what PM Daily Reports actually report. As measured data accumulates, defaults can be replaced category-by-category.
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
+              {['Category','Default Rate','Reports (N)','Total LF Reported','Measured Rate','Delta','Status'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {calibration.map(r=>{
+                const enoughData=r.measured_reports>=20;  // N=20 is rough threshold for trusting a measurement
+                return<tr key={r.category} style={{borderBottom:'1px solid #F4F4F2'}}>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{r.category_label}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600}}>{Number(r.lf_per_day).toFixed(0)} LF/day</td>
+                  <td style={{padding:'10px 12px'}}>{r.measured_reports}</td>
+                  <td style={{padding:'10px 12px'}}>{r.measured_total_lf>0?fmtLF(r.measured_total_lf):'—'}</td>
+                  <td style={{padding:'10px 12px',fontWeight:600,color:enoughData?'#1A1A1A':'#9E9B96'}}>{r.measured_rate?r.measured_rate.toFixed(0)+' LF/day':'—'}</td>
+                  <td style={{padding:'10px 12px',fontWeight:700,color:r.delta==null?'#9E9B96':Math.abs(r.delta)>30?'#8A261D':r.delta>0?'#0F6E56':'#B45309'}}>{r.delta!=null?(r.delta>0?'+':'')+r.delta.toFixed(0):'—'}</td>
+                  <td style={{padding:'10px 12px',fontSize:11}}>{enoughData?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 8px',borderRadius:4,fontWeight:700}}>ENOUGH DATA</span>:r.measured_reports>0?<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontWeight:700}}>NEED {20-r.measured_reports} MORE</span>:<span style={{background:'#F4F4F2',color:'#9E9B96',padding:'2px 8px',borderRadius:4,fontWeight:700}}>NO DATA</span>}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={captionStyle}>
+          Threshold for trusting measured rate: N ≥ 20 reports per category. Below that, sample variance is too high. Once a category has ENOUGH DATA and the delta is meaningful, Alex/Carlos can update the default in <code>install_rates</code> table.
+        </div>
+      </div>
+      <div style={{...card2,marginTop:14}}>
+        <div style={sectionHead}>PM Daily Report Adoption</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12}}>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Reports (3 weeks)</div><div style={{fontSize:24,fontWeight:800}}>{reports.length}</div></div>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Reports w/ LF Data</div><div style={{fontSize:24,fontWeight:800}}>{reports.filter(r=>r.lf_panels_installed>0).length}</div></div>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Active Install Jobs</div><div style={{fontSize:24,fontWeight:800}}>{activeInstallJobs.length}</div></div>
+          <div><div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Coverage Ratio</div><div style={{fontSize:24,fontWeight:800,color:reports.length/activeInstallJobs.length<1?'#8A261D':'#0F6E56'}}>{(reports.length/activeInstallJobs.length).toFixed(2)}x</div></div>
+        </div>
+        <div style={captionStyle}>
+          Coverage ratio = reports per active install job over 3 weeks. Healthy = ~10x (each active job ~3 reports/week). Currently {(reports.length/activeInstallJobs.length).toFixed(2)}x — well below threshold, so calibration data won't be statistically meaningful for several more weeks. <b>This is the bottleneck for everything downstream.</b>
+        </div>
+      </div>
+    </div>}
+
     {/* ─── CASH CONVERSION TAB ─── */}
     {tab==='cash'&&<div>
       <div style={card2}>
@@ -12844,6 +13268,28 @@ function DemandPlanningPage(){
       </div>
     </div>}
 
+    {/* ─── DEMAND PLANNER CO-PILOT (agentic) ─── */}
+    <DemandPlannerCopilot
+      tab={tab}
+      data={{
+        openJobs,
+        productionJobs,
+        activeInstallJobs,
+        plantLoad,
+        crewLoadByMarket,
+        scheduleByWeek,
+        cashByMarket,
+        agingBuckets,
+        materialRisk,
+        pipelineForecast,
+        ganttRows,
+        calibration,
+        reports,
+        crewLeaders,
+        leads,
+      }}
+    />
+
     {/* Track 2 callout — what makes this better */}
     <div style={{...card2,marginTop:24,background:'#F9F8F6'}}>
       <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>What makes this dashboard more accurate over time</div>
@@ -12852,7 +13298,7 @@ function DemandPlanningPage(){
         <li><b>PM Daily Report compliance</b> (Carlos, ongoing): once 80% of active jobs have daily LF reports, crew capacity rates become per-leader calibrated</li>
         <li><b><s>install_duration_days field</s></b> ✅ shipped — every job now has a computed install duration & complete date based on style-specific install rates. Override per job via PM input. Rates calibrate as PM Daily Reports accumulate.</li>
         <li><b>Style canonicalization</b> ({missingStyle} jobs missing style): closes the data gap that's understating plant load</li>
-        <li><b>Crew leader assignment</b> (Carlos + PMs): currently 0 of {openJobs.length} active jobs have crew_leader_id — without it, crew utilization can't be measured per leader</li>
+        <li><b>Crew leader assignment</b> (Carlos + PMs): currently 0 of {openJobs.length} active jobs have crew_leader_id — Leader Gantt tab is empty until this is backfilled. Single highest-leverage data investment right now.</li>
       </ul>
     </div>
   </div>;
