@@ -12466,6 +12466,194 @@ function PMReportPhotos({photos, jobNumber, onChange}){
     </div>
   );
 }
+// ═══ CREW LEADERS ADMIN PAGE ═══
+// Single-page roster manager. Inline editing on every row (name, market,
+// role, department code, pay rate). Add-new at top. Soft-deactivate via
+// the Active toggle — never hard-delete to preserve PM Daily Report and
+// Map history that references crew_leader_id.
+function CrewLeadersAdminPage(){
+  const auth=useAuth();
+  const isAdmin=auth?.profile?.role==='admin';
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[search,setSearch]=useState('');
+  const[marketFilter,setMarketFilter]=useState('');
+  const[showInactive,setShowInactive]=useState(false);
+  const[adding,setAdding]=useState(false);
+  const[addForm,setAddForm]=useState({name:'',market:'San Antonio',role:'Crew Leader',department_code:'1500',pay_rate:''});
+  const[saving,setSaving]=useState({});
+  const[toastMsg,setToastMsg]=useState(null);
+  const showToast=(m,err=false)=>{setToastMsg({message:m,isError:err});};
+
+  const fetchRows=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const d=await sbGet('crew_leaders','select=*&order=market.asc,name.asc');
+      setRows(Array.isArray(d)?d:[]);
+    }catch(e){showToast('Load failed: '+e.message,true);}
+    setLoading(false);
+  },[]);
+  useEffect(()=>{fetchRows();},[fetchRows]);
+
+  const filtered=useMemo(()=>{
+    let r=rows;
+    if(!showInactive)r=r.filter(x=>x.active!==false);
+    if(marketFilter)r=r.filter(x=>x.market===marketFilter);
+    if(search.trim()){
+      const q=search.toLowerCase();
+      r=r.filter(x=>(x.name||'').toLowerCase().includes(q)||(x.role||'').toLowerCase().includes(q));
+    }
+    return r;
+  },[rows,marketFilter,search,showInactive]);
+
+  const counts=useMemo(()=>{
+    const m={total:rows.filter(r=>r.active!==false).length,inactive:rows.filter(r=>r.active===false).length};
+    rows.filter(r=>r.active!==false).forEach(r=>{m[r.market]=(m[r.market]||0)+1;});
+    return m;
+  },[rows]);
+
+  const updateField=async(id,field,value)=>{
+    if(!isAdmin)return;
+    setSaving(s=>({...s,[id]:true}));
+    try{
+      let body={[field]:value};
+      if(field==='pay_rate')body[field]=value===''||value==null?null:parseFloat(value);
+      await sbPatch('crew_leaders',id,body);
+      setRows(rs=>rs.map(r=>r.id===id?{...r,...body}:r));
+    }catch(e){showToast('Save failed: '+e.message,true);}
+    setSaving(s=>{const n={...s};delete n[id];return n;});
+  };
+
+  const toggleActive=async(row)=>{
+    if(!isAdmin)return;
+    const newActive=!row.active;
+    if(!newActive&&!window.confirm(`Deactivate ${row.name}? They will no longer appear in PM Daily Report or Install Map dropdowns. History is preserved.`))return;
+    await updateField(row.id,'active',newActive);
+    showToast(`${row.name} ${newActive?'activated':'deactivated'}`);
+  };
+
+  const submitAdd=async()=>{
+    if(!isAdmin)return;
+    const f=addForm;
+    if(!f.name.trim()){showToast('Name required',true);return;}
+    if(!f.market){showToast('Market required',true);return;}
+    if(!f.role.trim()){showToast('Role required',true);return;}
+    setAdding(true);
+    try{
+      const body={
+        name:f.name.trim(),
+        market:f.market,
+        role:f.role.trim(),
+        department_code:f.department_code||null,
+        pay_type:'Hourly',
+        pay_rate:f.pay_rate===''?null:parseFloat(f.pay_rate),
+        active:true,
+      };
+      const res=await fetch(`${SB}/rest/v1/crew_leaders`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
+      if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
+      const created=await res.json();
+      setRows(rs=>[...rs,...(Array.isArray(created)?created:[created])]);
+      setAddForm({name:'',market:f.market,role:'Crew Leader',department_code:'1500',pay_rate:''});
+      showToast('Crew leader added');
+    }catch(e){showToast('Add failed: '+e.message,true);}
+    setAdding(false);
+  };
+
+  const MARKETS=['San Antonio','Houston','Austin','Dallas-Fort Worth','College Station'];
+  const ROLES=['Crew Leader','Crew Leader/Driver','Crew Leader - Drilling Crew','Crew Leader/Driver - Drilling Crew','Crew Leader/Driver - Washing Crew','Crew Leader/Own Vehicle'];
+  const DEPTS=['1500','1505','1535'];
+  const cellInp={padding:'6px 8px',fontSize:13,border:'1px solid #E5E3E0',borderRadius:6,width:'100%',background:'#FFF'};
+  const lbl={display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5};
+
+  if(!isAdmin){
+    return <div style={{...card,padding:40,textAlign:'center'}}>
+      <div style={{fontFamily:'Syne',fontSize:18,fontWeight:800,marginBottom:8}}>Admin only</div>
+      <div style={{fontSize:13,color:'#625650'}}>This page is restricted to administrators.</div>
+    </div>;
+  }
+
+  return <div>
+    {toastMsg&&<Toast message={toastMsg.message} isError={toastMsg.isError} onDone={()=>setToastMsg(null)}/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:12}}>
+      <div>
+        <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,margin:0}}>Crew Leaders</h1>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>
+          <b>{counts.total}</b> active · {Object.keys(counts).filter(k=>k!=='total'&&k!=='inactive').sort().map(m=>`${counts[m]} ${m}`).join(' · ')}
+          {counts.inactive>0&&<span style={{marginLeft:8,color:'#9E9B96'}}>({counts.inactive} inactive)</span>}
+        </div>
+      </div>
+    </div>
+
+    <div style={{...card,marginBottom:16}}>
+      <div style={{fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:12}}>Add Crew Leader</div>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1.5fr 0.8fr 0.8fr auto',gap:10,alignItems:'end'}}>
+        <div><div style={lbl}>Name</div><input value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))} placeholder="First Last" style={cellInp}/></div>
+        <div><div style={lbl}>Market</div><select value={addForm.market} onChange={e=>setAddForm(f=>({...f,market:e.target.value}))} style={cellInp}>{MARKETS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div><div style={lbl}>Role</div><select value={addForm.role} onChange={e=>setAddForm(f=>({...f,role:e.target.value}))} style={cellInp}>{ROLES.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+        <div><div style={lbl}>Dept</div><select value={addForm.department_code} onChange={e=>setAddForm(f=>({...f,department_code:e.target.value}))} style={cellInp}>{DEPTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div>
+        <div><div style={lbl}>$/hr</div><input type="number" step="0.01" value={addForm.pay_rate} onChange={e=>setAddForm(f=>({...f,pay_rate:e.target.value}))} style={cellInp}/></div>
+        <button onClick={submitAdd} disabled={adding||!addForm.name.trim()} style={{...btnP,padding:'8px 16px',fontSize:13,opacity:(adding||!addForm.name.trim())?0.5:1,cursor:(adding||!addForm.name.trim())?'not-allowed':'pointer'}}>{adding?'Adding…':'+ Add'}</button>
+      </div>
+    </div>
+
+    <div style={{display:'flex',gap:10,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or role…" style={{...cellInp,width:280}}/>
+      <select value={marketFilter} onChange={e=>setMarketFilter(e.target.value)} style={{...cellInp,width:200}}>
+        <option value="">All markets</option>
+        {MARKETS.map(m=><option key={m} value={m}>{m}</option>)}
+      </select>
+      <label style={{fontSize:12,color:'#625650',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+        <input type="checkbox" checked={showInactive} onChange={e=>setShowInactive(e.target.checked)}/>
+        Show inactive
+      </label>
+    </div>
+
+    <div style={{...card,padding:0,overflow:'hidden'}}>
+      {loading?<div style={{padding:24,textAlign:'center',color:'#625650'}}>Loading…</div>:
+       filtered.length===0?<div style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No crew leaders match your filters.</div>:
+       <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead style={{background:'#F9F8F6'}}>
+            <tr style={{borderBottom:'1px solid #E5E3E0'}}>
+              {['Name','Market','Role','Dept','$/hr','Active',''].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(r=><tr key={r.id} className="fc-row" style={{borderBottom:'1px solid #F4F4F2',opacity:r.active===false?0.55:1}}>
+              <td style={{padding:'8px 12px',minWidth:200}}>
+                <input defaultValue={r.name} onBlur={e=>{if(e.target.value.trim()&&e.target.value!==r.name)updateField(r.id,'name',e.target.value.trim());}} style={cellInp}/>
+              </td>
+              <td style={{padding:'8px 12px',minWidth:140}}>
+                <select defaultValue={r.market} onChange={e=>updateField(r.id,'market',e.target.value)} style={cellInp}>{MARKETS.map(m=><option key={m} value={m}>{m}</option>)}</select>
+              </td>
+              <td style={{padding:'8px 12px',minWidth:200}}>
+                <select defaultValue={r.role} onChange={e=>updateField(r.id,'role',e.target.value)} style={cellInp}>{ROLES.map(rl=><option key={rl} value={rl}>{rl}</option>)}{!ROLES.includes(r.role)&&<option value={r.role}>{r.role}</option>}</select>
+              </td>
+              <td style={{padding:'8px 12px',width:80}}>
+                <select defaultValue={r.department_code||''} onChange={e=>updateField(r.id,'department_code',e.target.value||null)} style={cellInp}>
+                  <option value="">—</option>
+                  {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
+                </select>
+              </td>
+              <td style={{padding:'8px 12px',width:90}}>
+                <input type="number" step="0.01" defaultValue={r.pay_rate||''} onBlur={e=>{const v=e.target.value;if(String(r.pay_rate||'')!==v)updateField(r.id,'pay_rate',v);}} style={cellInp}/>
+              </td>
+              <td style={{padding:'8px 12px',width:80,textAlign:'center'}}>
+                <button onClick={()=>toggleActive(r)} style={{background:r.active===false?'#F4F4F2':'#D1FAE5',color:r.active===false?'#9E9B96':'#065F46',border:'none',borderRadius:6,padding:'4px 12px',fontSize:11,fontWeight:700,cursor:'pointer'}}>{r.active===false?'Inactive':'Active'}</button>
+              </td>
+              <td style={{padding:'8px 12px',width:30,textAlign:'right',fontSize:11,color:'#9E9B96'}}>{saving[r.id]?'…':''}</td>
+            </tr>)}
+          </tbody>
+        </table>
+       </div>}
+    </div>
+
+    <div style={{fontSize:11,color:'#9E9B96',marginTop:12,lineHeight:1.5}}>
+      Edits save on blur (text/number) or change (dropdowns). Deactivating a leader hides them from PM Daily Report and Install Map dropdowns but preserves all historical references.
+    </div>
+  </div>;
+}
+
 // Crew Leader dropdown — used by PM Daily Report. Loads roster lazily;
 // filters by jobMarket unless 'Show all markets' is toggled.
 function CrewLeaderSelect({value,onChange,jobMarket,style}){
@@ -20992,6 +21180,7 @@ const PAGE_LABELS={
   cv_reconciliation:'Contract Reconciliation',
   my_plate:'My Plate',
   sharepoint_links:'SharePoint Links',
+  crew_leaders_admin:'Crew Leaders',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -22017,6 +22206,7 @@ function AppShell(){
     if(isAdmin)adminItems.push({key:'admin',label:'User Management',icon:'🔐'});
     if(canFolderAdmin)adminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
     if(canFolderAdmin)adminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
+    if(isAdmin)adminItems.push({key:'crew_leaders_admin',label:'Crew Leaders',icon:'👷'});
     if(canSystemEvents)adminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
     if(adminItems.length===0)return NAV_GROUPS;
     return[...NAV_GROUPS,{label:'ADMIN',color:'#4B5563',iconColor:'#9CA3AF',items:adminItems}];
@@ -22176,6 +22366,7 @@ function AppShell(){
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
             {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
             {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage currentUserEmail={currentUserEmail} currentUserName={profile?.full_name||null}/></ErrorBoundary>}
+            {page==='crew_leaders_admin'&&isAdmin&&<ErrorBoundary label="Crew Leaders"><CrewLeadersAdminPage/></ErrorBoundary>}
           </>}
         </div>
       </div>
