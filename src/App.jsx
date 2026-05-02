@@ -16401,6 +16401,15 @@ function MapPage({ jobs, onNav }) {
   }, [colorMode, getReadiness]);
 
   // ═══ MAP REF + LIFECYCLE ═══
+  // Honor the user's OS preferences for color-scheme and motion. Read
+  // once at mount — mid-session OS theme/motion changes won't auto-swap
+  // (a setStyle() call would also wipe our custom cluster layers, so
+  // initial-load handling is the simplest correct version for v1).
+  const prefersDark = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const reducedMotion = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const pinBorder = prefersDark ? '#FFFFFF' : '#1A1A1A';
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);  // active marker DOM elements for cleanup
@@ -16412,12 +16421,23 @@ function MapPage({ jobs, onNav }) {
     if (!mapContainerRef.current || mapRef.current) return;
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: prefersDark
+        ? 'mapbox://styles/mapbox/dark-v11'
+        : 'mapbox://styles/mapbox/light-v11',
       center: [-98.5, 31.0],   // Texas
       zoom: 5.6,
       attributionControl: true,
     });
     map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    // GeolocateControl: PMs in the field tap to center the map on their
+    // current location. ScaleControl: distance bar so users can gauge
+    // whether two jobs are close enough to share a truck route.
+    map.addControl(new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+    }), 'top-left');
+    map.addControl(new mapboxgl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
     map.on('load', () => { setMapReady(true); });
     mapRef.current = map;
     return () => {
@@ -16425,7 +16445,7 @@ function MapPage({ jobs, onNav }) {
       markersRef.current = [];
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     };
-  }, []);
+  }, [prefersDark]);
 
   // Re-render markers when the filtered set or color mode changes.
   // IMPORTANT: 'selected' is intentionally NOT in this deps array. Including it
@@ -16459,7 +16479,7 @@ function MapPage({ jobs, onNav }) {
         height: 14px;
         border-radius: 50%;
         background: ${color};
-        border: 2px solid #1A1A1A;
+        border: 2px solid ${pinBorder};
         cursor: pointer;
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         visibility: visible !important;
@@ -16468,10 +16488,6 @@ function MapPage({ jobs, onNav }) {
       `;
       el.title = `${j.job_number || ''} ${j.job_name || ''}`;
       el.addEventListener('click', (e) => { e.stopPropagation(); setSelected(j); });
-      // Diagnostic: log hover events. If the dot disappears on hover but no log
-      // fires, the cursor isn't actually hitting the dot — mapbox is.
-      el.addEventListener('mouseenter', () => { console.log('[PIN] mouseenter', j.job_number); });
-      el.addEventListener('mouseleave', () => { console.log('[PIN] mouseleave', j.job_number); });
       const marker = new mapboxgl.Marker(el).setLngLat([j.lng, j.lat]).addTo(map);
       markersRef.current.push(marker);
     });
@@ -16501,11 +16517,11 @@ function MapPage({ jobs, onNav }) {
     const coords = filtered.filter(j => j.lat && j.lng).map(j => [j.lng, j.lat]);
     if (coords.length === 0) return;
     if (coords.length === 1) {
-      mapRef.current.flyTo({ center: coords[0], zoom: 11, duration: 800 });
+      mapRef.current.flyTo({ center: coords[0], zoom: 11, duration: reducedMotion ? 0 : 800 });
       return;
     }
     const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
-    mapRef.current.fitBounds(bounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 11, duration: 800 });
+    mapRef.current.fitBounds(bounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 11, duration: reducedMotion ? 0 : 800 });
   }, [filtered, mapReady]);
 
   // Render cluster overlays as a separate layer using GeoJSON source.
@@ -16602,7 +16618,7 @@ function MapPage({ jobs, onNav }) {
   // ═══ HANDLERS ═══
   const flyToJob = (j) => {
     if (!mapRef.current || !j.lat || !j.lng) return;
-    mapRef.current.flyTo({ center: [j.lng, j.lat], zoom: 13, duration: 700 });
+    mapRef.current.flyTo({ center: [j.lng, j.lat], zoom: 13, duration: reducedMotion ? 0 : 700 });
     setSelected(j);
   };
 
@@ -16897,6 +16913,17 @@ function MapPage({ jobs, onNav }) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#EAB308', border: '1px solid #1A1A1A' }} />Production risk</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#DC2626', border: '1px solid #1A1A1A' }} />Overdue</span>
               {showUnscheduled && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#A855F7', border: '1px solid #1A1A1A' }} />No date</span>}
+              {layers.fence_complete && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 5, background: '#9CA3AF', border: '1px solid #1A1A1A' }} />Complete / other</span>}
+            </div>
+          </>}
+          {colorMode === 'market' && <>
+            <div style={{ fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9, marginBottom: 4 }}>Markets</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {Object.entries(MKT_PIN).map(([code, color]) => (
+                <span key={code} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: color, border: '1px solid #1A1A1A' }} />{code}
+                </span>
+              ))}
             </div>
           </>}
           {colorMode === 'crew' && <>
