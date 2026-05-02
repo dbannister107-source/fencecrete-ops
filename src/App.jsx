@@ -13526,7 +13526,8 @@ function HiringWhatIf({crewLoadByMarket}){
 // Honest-data principles: every assumption is labeled, gaps are surfaced as
 // warnings (not blanks), no predictions without confidence bands.
 function DemandPlanningPage(){
-  const[tab,setTab]=useState('plant');
+  const[tab,setTab]=useState('capacity');
+  const[crewView,setCrewView]=useState('load');  // 'load' | 'gantt' | 'scorecard' — sub-switcher inside Crews tab;
   const[loading,setLoading]=useState(true);
   const[jobs,setJobs]=useState([]);
   const[molds,setMolds]=useState([]);
@@ -13891,27 +13892,23 @@ function DemandPlanningPage(){
           {openJobs.length} open jobs · {fmtLF(openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0))} backlog · {fmt$(openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0))} contract value
         </div>
       </div>
-      <div style={{fontSize:11,color:'#9E9B96'}}>v0.3 · gantt + calibration</div>
+      <div style={{fontSize:11,color:'#9E9B96'}}>v0.6 · 5-tab consolidation</div>
     </div>
 
     <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-      {tabBtn('plant','Plant Load')}
-      {tabBtn('material','Material Readiness')}
-      {tabBtn('crew','Crew Load')}
-      {tabBtn('gantt','Leader Gantt')}
-      {tabBtn('scorecard','Leader Scorecard')}
-      {tabBtn('schedule','13-Week Schedule')}
-      {tabBtn('pipeline','Pipeline → Forecast')}
-      {tabBtn('calibration','Calibration')}
-      {tabBtn('cash','Cash Conversion')}
+      {tabBtn('capacity','Capacity')}
+      {tabBtn('crews','Crews')}
+      {tabBtn('schedule','Schedule')}
+      {tabBtn('data_health','Data Health')}
+      {tabBtn('cash','Cash')}
     </div>
 
-    {missingStyle>0&&tab==='plant'&&<div style={noteStyle}>
+    {missingStyle>0&&tab==='capacity'&&<div style={noteStyle}>
       <b>Data hygiene gap:</b> {missingStyle} of {openJobs.length} open jobs ({Math.round(missingStyle/openJobs.length*100)}%) have no style assigned and are excluded from this view. Plant load below understates true demand.
     </div>}
 
-    {/* ─── PLANT LOAD TAB ─── */}
-    {tab==='plant'&&<div>
+    {/* ─── CAPACITY TAB (Plant Load + Material Readiness merged) ─── */}
+    {tab==='capacity'&&<div>
       <div style={card2}>
         <div style={sectionHead}>Production Backlog by Style</div>
         <div style={{overflowX:'auto'}}>
@@ -13939,8 +13936,8 @@ function DemandPlanningPage(){
       </div>
     </div>}
 
-    {/* ─── MATERIAL READINESS TAB ─── */}
-    {tab==='material'&&<div>
+    {/* ─── (Material Readiness now lives under Capacity) ─── */}
+    {tab==='capacity'&&<div style={{marginTop:14}}>
       <div style={card2}>
         <div style={sectionHead}>Material Readiness Gate — Jobs Starting in Next 14 Days Without Material</div>
         <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
@@ -13975,8 +13972,14 @@ function DemandPlanningPage(){
       </div>
     </div>}
 
-    {/* ─── CREW LOAD TAB ─── */}
-    {tab==='crew'&&<div>
+    {/* ─── CREWS TAB (Load + Gantt + Scorecard merged with sub-switcher) ─── */}
+    {tab==='crews'&&<div>
+      <div style={{display:'flex',gap:6,marginBottom:14,padding:6,background:'#F4F4F2',borderRadius:8,width:'fit-content'}}>
+        {[['load','Load by market'],['gantt','Per-leader gantt'],['scorecard','Scorecard']].map(([v,l])=>
+          <button key={v} onClick={()=>setCrewView(v)} style={{padding:'6px 14px',borderRadius:6,border:'none',background:crewView===v?'#FFF':'transparent',color:crewView===v?'#1A1A1A':'#625650',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:crewView===v?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>{l}</button>)}
+      </div>
+    </div>}
+    {tab==='crews'&&crewView==='load'&&<div>
       <div style={card2}>
         <div style={sectionHead}>Active Install Workload by Market</div>
         <div style={{overflowX:'auto'}}>
@@ -14007,8 +14010,8 @@ function DemandPlanningPage(){
       <HiringWhatIf crewLoadByMarket={crewLoadByMarket}/>
     </div>}
 
-    {/* ─── LEADER SCORECARD TAB ─── */}
-    {tab==='scorecard'&&<div>
+    {/* ─── LEADER SCORECARD (sub-view of Crews) ─── */}
+    {tab==='crews'&&crewView==='scorecard'&&<div>
       <div style={card2}>
         <div style={sectionHead}>Crew Leader Productivity Scorecard</div>
         <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
@@ -14091,8 +14094,8 @@ function DemandPlanningPage(){
       </div>}
     </div>}
 
-    {/* ─── LEADER GANTT TAB ─── */}
-    {tab==='gantt'&&<div>
+    {/* ─── LEADER GANTT (sub-view of Crews) ─── */}
+    {tab==='crews'&&crewView==='gantt'&&<div>
       <div style={card2}>
         <div style={sectionHead}>Crew Leader Schedule — Next 13 Weeks</div>
         <div style={{fontSize:12,color:'#625650',marginBottom:10}}>
@@ -14124,8 +14127,8 @@ function DemandPlanningPage(){
       </div>}
     </div>}
 
-    {/* ─── PIPELINE → FORECAST TAB ─── */}
-    {tab==='pipeline'&&<div>
+    {/* ─── (Pipeline → Forecast moved to Sales Dashboard) ─── */}
+    {tab==='__retired_pipeline__'&&<div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:16}}>
         <div style={{...card,padding:16,borderLeft:'4px solid #185FA5'}}>
           <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Active Proposals</div>
@@ -14167,8 +14170,8 @@ function DemandPlanningPage(){
       </div>
     </div>}
 
-    {/* ─── CALIBRATION TAB ─── */}
-    {tab==='calibration'&&<div>
+    {/* ─── DATA HEALTH TAB (formerly Calibration) ─── */}
+    {tab==='data_health'&&<div>
       <div style={card2}>
         <div style={sectionHead}>Install Rate Calibration — Default vs. Measured</div>
         <div style={{fontSize:12,color:'#625650',marginBottom:14,lineHeight:1.6}}>
