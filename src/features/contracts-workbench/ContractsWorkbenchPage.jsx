@@ -47,7 +47,7 @@ const fmtDate = (s) => {
 
 // Auto-check field labels (must match keys in v_contract_readiness.auto_checks)
 const AUTO_LABELS = {
-  customer_linked: 'Customer set',
+  customer_linked: 'Linked to company',
   style_set: 'Style selected',
   color_set: 'Color selected',
   height_set: 'Height set',

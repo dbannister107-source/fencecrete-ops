@@ -2,6 +2,17 @@
 
 This file is read by Claude Code automatically at the start of every session. It contains the architectural principles, technical context, and operational patterns you need to be effective on this codebase. Read it carefully before making changes.
 
+## Safety Rules (Critical - Always Follow)
+
+- NEVER run `rm -rf`, `rm -r`, `del`, or any destructive commands without explicit user confirmation.
+- Always show the exact command and affected paths first and wait for "YES" or "PROCEED".
+- Prefer safer alternatives (e.g. `git clean`, moving to trash, or asking user to delete manually).
+- Before any file system modification that could delete data, summarize the risk and get explicit approval.
+- Never assume current working directory — always use full paths when running dangerous commands.
+- If something seems risky, stop and ask for confirmation instead of proceeding.
+
+I am very sensitive about data loss after the recent folder deletion incident.
+
 ---
 
 ## What This Is
@@ -100,9 +111,12 @@ Never set these directly. If you need a different value, change the upstream inp
 
 ### Currently in flight
 - **A3 line items + tax basis migration:** Blocked on 3 questions for Alex (PC tax basis universal? WI=33%? Wood basis?). 82 jobs need data hygiene first. 51 active 'Exempt' jobs.
-- **Customer Master Phase 2:** 58 active jobs unlinked to companies. Phase 3 (customer-level docs auto-attach) queued.
+- **Customer Master Phase 2 + 3:** Code is COMPLETE. Diagnostic + Reconcile (with bulk actions + auto-accept high-confidence) shipped 2026-04-30. Companies & Docs tab + `trg_company_attachment_fan_out_ai` fan-out trigger also live. Remaining work is operational, not engineering: 83 active jobs still unmatched to companies (trend was wrong direction, +25 since last snapshot); 0 company documents uploaded so far (zero adoption of Phase 3). The contract-readiness gate now correctly enforces `company_id` linkage (see "Recently shipped").
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
+
+### Recently shipped (2026-05-02)
+- **Customer-linked contract gate fixed.** `v_contract_readiness.auto_checks.customer_linked` now checks `company_id IS NOT NULL OR is_residential = TRUE` (previously only checked the free-text `customer_name` string, which never failed). 21 contract_review jobs newly blocked from advancing status until reconciled in Customer Master. Migration: `20260502_fix_customer_linked_gate.sql`. UI label updated to "Linked to company".
 
 ### Known data hygiene issues (don't bulk-fix without explicit approval)
 - 178 jobs have `contract_executed=false` (flag never backfilled) — silent SQL backfill OK
@@ -204,4 +218,4 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 2, 2026 (after audit + RLS hardening + Sales Origin recolor + nav reorg + logo refresh)*
+*Last updated: May 2, 2026 (added Safety Rules section + customer-linked gate fix + Customer Master Phase 2/3 status corrected)*
