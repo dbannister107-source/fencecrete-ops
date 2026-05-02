@@ -24,6 +24,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, H } from '../../shared/sb';
+import { AUTO_LABELS, MANUAL_ITEMS, REQUIRED_MANUAL } from '../../shared/readiness';
 
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 
@@ -44,32 +45,6 @@ const fmtDate = (s) => {
   const d = new Date(s);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
 };
-
-// Auto-check field labels (must match keys in v_contract_readiness.auto_checks)
-const AUTO_LABELS = {
-  customer_linked: 'Linked to company',
-  style_set: 'Style selected',
-  color_set: 'Color selected',
-  height_set: 'Height set',
-  total_lf_set: 'LF entered',
-  contract_value_set: 'Contract value',
-  line_items_entered: 'Line items entered',
-  line_items_match_contract: 'Line items reconcile to contract',
-};
-
-// Manual checklist items. PIS and Payment terms are universally required
-// (block advancement). The other 4 are optional documentation — Amiee ticks
-// them when they happen but they don't block the contract from advancing.
-// Required items render first.
-const MANUAL_ITEMS = [
-  { key: 'pis_submitted',        label: 'PIS submitted',        required: true },
-  { key: 'payment_terms',        label: 'Payment terms',        required: true },
-  { key: 'deposit_received',     label: 'Deposit received',     required: false },
-  { key: 'tax_cert',             label: 'Tax cert',             required: false },
-  { key: 'engineering_drawings', label: 'Engineering drawings', required: false },
-  { key: 'wet_signatures',       label: 'Wet signatures',       required: false },
-];
-const REQUIRED_MANUAL = MANUAL_ITEMS.filter((it) => it.required);
 
 export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOnly = false }) {
   const [rows, setRows] = useState([]);

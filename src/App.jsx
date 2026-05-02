@@ -31,6 +31,15 @@ import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWork
 // every applyAuthToken() call below.
 import { applySharedAuthToken } from './shared/sb';
 
+// Shared readiness definitions — single source of truth for the auto-check
+// labels and manual-item list. Used by EditPanel's Contract Readiness card
+// and CoPilotHome's blocked-contracts insight. Workbench has its own import.
+import {
+  AUTO_LABELS as READINESS_AUTO_LABELS,
+  MANUAL_ITEMS as READINESS_MANUAL_ITEMS,
+  MANUAL_LABELS as READINESS_MANUAL_LABELS,
+} from './shared/readiness';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -3180,23 +3189,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             {readiness&&(()=>{
               const ac=readiness.auto_checks||{};
               const mi=readiness.manual_items||{};
-              const AUTO_LABELS={
-                customer_linked:'Linked to company',
-                style_set:'Style selected',
-                color_set:'Color selected',
-                height_set:'Height set',
-                total_lf_set:'Total LF entered',
-                contract_value_set:'Contract value entered',
-                line_items_entered:'Line items entered',
-              };
-              const MANUAL_ITEMS=[
-                {key:'pis_submitted',label:'PIS submitted'},
-                {key:'deposit_received',label:'Deposit received'},
-                {key:'tax_cert',label:'Tax cert on file (if exempt)'},
-                {key:'engineering_drawings',label:'Engineering drawings approved (if non-standard)'},
-                {key:'payment_terms',label:'Payment terms agreed'},
-                {key:'wet_signatures',label:'Wet signatures received'},
-              ];
+              // Use the shared readiness definitions (single source of
+              // truth — also imported by ContractsWorkbenchPage and the
+              // CoPilotHome blocked-contracts insight).
+              const AUTO_LABELS=READINESS_AUTO_LABELS;
+              const MANUAL_ITEMS=READINESS_MANUAL_ITEMS;
               const autoEntries=Object.entries(AUTO_LABELS);
               const autoPassed=autoEntries.filter(([k])=>ac[k]).length;
               const manualPassed=MANUAL_ITEMS.filter(it=>{
@@ -13745,11 +13742,33 @@ function DemandPlannerCopilot({tab,data}){
     // visible so nothing sits silently.
     if(data.contractReadiness){
       const cr=data.contractReadiness;
+      // Top-level summary — the most prominent surface for the forcing
+      // function. Appears above the per-category detail rules below so
+      // the headline number is visible at a glance. The detail rules
+      // (blocked-by-data vs blocked-by-manual) follow.
+      if(cr.blocked>0){
+        const reasonCounts={};
+        cr.blocked_jobs.forEach(j=>{
+          (j.missing_auto||[]).forEach(k=>{
+            reasonCounts[k]=(reasonCounts[k]||0)+1;
+          });
+        });
+        const topReasons=Object.entries(reasonCounts)
+          .sort((a,b)=>b[1]-a[1]).slice(0,3)
+          .map(([k,n])=>`${READINESS_AUTO_LABELS[k]||k} (${n})`).join(' · ');
+        out.push({
+          severity:'warning',
+          icon:'🚧',
+          title:`${cr.blocked} contract${cr.blocked>1?'s':''} blocked from advancing to production_queue`,
+          body:topReasons?`Top blockers: ${topReasons}. Status moves out of contract_review require all auto-checks plus PIS + Payment terms.`:`These can't move out of contract_review until resolved.`,
+          action:'Open Contracts Workbench (filter: Blocked)',
+        });
+      }
       if(cr.ready>0){
         out.push({severity:'info',icon:'✅',title:`${cr.ready} job${cr.ready>1?'s':''} ready to advance to production_queue`,body:`Contract readiness checklist complete: ${cr.ready_jobs.map(j=>j.job_number).join(', ')}. Open each in Projects and bump status. The database gate will allow these through.`});
       }
       if(cr.blocked_by_auto>0){
-        const sample=cr.blocked_jobs.slice(0,3).map(j=>`${j.job_number} (missing ${j.missing_auto.slice(0,2).join(', ')})`).join('; ');
+        const sample=cr.blocked_jobs.slice(0,3).map(j=>`${j.job_number} (missing ${j.missing_auto.slice(0,2).map(k=>READINESS_AUTO_LABELS[k]||k).join(', ')})`).join('; ');
         out.push({severity:'warning',icon:'📝',title:`${cr.blocked_by_auto} contract_review job${cr.blocked_by_auto>1?'s':''} blocked by missing job data`,body:`${sample}${cr.blocked_jobs.length>3?` and ${cr.blocked_jobs.length-3} more`:''}. These need data filled in (style, color, height, line items) before contracts can advance.`});
       }
       if(cr.blocked_by_manual_only>0){
