@@ -23274,6 +23274,50 @@ function SalesDashboardPage({jobs,onNav}){
         </div>
       </div>}
 
+      {pipelineForecast.totals.count>0&&<div style={{...card,padding:20,marginTop:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+          <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800}}>Pipeline → Forecast</div>
+          <div style={{fontSize:11,color:'#9E9B96'}}>probability-weighted bookings by expected close month</div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:12,marginBottom:14}}>
+          <div style={{padding:14,border:'1px solid #E5E3E0',borderLeft:'4px solid #185FA5',borderRadius:6}}>
+            <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Active Proposals</div>
+            <div style={{fontSize:22,fontWeight:800,marginTop:4}}>{pipelineForecast.totals.count}</div>
+          </div>
+          <div style={{padding:14,border:'1px solid #E5E3E0',borderLeft:'4px solid #185FA5',borderRadius:6}}>
+            <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Proposal Value</div>
+            <div style={{fontSize:22,fontWeight:800,marginTop:4}}>{$k(pipelineForecast.totals.raw)}</div>
+          </div>
+          <div style={{padding:14,border:'1px solid #E5E3E0',borderLeft:'4px solid #0F6E56',borderRadius:6}}>
+            <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Expected (Prob-weighted)</div>
+            <div style={{fontSize:22,fontWeight:800,marginTop:4,color:'#0F6E56'}}>{$k(pipelineForecast.totals.expected)}</div>
+          </div>
+          <div style={{padding:14,border:'1px solid #E5E3E0',borderLeft:'4px solid #B45309',borderRadius:6}}>
+            <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>No Close Date</div>
+            <div style={{fontSize:22,fontWeight:800,marginTop:4,color:'#B45309'}}>{pipelineForecast.totals.no_date}<span style={{fontSize:12,fontWeight:600,marginLeft:6,color:'#625650'}}>({$k(pipelineForecast.totals.no_date_value)})</span></div>
+          </div>
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead><tr style={{background:'#F9F8F6',borderBottom:'1px solid #E5E3E0'}}>
+              {['Month','Proposals','Total Value','Expected (Prob-weighted)'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {pipelineForecast.months.filter(m=>m.proposals>0).map(m=><tr key={m.key} style={{borderBottom:'1px solid #F4F4F2'}}>
+                <td style={{padding:'8px 12px',fontWeight:700}}>{m.label}</td>
+                <td style={{padding:'8px 12px'}}>{m.proposals}</td>
+                <td style={{padding:'8px 12px'}}>{$k(m.raw)}</td>
+                <td style={{padding:'8px 12px',fontWeight:700,color:'#0F6E56'}}>{$k(m.expected)}</td>
+              </tr>)}
+              {pipelineForecast.months.filter(m=>m.proposals>0).length===0&&<tr><td colSpan={4} style={{padding:14,textAlign:'center',color:'#9E9B96',fontSize:12}}>No proposals with expected close dates in the next 6 months.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:11,color:'#9E9B96',marginTop:10,fontStyle:'italic',lineHeight:1.5}}>
+          Expected = Σ(proposal_value × win_probability). Reps' own entered probabilities. Cross-reference against the Probability Calibration card above for adjusted figures.
+        </div>
+      </div>}
+
     </div>
   </div>;
 }
