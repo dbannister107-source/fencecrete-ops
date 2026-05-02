@@ -14283,49 +14283,6 @@ function DemandPlanningPage(){
       </div>}
     </div>}
 
-    {/* ─── (Pipeline → Forecast moved to Sales Dashboard) ─── */}
-    {tab==='__retired_pipeline__'&&<div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:12,marginBottom:16}}>
-        <div style={{...card,padding:16,borderLeft:'4px solid #185FA5'}}>
-          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Active Proposals</div>
-          <div style={{fontSize:24,fontWeight:800,marginTop:4}}>{pipelineForecast.totals.count}</div>
-        </div>
-        <div style={{...card,padding:16,borderLeft:'4px solid #185FA5'}}>
-          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Total Proposal Value</div>
-          <div style={{fontSize:24,fontWeight:800,marginTop:4}}>{fmt$(pipelineForecast.totals.raw)}</div>
-        </div>
-        <div style={{...card,padding:16,borderLeft:'4px solid #0F6E56'}}>
-          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>Probability-Weighted Expected</div>
-          <div style={{fontSize:24,fontWeight:800,marginTop:4,color:'#0F6E56'}}>{fmt$(pipelineForecast.totals.expected)}</div>
-        </div>
-        <div style={{...card,padding:16,borderLeft:'4px solid #B45309'}}>
-          <div style={{fontSize:10,color:'#9E9B96',fontWeight:700,textTransform:'uppercase'}}>No Close Date</div>
-          <div style={{fontSize:24,fontWeight:800,marginTop:4,color:'#B45309'}}>{pipelineForecast.totals.no_date}<span style={{fontSize:13,fontWeight:600,marginLeft:6}}>({fmt$(pipelineForecast.totals.no_date_value)})</span></div>
-        </div>
-      </div>
-      <div style={card2}>
-        <div style={sectionHead}>Booking Forecast by Expected Close Month</div>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-            <thead><tr style={{borderBottom:'1px solid #E5E3E0',background:'#F9F8F6'}}>
-              {['Month','Proposals','Total Value','Expected (Prob-weighted)'].map(h=><th key={h} style={{textAlign:'left',padding:'10px 12px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {pipelineForecast.months.filter(m=>m.proposals_count>0).map(m=><tr key={m.key} style={{borderBottom:'1px solid #F4F4F2'}}>
-                <td style={{padding:'10px 12px',fontWeight:600}}>{m.label}</td>
-                <td style={{padding:'10px 12px'}}>{m.proposals_count}</td>
-                <td style={{padding:'10px 12px',fontWeight:600}}>{fmt$(m.proposals_value)}</td>
-                <td style={{padding:'10px 12px',fontWeight:700,color:'#0F6E56'}}>{fmt$(m.expected_value)}</td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>
-        <div style={captionStyle}>
-          Probability-weighted expected = Σ(proposal_value × win_probability). Reps' own entered probabilities. <b>Calibration question for Alex:</b> are reps' probabilities accurate? Compare against historical win rate per rep — if Matt enters 50% but actually wins 35%, his pipeline overstates by 30%.
-        </div>
-      </div>
-    </div>}
-
     {/* ─── DATA HEALTH TAB (formerly Calibration) ─── */}
     {tab==='data_health'&&<div>
       <div style={card2}>
