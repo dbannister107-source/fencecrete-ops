@@ -57,15 +57,19 @@ const AUTO_LABELS = {
   line_items_match_contract: 'Line items reconcile to contract',
 };
 
-// Manual checklist items (must match v_contract_readiness item_keys)
+// Manual checklist items. PIS and Payment terms are universally required
+// (block advancement). The other 4 are optional documentation — Amiee ticks
+// them when they happen but they don't block the contract from advancing.
+// Required items render first.
 const MANUAL_ITEMS = [
-  { key: 'pis_submitted', label: 'PIS submitted' },
-  { key: 'deposit_received', label: 'Deposit received' },
-  { key: 'tax_cert', label: 'Tax cert (if exempt)' },
-  { key: 'engineering_drawings', label: 'Engineering drawings' },
-  { key: 'payment_terms', label: 'Payment terms' },
-  { key: 'wet_signatures', label: 'Wet signatures' },
+  { key: 'pis_submitted',        label: 'PIS submitted',        required: true },
+  { key: 'payment_terms',        label: 'Payment terms',        required: true },
+  { key: 'deposit_received',     label: 'Deposit received',     required: false },
+  { key: 'tax_cert',             label: 'Tax cert',             required: false },
+  { key: 'engineering_drawings', label: 'Engineering drawings', required: false },
+  { key: 'wet_signatures',       label: 'Wet signatures',       required: false },
 ];
+const REQUIRED_MANUAL = MANUAL_ITEMS.filter((it) => it.required);
 
 export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOnly = false }) {
   const [rows, setRows] = useState([]);
@@ -139,14 +143,15 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOn
           not_applicable: action === 'not_applicable',
           notes: null,
         };
-        // Recompute is_ready locally — auto_checks unchanged, just re-check manual coverage
+        // Recompute is_ready locally — auto_checks unchanged, just re-check
+        // REQUIRED manual coverage. Optional items don't gate is_ready.
         const ac = r.auto_checks || {};
         const allAuto = Object.values(ac).every((v) => v === true);
-        const manualOk = MANUAL_ITEMS.every((it) => {
+        const requiredManualOk = REQUIRED_MANUAL.every((it) => {
           const m = mi[it.key];
           return m && (m.checked_at || m.not_applicable);
         });
-        return { ...r, manual_items: mi, is_ready: allAuto && manualOk };
+        return { ...r, manual_items: mi, is_ready: allAuto && requiredManualOk };
       }));
     } catch (e) {
       setToast({ type: 'error', msg: `Save failed: ${e.message}` });
@@ -294,11 +299,14 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOn
                 const mi = r.manual_items || {};
                 const autoCount = Object.values(ac).filter((v) => v === true).length;
                 const autoTotal = Object.keys(AUTO_LABELS).length;
-                const manualCount = MANUAL_ITEMS.filter((it) => {
+                // The row's "Manual N/N" column reflects REQUIRED items
+                // (the ones that gate advancement). Optional items still
+                // render in the expanded view but don't count toward this.
+                const manualCount = REQUIRED_MANUAL.filter((it) => {
                   const m = mi[it.key];
                   return m && (m.checked_at || m.not_applicable);
                 }).length;
-                const manualTotal = MANUAL_ITEMS.length;
+                const manualTotal = REQUIRED_MANUAL.length;
                 const isExpanded = expanded.has(r.job_id);
                 return (
                   <React.Fragment key={r.job_id}>
@@ -355,10 +363,10 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOn
                                 >Open in Projects to fix →</button>
                               )}
                             </div>
-                            {/* Manual checklist */}
+                            {/* Manual checklist — required items first, then optional documentation */}
                             <div>
                               <div style={{ fontSize: 10, fontWeight: 800, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                                Manual checklist (Amiee / sales rep)
+                                Manual checklist <span style={{ color: '#9E9B96', fontWeight: 600 }}>(★ blocks advancement)</span>
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                 {MANUAL_ITEMS.map((it) => {
@@ -378,7 +386,11 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOn
                                         style={{ width: 16, height: 16, accentColor: '#065F46', cursor: readOnly ? 'not-allowed' : (isSaving ? 'wait' : 'pointer'), opacity: readOnly ? 0.6 : 1 }}
                                       />
                                       <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, color: ok ? '#065F46' : '#1A1A1A' }}>{it.label}</div>
+                                        <div style={{ fontWeight: 600, color: ok ? '#065F46' : '#1A1A1A' }}>
+                                          {it.required && <span style={{ color: '#8A261D', marginRight: 4 }} title="Required to advance">★</span>}
+                                          {it.label}
+                                          {!it.required && <span style={{ color: '#9E9B96', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>(optional)</span>}
+                                        </div>
                                         {checked && m.checked_by && (
                                           <div style={{ fontSize: 10, color: '#625650', marginTop: 2 }}>
                                             by {m.checked_by} on {new Date(m.checked_at).toLocaleDateString()}
