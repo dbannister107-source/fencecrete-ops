@@ -1554,6 +1554,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   // Ref held by LineItemsEditor — lets us trigger its saveAll() from the
   // parent's handleSave so clicking top "Save" also commits line item edits.
   const lineItemsSaveRef=useRef(null);
+
+  // Contract Readiness — auto-checks computed from existing fields, manual
+  // items stored in contract_readiness_items table. Refetched whenever the
+  // job changes or the form is saved. Tracked separately from form state
+  // because it includes server-computed auto-checks via v_contract_readiness.
+  const[readiness,setReadiness]=useState(null);
+  const fetchReadiness=useCallback(async()=>{
+    if(!job?.id)return;
+    const rows=await sbGet('v_contract_readiness',`job_id=eq.${job.id}&limit=1`);
+    setReadiness(Array.isArray(rows)&&rows.length?rows[0]:null);
+  },[job?.id]);
+  useEffect(()=>{fetchReadiness();},[fetchReadiness]);
+
   const[pisTokens,setPisTokens]=useState([]);
   const[pisSheets,setPisSheets]=useState([]);
   const[pisSending,setPisSending]=useState(false);
@@ -1572,6 +1585,30 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[sharepointSourceUrl,setSharepointSourceUrl]=useState('');
   const[sharepointFolderOptions,setSharepointFolderOptions]=useState([]);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
+
+  // Toggle / set a manual contract readiness item. Pass action='check' to
+  // mark it done (stamps checked_at + checked_by), action='uncheck' to clear,
+  // or action='not_applicable' to mark N/A. Upserts into contract_readiness_items.
+  const setReadinessItem=async(itemKey,action)=>{
+    if(!job?.id)return;
+    const now=new Date().toISOString();
+    const body={
+      job_id:job.id,
+      item_key:itemKey,
+      checked_at:action==='check'?now:null,
+      checked_by:action==='check'?currentUserEmail:null,
+      not_applicable:action==='not_applicable',
+      updated_at:now,
+    };
+    // Use upsert via PostgREST — on_conflict on (job_id,item_key)
+    await fetch(`${SB}/rest/v1/contract_readiness_items?on_conflict=job_id,item_key`,{
+      method:'POST',
+      headers:{...H,'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(body),
+    });
+    fetchReadiness();
+  };
+
   const[saveErr,setSaveErr]=useState(null);
   const loadPisData=useCallback(async()=>{
     if(!job?.id)return;
@@ -3048,6 +3085,90 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <div key={f} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #E5E3E0'}}><span style={{fontSize:12,color:'#625650'}}>{cd?cd.label:f}</span><span style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{val}</span></div>);})}
           </div>}
           {tab==='contract'&&<>
+            {/* ─── CONTRACT READINESS CARD ─── */}
+            {readiness&&(()=>{
+              const ac=readiness.auto_checks||{};
+              const mi=readiness.manual_items||{};
+              const AUTO_LABELS={
+                customer_linked:'Customer set',
+                style_set:'Style selected',
+                color_set:'Color selected',
+                height_set:'Height set',
+                total_lf_set:'Total LF entered',
+                contract_value_set:'Contract value entered',
+                line_items_entered:'Line items entered',
+              };
+              const MANUAL_ITEMS=[
+                {key:'pis_submitted',label:'PIS submitted'},
+                {key:'deposit_received',label:'Deposit received'},
+                {key:'tax_cert',label:'Tax cert on file (if exempt)'},
+                {key:'engineering_drawings',label:'Engineering drawings approved (if non-standard)'},
+                {key:'payment_terms',label:'Payment terms agreed'},
+                {key:'wet_signatures',label:'Wet signatures received'},
+              ];
+              const autoEntries=Object.entries(AUTO_LABELS);
+              const autoPassed=autoEntries.filter(([k])=>ac[k]).length;
+              const manualPassed=MANUAL_ITEMS.filter(it=>{
+                const m=mi[it.key];return m&&(m.checked_at||m.not_applicable);
+              }).length;
+              const totalReady=autoPassed+manualPassed;
+              const totalItems=autoEntries.length+MANUAL_ITEMS.length;
+              const isReady=readiness.is_ready;
+              const banner=isReady?{bg:'#D1FAE5',border:'#065F46',color:'#065F46',label:'READY FOR PRODUCTION QUEUE'}
+                :{bg:'#FEF3C7',border:'#B45309',color:'#92400E',label:`${totalItems-totalReady} ITEM${totalItems-totalReady===1?'':'S'} OUTSTANDING`};
+              return <div style={{marginBottom:18,border:`2px solid ${banner.border}`,borderRadius:10,overflow:'hidden'}}>
+                <div style={{background:banner.bg,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:800,color:banner.color,textTransform:'uppercase',letterSpacing:0.5}}>Contract Readiness</div>
+                    <div style={{fontSize:13,fontWeight:700,color:banner.color,marginTop:2}}>{banner.label}</div>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:800,color:banner.color}}>{totalReady}/{totalItems}</div>
+                </div>
+                <div style={{padding:14,background:'#FFF'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Auto-checked from job data</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:6,marginBottom:14}}>
+                    {autoEntries.map(([k,label])=>{
+                      const ok=!!ac[k];
+                      return <div key={k} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 8px',background:ok?'#F0FDF4':'#FEF2F2',borderRadius:6,fontSize:12}}>
+                        <span style={{fontSize:14,color:ok?'#065F46':'#991B1B',fontWeight:800,width:14}}>{ok?'✓':'✗'}</span>
+                        <span style={{color:ok?'#065F46':'#991B1B',fontWeight:600}}>{label}</span>
+                      </div>;
+                    })}
+                  </div>
+                  <div style={{fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Manual checklist (sales rep before submitting to Contracts)</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {MANUAL_ITEMS.map(it=>{
+                      const m=mi[it.key]||{};
+                      const checked=!!m.checked_at;
+                      const na=!!m.not_applicable;
+                      const ok=checked||na;
+                      return <div key={it.key} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',background:ok?'#F0FDF4':'#F9F8F6',border:`1px solid ${ok?'#A7F3D0':'#E5E3E0'}`,borderRadius:6,fontSize:12}}>
+                        <input
+                          type="checkbox"
+                          checked={ok}
+                          disabled={!canEdit}
+                          onChange={e=>setReadinessItem(it.key,e.target.checked?'check':'uncheck')}
+                          style={{width:16,height:16,accentColor:'#065F46',cursor:canEdit?'pointer':'not-allowed'}}
+                        />
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:600,color:ok?'#065F46':'#1A1A1A'}}>{it.label}</div>
+                          {checked&&m.checked_by&&<div style={{fontSize:10,color:'#625650',marginTop:2}}>checked by {m.checked_by} on {new Date(m.checked_at).toLocaleDateString()}</div>}
+                          {na&&<div style={{fontSize:10,color:'#625650',marginTop:2}}>marked N/A</div>}
+                        </div>
+                        {canEdit&&!checked&&<button
+                          onClick={()=>setReadinessItem(it.key,na?'uncheck':'not_applicable')}
+                          style={{fontSize:10,padding:'4px 8px',background:na?'#FEF3C7':'#F4F4F2',color:na?'#92400E':'#625650',border:`1px solid ${na?'#FCD34D':'#E5E3E0'}`,borderRadius:4,cursor:'pointer',fontWeight:600}}
+                        >{na?'Un-N/A':'Mark N/A'}</button>}
+                      </div>;
+                    })}
+                  </div>
+                  {!isReady&&<div style={{marginTop:12,padding:10,background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:6,fontSize:11,color:'#92400E',lineHeight:1.5}}>
+                    <b>Status gate active:</b> the database will block any attempt to move this job out of <code>contract_review</code> until every item above is green. Open the missing fields, fill them in, then come back to check the manual items.
+                  </div>}
+                </div>
+              </div>;
+            })()}
+
             {/* Permits & Bonds — now entered as line items (see Line Items tab).
                 Flat columns kept on jobs for backward compat but no longer
                 surfaced in the UI. The legacy summary block below still reads
