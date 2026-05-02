@@ -14719,12 +14719,24 @@ function MapPage({ jobs, onNav }) {
               </div>
               {(() => {
                 const jobMarket = selected.market || '';
-                const filtered = showAllCrewLeaders ? crewLeaders : crewLeaders.filter(cl => !jobMarket || cl.market === jobMarket);
-                return <select value={selected.crew_leader_id || ''} onChange={e => assignCrewLeader(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
-                  <option value="">— Unassigned —</option>
-                  {filtered.length === 0 && <option disabled>No crew leaders for {jobMarket}</option>}
-                  {filtered.map(cl => <option key={cl.id} value={cl.id}>{cl.name}{showAllCrewLeaders ? ` (${cl.market})` : ''}{cl.role && cl.role !== 'Crew Leader' ? ` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/, '')}` : ''}</option>)}
-                </select>;
+                // DFW + Austin = subcontractor markets; no W-2 crew leaders exist there.
+                // Default the filter to San Antonio (closest crew base — SA crews drive
+                // up when work is self-performed) and surface a banner explaining why
+                // the dropdown isn't showing DFW/Austin names.
+                const SUB_MARKETS = new Set(['Dallas-Fort Worth','Austin','College Station']);
+                const isSubMarket = SUB_MARKETS.has(jobMarket);
+                const effectiveMarket = isSubMarket ? 'San Antonio' : jobMarket;
+                const filtered = showAllCrewLeaders ? crewLeaders : crewLeaders.filter(cl => !effectiveMarket || cl.market === effectiveMarket);
+                return <>
+                  {isSubMarket && !showAllCrewLeaders && <div style={{ fontSize: 11, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 6, padding: '6px 10px', marginBottom: 6, lineHeight: 1.4 }}>
+                    ⚠️ {jobMarket} installs use subcontractors — defaulting to San Antonio crews. Toggle above to see all markets.
+                  </div>}
+                  <select value={selected.crew_leader_id || ''} onChange={e => assignCrewLeader(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
+                    <option value="">— Unassigned —</option>
+                    {filtered.length === 0 && <option disabled>No crew leaders for {effectiveMarket||jobMarket}</option>}
+                    {filtered.map(cl => <option key={cl.id} value={cl.id}>{cl.name}{showAllCrewLeaders ? ` (${cl.market})` : ''}{cl.role && cl.role !== 'Crew Leader' ? ` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/, '')}` : ''}</option>)}
+                  </select>
+                </>;
               })()}
               {selected.crew_leader_id && crewLeaderById[selected.crew_leader_id] && <div style={{ marginTop: 6, fontSize: 11, color: '#625650' }}>
                 {crewLeaderById[selected.crew_leader_id].role} · {crewLeaderById[selected.crew_leader_id].market}
