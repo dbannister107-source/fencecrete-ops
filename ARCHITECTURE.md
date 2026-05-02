@@ -33,6 +33,8 @@ There are exactly two acceptable reasons to bypass this cap:
 1. A bug fix to existing functionality that happens to require a new helper component.
 2. An edit that reduces total App.jsx size (refactoring, deletion).
 
+This is not a theoretical pattern — `src/features/` already contains 7 extracted modules (`system-events`, `specialty-visits`, `cv-reconciliation`, `my-plate`, `pis`, `sharepoint-links`, `customer-master`). New features follow that template; they are not declared inline in App.jsx.
+
 Anything else is a fold-in or a parallel module.
 
 ### 3. Tab discipline: fold, don't sprout
@@ -84,7 +86,7 @@ Use this table when you have a new feature in mind:
 | New AI question users want to ask | `demand-copilot` edge function (no UI work needed) |
 | New chart / table that augments existing analysis | New card on existing tab, or a sub-view inside an existing tab |
 | New workflow tied to an existing entity (lead, job, leader) | EditPanel tab on that entity, or modal triggered from existing list view |
-| New entirely-different concept that doesn't fit anywhere | Parallel module — Next.js subpath, separate React entry, or iframe embed. **Not** a new App.jsx page |
+| New entirely-different concept that doesn't fit anywhere | Parallel module in `src/features/<feature-name>/` — same pattern as the existing `system-events`, `specialty-visits`, `cv-reconciliation`, `my-plate`, `pis`, `sharepoint-links`, and `customer-master` features. App.jsx imports the page component and the routing line is the only addition to App.jsx itself. **Not** a new component declared inside App.jsx |
 | New scheduled job | Edge function + pg_cron entry. Use jobid 5/6 pattern (literal anon key, `timeout_milliseconds:60000`) |
 | New audit log | Postgres table named `<entity>_validations`, `<entity>_history`, or `<entity>_events` with `created_at`, FK to entity, JSONB result |
 

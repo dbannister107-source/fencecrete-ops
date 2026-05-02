@@ -1,3 +1,16 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  Fencecrete OPS — see ARCHITECTURE.md at repo root before editing this file.
+//
+//  Hard caps:
+//   • No new top-level pages get added inline here. New features go in
+//     src/features/<feature-name>/ (see existing modules at L8-14).
+//   • Demand Planning is frozen at 5 tabs. Sub-views inside a tab are fine.
+//   • Co-Pilot stays on /dashboard as the home view, above <Dashboard>.
+//   • All edits via exact str.replace + @babel/parser check before push.
+//
+//  When in doubt, fold into something existing or build a parallel module —
+//  do NOT add a new component / page / tab inside this file.
+// ═══════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import QRCode from 'react-qr-code';
 import * as XLSX from 'xlsx';
