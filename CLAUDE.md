@@ -158,7 +158,32 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 
 ### Recently shipped (2026-05-03)
 
-**Session summary (2026-05-03, complete after evening session):** 16 commits to `main`, 5 DB migrations, 4 edge function deploys, 1 GitHub Actions workflow added. **8 backlog items retired or substantially advanced**, 1 long-standing data bug fixed, 1 deploy chain fixed mid-session, full integration of demand planning + production planning + AI scheduler with `v_mold_capacity`, full PIS-extract feature shipped (single + bulk), CI for DB tests wired and verified green, Power Automate retired from inventory, App.jsx fetch migration Phase 2A + 2B (38 of 113 warnings cleared = 33% drop). All builds green under `CI=true` (the Vercel reality). **Pickup tomorrow:** Tech debt #6 Phase 2C — finish remaining ~75 inline `rest/v1` fetches in App.jsx (3-4 hrs incremental, no rush since lint is warn-only on App.jsx). Or operational: validate AI scheduler v13 output against Carlos's intuition; or trigger the bulk PIS pull from Customer Master and watch it work through 133 projects. Or write a second test file (e.g. customer_name sync trigger regression) to prove the CI pattern with a non-readiness-gate target.
+**Session summary (2026-05-03, FINAL — full day plus evening):** 28 commits to `main`, 5 DB migrations, 4 edge function deploys, 1 GitHub Actions workflow added. **9 tech-debt + workflow backlog items retired**, 1 long-standing data bug fixed, 1 deploy chain fixed mid-session. Major surfaces shipped or completed: full Demand Planning + Production Planning + AI Scheduler integration with `v_mold_capacity`; full PIS-extract feature (single per-project pull + bulk pull on 133 eligible projects with quality filter + audit log); CI wired for DB tests and verified green; Power Automate retired from inventory (was already disabled — docs caught up to reality); **App.jsx fetch migration Phase 2 fully complete, 113 → 0 no-restricted-syntax warnings (100% retired)**; permissions moved from hardcoded email Sets to `user_profiles.permissions` JSONB; xlsx → exceljs (closed only production high-severity vulnerability); first DB test wrote precedent for `supabase/tests/*.sql`. All builds green; CI green on every commit.
+
+**Final closing state (`7222c7b` HEAD):**
+
+| Tech debt | Status going into 2026-05-04 |
+|---|---|
+| #1 Zero CI on tests | ✅ Wired and verified green; 7 readiness-gate assertions pass on every push/PR |
+| #2 Edge function source not in repo | ✅ All 25 functions in repo |
+| #3 Power Automate dependency | ✅ Retired (was already disabled — docs caught up) |
+| #4 App.jsx 25,000-line monolith | Ongoing chip-away; today added 2 new shared modules + landed bulk PIS in feature module not App.jsx |
+| #5 npm vulnerabilities | All 14 high-severity gated on Hurricane port (CRA dev tooling); `xlsx` (only prod-path high) replaced with `exceljs` |
+| #6 No API abstraction (App.jsx fetches) | ✅ 100% complete (113 → 0). 6 fetches remain with eslint-disable + justifying comments (retry-on-missing-column pattern) |
+| #7 No error tracking | ✅ Sentry installed earlier this week |
+| #8 No type safety | Hurricane-port-gated |
+| #9 Hardcoded permissions | ✅ JSONB |
+| #10 Duplicated design tokens | Substantially resolved |
+| #11 Latent ESLint warnings | ~134 remaining (no-unused-vars, react-hooks/exhaustive-deps); now actually visible since the 113 fetch warnings cleared |
+
+**Pickup tomorrow morning** (in priority order):
+
+1. **Refactor retry-on-missing-column pattern** (~1 hr) — 6 eslint-disabled fetches in production_plan_lines + production_actuals POSTs. Replace each retry loop with try/catch around `sbPost throwOnError`, parse `e.message` for the missing column, retry with cleaned rows. Ships: 6 disabled comments → 0, retire `H` constant entirely from App.jsx.
+2. **Trigger the bulk PIS pull** — operational, ~5 min of clicking. Open Customer Master → scroll to bottom → "📥 Pull PIS data for all 133 projects" → confirm. Watch the progress bar. Review the failure detail table. Logs hit `pis_extract_log` for the audit trail. This is where demand-from-the-business gets met.
+3. **Latent ESLint cleanup pass** (~2-3 hrs) — 134 mostly-mechanical warnings. ~100 `no-unused-vars` (dead imports, abandoned variables — find/delete), ~10 `react-hooks/exhaustive-deps` (per-site investigation needed; some intentionally omitted to avoid loops), ~25 misc.
+4. **Write more DB tests** (~1-2 hrs each) — high-value targets: `customer_name` sync trigger (the 2026-05-02 backfill behavior), `pm_user_id` / `sales_rep_user_id` identity FK sync triggers, PIS bulk extract idempotency (mock data, run twice, assert second run is a no-op).
+5. **Validate AI scheduler v13 with Carlos** — operational; does it pace Rock Style at ~191 LF/day correctly? Houston backlog handled? Family pool sharing make sense?
+6. **Resolve Franklin + Watermark company duplicates** — pending Matt's confirmation on whether Austin and SA jobs are the same business.
 
 **Live verification points after this session:**
 - Co-Pilot home → bottleneck-component insights fire ("Rock Style: cap molds are the binding mold constraint, 33 weeks of plant")
@@ -380,4 +405,4 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 3, 2026 — full-day session: 9 commits (`19e17a5`..`0a67c4a`), 4 DB migrations, 2 edge function deploys (demand-copilot v2, production-scheduler v13). 5 backlog items retired (#9 permissions JSONB, #6 Phase 1 sb.js + ESLint, #10 design tokens substantial, 16 no-undef refs, deploy chain). Demand Planning + Production Planning + AI scheduler + Co-Pilot Q&A all integrated with v_mold_capacity (single source of truth for horizon plant capacity). install_rates.precast corrected 100 → 50 LF/day per 4-person crew; shifts_per_day = 2 codified; multi-day partial runs (run_id) shipped. See "Recently shipped (2026-05-03)" for details and tomorrow's pickup point. Tomorrow's likely pickup: Tech debt #6 Phase 2 (App.jsx fetch migration → retire 108 no-restricted-syntax warnings).*
+*Last updated: May 3, 2026 — FINAL end-of-day. 28 commits across the full-day + evening session (`b99c7c5`..`7222c7b`), 5 DB migrations, 4 edge function deploys (demand-copilot v2, production-scheduler v13, pis-extract-from-sharepoint v1→v4, bill-sheet-submitted-notification v15→v16), 1 GitHub Actions workflow wired and verified green. 9 backlog items retired or substantially advanced. Demand Planning + Production Planning + AI Scheduler + Co-Pilot Q&A integrated with v_mold_capacity (single source of truth). Bulk PIS pull from SharePoint shipped end-to-end with quality filter + audit log. **App.jsx fetch migration 113 → 0 (100% retired)** across Phases 2A + 2B + 2C. CI runs `supabase/tests/*.sql` on every push and PR. Power Automate retired from inventory (the docs caught up — flows were already disabled). xlsx replaced with exceljs (closed only prod-path high-severity vulnerability). All builds green, CI green on every commit. See "Recently shipped (2026-05-03)" for the full breakdown and "Pickup tomorrow morning" for the prioritized list of what's next. Tomorrow's likely pickup: refactor the retry-on-missing-column pattern (~1 hr) to retire the last 6 eslint-disabled fetches and the H constant; or run the bulk PIS pull on the 133 eligible projects; or chip at latent ESLint warnings (~134 remaining, now actually visible).*
