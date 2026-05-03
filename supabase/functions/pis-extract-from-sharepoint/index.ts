@@ -146,7 +146,13 @@ function pickPisFile(children: DriveChild[]): DriveChild | null {
     if (!c.name) return false;
     const lower = c.name.toLowerCase();
     const isExcel = /\.(xlsx|xls|xlsm)$/i.test(c.name);
-    const looksLikePis = /\bpis\b|project[\s_-]*information[\s_-]*sheet/i.test(lower);
+    // Filename patterns observed in the wild:
+    //   "Project Information Sheet_2025.xlsx"
+    //   "Sundance Cove - Project Info Sheet.xlsx"   ← "Info" abbreviated
+    //   "PIS Sundance Cove.xlsx"
+    //   "Project_Info_Sheet_Sundance.xlsx"
+    // The "info(rmation)?" optional group accepts both forms.
+    const looksLikePis = /\bpis\b|project[\s_-]*info(?:rmation)?[\s_-]*sheet/i.test(lower);
     return isExcel && looksLikePis;
   });
   if (candidates.length === 0) return null;
