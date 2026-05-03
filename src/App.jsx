@@ -3705,7 +3705,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{f.install_duration_days&&f.total_lf?<span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>({Math.round((Number(f.total_lf)||0)/Number(f.install_duration_days)*1)/1} LF/day)</span>:''}</div></div>
         <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
-      {sec==='schedule'&&job?.id&&<JobDiagnostic jobId={job.id}/>}
+      {/* JobDiagnostic intentionally omitted here — NewProjectForm creates a job; there is no jobs.id to diagnose until after first save. EditPanel renders the diagnostic on its own schedule tab. */}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
         {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
@@ -6616,23 +6616,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
           {s.height&&<span>Height: <b style={{color:'#1A1A1A'}}>{s.height}ft</b></span>}
           {n(s.adj_contract_value)>0&&<span>Contract: <b style={{color:'#1A1A1A'}}>{$(s.adj_contract_value)}</b></span>}
         </div>
-        {arCOs.length>0&&<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Breakdown</div>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
-            <span style={{color:'#625650'}}>Original Contract</span>
-            <span style={{fontWeight:700}}>{$(arCOs.reduce((sum,co)=>sum,n(s.adj_contract_value)-arCOs.filter(c=>c.status==='approved').reduce((s2,c)=>s2+n(c.amount),0)))}</span>
-          </div>
-          {arCOs.filter(c=>c.status==='approved').map((co,i)=><div key={co.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}>
-            <span style={{color:'#625650'}}>CO #{i+1}{co.description?' — '+co.description.slice(0,40):''}</span>
-            <span style={{fontWeight:600,color:n(co.amount)>=0?'#065F46':'#DC2626'}}>{n(co.amount)>=0?'+':''}{$(Math.abs(n(co.amount)))}</span>
-          </div>)}
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,paddingTop:6,marginTop:4,borderTop:'1px solid #E5E3E0'}}>
-            <span style={{fontWeight:700}}>Adjusted Total</span>
-            <span style={{fontWeight:800,color:'#8A261D'}}>{$(s.adj_contract_value)}</span>
-          </div>
-        </div>}
-        <div style={{display:'flex',gap:8,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}>
-        </div>
+        {/* Contract Breakdown (original + COs = adjusted) intentionally lives on BillingPage's bill detail modal, not here. ProductionPage doesn't load change_orders, so any breakdown UI here would crash. PMs who need the CO-level view can open Billing. */}
         <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>LF Detail</div>
           {PROD_LF_SECTIONS.map(sec=>{const hasData=sec.fields.some(([,f])=>n(s[f])>0);if(!hasData)return null;return<div key={sec.title} style={{marginBottom:8}}>
@@ -17961,6 +17945,7 @@ const excelDateToIso=(v)=>{
 
 function PipelinePage({jobs,onRefresh,onOpenProject}){
   const isMobile = useIsMobile();
+  const auth = useAuth();
   const[leads,setLeads]=useState([]);
   const[contacts,setContacts]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -18139,7 +18124,7 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
             headers:{...H,'Content-Type':'application/json','Prefer':'return=minimal'},
             body:JSON.stringify({
               validated_by_email:repEmail,
-              validated_by_name:auth?.profile?.name||null,
+              validated_by_name:auth?.profile?.full_name||null,
               source:'bypass',
               lead_id:lead.id,
               passed:false,
@@ -23396,6 +23381,37 @@ function SalesDashboardPage({jobs,onNav}){
     const m={};MKTS.forEach(mk=>m[mk]={market:mk,label:MS[mk]||mk,value:0,color:MC[mk]});
     proposalsOpen.forEach(l=>{if(!l.market||!m[l.market])return;m[l.market].value+=n(l.estimated_value||l.proposal_value);});
     return Object.values(m).sort((a,b)=>b.value-a.value);
+  },[proposalsOpen]);
+  // Pipeline → Forecast: probability-weighted bookings by expected close month.
+  // Powers the "Pipeline → Forecast" card below. Source = proposalsOpen (leads
+  // currently in stage='proposal_sent'); past stages aren't part of the forward
+  // forecast. Same conceptual logic as DemandPlanningPage's pipelineForecast,
+  // narrower output shape (`{proposals, raw, expected}` per month) to match
+  // the JSX field names this card uses.
+  const pipelineForecast=useMemo(()=>{
+    const start=new Date();start.setHours(0,0,0,0);
+    const monthKey=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const months={};
+    for(let i=0;i<6;i++){
+      const d=new Date(start.getFullYear(),start.getMonth()+i,1);
+      months[monthKey(d)]={key:monthKey(d),label:d.toLocaleDateString('en-US',{month:'short',year:'numeric'}),proposals:0,raw:0,expected:0};
+    }
+    let no_date=0,no_date_value=0,count=0,totalRaw=0,totalExpected=0;
+    proposalsOpen.forEach(l=>{
+      const value=Number(l.proposal_value||l.estimated_value)||0;
+      const prob=(Number(l.win_probability)||0)/100;
+      const expected=value*prob;
+      count+=1;totalRaw+=value;totalExpected+=expected;
+      if(!l.expected_close_date){no_date+=1;no_date_value+=value;return;}
+      const d=new Date(l.expected_close_date);
+      const k=monthKey(d);
+      if(!months[k])months[k]={key:k,label:d.toLocaleDateString('en-US',{month:'short',year:'numeric'}),proposals:0,raw:0,expected:0};
+      months[k].proposals+=1;months[k].raw+=value;months[k].expected+=expected;
+    });
+    return{
+      months:Object.values(months).sort((a,b)=>a.key.localeCompare(b.key)),
+      totals:{count,raw:totalRaw,expected:totalExpected,no_date,no_date_value},
+    };
   },[proposalsOpen]);
   const monthlyTrend=useMemo(()=>{
     const months=[];
