@@ -1465,6 +1465,164 @@ function JobDiagnostic({jobId}){
   </div>;
 }
 
+// PisExtractPreviewModal — preview the fields extracted from a SharePoint PIS
+// file before applying them to the parties draft. Each field shows the
+// extracted value with a checkbox; user can toggle which fields to apply
+// or edit values inline. Apply button merges selected values into partiesDraft;
+// the user then clicks the existing Save Parties button to commit to DB.
+//
+// Why preview-and-confirm instead of auto-save: extraction accuracy is high
+// (>95%) for the standard template but customers occasionally edit cells in
+// non-standard ways. The modal is the safety valve.
+function PisExtractPreviewModal({ result, onClose, onApply }){
+  const fields = result?.fields || {};
+  // Map extraction keys to the project_info_sheets columns that the Parties
+  // draft uses. Most are 1:1 since the schema mirrors the template structure.
+  const FIELD_MAP = [
+    { key: 'gc_company',        label: 'GC Company',         section: 'GC' },
+    { key: 'gc_address',        label: 'GC Address',         section: 'GC' },
+    { key: 'gc_city',           label: 'GC City',            section: 'GC' },
+    { key: 'gc_state',          label: 'GC State',           section: 'GC' },
+    { key: 'gc_zip',            label: 'GC Zip',             section: 'GC' },
+    { key: 'gc_phone',          label: 'GC Phone',           section: 'GC' },
+    { key: 'gc_contact',        label: 'GC Contact',         section: 'GC' },
+    { key: 'gc_contact_phone',  label: 'GC Contact Phone',   section: 'GC' },
+    { key: 'gc_email',          label: 'GC Email',           section: 'GC' },
+    { key: 'gc_alt_contact',    label: 'GC Alt Contact',     section: 'GC' },
+    { key: 'owner_company',     label: 'Owner Company',      section: 'Owner' },
+    { key: 'owner_address',     label: 'Owner Address',      section: 'Owner' },
+    { key: 'owner_city',        label: 'Owner City',         section: 'Owner' },
+    { key: 'owner_state',       label: 'Owner State',        section: 'Owner' },
+    { key: 'owner_zip',         label: 'Owner Zip',          section: 'Owner' },
+    { key: 'owner_phone',       label: 'Owner Phone',        section: 'Owner' },
+    { key: 'owner_contact',     label: 'Owner Contact',      section: 'Owner' },
+    { key: 'owner_contact_phone', label: 'Owner Contact Phone', section: 'Owner' },
+    { key: 'owner_email',       label: 'Owner Email',        section: 'Owner' },
+    { key: 'owner_alt_contact', label: 'Owner Alt Contact',  section: 'Owner' },
+    { key: 'engineer_name',     label: 'Engineer Name',      section: 'Engineer (2025+)' },
+    { key: 'engineer_mobile',   label: 'Engineer Mobile',    section: 'Engineer (2025+)' },
+    { key: 'engineer_office',   label: 'Engineer Office',    section: 'Engineer (2025+)' },
+    { key: 'engineer_email',    label: 'Engineer Email',     section: 'Engineer (2025+)' },
+    { key: 'engineer_alt',      label: 'Engineer Alt',       section: 'Engineer (2025+)' },
+    { key: 'billing_contact',   label: 'Billing Contact',    section: 'Billing' },
+    { key: 'billing_address',   label: 'Billing Address',    section: 'Billing' },
+    { key: 'billing_city',      label: 'Billing City',       section: 'Billing' },
+    { key: 'billing_state',     label: 'Billing State',      section: 'Billing' },
+    { key: 'billing_zip',       label: 'Billing Zip',        section: 'Billing' },
+    { key: 'billing_phone',     label: 'Billing Phone',      section: 'Billing' },
+    { key: 'billing_email',     label: 'Billing Email',      section: 'Billing' },
+    { key: 'pm_name',           label: 'PM Name',            section: 'PM/Superintendent' },
+    { key: 'pm_mobile',         label: 'PM Mobile',          section: 'PM/Superintendent' },
+    { key: 'pm_office',         label: 'PM Office',          section: 'PM/Superintendent' },
+    { key: 'pm_email',          label: 'PM Email',           section: 'PM/Superintendent' },
+    { key: 'surety_name',       label: 'Surety Name',        section: 'Surety' },
+    { key: 'surety_address',    label: 'Surety Address',     section: 'Surety' },
+    { key: 'surety_city',       label: 'Surety City',        section: 'Surety' },
+    { key: 'surety_state',      label: 'Surety State',       section: 'Surety' },
+    { key: 'surety_zip',        label: 'Surety Zip',         section: 'Surety' },
+    { key: 'surety_contact',    label: 'Surety Contact',     section: 'Surety' },
+    { key: 'surety_phone',      label: 'Surety Phone',       section: 'Surety' },
+    { key: 'surety_email',      label: 'Surety Email',       section: 'Surety' },
+    { key: 'agent_name',        label: 'Agent Name',         section: 'Bonding Agent' },
+    { key: 'agent_address',     label: 'Agent Address',      section: 'Bonding Agent' },
+    { key: 'agent_city',        label: 'Agent City',         section: 'Bonding Agent' },
+    { key: 'agent_state',       label: 'Agent State',        section: 'Bonding Agent' },
+    { key: 'agent_zip',         label: 'Agent Zip',          section: 'Bonding Agent' },
+    { key: 'agent_phone',       label: 'Agent Phone',        section: 'Bonding Agent' },
+    { key: 'agent_email',       label: 'Agent Email',        section: 'Bonding Agent' },
+  ];
+
+  const initialEdits = {};
+  const initialSelected = {};
+  FIELD_MAP.forEach(f => {
+    initialEdits[f.key] = String(fields[f.key] ?? '');
+    initialSelected[f.key] = !!fields[f.key];  // default-checked when extraction has a value
+  });
+  const [edits, setEdits] = React.useState(initialEdits);
+  const [selected, setSelected] = React.useState(initialSelected);
+  const [bondReq, setBondReq] = React.useState(fields.bonding_required);
+  const [taxable, setTaxable] = React.useState(fields.taxable);
+  const [applyBond, setApplyBond] = React.useState(fields.bonding_required != null);
+  const [applyTax,  setApplyTax]  = React.useState(fields.taxable != null);
+
+  const sections = Array.from(new Set(FIELD_MAP.map(f => f.section)));
+
+  const apply = () => {
+    const picks = {};
+    FIELD_MAP.forEach(f => {
+      if (selected[f.key] && edits[f.key] !== '') picks[f.key] = edits[f.key];
+    });
+    if (applyBond && bondReq != null) picks.bonding_required = bondReq;
+    if (applyTax  && taxable  != null) picks.taxable          = taxable;
+    onApply(picks);
+  };
+
+  const fileLabel = result.file ? result.file.name : '(unknown file)';
+  const fileMod = result.file?.modified_at ? new Date(result.file.modified_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+  const tplVer = result.template_version || 'unknown';
+
+  return <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9999, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'40px 16px', overflow:'auto'}} onClick={onClose}>
+    <div style={{background:'#FFF', borderRadius:12, maxWidth:780, width:'100%', boxShadow:'0 20px 50px rgba(0,0,0,0.25)', display:'flex', flexDirection:'column', maxHeight:'calc(100vh - 80px)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{padding:'18px 22px 12px 22px', borderBottom:'1px solid #E5E3E0'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap'}}>
+          <div style={{minWidth:0, flex:1}}>
+            <div style={{fontFamily:'Syne, Inter, sans-serif', fontSize:18, fontWeight:900, color:'#1A1A1A'}}>📥 Extracted from SharePoint PIS</div>
+            <div style={{fontSize:12, color:'#625650', marginTop:4}}>
+              <b>{fileLabel}</b>{fileMod ? ` · modified ${fileMod}` : ''} · template <span style={{padding:'1px 6px', background:'#F4F4F2', borderRadius:4, fontSize:10, fontWeight:700}}>{tplVer}</span>
+              {result.file?.web_url && <> · <a href={result.file.web_url} target="_blank" rel="noopener noreferrer" style={{color:'#1E40AF', fontWeight:700}}>Open in SharePoint ↗</a></>}
+            </div>
+            {result.missing_fields && result.missing_fields.length > 0 && <div style={{marginTop:6, fontSize:11, color:'#B45309', fontWeight:700}}>⚠ Missing key fields: {result.missing_fields.join(', ')}</div>}
+          </div>
+          <button onClick={onClose} style={{background:'none', border:'none', fontSize:22, color:'#9E9B96', cursor:'pointer', padding:0, lineHeight:1}} aria-label="Close">×</button>
+        </div>
+      </div>
+      <div style={{flex:1, overflowY:'auto', padding:'14px 22px'}}>
+        <div style={{fontSize:11, color:'#625650', marginBottom:12, lineHeight:1.5}}>
+          Review extracted values below. Uncheck any field you don't want to apply, or edit values inline. Apply commits the selected values into the Parties form draft — you still need to click <b>Save Parties</b> after closing this modal to write to the database.
+        </div>
+        {sections.map(sec => {
+          const items = FIELD_MAP.filter(f => f.section === sec);
+          const anyVal = items.some(f => fields[f.key]);
+          if (!anyVal) return null;  // hide sections with no extracted data
+          return <div key={sec} style={{marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:'#8A261D', textTransform:'uppercase', letterSpacing:0.5, marginBottom:6}}>{sec}</div>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:8}}>
+              {items.map(f => {
+                const has = fields[f.key];
+                return <div key={f.key} style={{padding:8, background: has ? '#F9F8F6' : '#FAFAF8', border:'1px solid #E5E3E0', borderRadius:6, opacity: has ? 1 : 0.55}}>
+                  <label style={{display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:700, color:'#625650', textTransform:'uppercase', letterSpacing:0.4, marginBottom:4, cursor: has ? 'pointer' : 'default'}}>
+                    <input type="checkbox" checked={!!selected[f.key]} disabled={!has} onChange={e=>setSelected(s=>({...s, [f.key]: e.target.checked}))} style={{accentColor:'#8A261D'}}/>
+                    {f.label}
+                  </label>
+                  <input value={edits[f.key]} onChange={e=>setEdits(d=>({...d, [f.key]: e.target.value}))} disabled={!has} placeholder={has ? '' : '(empty in PIS)'} style={{width:'100%', padding:'5px 8px', fontSize:12, border:'1px solid #D1CEC9', borderRadius:4, background:'#FFF', boxSizing:'border-box'}}/>
+                </div>;
+              })}
+            </div>
+          </div>;
+        })}
+        {/* Bonding + Taxable flags */}
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:11, fontWeight:800, color:'#8A261D', textTransform:'uppercase', letterSpacing:0.5, marginBottom:6}}>Flags</div>
+          <div style={{display:'flex', gap:14, flexWrap:'wrap'}}>
+            <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color: bondReq != null ? '#1A1A1A' : '#9E9B96'}}>
+              <input type="checkbox" checked={applyBond} disabled={bondReq == null} onChange={e=>setApplyBond(e.target.checked)} style={{accentColor:'#8A261D'}}/>
+              Bonding required: <b>{bondReq === true ? 'Yes' : bondReq === false ? 'No' : '(not detected)'}</b>
+            </label>
+            <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color: taxable != null ? '#1A1A1A' : '#9E9B96'}}>
+              <input type="checkbox" checked={applyTax} disabled={taxable == null} onChange={e=>setApplyTax(e.target.checked)} style={{accentColor:'#8A261D'}}/>
+              Taxable: <b>{taxable === true ? 'Yes' : taxable === false ? 'No (Non-Taxable)' : '(not detected)'}</b>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div style={{padding:'12px 22px', borderTop:'1px solid #E5E3E0', display:'flex', gap:10, justifyContent:'flex-end'}}>
+        <button onClick={onClose} style={{padding:'8px 14px', background:'#F4F4F2', color:'#625650', border:'1px solid #E5E3E0', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer'}}>Cancel</button>
+        <button onClick={apply} style={{padding:'8px 14px', background:'#1E40AF', color:'#FFF', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer'}}>Apply to Parties draft</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const isMobile = useIsMobile();
   const auth = useAuth();
@@ -1593,10 +1751,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   // happens later wins. For jobs with no PIS row yet (15 of these as of
   // 2026-04-29 audit), the upsert auto-creates one — Amiee can fill in known
   // GC/Owner data from contract docs without waiting on a customer to submit.
-  const PARTY_FIELDS=React.useMemo(()=>['gc_company','gc_contact','gc_phone','gc_email','gc_address','gc_city','gc_state','gc_zip','owner_company','owner_contact','owner_phone','owner_email','owner_address','owner_city','owner_state','owner_zip','billing_contact','billing_phone','billing_email','billing_address','billing_city','billing_state','billing_zip','agent_name','agent_phone','agent_email','agent_address','agent_city','agent_state','agent_zip','surety_name','surety_contact','surety_phone','surety_email','surety_address','surety_city','surety_state','surety_zip','bonding_required','taxable'],[]);
+  const PARTY_FIELDS=React.useMemo(()=>['gc_company','gc_contact','gc_contact_phone','gc_phone','gc_email','gc_address','gc_city','gc_state','gc_zip','gc_alt_contact','owner_company','owner_contact','owner_contact_phone','owner_phone','owner_email','owner_address','owner_city','owner_state','owner_zip','owner_alt_contact','engineer_name','engineer_mobile','engineer_office','engineer_email','engineer_alt','billing_contact','billing_phone','billing_email','billing_address','billing_city','billing_state','billing_zip','pm_name','pm_mobile','pm_office','pm_email','agent_name','agent_phone','agent_email','agent_address','agent_city','agent_state','agent_zip','surety_name','surety_contact','surety_phone','surety_email','surety_address','surety_city','surety_state','surety_zip','bond_number','bond_amount','bonding_required','taxable'],[]);
   const[partiesDraft,setPartiesDraft]=useState({});
   const[partiesSaving,setPartiesSaving]=useState(false);
   const[partiesToast,setPartiesToast]=useState(null);
+  // SharePoint PIS extraction state — drives the "Pull from SharePoint PIS file" button
+  // + preview/confirm modal. Edge function: pis-extract-from-sharepoint (deployed 2026-05-03).
+  const[pisExtractBusy,setPisExtractBusy]=useState(false);
+  const[pisExtractResult,setPisExtractResult]=useState(null);
+  const[pisExtractError,setPisExtractError]=useState(null);
   // Reseed draft whenever the underlying PIS data refreshes (or the user switches jobs).
   useEffect(()=>{
     if(tab!=='parties')return;
@@ -2555,12 +2718,55 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 Internal edit surface for the General Contractor, Owner, Billing contact, and (when bonded) Agent + Surety. {pisSheets&&pisSheets[0]?<>Linked to the customer's PIS submission — edits here update the same row.</>:<>No PIS submitted yet — saving here will create the row so contracts has a single source of truth.</>}
               </div>
             </div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
               {pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>✓ Customer-submitted PIS on file</span>}
               {pisSheets&&pisSheets[0]&&!pisSheets[0].submitted_at&&<span style={{background:'#FEF3C7',color:'#B45309',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>Internal-only entry (no PIS submission)</span>}
               {!(pisSheets&&pisSheets[0])&&<span style={{background:'#FEE2E2',color:'#991B1B',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>No PIS row yet</span>}
+              {/* Pull-from-SharePoint button — only shown when job has a folder linked AND no submitted PIS yet.
+                  When a customer-submitted PIS already exists, that's the source of truth and we don't want
+                  Amiee to overwrite it with a stale SharePoint copy by accident. */}
+              {canEdit && job?.sharepoint_folder_url && !(pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at) && <button
+                onClick={async()=>{
+                  setPisExtractBusy(true);
+                  setPisExtractResult(null);
+                  setPisExtractError(null);
+                  try {
+                    const res = await fetch(`${SB}/functions/v1/pis-extract-from-sharepoint`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}`, apikey: KEY },
+                      body: JSON.stringify({ job_id: job.id }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || data.details || `HTTP ${res.status}`);
+                    if (!data.found) throw new Error(data.reason || 'No PIS file found in the SharePoint folder.');
+                    setPisExtractResult(data);
+                  } catch (e) {
+                    setPisExtractError(e.message || String(e));
+                  } finally {
+                    setPisExtractBusy(false);
+                  }
+                }}
+                disabled={pisExtractBusy}
+                style={{background:'#1E40AF',color:'#FFF',border:'none',borderRadius:6,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:pisExtractBusy?'wait':'pointer',opacity:pisExtractBusy?0.6:1}}>
+                {pisExtractBusy ? '⏳ Extracting…' : '📥 Pull from SharePoint PIS file'}
+              </button>}
             </div>
           </div>
+
+          {pisExtractError && <div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:'#FEE2E2',color:'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>⚠ {pisExtractError}</span>
+            <button onClick={()=>setPisExtractError(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button>
+          </div>}
+
+          {pisExtractResult && pisExtractResult.found && <PisExtractPreviewModal
+            result={pisExtractResult}
+            onClose={()=>setPisExtractResult(null)}
+            onApply={(picks)=>{
+              setPartiesDraft(d=>({...d, ...picks}));
+              setPisExtractResult(null);
+              setPartiesToast({kind:'success', msg:'Extracted fields applied to draft. Review then click Save Parties.'});
+            }}
+          />}
 
           {partiesToast&&<div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:partiesToast.kind==='success'?'#D1FAE5':'#FEE2E2',color:partiesToast.kind==='success'?'#065F46':'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{partiesToast.msg}</span><button onClick={()=>setPartiesToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
 
