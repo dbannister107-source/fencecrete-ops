@@ -28,6 +28,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 // All Supabase REST goes through shared/sb.js -- direct fetch(`${SB}/...`) is
 // forbidden by ESLint outside that file.
 import { sbGet, sbPost, sbPatch, sbPatchWhere, sbDel, sbStorageUpload, sbStorageDelete, sbStorageSign } from '../../shared/sb';
+import { bulkExtractPis } from '../../shared/pisBulkExtract';
 
 import { card, stat, statLabel, statValue, btnP, btnS, btnG, btnB, inputS } from '../../shared/ui';
 
@@ -240,6 +241,8 @@ export default function CustomerMasterPage({ currentUserEmail = '', currentUserN
           onRefresh={() => setRefreshKey((k) => k + 1)}
         />
       )}
+
+      <BulkOperationsCard currentUserEmail={currentUserEmail} />
 
       <div style={{ fontSize: 11, color: '#9E9B96', textAlign: 'center', padding: 8 }}>
         Phase 2 of customer master rollout · {companies.length} companies · {jobs.length} jobs · {stats.linked} linked, {stats.residential} residential, {stats.unmatched} to reconcile
@@ -1545,6 +1548,241 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// BULK OPERATIONS CARD
+// ============================================================
+// Sits at the bottom of Customer Master. Currently houses the bulk
+// "pull PIS data from SharePoint" runner (added 2026-05-03). Future bulk
+// surgical jobs (mass company-attachment ops, mass status reconcile, etc.)
+// can fold in here so they have one home rather than scattering buttons.
+function BulkOperationsCard({ currentUserEmail }) {
+  const [eligibility, setEligibility] = useState(null); // null=unchecked, {count, jobs}
+  const [checking, setChecking] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0, last: null });
+  const [results, setResults] = useState(null); // {results, summary}
+  const [error, setError] = useState(null);
+  const [showFailures, setShowFailures] = useState(false);
+
+  const checkEligibility = useCallback(async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      // Same eligibility filter as the SQL scope query: jobs that are active,
+      // have a SharePoint folder URL, and don't already have a customer-
+      // submitted PIS. We deliberately INCLUDE jobs with internal-entered PIS
+      // rows (submitted_at IS NULL) — the bulk runner will add to those rows
+      // for any fields still empty without overwriting human-entered values.
+      const jobs = await sbGet(
+        'jobs',
+        'select=id,job_number,job_name,sharepoint_folder_url,address,city,state,zip'
+        + '&sharepoint_folder_url=not.is.null'
+        + '&status=not.in.(lost,cancelled,completed)'
+        + '&order=job_number.asc',
+      );
+      // Cross-check against project_info_sheets for already-submitted PIS rows.
+      const submittedPis = await sbGet(
+        'project_info_sheets',
+        'select=job_id&submitted_at=not.is.null',
+      );
+      const submittedJobIds = new Set((submittedPis || []).map((p) => p.job_id));
+      const eligibleJobs = (jobs || []).filter(
+        (j) => j.sharepoint_folder_url && !submittedJobIds.has(j.id),
+      );
+      setEligibility({ count: eligibleJobs.length, jobs: eligibleJobs });
+    } catch (e) {
+      setError(e.message || 'Failed to load eligible projects');
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  // Auto-check eligibility on mount so the card lands with a meaningful count.
+  useEffect(() => { checkEligibility(); }, [checkEligibility]);
+
+  const runBulk = async () => {
+    if (!eligibility || eligibility.count === 0) return;
+    if (!window.confirm(
+      `Pull PIS data from SharePoint for ${eligibility.count} eligible projects?\n\n`
+      + `• Each project's SharePoint folder is searched for a Project Info Sheet file.\n`
+      + `• Extracted parties data is written ONLY to fields currently empty — no human-entered values are overwritten.\n`
+      + `• Customer-submitted PIS rows are skipped automatically.\n`
+      + `• Estimated time: ${Math.ceil(eligibility.count * 4 / 5 / 60)} min (5 in parallel, ~4s per call).\n\n`
+      + `Keep this tab open until the run finishes.`,
+    )) return;
+
+    setRunning(true);
+    setProgress({ done: 0, total: eligibility.count, last: null });
+    setResults(null);
+    setError(null);
+    try {
+      const out = await bulkExtractPis(eligibility.jobs, {
+        concurrency: 5,
+        triggeredBy: currentUserEmail,
+        onProgress: (done, total, last) => {
+          setProgress({ done, total, last });
+        },
+      });
+      setResults(out);
+      // Refresh eligibility — successful pulls might have changed counts.
+      checkEligibility();
+    } catch (e) {
+      setError(e.message || 'Bulk run failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const summary = results?.summary || null;
+  const failures = results?.results?.filter((r) => r.outcome !== 'success' && r.outcome !== 'noop' && r.outcome !== 'skipped') || [];
+  const successCount = (summary?.success || 0);
+  const noopCount = (summary?.noop || 0);
+  const skippedCount = (summary?.skipped || 0);
+
+  return (
+    <div style={{ ...card, borderColor: '#FBBF24', borderWidth: 1, borderStyle: 'solid' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800, color: '#1A1A1A' }}>⚡ Bulk Operations</div>
+          <div style={{ fontSize: 12, color: '#625650', marginTop: 4 }}>
+            Mass-apply parties data extracted from each project's SharePoint folder. Idempotent — empty fields only, never overwrites human-entered values.
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ padding: '8px 12px', background: '#FEE2E2', color: '#991B1B', borderRadius: 6, fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Status row — eligibility + action button + progress */}
+      <div style={{ background: '#FAFAF8', border: '1px solid #E5E3E0', borderRadius: 8, padding: 14 }}>
+        {checking && <div style={{ fontSize: 13, color: '#625650' }}>Checking eligible projects…</div>}
+
+        {!checking && eligibility && !running && !results && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#1A1A1A', fontFamily: 'Syne' }}>
+                {eligibility.count}
+                <span style={{ fontSize: 13, color: '#625650', fontWeight: 600, marginLeft: 8 }}>
+                  eligible project{eligibility.count === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: '#625650', marginTop: 2 }}>
+                Has SharePoint folder linked · No customer-submitted PIS yet
+              </div>
+            </div>
+            <button
+              onClick={runBulk}
+              disabled={eligibility.count === 0}
+              style={{ ...btnP, opacity: eligibility.count === 0 ? 0.4 : 1, cursor: eligibility.count === 0 ? 'not-allowed' : 'pointer' }}
+            >
+              📥 Pull PIS data for all {eligibility.count} project{eligibility.count === 1 ? '' : 's'}
+            </button>
+          </div>
+        )}
+
+        {running && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A' }}>
+                Extracting PIS data… {progress.done} / {progress.total}
+              </div>
+              <div style={{ fontSize: 11, color: '#625650' }}>
+                {progress.last && `Last: ${progress.last.job_number || ''} → ${progress.last.outcome}`}
+              </div>
+            </div>
+            <div style={{ height: 8, background: '#E5E3E0', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%`,
+                background: 'linear-gradient(90deg,#8A261D,#B91C1C)',
+                transition: 'width 0.2s ease-out',
+              }}/>
+            </div>
+            <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 6 }}>
+              Keep this tab open. Cancellation isn't supported mid-run; if you close the tab, the in-flight calls finish but no UI summary will land.
+            </div>
+          </div>
+        )}
+
+        {!running && results && summary && (
+          <div>
+            <div style={{ fontFamily: 'Syne', fontSize: 14, fontWeight: 800, marginBottom: 8 }}>
+              Bulk run complete · {summary.total} project{summary.total === 1 ? '' : 's'} processed
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+              <SummaryStat label="Applied" count={successCount} color="#065F46" bg="#D1FAE5" />
+              {noopCount > 0 && <SummaryStat label="Already filled" count={noopCount} color="#1D4ED8" bg="#DBEAFE" />}
+              {skippedCount > 0 && <SummaryStat label="Skipped (PIS submitted)" count={skippedCount} color="#475569" bg="#F1F5F9" />}
+              {(summary.no_file || 0) > 0 && <SummaryStat label="No PIS file in folder" count={summary.no_file} color="#92400E" bg="#FEF3C7" />}
+              {(summary.no_folder || 0) > 0 && <SummaryStat label="No folder linked" count={summary.no_folder} color="#92400E" bg="#FEF3C7" />}
+              {(summary.no_fields_passed_filter || 0) > 0 && <SummaryStat label="All fields rejected" count={summary.no_fields_passed_filter} color="#92400E" bg="#FEF3C7" />}
+              {(summary.parse_error || 0) > 0 && <SummaryStat label="Parse error" count={summary.parse_error} color="#991B1B" bg="#FEE2E2" />}
+              {(summary.graph_error || 0) > 0 && <SummaryStat label="SharePoint error" count={summary.graph_error} color="#991B1B" bg="#FEE2E2" />}
+              {(summary.http_error || 0) > 0 && <SummaryStat label="HTTP error" count={summary.http_error} color="#991B1B" bg="#FEE2E2" />}
+            </div>
+            {failures.length > 0 && (
+              <button
+                onClick={() => setShowFailures((v) => !v)}
+                style={{ ...btnS, marginBottom: 8 }}
+              >
+                {showFailures ? '▼' : '▶'} {failures.length} project{failures.length === 1 ? '' : 's'} need attention
+              </button>
+            )}
+            {showFailures && failures.length > 0 && (
+              <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 12 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#F4F4F2', borderBottom: '1px solid #E5E3E0' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#625650', fontWeight: 700, textTransform: 'uppercase' }}>Job</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#625650', fontWeight: 700, textTransform: 'uppercase' }}>Outcome</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#625650', fontWeight: 700, textTransform: 'uppercase' }}>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {failures.map((r) => (
+                      <tr key={r.job_id} style={{ borderBottom: '1px solid #F4F4F2' }}>
+                        <td style={{ padding: '6px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{r.job_number}</td>
+                        <td style={{ padding: '6px 10px', fontSize: 11, color: '#625650', whiteSpace: 'nowrap' }}>{r.outcome}</td>
+                        <td style={{ padding: '6px 10px', fontSize: 11, color: '#625650', wordBreak: 'break-word' }}>{r.error_message || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button onClick={() => { setResults(null); setShowFailures(false); }} style={btnS}>
+                Reset
+              </button>
+              {(eligibility?.count || 0) > 0 && (
+                <button onClick={runBulk} style={btnS}>
+                  ↻ Re-run on remaining {eligibility.count}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontSize: 11, color: '#9E9B96', marginTop: 8 }}>
+        Quality filter strips "Same as Owner", template placeholders, and stray short values before applying. Every attempt logged to <code>pis_extract_log</code> for the audit trail.
+      </div>
+    </div>
+  );
+}
+
+function SummaryStat({ label, count, color, bg }) {
+  return (
+    <div style={{ background: bg, border: `1px solid ${color}33`, borderRadius: 6, padding: 8 }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color, fontFamily: 'Syne' }}>{count}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
     </div>
   );
 }
