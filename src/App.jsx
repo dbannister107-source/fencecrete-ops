@@ -16482,20 +16482,38 @@ function MapPage({ jobs, onNav }) {
   // Previously each filter change rebuilt every DOM marker (1 element per
   // job, hundreds of event listeners). The layer-based approach renders on
   // the GPU and updates via setData -- no DOM churn, no flicker bugs.
-  // Three layers:
-  //   jobs-pins      visible circles, data-driven color from feature props
-  //   jobs-hit       transparent 18px-radius circles for finger-friendly tap
-  //   jobs-selected  red halo, filter targets the currently-selected feature
+  //
+  // Five layers, split by clustering:
+  //   Unclustered (filter '!has point_count'):
+  //     jobs-pins              visible circles, data-driven color
+  //     jobs-hit               transparent 18px-radius for finger-friendly tap
+  //     jobs-selected          red halo, filter targets the selected feature
+  //   Clusters (filter 'has point_count'):
+  //     jobs-clusters-bubble   brand-red bubble, sized by point_count
+  //     jobs-clusters-count    text label inside bubble
+  //
+  // Clusters are computed by Mapbox automatically because cluster:true is
+  // set on the source. clusterMaxZoom: 12 means above zoom 12 clusters fully
+  // break apart. Click on a cluster zooms to the level where it expands.
   useEffect(() => {
     if (!mapReady || !mapRef.current || layersAddedRef.current) return;
     const map = mapRef.current;
 
-    map.addSource('jobs', { type: 'geojson', data: featureCollection });
+    map.addSource('jobs', {
+      type: 'geojson',
+      data: featureCollection,
+      cluster: true,
+      clusterRadius: 50,        // pixels — features within this distance group
+      clusterMaxZoom: 12,       // above zoom 12 clusters fully break apart
+    });
+
+    // ─── Unclustered (individual job) layers ───
 
     map.addLayer({
       id: 'jobs-pins',
       type: 'circle',
       source: 'jobs',
+      filter: ['!', ['has', 'point_count']],
       paint: {
         // Slightly larger pins as you zoom in
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 5, 10, 8, 14, 12],
@@ -16512,11 +16530,44 @@ function MapPage({ jobs, onNav }) {
       id: 'jobs-hit',
       type: 'circle',
       source: 'jobs',
+      filter: ['!', ['has', 'point_count']],
       paint: { 'circle-radius': 18, 'circle-opacity': 0 },
     });
 
+    // ─── Cluster layers ───
+
+    map.addLayer({
+      id: 'jobs-clusters-bubble',
+      type: 'circle',
+      source: 'jobs',
+      filter: ['has', 'point_count'],
+      paint: {
+        // Step radius based on point_count: base 18px, 24px at 10+, 32px at 30+
+        'circle-radius': ['step', ['get', 'point_count'], 18, 10, 24, 30, 32],
+        'circle-color': '#8A261D',
+        'circle-opacity': 0.85,
+        'circle-stroke-color': pinBorder,
+        'circle-stroke-width': 2,
+      },
+    });
+
+    map.addLayer({
+      id: 'jobs-clusters-count',
+      type: 'symbol',
+      source: 'jobs',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 13,
+      },
+      paint: { 'text-color': '#FFFFFF' },
+    });
+
     // Selected halo. Filter starts as a never-match; setFilter below points
-    // it at the actual selected id whenever selection changes.
+    // it at the actual selected id whenever selection changes. Painted last
+    // so it stays on top of other layers. Clusters never carry an id matching
+    // a job, so this halo never paints over a cluster bubble.
     map.addLayer({
       id: 'jobs-selected',
       type: 'circle',
@@ -16530,6 +16581,9 @@ function MapPage({ jobs, onNav }) {
       },
     });
 
+    // ─── Interactions ───
+
+    // Click on individual pin → select
     map.on('click', 'jobs-hit', (e) => {
       const f = e.features?.[0];
       if (!f) return;
@@ -16539,8 +16593,29 @@ function MapPage({ jobs, onNav }) {
     map.on('mouseenter', 'jobs-hit', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'jobs-hit', () => { map.getCanvas().style.cursor = ''; });
 
+    // Click on cluster → zoom in to the level where the cluster breaks apart.
+    // getClusterExpansionZoom is async (callback API). reducedMotion is
+    // captured from outer scope at effect-run time; it's a stable boolean
+    // so closure capture is fine.
+    map.on('click', 'jobs-clusters-bubble', (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const clusterId = f.properties.cluster_id;
+      const src = map.getSource('jobs');
+      src.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+        map.easeTo({
+          center: f.geometry.coordinates,
+          zoom,
+          duration: reducedMotion ? 0 : 500,
+        });
+      });
+    });
+    map.on('mouseenter', 'jobs-clusters-bubble', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'jobs-clusters-bubble', () => { map.getCanvas().style.cursor = ''; });
+
     layersAddedRef.current = true;
-  }, [mapReady, featureCollection, pinBorder]);
+  }, [mapReady, featureCollection, pinBorder, reducedMotion]);
 
   // Update source data when filter or color mode changes.
   // Replaces the DOM-marker rebuild with a single setData call -- no churn.
