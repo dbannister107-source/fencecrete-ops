@@ -18207,7 +18207,7 @@ function LeadCard({lead,onDragStart,onClick,linkedJob,onOpenProject,capacity,hig
       <span style={{flexShrink:0,fontWeight:800}}>{fmt(nextTask.due_date)}</span>
     </div>;
   }
-  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',transition:'box-shadow .15s,border-color .15s',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
+  return <div draggable onDragStart={e=>onDragStart(e,lead)} onClick={onClick} style={{background:'#FFF',border:highlighted?'2px solid #8A261D':'1px solid #E5E3E0',borderLeft:`4px solid ${mc}`,borderRadius:10,padding:12,marginBottom:8,cursor:'grab',boxShadow:highlighted?'0 0 0 4px #8A261D22,0 1px 3px rgba(0,0,0,0.06)':'0 1px 3px rgba(0,0,0,0.06)',transition:'box-shadow .3s,border-color .3s'}}>
     <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lead.company_name||'Unnamed'}</div>
     {lead.project_description&&<div style={{fontSize:11,color:'#625650',marginBottom:6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{lead.project_description}</div>}
     {taskChip}
