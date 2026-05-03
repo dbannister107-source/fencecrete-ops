@@ -21,7 +21,13 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const AR_EMAILS = ['david@fencecrete.com', 'ccontreras@fencecrete.com'];
+// Leadership heads-up only. NOT an AR routing channel.
+// Virginia (AR) sees bill-sheet submissions on the OPS Billing page —
+// pull-based, all markets in one screen. Don't add her here, it would
+// be email-per-submission noise. See docs/automations.md (Power Automate
+// retirement record) for the full context. Renamed from AR_EMAILS
+// 2026-05-03 because the prior name was misleading.
+const LEADERSHIP_NOTIFY_EMAILS = ['david@fencecrete.com', 'ccontreras@fencecrete.com'];
 
 async function isPaused(category: string): Promise<boolean> {
   try {
@@ -148,9 +154,9 @@ Deno.serve(async (req: Request) => {
       ctaLabel: 'Review in Fencecrete OPS →',
     });
 
-    await sendEmail(AR_EMAILS, `[Fencecrete] Bill Sheet Submitted: ${job.job_name} — ${monthLabel}`, html);
+    await sendEmail(LEADERSHIP_NOTIFY_EMAILS, `[Fencecrete] Bill Sheet Submitted: ${job.job_name} — ${monthLabel}`, html);
 
-    return new Response(JSON.stringify({ success: true, recipients: AR_EMAILS }), { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, recipients: LEADERSHIP_NOTIFY_EMAILS }), { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
   } catch (err: any) {
     console.error('Bill sheet notification error:', err);
     return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });

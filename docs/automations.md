@@ -1,123 +1,106 @@
 # Fencecrete OPS — External Automations Inventory
 
 This file documents automations that run **outside the OPS codebase** —
-Microsoft Power Automate flows, SharePoint hooks, third-party webhooks,
-etc. Each entry should answer enough that a successor with admin access
-to your Microsoft tenant could rebuild the flow from scratch.
+SharePoint hooks, third-party webhooks, Azure resources, etc. Each entry
+should answer enough that a successor with admin access could rebuild
+the dependency from scratch.
 
 If an automation isn't here, it isn't documented. Fix that.
 
 ---
 
-## Bill sheet submitted → AR notification (Power Automate)
+## Microsoft Power Automate — RETIRED 2026-05-03
 
-**Status:** Active. Single point of failure: lives in one user's Office
-account; if that account loses access or leaves, AR notifications
-silently stop. **Migration target:** rebuild as a Supabase edge function
-using the `dispatch_system_event` pattern; once verified, retire the
-Power Automate flow.
+**Status:** Retired. Not in production use.
 
-### What it does
+Three per-market cloud flows existed in `david@fencecrete.com`'s Power
+Automate account, all named `Bill Sheet Notification-<Market>`:
 
-When a PM uploads a bill sheet (via OPS / SharePoint / both — TBD), this
-flow sends an email to Accounts Receivable so they know an invoice is
-ready to be cut.
+- Bill Sheet Notification-Austin
+- Bill Sheet Notification - San Antonio
+- Bill Sheet Notification-Dallas
 
-### Owner
+(No Houston flow ever existed. Houston is the largest market.)
 
-- **Account that hosts the flow:** `<TODO: which Office user account
-  does the flow live under? Usually visible at https://make.powerautomate.com
-  → My flows. Likely david@ but confirm.>`
-- **Backup admin:** `<TODO: anyone else with edit access to this flow?>`
+### What they did
 
-### Trigger
+Watched a SharePoint folder for new bill-sheet uploads from PMs and
+emailed Accounts Receivable so Virginia could cut invoices.
 
-- **Source:** `<TODO: SharePoint folder watch? OPS direct webhook?
-  Email-based trigger? OPS edge function call?>`
-- **Specifically:** `<TODO: which SharePoint library / folder, or which
-  webhook URL, or which OPS code path posts to it?>`
+### Why retired
 
-### Recipients
+Bill-sheet submission moved entirely into the OPS web app
+(2025–2026 buildout). PMs now submit via the Bill Sheets tab in
+Production. Virginia monitors the **Billing page** in OPS — pull-based,
+one screen, all markets, all jobs — instead of receiving per-event
+emails. This is a cleaner workflow than email-per-submission noise,
+which is why we never bothered porting Houston into Power Automate.
 
-- **To:** Virginia Garcia (`virginiag@fencecrete.com`)
-- **Historically also:** Mary Barbe (`mary@fencecrete.com`) — **departed,
-  remove if still listed in the flow.**
-- `<TODO: confirm Cc/Bcc list, if any>`
+The OPS edge function `bill-sheet-submitted-notification` (Resend-backed)
+still fires on bill-sheet submission and emails leadership (David +
+Carlos) — that's a leadership heads-up, NOT an AR routing channel. AR
+sees them on the Billing page; leadership gets the email.
 
-### Email content (current)
+### Current state of the disabled flows
 
-- **Subject template:** `<TODO: paste current subject line, with any
-  variable substitutions noted (e.g., {{job_name}})>`
-- **Body fields:** `<TODO: list the data points the email surfaces —
-  job name, job number, billing period, amount, attached PDF, etc.>`
-- **Attachments:** `<TODO: does the email include the bill sheet
-  PDF/photo? Or just a link?>`
+- All three are **disabled** in Power Automate (prohibition icon visible
+  on the SharePoint connector in My flows).
+- Last-modified: 4 days ago (when David disabled them).
+- They sit in `david@fencecrete.com`'s personal Power Automate account.
 
-### Related OPS surfaces (verified)
+### Cleanup follow-up (operational, not engineering)
 
-- The OPS edge function `bill-sheet-submitted-notification`
-  (`supabase/functions/bill-sheet-submitted-notification/index.ts`) fires
-  on the same trigger and notifies leadership (`david@`, `ccontreras@`)
-  via Resend. **It does NOT send to Virginia.** The Power Automate flow
-  is what reaches AR.
-- The OPS edge function `bill-sheet-reminder` runs monthly to nudge PMs
-  with missing bill sheets — separate flow, not this one.
+- David should **delete** the three disabled flows when convenient.
+  Reasons: (a) they show up as visual debris on every My flows view,
+  (b) they're in a personal account — if that account ever lapses,
+  they'd be lost without ceremony anyway, (c) tiny risk of accidental
+  re-enable. No engineering action needed; this is one click in the
+  Power Automate UI per flow.
 
-### How to inspect / edit
+### What replaced this (the live workflow)
 
-1. Sign in to https://make.powerautomate.com with the owner account.
-2. **My flows** → search "bill sheet" or filter to active flows.
-3. Open the flow → **Edit** to see the trigger, conditions, and email
-   action. **Run history** shows recent invocations and any failures.
-
-### How to verify it's working
-
-- Trigger a test bill sheet submission in OPS.
-- Check Virginia's inbox (or her preview if you have her account
-  delegated) for the notification within ~2 minutes.
-- In Power Automate: **My flows → [this flow] → Run history** should
-  show a successful run.
-
-### Migration plan (when ready)
-
-- Reuse `bill-sheet-submitted-notification` edge function. Add
-  `virginiag@fencecrete.com` to its `AR_EMAILS` array. Same email
-  payload pattern as the existing AR alerts.
-- Run both flows in parallel for ~1 week to confirm payload parity.
-- Disable the Power Automate flow once Virginia confirms she's getting
-  the edge-function-sent emails.
-- Add a CLAUDE.md "Recently shipped" entry noting Power Automate
-  retired; remove this entry from `docs/automations.md` and replace
-  with a "(retired — see edge function)" note pointing at the migration
-  commit.
+| Component | Where |
+|---|---|
+| Bill-sheet capture UI | OPS Production page → Bill Sheets tab (PM submits) |
+| Trigger | DB trigger on `pm_bill_sheets` insert calls `bill-sheet-submitted-notification` edge function |
+| Leadership notification | Edge function `bill-sheet-submitted-notification` → David + Carlos via Resend |
+| AR access | Virginia opens the OPS Billing page; sees every submitted bill sheet across markets in one view |
+| Reminders | Edge function `bill-sheet-reminder` (monthly cron) — separate concern, lives in repo |
 
 ---
 
-## Other automations
+## Other automations to inventory
 
-`<TODO: enumerate any other Power Automate flows, SharePoint hooks,
-QuickBooks integrations, etc. The same questions apply: who owns it,
-what triggers it, who receives, how to verify.>`
+`<TODO: enumerate any non-Power-Automate external dependencies. Same
+questions: who owns it, what triggers it, who receives, how to verify.>`
 
 Candidates to investigate (mentioned in code or CLAUDE.md):
 
-- **SharePoint folder creation on new job** — handled by edge function
-  `create-sharepoint-folder`, which IS in the repo. But: the flow uses
-  Microsoft Graph API with `MS_GRAPH_*` secrets — those credentials
-  live in someone's Azure AD app registration. Document the Azure AD
-  app registration: which tenant, which app, which scopes, how to
-  rotate the client secret.
-- **QuickBooks sync** — none visible in the repo, but worth checking
-  whether one exists.
-- **Resend (email)** — owned by the Fencecrete account; DSN/API keys
-  live in Supabase secrets. Document where they're rotated.
+- **Microsoft Graph / Azure AD app registration** — used by edge
+  functions `create-sharepoint-folder`, `pis-extract-from-sharepoint`,
+  the new bulk SharePoint pull (planned). Credentials in Supabase
+  secrets as `MS_GRAPH_CLIENT_ID` / `MS_GRAPH_TENANT_ID` /
+  `MS_GRAPH_CLIENT_SECRET`. Document: which Azure AD tenant, which
+  app registration name, which Graph scopes are granted, where the
+  client secret lives, expiration date, how to rotate.
+- **Resend (transactional email)** — owned under the Fencecrete
+  account. API key in Supabase secrets as `RESEND_API_KEY`. DNS
+  verification at Sharkmatic still pending for `mail.fencecrete.com`.
+  Document: which Resend account, who's the billing contact, when the
+  API key was last rotated, where to find DNS records.
+- **Anthropic API** — used by `chat-assistant`, `demand-copilot`,
+  `production-scheduler`, `prospect-researcher`, `proposal-validator`,
+  `job-explainer`. Single key `ANTHROPIC_API_KEY` in Supabase secrets.
+  Document: which Anthropic workspace, billing contact, current spend
+  pattern.
 
 ---
 
 ## Maintenance
 
 - Review this file quarterly.
-- Anytime an automation is added, modified, or removed: update the
-  matching entry here in the same commit.
-- If the flow's owner is leaving Fencecrete: re-assign or migrate
-  before their last day.
+- Anytime an automation is added, modified, retired, or removed:
+  update the matching entry here in the same commit.
+- If an automation's owner is leaving Fencecrete: re-assign or migrate
+  before their last day. Power Automate flows in personal Office
+  accounts are the canonical example of why this matters.
