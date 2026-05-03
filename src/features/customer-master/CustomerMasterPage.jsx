@@ -30,15 +30,7 @@ import { sbGet, H } from '../../shared/sb';
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const stat = { padding: 16, background: '#F9F8F6', border: '1px solid #E5E3E0', borderRadius: 10 };
-const statLabel = { fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5 };
-const statValue = { fontSize: 24, fontWeight: 900, color: '#1A1A1A', fontFamily: 'Inter', marginTop: 4 };
-const btnP = { padding: '8px 14px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
-const btnS = { padding: '8px 14px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 12 };
-const btnG = { padding: '6px 10px', background: '#065F46', border: 'none', borderRadius: 6, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 11 };
-const btnB = { padding: '6px 10px', background: '#1D4ED8', border: 'none', borderRadius: 6, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 11 };
-const inputS = { padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', background: '#FFF' };
+import { card, stat, statLabel, statValue, btnP, btnS, btnG, btnB, inputS } from '../../shared/ui';
 
 const fmtMoney = (n) => {
   const v = Number(n) || 0;

@@ -28,10 +28,11 @@ import { AUTO_LABELS, MANUAL_ITEMS, REQUIRED_MANUAL } from '../../shared/readine
 
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnP = { padding: '8px 14px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
+import { card, btnP, inputS } from '../../shared/ui';
+// btnS is intentionally a smaller variant on this page (filter chips need
+// to fit a dense toolbar). Kept local; reconcile if the design lands on
+// one btnS size across the app.
 const btnS = { padding: '6px 12px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 11 };
-const inputS = { padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' };
 
 const fmtMoney = (n) => {
   const v = Number(n) || 0;

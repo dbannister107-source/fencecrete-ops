@@ -27,8 +27,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbPatch } from '../../shared/sb';
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnP = { padding: '8px 14px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
+import { card, btnP } from '../../shared/ui';
+// btnS is a smaller variant on this page (6px/12px / fontSize 12). inputS
+// has width:100% + boxSizing:border-box for full-width form fields.
+// Both kept local; reconcile when design lands on canonical sizes.
 const btnS = { padding: '6px 12px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 12 };
 const inputS = { padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 13, width: '100%', boxSizing: 'border-box' };
 
