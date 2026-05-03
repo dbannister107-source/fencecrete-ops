@@ -138,22 +138,42 @@ async function listFolderChildren(driveId: string, folderId: string): Promise<Dr
 }
 
 // Find the best PIS-file candidate by filename heuristics.
-// Priority: name contains "PIS" or "Project Information Sheet". Excel preferred.
-// If multiple match, prefer the most recently modified.
+//
+// Per David: filename can include any combination of the words
+// {project, information, info, PIS, sheet} — order, separators, and
+// surrounding text are unconstrained. Examples we want to match:
+//   "PIS.xlsx"
+//   "Sundance Cove - PIS.xlsx"
+//   "Project Information Sheet_2025.xlsx"
+//   "Sundance Cove - Project Info Sheet.xlsx"
+//   "Project Info.xlsx"
+//   "Information Sheet.xlsx"
+//   "Info Sheet.xlsx"
+//   "Project Sheet.xlsx"   (rare but valid)
+//
+// Examples we DON'T want to match (would be false positives if matching just "info" or "sheet"):
+//   "Cost Sheet.xlsx"
+//   "Bill Sheet.xlsx"
+//   "Information Brochure.xlsx"
+//   "Project Plan.xlsx"
+//
+// Strategy: PIS alone is a strong signal. Otherwise require at least
+// 2 of {project, info|information, sheet} to co-occur in the filename.
+function looksLikePisFilename(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (/\bpis\b/.test(lower)) return true;
+  const hasProject = /\bproject\b/.test(lower);
+  const hasInfo    = /\binformation\b|\binfo\b/.test(lower);
+  const hasSheet   = /\bsheet\b/.test(lower);
+  return (hasProject ? 1 : 0) + (hasInfo ? 1 : 0) + (hasSheet ? 1 : 0) >= 2;
+}
+
 function pickPisFile(children: DriveChild[]): DriveChild | null {
   const candidates = children.filter((c) => {
     if (c.folder) return false;
     if (!c.name) return false;
-    const lower = c.name.toLowerCase();
     const isExcel = /\.(xlsx|xls|xlsm)$/i.test(c.name);
-    // Filename patterns observed in the wild:
-    //   "Project Information Sheet_2025.xlsx"
-    //   "Sundance Cove - Project Info Sheet.xlsx"   ← "Info" abbreviated
-    //   "PIS Sundance Cove.xlsx"
-    //   "Project_Info_Sheet_Sundance.xlsx"
-    // The "info(rmation)?" optional group accepts both forms.
-    const looksLikePis = /\bpis\b|project[\s_-]*info(?:rmation)?[\s_-]*sheet/i.test(lower);
-    return isExcel && looksLikePis;
+    return isExcel && looksLikePisFilename(c.name);
   });
   if (candidates.length === 0) return null;
   candidates.sort(
