@@ -23,10 +23,9 @@
 // Permission: anyone with canEditProjects (David, Amiee, contracts@, alex@).
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { sbGet, H } from '../../shared/sb';
+// All Supabase REST goes through shared/sb.js -- direct fetch is forbidden.
+import { sbGet, sbUpsert } from '../../shared/sb';
 import { AUTO_LABELS, MANUAL_ITEMS, REQUIRED_MANUAL } from '../../shared/readiness';
-
-const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 
 import { card, btnP, inputS } from '../../shared/ui';
 // btnS is intentionally a smaller variant on this page (filter chips need
@@ -100,15 +99,10 @@ export default function ContractsWorkbenchPage({ currentUserEmail, onNav, readOn
         not_applicable: action === 'not_applicable',
         updated_at: now,
       };
-      const res = await fetch(`${SB}/rest/v1/contract_readiness_items?on_conflict=job_id,item_key`, {
-        method: 'POST',
-        headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(body),
+      await sbUpsert('contract_readiness_items', body, {
+        onConflict: 'job_id,item_key',
+        returnRepresentation: false,
       });
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || `HTTP ${res.status}`);
-      }
       // Optimistically update the local row instead of re-fetching the whole table
       setRows((prev) => prev.map((r) => {
         if (r.job_id !== jobId) return r;

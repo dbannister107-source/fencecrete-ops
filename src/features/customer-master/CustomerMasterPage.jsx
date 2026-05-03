@@ -25,10 +25,9 @@
 // finder + per-market breakdown + top unmatched list.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { sbGet, H } from '../../shared/sb';
-
-const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
+// All Supabase REST goes through shared/sb.js -- direct fetch(`${SB}/...`) is
+// forbidden by ESLint outside that file.
+import { sbGet, sbPost, sbPatch, sbPatchWhere, sbDel, sbStorageUpload, sbStorageDelete, sbStorageSign } from '../../shared/sb';
 
 import { card, stat, statLabel, statValue, btnP, btnS, btnG, btnB, inputS } from '../../shared/ui';
 
@@ -380,15 +379,7 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
     setBusy(group.name);
     try {
       const jobIds = group.jobs.map((j) => j.id);
-      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-        method: 'PATCH',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ company_id: company.id }),
-      });
-      if (!res.ok && res.status !== 204) {
-        const txt = await res.text();
-        throw new Error(`Link failed (${res.status}): ${txt.slice(0, 120)}`);
-      }
+      await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: company.id });
       setToast({ msg: `Linked ${group.count} job${group.count === 1 ? '' : 's'} to ${company.name}`, kind: 'success' });
       // Record undo payload: jobs were unlinked before, now linked. Reverse = unlink.
       setLastAction({
@@ -411,15 +402,7 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
     setBusy(group.name);
     try {
       const jobIds = group.jobs.map((j) => j.id);
-      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-        method: 'PATCH',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ is_residential: true }),
-      });
-      if (!res.ok && res.status !== 204) {
-        const txt = await res.text();
-        throw new Error(`Mark residential failed (${res.status}): ${txt.slice(0, 120)}`);
-      }
+      await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { is_residential: true });
       setToast({ msg: `Marked ${group.count} job${group.count === 1 ? '' : 's'} as residential`, kind: 'success' });
       // Record undo payload: was is_residential=false, now true. Reverse = false.
       setLastAction({
@@ -440,36 +423,20 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
   const createAndLink = useCallback(async (group, draft) => {
     setBusy(group.name);
     try {
-      // Create the company
-      const createRes = await fetch(`${SB}/rest/v1/companies`, {
-        method: 'POST',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          company_type: 'customer',
-          market: draft.market || group.markets.split(',')[0]?.trim() || null,
-          active: true,
-        }),
-      });
-      if (!createRes.ok) {
-        const txt = await createRes.text();
-        throw new Error(`Create company failed (${createRes.status}): ${txt.slice(0, 200)}`);
-      }
-      const created = JSON.parse(await createRes.text());
-      const newCompanyId = created[0]?.id;
+      // Create the company. sbPost defaults to Prefer: return=representation,
+      // so the inserted row(s) come back as JSON.
+      const created = await sbPost('companies', {
+        name: draft.name.trim(),
+        company_type: 'customer',
+        market: draft.market || group.markets.split(',')[0]?.trim() || null,
+        active: true,
+      }, { throwOnError: true });
+      const newCompanyId = Array.isArray(created) ? created[0]?.id : created?.id;
       if (!newCompanyId) throw new Error('No company ID returned from insert');
 
       // Link the jobs
       const jobIds = group.jobs.map((j) => j.id);
-      const linkRes = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-        method: 'PATCH',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ company_id: newCompanyId }),
-      });
-      if (!linkRes.ok && linkRes.status !== 204) {
-        const txt = await linkRes.text();
-        throw new Error(`Link failed (${linkRes.status}): ${txt.slice(0, 120)}`);
-      }
+      await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: newCompanyId });
       setToast({ msg: `Created "${draft.name}" and linked ${group.count} job${group.count === 1 ? '' : 's'}`, kind: 'success' });
       // Record undo payload: created company AND linked jobs. Reverse = unlink jobs,
       // then delete company IF nothing else references it (defensive).
@@ -502,56 +469,30 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
       const { kind, jobIds, createdCompanyId, createdCompanyName, companyName, groupName } = lastAction;
 
       if (kind === 'link') {
-        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-          method: 'PATCH',
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ company_id: null }),
-        });
-        if (!res.ok && res.status !== 204) {
-          const txt = await res.text();
-          throw new Error(`Undo link failed (${res.status}): ${txt.slice(0, 120)}`);
-        }
+        await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: null });
         setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} from ${companyName}`, kind: 'gray' });
       } else if (kind === 'residential') {
-        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-          method: 'PATCH',
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ is_residential: false }),
-        });
-        if (!res.ok && res.status !== 204) {
-          const txt = await res.text();
-          throw new Error(`Undo residential failed (${res.status}): ${txt.slice(0, 120)}`);
-        }
+        await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { is_residential: false });
         setToast({ msg: `Undone — ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} no longer marked residential`, kind: 'gray' });
       } else if (kind === 'create_and_link') {
         // Step 1: unlink the jobs we linked
-        const unlinkRes = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-          method: 'PATCH',
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ company_id: null }),
-        });
-        if (!unlinkRes.ok && unlinkRes.status !== 204) {
-          const txt = await unlinkRes.text();
-          throw new Error(`Undo unlink failed (${unlinkRes.status}): ${txt.slice(0, 120)}`);
-        }
+        await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: null });
         // Step 2: defensive — only delete the company if no OTHER jobs reference
         // it. If someone linked another group to this company in the meantime,
-        // leave it alone (just unlink ours).
-        const refCheck = await fetch(`${SB}/rest/v1/jobs?company_id=eq.${createdCompanyId}&select=id&limit=1`, {
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
-        });
-        const stillReferenced = refCheck.ok ? (await refCheck.json()).length > 0 : true; // be safe on error
+        // leave it alone (just unlink ours). On error, assume still referenced.
+        let stillReferenced = true;
+        try {
+          const ref = await sbGet('jobs', `company_id=eq.${createdCompanyId}&select=id&limit=1`);
+          stillReferenced = Array.isArray(ref) ? ref.length > 0 : true;
+        } catch (e) { stillReferenced = true; }
         if (!stillReferenced) {
-          const deleteRes = await fetch(`${SB}/rest/v1/companies?id=eq.${createdCompanyId}`, {
-            method: 'DELETE',
-            headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
-          });
-          if (!deleteRes.ok && deleteRes.status !== 204) {
-            // Non-fatal — jobs are already unlinked, just leave the orphan company.
-            console.warn('Undo: failed to delete created company', createdCompanyId, await deleteRes.text());
-            setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} but couldn't delete "${createdCompanyName}" (kept as orphan)`, kind: 'gray' });
-          } else {
+          try {
+            await sbDel('companies', createdCompanyId);
             setToast({ msg: `Undone — unlinked jobs and deleted "${createdCompanyName}"`, kind: 'gray' });
+          } catch (delErr) {
+            // Non-fatal — jobs are already unlinked, just leave the orphan company.
+            console.warn('Undo: failed to delete created company', createdCompanyId, delErr.message);
+            setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} but couldn't delete "${createdCompanyName}" (kept as orphan)`, kind: 'gray' });
           }
         } else {
           setToast({ msg: `Undone — unlinked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'}. Kept "${createdCompanyName}" (other jobs are linked to it now)`, kind: 'gray' });
@@ -605,15 +546,7 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
     setBusy('__bulk__');
     try {
       const jobIds = selectedGroups.flatMap((g) => g.jobs.map((j) => j.id));
-      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-        method: 'PATCH',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ is_residential: true }),
-      });
-      if (!res.ok && res.status !== 204) {
-        const txt = await res.text();
-        throw new Error(`Bulk mark failed (${res.status}): ${txt.slice(0, 120)}`);
-      }
+      await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { is_residential: true });
       setToast({
         msg: `Marked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} across ${selectedGroups.length} customer name${selectedGroups.length === 1 ? '' : 's'} as residential`,
         kind: 'success',
@@ -635,15 +568,7 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
     setBusy('__bulk__');
     try {
       const jobIds = selectedGroups.flatMap((g) => g.jobs.map((j) => j.id));
-      const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-        method: 'PATCH',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ company_id: company.id }),
-      });
-      if (!res.ok && res.status !== 204) {
-        const txt = await res.text();
-        throw new Error(`Bulk link failed (${res.status}): ${txt.slice(0, 120)}`);
-      }
+      await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: company.id });
       setToast({
         msg: `Linked ${jobIds.length} job${jobIds.length === 1 ? '' : 's'} across ${selectedGroups.length} customer name${selectedGroups.length === 1 ? '' : 's'} to ${company.name}`,
         kind: 'success',
@@ -722,15 +647,7 @@ function ReconcileView({ unmatchedGroups, companies, onRefresh }) {
       // Execute sequentially. PATCHes are idempotent so partial failure is recoverable.
       const allJobIds = [];
       for (const [companyId, { jobIds }] of byCompany.entries()) {
-        const res = await fetch(`${SB}/rest/v1/jobs?id=in.(${jobIds.join(',')})`, {
-          method: 'PATCH',
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ company_id: companyId }),
-        });
-        if (!res.ok && res.status !== 204) {
-          const txt = await res.text();
-          throw new Error(`Auto-accept failed mid-batch (${res.status}): ${txt.slice(0, 120)}`);
-        }
+        await sbPatchWhere('jobs', `id=in.(${jobIds.join(',')})`, { company_id: companyId });
         allJobIds.push(...jobIds);
       }
       setToast({
@@ -1159,13 +1076,7 @@ const CATEGORY_LABELS = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.value, c
 const CATEGORY_AUTO_ATTACH = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.value, c.autoAttachDefault]));
 const COMPANIES_VIEW_MARKETS = ['SA', 'HOU', 'AUS', 'DFW'];
 
-const SB_URL = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const COMPANY_BUCKET = 'company-attachments';
-
-// Encode storage path segment-by-segment so '/' separators stay literal in the
-// URL. Same fix as the Documents-tab signing endpoint earlier today — collapsing
-// slashes via encodeURIComponent breaks the Storage signing endpoint's lookup.
-const encodeStoragePath = (p) => (p || '').split('/').map(encodeURIComponent).join('/');
 
 // Strip characters that have caused Storage upload failures (% mostly, plus the
 // usual URL specials). Same character set as App.jsx sanitizeForStorage to keep
@@ -1341,19 +1252,9 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
 
   const openSignedUrl = async (doc) => {
     try {
-      const encoded = encodeStoragePath(doc.storage_path);
-      const res = await fetch(`${SB_URL}/storage/v1/object/sign/${COMPANY_BUCKET}/${encoded}`, {
-        method: 'POST',
-        headers: H,
-        body: JSON.stringify({ expiresIn: 300 }),
-      });
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Sign failed (${res.status}): ${txt.slice(0, 160)}`);
-      }
-      const data = await res.json();
-      const url = `${SB_URL}/storage/v1${data.signedURL || data.signedUrl}`;
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const data = await sbStorageSign(COMPANY_BUCKET, doc.storage_path, 300);
+      // sbStorageSign returns absolute signedUrl (storage's native signedURL is path-relative)
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
     } catch (e) {
       console.error('[CompanyCard] sign URL failed:', e);
       alert('Could not open file: ' + e.message);
@@ -1377,15 +1278,9 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
       const cleanName = sanitizeFilename(uploadFile.name);
       const stamp = Date.now();
       const path = `${company.id}/${uploadCategory}/${stamp}_${cleanName}`;
-      const putRes = await fetch(`${SB_URL}/storage/v1/object/${COMPANY_BUCKET}/${encodeStoragePath(path)}`, {
-        method: 'POST',
-        headers: { ...H, 'Content-Type': uploadFile.type || 'application/octet-stream', 'x-upsert': 'false' },
-        body: uploadFile,
-      });
-      if (!putRes.ok) {
-        const txt = await putRes.text();
-        throw new Error(`Storage upload failed (${putRes.status}): ${txt.slice(0, 200)}`);
-      }
+      // upsert:false here -- we want to fail if the path already exists rather
+      // than silently overwrite (each timestamp should be unique anyway).
+      await sbStorageUpload(COMPANY_BUCKET, path, uploadFile, uploadFile.type || 'application/octet-stream', { upsert: false });
       const meta = {
         company_id: company.id,
         filename: uploadFile.name,
@@ -1398,18 +1293,14 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
         uploaded_by_email: currentUserEmail || null,
         uploaded_by_name: currentUserName || null,
       };
-      const insRes = await fetch(`${SB_URL}/rest/v1/company_attachments`, {
-        method: 'POST',
-        headers: { ...H, Prefer: 'return=representation' },
-        body: JSON.stringify(meta),
-      });
-      if (!insRes.ok) {
-        const txt = await insRes.text();
+      let inserted;
+      try {
+        inserted = await sbPost('company_attachments', meta, { throwOnError: true });
+      } catch (insErr) {
         // Best-effort cleanup of the orphaned Storage object
-        try { await fetch(`${SB_URL}/storage/v1/object/${COMPANY_BUCKET}/${encodeStoragePath(path)}`, { method: 'DELETE', headers: H }); } catch (_) {}
-        throw new Error(`Database insert failed (${insRes.status}): ${txt.slice(0, 200)}`);
+        try { await sbStorageDelete(COMPANY_BUCKET, path); } catch (_) {}
+        throw insErr;
       }
-      const inserted = JSON.parse(await insRes.text());
       const newRow = Array.isArray(inserted) ? inserted[0] : inserted;
 
       // Wait briefly for the AFTER-INSERT fan-out trigger to populate
@@ -1455,15 +1346,9 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
     try {
       const nowIso = new Date().toISOString();
       // 1) Soft-delete the company_attachment row.
-      const r1 = await fetch(`${SB_URL}/rest/v1/company_attachments?id=eq.${deleteCandidate.id}`, {
-        method: 'PATCH',
-        headers: { ...H, Prefer: 'return=minimal' },
-        body: JSON.stringify({ deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'user' }),
+      await sbPatch('company_attachments', deleteCandidate.id, {
+        deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'user',
       });
-      if (!r1.ok && r1.status !== 204) {
-        const txt = await r1.text();
-        throw new Error(`Delete failed (${r1.status}): ${txt.slice(0, 200)}`);
-      }
       // 2) Cascade to project_attachments. The DB does not currently ship a
       //    delete-cascade trigger (only the after-insert fan-out exists), so
       //    we explicitly tombstone every project_attachments row that was
@@ -1471,11 +1356,11 @@ function CompanyCard({ company, jobCount, docCount, isExpanded, onToggle, curren
       //    handles this, the WHERE deleted_at IS NULL clause prevents double-
       //    stamping deleted_at.
       try {
-        await fetch(`${SB_URL}/rest/v1/project_attachments?source_table=eq.company_attachments&source_id=eq.${deleteCandidate.id}&deleted_at=is.null`, {
-          method: 'PATCH',
-          headers: { ...H, Prefer: 'return=minimal' },
-          body: JSON.stringify({ deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'cascade_company_attachment' }),
-        });
+        await sbPatchWhere(
+          'project_attachments',
+          `source_table=eq.company_attachments&source_id=eq.${deleteCandidate.id}&deleted_at=is.null`,
+          { deleted_at: nowIso, deleted_by_email: currentUserEmail || null, deleted_reason: 'cascade_company_attachment' },
+        );
       } catch (e) { console.warn('[CompanyCard] cascade delete soft-failed:', e); }
 
       await loadDetail();

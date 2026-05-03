@@ -37,6 +37,29 @@
     "start": "node write-version.js && react-scripts start",
     "build": "node write-version.js && react-scripts build"
   },
+  "eslintConfig": {
+    "extends": "react-app",
+    "rules": {
+      "no-restricted-syntax": [
+        "error",
+        {
+          "selector": "CallExpression[callee.name='fetch'] TemplateLiteral Identifier[name='SB']",
+          "message": "Direct fetch to Supabase URLs is forbidden. Use helpers from src/shared/sb.js (sbGet, sbPost, sbPatch, sbPatchWhere, sbUpsert, sbDel, sbDelWhere, sbStorageUpload, sbStorageSign, sbStorageDelete, sbFn, sbRpc). Add a new helper there if your case isn't covered. If a one-off is genuinely needed, add `// eslint-disable-next-line no-restricted-syntax` with a justifying comment."
+        }
+      ],
+      "no-undef": "warn"
+    },
+    "overrides": [
+      {
+        "files": ["src/shared/sb.js"],
+        "rules": { "no-restricted-syntax": "off" }
+      },
+      {
+        "files": ["src/App.jsx"],
+        "rules": { "no-restricted-syntax": "warn" }
+      }
+    ]
+  },
   "browserslist": {
     "production": [
       ">0.2%",

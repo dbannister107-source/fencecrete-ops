@@ -121,6 +121,10 @@ if (!id) { /* handle "couldn't resolve" — typically a not-found error to the u
 
 **Structural debt** (separate from this utility): some child tables (`job_line_items`, `leads`) FK by `job_number` text rather than `job_id` UUID. That's a real inconsistency, not addressed by `resolveJobId()`. Eventually those should be migrated to UUID FKs. Until then, queries against those tables filter by `job_number=eq.${...}` and that's expected.
 
+### Supabase calls go through `src/shared/sb.js` only
+
+All REST / Storage / Edge-function calls go through helpers exported from `src/shared/sb.js` (`sbGet`, `sbGetOne`, `sbPost`, `sbPatch`, `sbPatchWhere`, `sbDel`, `sbDelWhere`, `sbUpsert`, `sbRpc`, `sbStorageUpload`, `sbStorageDelete`, `sbStorageSign`, `sbFn`). An ESLint rule (`no-restricted-syntax`) errors on direct `fetch(\`${SB}/...\`)` outside that file. Phase-1 transition: `src/App.jsx` is grandfathered as `warn`-only until its ~95 inline fetches are migrated; new code there still surfaces a warning. If your call pattern isn't covered by an existing helper, add a new one in `sb.js` rather than reaching around the rule.
+
 ### App.jsx editing strategy (when working on the monolith)
 
 1. **View first, edit second.** App.jsx is 1.93 MB — always grep before editing to confirm anchor uniqueness.
