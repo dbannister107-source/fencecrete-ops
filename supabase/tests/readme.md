@@ -4,15 +4,15 @@ DB-side tests for the Fencecrete OPS Postgres schema (views, triggers, functions
 
 ## Run a test file
 
-### Via Supabase MCP `execute_sql` (current default)
+### Via GitHub Actions (CI — automatic on every PR + push to main)
+
+`.github/workflows/db-tests.yml` runs every file in this directory against the production Supabase DB on every push and PR. Failures gate merges. **This is the primary signal** — local runs are for iteration.
+
+Trigger a manual run from the GitHub Actions tab → "DB tests" workflow → "Run workflow".
+
+### Via Supabase MCP `execute_sql` (local dev iteration)
 
 Open the file, copy its contents, paste into a single `execute_sql` call. The final `SELECT` returns a rowset of passed assertions. A failure raises and aborts the call (whole transaction rolls back via the wrapping `BEGIN/ROLLBACK`).
-
-### Via Supabase CLI (once set up)
-
-```bash
-supabase db remote query --file supabase/tests/readiness_gate.sql
-```
 
 ### Via direct `psql` (if you have a session)
 
@@ -52,12 +52,23 @@ SELECT id, test, status FROM _test_results ORDER BY id;
 ROLLBACK;
 ```
 
-## Future — CI
+## CI — wired 2026-05-03
 
-These tests aren't yet wired into GitHub Actions. When CI is added:
+`.github/workflows/db-tests.yml` runs every `supabase/tests/*.sql` against the production Supabase DB via the Management API on every push to main + every PR. New test files are picked up automatically (the workflow globs the directory; no workflow edit required).
 
-- A workflow on every PR runs each `supabase/tests/*.sql` against a Supabase branch via `supabase db remote query --file ...`
-- Workflow fails on any non-zero exit (raised by `RAISE EXCEPTION`)
-- PR check turns red until tests pass
+**Required GitHub Actions secrets:**
+- `SUPABASE_ACCESS_TOKEN` — Personal Access Token (sbp_...). Generate at https://supabase.com/dashboard/account/tokens
+- `SUPABASE_PROJECT_REF` — `bdnwjokehfxudheshmmj`
 
-That's a separate, larger setup — not the first-test's job. The local-run pattern above is sufficient for now and is what new tests should slot into.
+If a secret is missing, the workflow fails fast with a clear error message pointing at the Settings UI.
+
+**Why production DB and not a branch / local Postgres:**
+- BEGIN/ROLLBACK wrapping means tests can't mutate real data
+- Migrations don't reliably apply from scratch (they're written for incremental application), so a fresh Postgres in CI is a porting headache
+- Supabase branches add cost + complexity for a 1-engineer shop
+- This is also how David runs them manually today — CI just automates it
+
+**What happens if a test fails:**
+- Failure surface: failed assertion → `RAISE EXCEPTION` → SQL error → 4xx from Management API → the workflow's curl step exits non-zero → workflow fails
+- Workflow keeps running remaining test files even after one fails (so you see the full picture, not just the first failure)
+- PR check turns red until you fix the regression and push again

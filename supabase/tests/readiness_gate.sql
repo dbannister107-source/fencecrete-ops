@@ -6,11 +6,12 @@
 -- this repo.
 --
 -- HOW TO RUN
---   Via Supabase MCP `execute_sql`:
---     paste this file's contents into a single execute_sql call.
---   Via Supabase CLI (when set up):
---     supabase db remote query --file supabase/tests/readiness_gate.sql
---   Future: GitHub Actions on every PR (separate setup, not this commit).
+--   Primary signal:
+--     GitHub Actions runs this on every push + PR. See .github/workflows/db-tests.yml.
+--   Local dev iteration:
+--     Paste this file's contents into a single Supabase MCP execute_sql call.
+--   Via psql:
+--     psql "$SUPABASE_DB_URL" -f supabase/tests/readiness_gate.sql
 --
 -- HOW IT WORKS
 --   BEGIN ... ROLLBACK wraps the whole file -- mutations to real data
