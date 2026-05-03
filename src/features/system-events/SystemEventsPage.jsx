@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbFunctionUrl, sbAuthHeader } from '../../shared/sb';
 import { logEvent } from '../../shared/systemEvents';
+import { card, btnS, btnPL } from '../../shared/ui';
 
 const REFRESH_MS = 5000;
 const ROW_LIMIT = 500;
@@ -36,9 +37,9 @@ const CATEGORY_COLORS = {
   test:       '#9333EA',
 };
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnP = { padding: '10px 18px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
-const btnS = { padding: '8px 14px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 12 };
+// card, btnS, btnPL imported from shared/ui at top of file. btnPL is the
+// larger primary-action button (10px/18px, fs 13) used for page-level
+// verbs like "Send Test Ping" and "Replay this event".
 
 function relTime(iso) {
   if (!iso) return '—';
@@ -180,7 +181,7 @@ function DetailDrawer({ event, onClose, onReplay, replaying }) {
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid #E5E3E0' }}>
-            <button onClick={() => onReplay(event)} disabled={replaying} style={{ ...btnP, opacity: replaying ? 0.6 : 1, cursor: replaying ? 'wait' : 'pointer' }}>{replaying ? 'Replaying…' : '↻ Replay this event'}</button>
+            <button onClick={() => onReplay(event)} disabled={replaying} style={{ ...btnPL, opacity: replaying ? 0.6 : 1, cursor: replaying ? 'wait' : 'pointer' }}>{replaying ? 'Replaying…' : '↻ Replay this event'}</button>
             <button onClick={onClose} style={btnS}>Close</button>
           </div>
         </div>
@@ -370,7 +371,7 @@ export default function SystemEventsPage({ currentUserEmail }) {
             Live event log for the agentic spine. Every business action emits an event here. The dispatcher processes them and records what it did. This is your debugging window for every future agent.
           </div>
         </div>
-        <button onClick={sendPing} disabled={sending} style={{ ...btnP, opacity: sending ? 0.6 : 1, cursor: sending ? 'wait' : 'pointer' }}>
+        <button onClick={sendPing} disabled={sending} style={{ ...btnPL, opacity: sending ? 0.6 : 1, cursor: sending ? 'wait' : 'pointer' }}>
           {sending ? 'Sending…' : '⚡ Send Test Ping'}
         </button>
       </div>

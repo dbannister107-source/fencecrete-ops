@@ -29,10 +29,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbPatch, sbFunctionUrl, sbAuthHeader } from '../../shared/sb';
+import { card, btnS } from '../../shared/ui';
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnP = { padding: '10px 18px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
-const btnS = { padding: '8px 14px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 12 };
+// btnG here is the larger 8px/14px green variant (shape matches btnS, color
+// matches success). Different from canonical btnG (6px/10px small). Kept
+// local until a btnGL ladder rung is justified by a second caller.
 const btnG = { padding: '8px 14px', background: '#065F46', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
 const btnDanger = { padding: '6px 10px', background: '#FFF', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 11 };
 

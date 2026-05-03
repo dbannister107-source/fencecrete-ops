@@ -91,6 +91,20 @@ export const btnP = {
   fontSize: 12,
 };
 
+// Larger primary button -- used on dense admin pages (SystemEvents,
+// SharePointLinks) where the primary action is the page's primary verb
+// rather than a per-row button. 10px/18px padding, 13px font.
+export const btnPL = {
+  padding: '10px 18px',
+  background: COLOR.brand,
+  border: 'none',
+  borderRadius: RADIUS.lg,
+  color: COLOR.white,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: 13,
+};
+
 // Secondary action button (gray)
 export const btnS = {
   padding: '8px 14px',

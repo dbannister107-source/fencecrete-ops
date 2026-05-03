@@ -27,7 +27,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbUpsert } from '../../shared/sb';
 import { AUTO_LABELS, MANUAL_ITEMS, REQUIRED_MANUAL } from '../../shared/readiness';
 
-import { card, btnP, inputS } from '../../shared/ui';
+import { card, inputS } from '../../shared/ui';
 // btnS is intentionally a smaller variant on this page (filter chips need
 // to fit a dense toolbar). Kept local; reconcile if the design lands on
 // one btnS size across the app.

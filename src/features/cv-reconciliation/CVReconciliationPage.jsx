@@ -43,9 +43,12 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { sbGet, sbPatch } from '../../shared/sb';
+import { card, btnP } from '../../shared/ui';
 
-const card = { background: '#FFF', border: '1px solid #E5E3E0', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnP = { padding: '8px 14px', background: '#8A261D', border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
+// btnS is intentionally a smaller variant on this page (dense admin filters).
+// inputS is intentionally full-width with box-sizing for the reconciliation
+// table form fields. Both kept local; reconcile if the design lands on a
+// shared small-secondary / full-width-input variant across the app.
 const btnS = { padding: '6px 12px', background: '#F4F4F2', color: '#625650', border: '1px solid #E5E3E0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 12 };
 const inputS = { padding: '6px 10px', border: '1px solid #E5E3E0', borderRadius: 6, fontSize: 13, width: '100%', boxSizing: 'border-box' };
 
