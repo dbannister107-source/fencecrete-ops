@@ -1,135 +1,183 @@
-// supabase/functions/chat-assistant/index.ts
-// FCA Assistant — Phase 1 help/FAQ chatbot backed by Anthropic Claude.
-// Deploy via: supabase functions deploy chat-assistant --no-verify-jwt
-// Required secret: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const SYSTEM_PROMPT = `You are the FCA Assistant — a helpful guide built into the Fencecrete America project tracker app. You help users understand the app, answer questions about fields and features, and explain how to do things.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 
-ABOUT THE APP:
-This is the Fencecrete Ops Platform — a web app for managing precast concrete fence projects across 4 Texas markets: San Antonio (SA), Houston (H), Dallas-Fort Worth (D), and Austin (A).
-
-KEY PAGES:
-- Dashboard: CEO overview with weekly digest, KPIs, billing alerts
-- Projects: Master list of all jobs with filters, search, edit panel. 71 data columns per job.
-- Production Board: Kanban board for tracking production status. Can group by customer, style, or color.
-- Production Planning: Where Max schedules daily production runs
-- Daily Production Report: Where Luis logs actual pieces/LF produced per shift
-- Material Calculator: Calculates panels, posts, rails needed for a job based on LF and height
-- PM Bill Sheet: Billing view for Project Managers showing contract values, invoiced amounts, % billed, left to bill, plus accent/add-on columns
-- Install Schedule: Calendar + list + Gantt chart for install scheduling
-- Weather Days: Log weather delays by market and date
-- Change Order Log: Track change orders by job with approval workflow
-- PM Daily Report: Field reports from PMs logging daily install progress
-- Reports: 6 built-in reports with charts
-
-KEY TERMINOLOGY:
-- Job Code format: 26H015 = year (26) + market letter (H=Houston, A=Austin, D=DFW, S=SA, CS=Central/Special) + sequence number. Residential jobs use plain numbers like 10167.
-- LF = Linear Feet (how fence is measured)
-- PC = Precast (produced in-house at the SA plant)
-- SW = Single Wythe (masonry/brick, purchased and installed)
-- WI = Wrought Iron (purchased and installed)
-- Gates = purchased and installed, measured in pieces not LF
-- Columns (C) = associated with single wythe jobs
-- Add-Ons: G=Gates, WI=Wrought Iron, C=Columns
-- Primary Type: PC, Masonry, or WI
-- Status flow: Contract Review → Inventory Ready → In Production → Active Install → Closed
-- PM = Project Manager: Ray (SA), Manuel (Houston Precast), Rafael Jr. (Houston Masonry/SW), Doug (DFW & Austin)
-
-KEY FIELDS:
-- Net Contract Value: base contract amount before tax
-- Sales Tax: tax amount (or "Exempt")
-- Contract Value: net + tax
-- Adj Contract Value: contract value + approved change orders
-- YTD Invoiced: total invoiced to date
-- % Billed: YTD Invoiced ÷ Adj Contract Value (auto-calculated)
-- Left to Bill: Adj Contract Value - YTD Invoiced (auto-calculated)
-- Style: fence panel style (Rock Style, Vertical Wood 6', Block Style, etc.)
-- Color: 6 standard colors for new projects: LAC, Silversmoke #860, Café, Outback #677, Regular Brown, Buff Green. Legacy colors exist on older jobs.
-- is_produced: true = precast (made in plant), false = purchased item
-
-PEOPLE:
-- David Bannister: CEO
-- Alex Hanno: CFO
-- Amiee: Contracts admin, enters new projects
-- Mary & Virginia: Accounting/billing
-- Max: Production scheduler
-- Luis: Daily production reporting
-- Matt, Laura, Yuda, Nathan, Ryne: Sales reps
-
-RULES:
-- You ONLY answer questions about the app, its features, fields, and workflows
-- You do NOT access, query, or modify any data
-- You do NOT make promises about features that don't exist yet
-- Keep answers concise and practical
-- If you don't know something, say so and suggest they contact David`;
-
-const corsHeaders = {
+const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json',
 };
 
-// @ts-ignore — Deno runtime global
+async function querySupabase(endpoint: string): Promise<any> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Supabase error: ${res.status}`);
+  return res.json();
+}
+
+async function getDataAnswer(question: string): Promise<string | null> {
+  const q = question.toLowerCase();
+  const pmMatch = q.match(/(?:left to bill|ltb|pipeline|balance).*?(?:for|by)?\s+(ray|manuel|rafael|doug|ray garcia|manuel salazar|rafael anaya|doug monroe)/) || q.match(/(ray|manuel|rafael|doug|ray garcia|manuel salazar|rafael anaya|doug monroe).*?(?:left to bill|ltb|pipeline|balance)/);
+  if (pmMatch) {
+    const pmName = pmMatch[1].toLowerCase();
+    const pmMap: Record<string,string> = { ray:'Ray Garcia', manuel:'Manuel Salazar', rafael:'Rafael Anaya Jr.', doug:'Doug Monroe', 'ray garcia':'Ray Garcia', 'manuel salazar':'Manuel Salazar', 'rafael anaya':'Rafael Anaya Jr.', 'doug monroe':'Doug Monroe' };
+    const pm = pmMap[pmName];
+    if (pm) {
+      const jobs = await querySupabase(`jobs?pm=eq.${encodeURIComponent(pm)}&status=not.in.(closed,canceled)&select=job_name,job_number,left_to_bill,ytd_invoiced,adj_contract_value,status`);
+      const total = jobs.reduce((s: number, j: any) => s + parseFloat(j.left_to_bill || 0), 0);
+      const totalContract = jobs.reduce((s: number, j: any) => s + parseFloat(j.adj_contract_value || 0), 0);
+      const topJobs = [...jobs].sort((a: any, b: any) => parseFloat(b.left_to_bill) - parseFloat(a.left_to_bill)).slice(0, 5);
+      return `${pm} has $${total.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})} left to bill across ${jobs.length} active jobs (total contract: $${totalContract.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}).\n\nTop jobs by remaining balance:\n${topJobs.map((j: any) => `• ${j.job_name} — $${parseFloat(j.left_to_bill).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})} remaining`).join('\n')}`;
+    }
+  }
+  const pmJobsMatch = q.match(/(?:jobs?|projects?).*?(ray|manuel|rafael|doug|ray garcia|manuel salazar|rafael anaya|doug monroe)/) || q.match(/(ray|manuel|rafael|doug|ray garcia|manuel salazar|rafael anaya|doug monroe).*?(?:jobs?|projects?)/);
+  if (pmJobsMatch && !pmMatch) {
+    const pmName = pmJobsMatch[1].toLowerCase();
+    const pmMap: Record<string,string> = { ray:'Ray Garcia', manuel:'Manuel Salazar', rafael:'Rafael Anaya Jr.', doug:'Doug Monroe', 'ray garcia':'Ray Garcia', 'manuel salazar':'Manuel Salazar', 'rafael anaya':'Rafael Anaya Jr.', 'doug monroe':'Doug Monroe' };
+    const pm = pmMap[pmName];
+    if (pm) {
+      const jobs = await querySupabase(`jobs?pm=eq.${encodeURIComponent(pm)}&status=not.in.(closed,canceled)&select=job_name,job_number,status,adj_contract_value,left_to_bill&order=status.asc`);
+      const statusLabel: Record<string,string> = { active_install:'Active Install', in_production:'In Production', material_ready:'Material Ready', production_queue:'Production Queue', contract_review:'Contract Review' };
+      return `${pm} has ${jobs.length} active jobs:\n\n${jobs.map((j: any) => `• ${j.job_name} (${j.job_number}) — ${statusLabel[j.status]||j.status} — $${parseFloat(j.left_to_bill||0).toLocaleString('en-US',{maximumFractionDigits:0})} left to bill`).join('\n')}`;
+    }
+  }
+  const marketMatch = q.match(/(houston|san antonio|dallas|austin|dfw).*?(?:pipeline|total|left to bill|balance|contract)/) || q.match(/(?:pipeline|total|left to bill|balance|contract).*?(houston|san antonio|dallas|austin|dfw)/);
+  if (marketMatch) {
+    const mktRaw = marketMatch[1].toLowerCase();
+    const mktMap: Record<string,string> = { houston:'Houston', 'san antonio':'San Antonio', dallas:'Dallas-Fort Worth', dfw:'Dallas-Fort Worth', austin:'Austin' };
+    const mkt = mktMap[mktRaw];
+    if (mkt) {
+      const jobs = await querySupabase(`jobs?market=eq.${encodeURIComponent(mkt)}&status=not.in.(closed,canceled)&select=adj_contract_value,ytd_invoiced,left_to_bill,status`);
+      const ltb = jobs.reduce((s: number, j: any) => s + parseFloat(j.left_to_bill||0), 0);
+      const contract = jobs.reduce((s: number, j: any) => s + parseFloat(j.adj_contract_value||0), 0);
+      const invoiced = jobs.reduce((s: number, j: any) => s + parseFloat(j.ytd_invoiced||0), 0);
+      return `${mkt} market — ${jobs.length} active jobs:\n• Total contract: $${contract.toLocaleString('en-US',{maximumFractionDigits:0})}\n• YTD invoiced: $${invoiced.toLocaleString('en-US',{maximumFractionDigits:0})}\n• Left to bill: $${ltb.toLocaleString('en-US',{maximumFractionDigits:0})}`;
+    }
+  }
+  if (q.includes('unbilled') || q.includes('not been billed') || q.includes('never billed') || (q.includes('billed') && (q.includes('60') || q.includes('30') || q.includes('90') || q.includes('overdue')))) {
+    const jobs = await querySupabase(`jobs?status=not.in.(closed,canceled,contract_review)&ytd_invoiced=eq.0&select=job_name,job_number,pm,market,adj_contract_value,contract_date&order=contract_date.asc`);
+    if (jobs.length === 0) return `No active jobs with zero billing found.`;
+    return `${jobs.length} active jobs with $0 invoiced:\n\n${jobs.slice(0,10).map((j: any) => `• ${j.job_name} (${j.job_number}) — ${j.pm||'No PM'} — $${parseFloat(j.adj_contract_value||0).toLocaleString('en-US',{maximumFractionDigits:0})}`).join('\n')}${jobs.length > 10 ? `\n...and ${jobs.length-10} more` : ''}`;
+  }
+  const jobLookup = q.match(/(?:what is|show me|tell me about|find|look up|status of)\s+(.{5,50}?)(?:'s|\?|$)/);
+  if (jobLookup) {
+    const search = jobLookup[1].trim();
+    if (search.length > 3) {
+      const jobs = await querySupabase(`jobs?or=(job_name.ilike.*${encodeURIComponent(search)}*,job_number.ilike.*${encodeURIComponent(search)}*)&select=job_name,job_number,status,pm,market,adj_contract_value,ytd_invoiced,left_to_bill,pct_billed&limit=3`);
+      if (jobs.length > 0) {
+        const j = jobs[0];
+        const statusLabel: Record<string,string> = { active_install:'Active Install', in_production:'In Production', material_ready:'Material Ready', production_queue:'Production Queue', contract_review:'Contract Review', closed:'Closed' };
+        return `${j.job_name} (${j.job_number}):\n• Status: ${statusLabel[j.status]||j.status}\n• PM: ${j.pm||'—'}\n• Market: ${j.market||'—'}\n• Contract: $${parseFloat(j.adj_contract_value||0).toLocaleString('en-US',{maximumFractionDigits:0})}\n• YTD Invoiced: $${parseFloat(j.ytd_invoiced||0).toLocaleString('en-US',{maximumFractionDigits:0})}\n• Left to Bill: $${parseFloat(j.left_to_bill||0).toLocaleString('en-US',{maximumFractionDigits:0})}\n• % Billed: ${Math.round(parseFloat(j.pct_billed||0)*100)}%`;
+      }
+    }
+  }
+  if (q.includes('change order') || q.includes(' co ') || q.includes('pending approval')) {
+    const cos = await querySupabase(`change_orders?status=in.(pending,Pending)&select=co_number,amount,description,job_number,date_submitted&order=date_submitted.asc`);
+    if (cos.length === 0) return 'No change orders pending approval right now.';
+    const total = cos.reduce((s: number, c: any) => s + parseFloat(c.amount||0), 0);
+    return `${cos.length} change orders pending Amiee's approval — total $${total.toLocaleString('en-US',{maximumFractionDigits:0})}:\n\n${cos.map((c: any) => `• CO #${c.co_number||'—'} on ${c.job_number} — $${parseFloat(c.amount||0).toLocaleString('en-US',{maximumFractionDigits:0})}${c.description?' — '+c.description.slice(0,50):''}`).join('\n')}`;
+  }
+  if (q.includes('production queue') || q.includes('in production') || (q.includes('production') && q.includes('schedule'))) {
+    const jobs = await querySupabase(`jobs?status=in.(production_queue,in_production)&select=job_name,job_number,pm,lf_precast,est_start_date,style,color&order=est_start_date.asc.nullslast`);
+    if (jobs.length === 0) return 'No jobs currently in the production queue.';
+    return `${jobs.length} jobs in production queue/in production:\n\n${jobs.map((j: any) => `• ${j.job_name} — ${j.lf_precast?j.lf_precast.toLocaleString()+' LF ':''} ${j.style||''} ${j.color||''}${j.est_start_date?' — Install: '+new Date(j.est_start_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}`).join('\n')}`;
+  }
+  if (q.includes('material request') || q.includes('material order')) {
+    const reqs = await querySupabase(`material_requests?status=in.(pending,acknowledged)&select=job_name,job_number,requested_by,status,linear_feet,material_style,created_at&order=created_at.asc`);
+    if (reqs.length === 0) return 'No pending material requests right now.';
+    return `${reqs.length} material requests pending:\n\n${reqs.map((r: any) => `• ${r.job_name} (${r.job_number}) — ${r.requested_by||'—'} — ${r.status} — ${r.linear_feet?r.linear_feet+' LF ':''} ${r.material_style||''}`).join('\n')}`;
+  }
+  if (q.includes('total') || q.includes('overall') || q.includes('company') || q.includes('summary') || q.includes('how much') || q.includes('pipeline')) {
+    const jobs = await querySupabase(`jobs?status=not.in.(closed,canceled)&select=adj_contract_value,ytd_invoiced,left_to_bill,status`);
+    const ltb = jobs.reduce((s: number, j: any) => s + parseFloat(j.left_to_bill||0), 0);
+    const contract = jobs.reduce((s: number, j: any) => s + parseFloat(j.adj_contract_value||0), 0);
+    const invoiced = jobs.reduce((s: number, j: any) => s + parseFloat(j.ytd_invoiced||0), 0);
+    const byStatus: Record<string,number> = {};
+    jobs.forEach((j: any) => { byStatus[j.status] = (byStatus[j.status]||0) + 1; });
+    const statusLabel: Record<string,string> = { active_install:'Active Install', in_production:'In Production', material_ready:'Material Ready', production_queue:'Production Queue', contract_review:'Contract Review' };
+    return `FCA Company Summary — ${jobs.length} active jobs:\n• Total contract: $${contract.toLocaleString('en-US',{maximumFractionDigits:0})}\n• YTD invoiced: $${invoiced.toLocaleString('en-US',{maximumFractionDigits:0})}\n• Left to bill: $${ltb.toLocaleString('en-US',{maximumFractionDigits:0})}\n\nBy status:\n${Object.entries(byStatus).map(([s,c]) => `• ${statusLabel[s]||s}: ${c} jobs`).join('\n')}`;
+  }
+  const overMatch = q.match(/(houston|san antonio|dallas|austin|dfw).*?(?:over|above|more than|>)\s*\$?([\d,]+)/);
+  if (overMatch) {
+    const mktRaw = overMatch[1].toLowerCase();
+    const mktMap: Record<string,string> = { houston:'Houston', 'san antonio':'San Antonio', dallas:'Dallas-Fort Worth', dfw:'Dallas-Fort Worth', austin:'Austin' };
+    const mkt = mktMap[mktRaw];
+    const threshold = parseFloat(overMatch[2].replace(/,/g,''));
+    if (mkt && threshold) {
+      const jobs = await querySupabase(`jobs?market=eq.${encodeURIComponent(mkt)}&status=not.in.(closed,canceled)&adj_contract_value=gte.${threshold}&select=job_name,job_number,pm,adj_contract_value,left_to_bill,status&order=adj_contract_value.desc`);
+      if (jobs.length === 0) return `No active ${mkt} jobs over $${threshold.toLocaleString()}.`;
+      const statusLabel: Record<string,string> = { active_install:'Active Install', in_production:'In Production', material_ready:'Material Ready', production_queue:'Production Queue', contract_review:'Contract Review' };
+      return `${jobs.length} active ${mkt} jobs over $${threshold.toLocaleString()}:\n\n${jobs.map((j: any) => `• ${j.job_name} (${j.job_number}) — $${parseFloat(j.adj_contract_value||0).toLocaleString('en-US',{maximumFractionDigits:0})} — ${statusLabel[j.status]||j.status} — PM: ${j.pm||'—'}`).join('\n')}`;
+    }
+  }
+  return null;
+}
+
+const SYSTEM_PROMPT = `You are Chorizo 🌶️ — a helpful assistant built into the Fencecrete America project tracker app. You help users understand the app AND answer live questions about their jobs, billing, and operations.
+
+You have access to live data from the FCA database. When users ask about specific jobs, PMs, markets, billing, or production — you will receive the actual data to answer with. Use it to give precise, helpful answers.
+
+KEY TERMINOLOGY:
+- LF = Linear Feet
+- PC = Precast (produced in-house)
+- SW = Single Wythe (masonry, purchased)
+- WI = Wrought Iron (purchased)
+- Left to Bill = contract value not yet invoiced
+- Adj Contract Value = net contract + approved COs + permits + bonds + sales tax
+- PMs: Ray Garcia (SA), Manuel Salazar (Houston Precast), Rafael Anaya Jr. (Houston Masonry/SW), Doug Monroe (DFW & Austin)
+- Status flow: Contract Review → Production Queue → In Production → Material Ready → Active Install → Closed
+
+Be concise and direct. When you have live data, lead with the numbers.`;
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: CORS_HEADERS });
   }
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+
+  if (!ANTHROPIC_KEY) {
+    console.error('ANTHROPIC_API_KEY not configured in Supabase secrets');
+    return new Response(
+      JSON.stringify({ error: 'Configuration error', details: 'ANTHROPIC_API_KEY not set' }),
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
+
   try {
     const body = await req.json();
-    const { messages, currentPage } = body || {};
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return new Response(JSON.stringify({ error: 'Missing or empty messages array' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const messages = body.messages || [];
+    const currentPage = body.currentPage || 'Dashboard';
+    const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop();
+    let dataContext = '';
+    if (lastUserMsg) {
+      try {
+        const dataAnswer = await getDataAnswer(lastUserMsg.content);
+        if (dataAnswer) dataContext = `\n\nLIVE DATA FROM FCA DATABASE:\n${dataAnswer}\n\nUse this data to answer the user's question directly and precisely.`;
+      } catch(e) { console.error('Data query failed:', e); }
     }
-    // @ts-ignore — Deno runtime global
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Server missing ANTHROPIC_API_KEY secret' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const contextualSystem = `${SYSTEM_PROMPT}\n\nCONTEXT: The user is currently on the "${currentPage || 'dashboard'}" page. Tailor examples and suggestions to that page when relevant.`;
-    const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: contextualSystem,
-        messages,
-      }),
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: SYSTEM_PROMPT + `\nThe user is on the ${currentPage} page.` + dataContext, messages }),
     });
-    const data = await apiRes.json();
-    if (!apiRes.ok) {
-      const msg = data?.error?.message || `Anthropic API error ${apiRes.status}`;
-      return new Response(JSON.stringify({ error: msg }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Anthropic API error:', response.status, JSON.stringify(data));
+      return new Response(
+        JSON.stringify({ error: 'Anthropic API error', status: response.status, anthropic_error: data?.error?.message || JSON.stringify(data) }),
+        { status: 502, headers: CORS_HEADERS }
+      );
     }
-    const message = Array.isArray(data?.content) && data.content[0]?.text ? data.content[0].text : '';
-    // Always return 200; frontend decides success by presence of `message`
-    return new Response(JSON.stringify({ message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: 'Edge function threw', details: msg }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const assistantMessage = data.content?.[0]?.text || 'Sorry, I could not generate a response.';
+    return new Response(JSON.stringify({ message: assistantMessage }), { status: 200, headers: CORS_HEADERS });
+  } catch (error) {
+    console.error('Edge function crashed:', error);
+    return new Response(
+      JSON.stringify({ error: 'Internal error', details: String(error) }),
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 });
