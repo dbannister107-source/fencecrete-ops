@@ -49,6 +49,16 @@ import { convertHeicIfNeeded, usePasteUpload } from './shared/upload';
 // where both forms can arrive (PIS flow, deep-link params).
 import { resolveJobId } from './shared/jobs';
 
+// Permission helpers -- read user_profiles.permissions JSONB column.
+// Replaces the hardcoded EDIT_EMAILS / STATUS_EDIT_EMAILS / etc. Sets that
+// previously sat at the top of this file. Adding/removing a permission for
+// a user is now a SQL UPDATE; no app deploy. See src/shared/permissions.js
+// and migration 20260503_user_permissions_jsonb.sql.
+import {
+  canEditProjects, canEditStatus, canReopen, canEditInstallDate,
+  canViewWorkbench, canApproveCO, canViewSystemEvents, canEditPlantWO,
+} from './shared/permissions';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -60,97 +70,12 @@ if (MAPBOX_TOKEN) mapboxgl.accessToken = MAPBOX_TOKEN;
 const SB = 'https://bdnwjokehfxudheshmmj.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbndqb2tlaGZ4dWRoZXNobW1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjE5NDUsImV4cCI6MjA5MDIzNzk0NX0.qeItI3HZKIThW9A3T64W4TkGMo5K2FDNKbyzUOC1xoM';
 
-// Access control — only these emails can edit project records
-const EDIT_EMAILS = new Set([
-  'david@fencecrete.com',
-  'amiee@fencecrete.com',
-  'contracts@fencecrete.com',
-  'alex@fencecrete.com',
-  // Apr 28 2026 per David: Carlos gets identical permissions to David.
-  // Already in STATUS_EDIT_EMAILS, REOPEN_EMAILS, PLANT_EDIT_EMAILS.
-  // Adding to EDIT_EMAILS (full project record editing) and
-  // SYSTEM_ADMIN_EMAILS below completes the parity.
-  'ccontreras@fencecrete.com',
-]);
-const STATUS_EDIT_EMAILS = new Set([
-  'david@fencecrete.com',
-  'amiee@fencecrete.com',
-  'contracts@fencecrete.com',
-  'alex@fencecrete.com',
-  'max@fencecrete.com',
-  'ccontreras@fencecrete.com',
-  'mmartin@fencecrete.com',
-  'luis@fencecrete.com',
-]);
-// Reopening a closed job has billing/reporting ripple effects, so it's
-// gated more tightly than routine status changes. Apr 20 2026 per David:
-// admin + finance only. Max and Luis can still advance status on active
-// jobs (STATUS_EDIT_EMAILS above) but can't reopen closed ones.
-const REOPEN_EMAILS = new Set([
-  'david@fencecrete.com',
-  'amiee@fencecrete.com',
-  'alex@fencecrete.com',
-  'ccontreras@fencecrete.com',
-  'mmartin@fencecrete.com',
-  'virginiag@fencecrete.com',
-]);
-const canEditProjects = (email) => EDIT_EMAILS.has((email||'').toLowerCase().trim());
-const canEditStatus = (email) => STATUS_EDIT_EMAILS.has((email||'').toLowerCase().trim());
-const canReopen = (email) => REOPEN_EMAILS.has((email||'').toLowerCase().trim());
-// Sales reps and PMs often learn of install date changes directly from the customer
-// (GC calls the sales rep, PM's crew hits weather delays, etc.). Giving them a
-// narrow carve-out to edit ONLY est_start_date without opening up the full project
-// form. Everyone who can edit projects, change status, or reopen can also do this.
-const INSTALL_DATE_EDIT_EMAILS = new Set([
-  // Sales reps
-  'matt@fencecrete.com',
-  'laura@fencecrete.com',
-  'yuda@fencecrete.com',
-  'nathan@fencecrete.com',
-  'ryne@fencecrete.com',
-  'mdean@fencecrete.com',  // Mike Dean — Dallas (added 2026-05-02)
-  // PMs
-  'ray@fencecrete.com',
-  'manuel@fencecrete.com',
-  'jr@fencecrete.com',
-  'doug@fencecrete.com',
-]);
-
-// Contracts Workbench: full edit access via canEditProjects (Amiee, Alex,
-// David, Carlos, contracts@). Sales reps get VIEW-ONLY access — they can
-// see what's blocking their own contracts and pressure the right person,
-// but can't tick the manual items themselves (those are Amiee's call).
-const WORKBENCH_VIEW_EMAILS = new Set([
-  'matt@fencecrete.com',
-  'laura@fencecrete.com',
-  'yuda@fencecrete.com',
-  'nathan@fencecrete.com',
-  'ryne@fencecrete.com',
-  'mdean@fencecrete.com',  // Mike Dean — Dallas (added 2026-05-02)
-]);
-const canViewWorkbench = (email) => {
-  const e = (email||'').toLowerCase().trim();
-  return EDIT_EMAILS.has(e) || WORKBENCH_VIEW_EMAILS.has(e);
-};
-const canEditInstallDate = (email) => {
-  const e = (email||'').toLowerCase().trim();
-  return EDIT_EMAILS.has(e) || STATUS_EDIT_EMAILS.has(e) || REOPEN_EMAILS.has(e) || INSTALL_DATE_EDIT_EMAILS.has(e);
-};
-// Only Amiee can approve/reject change orders
-const AMIEE_EMAILS = new Set([
-  'amiee@fencecrete.com',
-  'contracts@fencecrete.com',
-]);
-const canApproveCO = (email) => AMIEE_EMAILS.has((email||'').toLowerCase().trim());
-
-// System admin allowlist — gates the ADMIN > System Events sidebar item
-// and the agentic-spine debug page. Keep narrow; this exposes the raw
-// event log for every automated workflow in the app.
-const SYSTEM_ADMIN_EMAILS = new Set([
-  'david@fencecrete.com',
-  'ccontreras@fencecrete.com',
-]);
-const canViewSystemEvents = (email) => SYSTEM_ADMIN_EMAILS.has((email||'').toLowerCase().trim());
+// Permission Sets formerly lived here (EDIT_EMAILS, STATUS_EDIT_EMAILS,
+// REOPEN_EMAILS, INSTALL_DATE_EDIT_EMAILS, WORKBENCH_VIEW_EMAILS,
+// AMIEE_EMAILS, SYSTEM_ADMIN_EMAILS) and their canEdit*/canApprove*/canView*
+// helpers. Migrated 2026-05-03 to user_profiles.permissions JSONB column;
+// helpers imported from src/shared/permissions.js at the top of this file.
+// Adding/removing a permission for a user is now a SQL UPDATE — no deploy.
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H })).json();
@@ -1544,12 +1469,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const isMobile = useIsMobile();
   const auth = useAuth();
   const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
-  const canEdit = isNew || canEditProjects(currentUserEmail);
-  const canChangeStatus = isNew || canEditStatus(currentUserEmail);
-  const canReopenJob = canReopen(currentUserEmail);
+  const canEdit = isNew || canEditProjects(auth?.profile);
+  const canChangeStatus = isNew || canEditStatus(auth?.profile);
+  const canReopenJob = canReopen(auth?.profile);
   // Granular install-date carve-out for sales + PMs. Only applies when the user
   // doesn't otherwise have edit access; if they can edit everything, this is moot.
-  const canEditInstallDateOnly = !canEdit && canEditInstallDate(currentUserEmail);
+  const canEditInstallDateOnly = !canEdit && canEditInstallDate(auth?.profile);
   // Per-field editable check. Returns true when the given column should accept user
   // input. Full editors see everything. Install-date-only users see just est_start_date.
   const fieldEditable = (f) => canEdit || (canEditInstallDateOnly && f === 'est_start_date');
@@ -2240,7 +2165,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const approveCO=async(c)=>{
     const today=new Date().toISOString().split('T')[0];
     const currentUser=auth?.user?.email||'';
-    if(!canApproveCO(currentUser)){setCOToast({msg:'Only Amiee can approve change orders',kind:'error'});return;}
+    if(!canApproveCO(auth?.profile)){setCOToast({msg:'Only Amiee can approve change orders',kind:'error'});return;}
     try{
       await sbPatch('change_orders',c.id,{status:'approved',approved_by:currentUser,date_approved:today});
       await reloadCOs();
@@ -2251,7 +2176,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
   const rejectCO=async(c)=>{
     const currentUser=auth?.user?.email||'';
-    if(!canApproveCO(currentUser)){setCOToast({msg:'Only Amiee can reject change orders',kind:'error'});return;}
+    if(!canApproveCO(auth?.profile)){setCOToast({msg:'Only Amiee can reject change orders',kind:'error'});return;}
     try{
       await sbPatch('change_orders',c.id,{status:'rejected'});
       await reloadCOs();
@@ -4398,9 +4323,9 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
        - pageCanInstallOnly: sales + PMs     — only 'est_start_date' col
      Users with none of the above don't see the edit-mode toggle at all. */
   const pageEmail = (auth?.user?.email||'').toLowerCase().trim();
-  const pageCanEdit = canEditProjects(pageEmail);
-  const pageCanStatusOnly = !pageCanEdit && canEditStatus(pageEmail);
-  const pageCanInstallOnly = !pageCanEdit && !pageCanStatusOnly && canEditInstallDate(pageEmail);
+  const pageCanEdit = canEditProjects(auth?.profile);
+  const pageCanStatusOnly = !pageCanEdit && canEditStatus(auth?.profile);
+  const pageCanInstallOnly = !pageCanEdit && !pageCanStatusOnly && canEditInstallDate(auth?.profile);
   const pageCanAnyEdit = pageCanEdit || pageCanStatusOnly || pageCanInstallOnly;
   /* Which columns is this user allowed to edit inline? Used both for click-gating
      (prevent entering edit mode on a locked cell) and as a defense-in-depth check
@@ -15954,10 +15879,9 @@ function MapPage({ jobs, onNav }) {
   const isMobile = useIsMobile();
   const auth = useAuth();
   const currentUserEmail = (auth?.user?.email||'').toLowerCase().trim();
-  // Reuse existing edit-emails allowlist as the admin gate for geocoding —
-  // it's already the David/Amiee/Alex/Contracts circle that should manage
-  // data hygiene tasks like running geocoding.
-  const canGeocode = canEditProjects(currentUserEmail);
+  // Reuse existing edit-projects gate for geocoding — it's already the
+  // David/Amiee/Alex/Carlos circle that should manage data hygiene tasks.
+  const canGeocode = canEditProjects(auth?.profile);
 
   // ═══ FILTER STATE ═══
   // Time horizon: how far out to show scheduled installs.
@@ -19229,23 +19153,9 @@ const PLANT_STATUS_LABELS={open:'Open',new:'New',assigned:'Assigned',in_progress
 const PLANT_STATUS_C={open:'#991B1B',new:'#991B1B',assigned:'#185FA5',in_progress:'#B45309',pending_verification:'#D97706',completed:'#065F46',verified:'#065F46',closed:'#374151'};
 const PLANT_STATUS_BG={open:'#FEF2F2',new:'#FEF2F2',assigned:'#DBEAFE',in_progress:'#FEF3C7',pending_verification:'#FED7AA',completed:'#D1FAE5',verified:'#D1FAE5',closed:'#F4F4F2'};
 const PLANT_OPEN_STATUSES=new Set(['open','new','assigned','in_progress','pending_verification']);
-// Email-based gate, mirroring the rest of the app. Spec asked for a
-// role-based check; the codebase doesn't have a roles model yet, so the
-// admin / plant supervisor / mechanic identities are encoded as the
-// existing edit allowlist plus Max (plant supervisor) and Luis
-// (mechanic). Viewers — including outside PE sponsors — fall through to
-// read-only.
-const PLANT_EDIT_EMAILS=new Set([
-  'david@fencecrete.com',
-  'amiee@fencecrete.com',
-  'alex@fencecrete.com',
-  'contracts@fencecrete.com',
-  'ccontreras@fencecrete.com',
-  'mmartin@fencecrete.com',
-  'max@fencecrete.com',
-  'luis@fencecrete.com',
-]);
-const canEditPlantWO=(email)=>PLANT_EDIT_EMAILS.has((email||'').toLowerCase().trim());
+// canEditPlantWO formerly lived here as an email-Set check (plant supervisors
+// + mechanics + admins). Migrated 2026-05-03 to the JSONB permissions column;
+// helper imported from shared/permissions at the top of this file.
 const subsystemLabel=(v)=>{const m=PLANT_SUBSYSTEMS.find(s=>s.value===v);return m?m.label:(v||'—');};
 const subsystemShort=(v)=>(subsystemLabel(v)||'').split(' (')[0];
 const issueTypeLabel=(v)=>{const m=PLANT_ISSUE_TYPES.find(t=>t.value===v);return m?m.label:(v||'—');};
@@ -19254,7 +19164,7 @@ const issueTypeShort=(v)=>(issueTypeLabel(v)||'').split(' (')[0];
 function PlantMaintenancePage(){
   const auth=useAuth();
   const currentEmail=(auth?.user?.email||'').toLowerCase().trim();
-  const canEdit=canEditPlantWO(currentEmail);
+  const canEdit=canEditPlantWO(auth?.profile);
 
   const[plantEquip,setPlantEquip]=useState(null);
   const[wos,setWOs]=useState([]);
@@ -24834,7 +24744,7 @@ function AppShell(){
   // promoting her to full admin.
   const canFolderAdmin=isAdmin||profile?.role==='billing';
   const currentUserEmail=(user?.email||'').toLowerCase().trim();
-  const canSystemEvents=canViewSystemEvents(currentUserEmail);
+  const canSystemEvents=canViewSystemEvents(profile);
   // ADMIN group is shown when the user qualifies for at least one admin item.
   // Items inside the group are independently gated so we can grow this list
   // without coupling the User Management gate to the System Events gate.
@@ -25006,7 +24916,7 @@ function AppShell(){
             {page==='system_events'&&canSystemEvents&&<ErrorBoundary label="System Events"><SystemEventsPage currentUserEmail={currentUserEmail}/></ErrorBoundary>}
             {page==='sharepoint_links'&&canFolderAdmin&&<ErrorBoundary label="SharePoint Links"><SharePointLinksPage/></ErrorBoundary>}
             {page==='customer_master'&&canFolderAdmin&&<ErrorBoundary label="Customer Master"><CustomerMasterPage currentUserEmail={currentUserEmail} currentUserName={profile?.full_name||null}/></ErrorBoundary>}
-            {page==='contracts_workbench'&&canViewWorkbench(currentUserEmail)&&<ErrorBoundary label="Contracts Workbench"><ContractsWorkbenchPage currentUserEmail={currentUserEmail} onNav={navigateTo} readOnly={!canEditProjects(currentUserEmail)}/></ErrorBoundary>}
+            {page==='contracts_workbench'&&canViewWorkbench(profile)&&<ErrorBoundary label="Contracts Workbench"><ContractsWorkbenchPage currentUserEmail={currentUserEmail} onNav={navigateTo} readOnly={!canEditProjects(profile)}/></ErrorBoundary>}
             {page==='crew_leaders_admin'&&isAdmin&&<ErrorBoundary label="Crew Leaders"><CrewLeadersAdminPage/></ErrorBoundary>}
           </>}
         </div>
