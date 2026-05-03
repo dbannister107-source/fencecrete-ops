@@ -32,6 +32,7 @@ import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWork
 import {
   applySharedAuthToken,
   sbGet, sbPost, sbPatch, sbDel, sbFn,
+  sbStorageUpload, sbStorageSign, sbStorageDelete,
   sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
 } from './shared/sb';
 
@@ -1924,14 +1925,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       const cleanName=sanitizeForStorage(file.name);
       const stamp=Date.now();
       const path=`${job.id}/${category}/${stamp}-${cleanName}`;
-      // Storage put via the REST API (avoid pulling in the full Supabase JS SDK
-      // for this one operation — we already have apikey + bearer in scope)
-      const putRes=await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`,{
-        method:'POST',
-        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':file.type||'application/octet-stream','x-upsert':'false'},
-        body:file,
-      });
-      if(!putRes.ok){const txt=await putRes.text();throw new Error(`Storage upload failed (${putRes.status}): ${txt.slice(0,200)}`);}
+      // sbStorageUpload throws on non-2xx with the error envelope already extracted
+      await sbStorageUpload('project-attachments', path, file, file.type||'application/octet-stream', { upsert: false });
       // Record metadata in project_attachments. Trigger emits document.uploaded
       // event — that's how Block C rules (when added) hook in.
       // Derive a friendly display name from the email — capitalize the local
@@ -1964,7 +1959,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         // Storage put succeeded but DB insert failed. Try to clean up the
         // orphaned Storage object so we don't accumulate ghost files.
         const txt=await insertRes.text();
-        try{await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});}catch(_){}
+        try{await sbStorageDelete('project-attachments', path);}catch(_){}
         throw new Error(`Database insert failed (${insertRes.status}): ${txt.slice(0,200)}`);
       }
       setUploadQueue(q=>q.filter(x=>x.id!==queueId));
@@ -2028,17 +2023,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           pathInBucket=pathInBucket.slice('pis-tax-certs/'.length);
         }
       }
-      // Encode each path segment individually so '/' stays literal in the URL.
-      // Sign endpoint treats encoded slashes as part of the key and returns 404.
-      const encodedPath=pathInBucket.split('/').map(encodeURIComponent).join('/');
-      const res=await fetch(`${SB}/storage/v1/object/sign/${bucket}/${encodedPath}`,{
-        method:'POST',
-        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({expiresIn:300}),
-      });
-      if(!res.ok){const txt=await res.text();throw new Error(`Sign failed (${res.status}): ${txt.slice(0,200)}`);}
-      const data=await res.json();
-      return`${SB}/storage/v1${data.signedURL||data.signedUrl}`;
+      // sbStorageSign handles per-segment encoding + extracts the absolute signed URL.
+      const data=await sbStorageSign(bucket, pathInBucket, 300);
+      return data.signedUrl;
     }catch(e){console.error('[Documents sign]',e);throw e;}
   };
 
@@ -2228,15 +2215,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         const f=coForm.pdfFile;
         const safeName=(f.name||'co.pdf').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,200);
         const path=`change-orders/${job.id}/${Date.now()}-${safeName}`;
-        const upRes=await fetch(`${SB}/storage/v1/object/project-attachments/${encodeURI(path)}`,{
-          method:'POST',
-          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':f.type||'application/pdf','x-upsert':'true'},
-          body:f,
-        });
-        if(!upRes.ok){
-          const txt=await upRes.text().catch(()=>'');
-          throw new Error(`Storage upload failed (${upRes.status}): ${txt.slice(0,140)}`);
-        }
+        await sbStorageUpload('project-attachments', path, f, f.type||'application/pdf', { upsert: true });
         pdfStoragePath=path;
       }catch(uploadErr){
         console.error('[CO PDF upload]',uploadErr);
@@ -19648,24 +19627,13 @@ async function uploadFleetPhoto(file, folder) {
    errors (e.g. % characters in iOS HEIC names) don't slip through.
 */
 async function uploadPhoto(file, bucket, folder) {
-  // Use App.jsx's own H so authenticated JWT is attached when present.
   const ext = (file.name.split('.').pop() || 'jpg')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '') || 'jpg';
   const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const resp = await fetch(`${SB}/storage/v1/object/${bucket}/${path}`, {
-    method: 'POST',
-    headers: {
-      apikey: KEY,
-      Authorization: H.Authorization,
-      'Content-Type': file.type || 'image/jpeg',
-    },
-    body: file,
-  });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => '');
-    throw new Error(`Upload failed (${resp.status}): ${txt}`);
-  }
+  // sbStorageUpload throws on non-2xx with the error envelope already extracted;
+  // it also reads H.Authorization at call time so the user's JWT is attached.
+  await sbStorageUpload(bucket, path, file, file.type || 'image/jpeg');
   return `${SB}/storage/v1/object/public/${bucket}/${path}`;
 }
 
