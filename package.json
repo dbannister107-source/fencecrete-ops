@@ -35,7 +35,7 @@
   },
   "scripts": {
     "start": "node write-version.js && react-scripts start",
-    "build": "node write-version.js && react-scripts build"
+    "build": "node build.js"
   },
   "eslintConfig": {
     "extends": "react-app",
