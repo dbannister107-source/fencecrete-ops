@@ -13,7 +13,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import QRCode from 'react-qr-code';
-import * as XLSX from 'xlsx';
+import { readWorkbook, getSheetNames, rowsAsArrays, rowsAsObjects } from './shared/excel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie, LineChart, Line, ComposedChart, CartesianGrid } from 'recharts';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -15525,10 +15525,11 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 
   const parseSheet=(wb,sheetName)=>{
     try{
-      const sheet=wb.Sheets[sheetName];
+      const sheet=wb.getWorksheet(sheetName);
       if(!sheet){setError('Sheet "'+sheetName+'" not found');return;}
-      // Headers on row 1 (0-indexed 0)
-      const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false});
+      // rowsAsArrays returns [[header1, ...], [row1col1, ...], ...] —
+      // mirrors xlsx's sheet_to_json with {header:1, defval:null, raw:false}
+      const rows=rowsAsArrays(sheet);
       if(rows.length<2){setError('Sheet must have a header row and at least one data row');return;}
       const hdrs=rows[0].map(h=>h?String(h):'');
       const dataRows=rows.slice(1).filter(r=>r.some(c=>c!=null&&String(c).trim()!==''));
@@ -15546,15 +15547,17 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
   const loadWorkbook=(file)=>{
     setError('');
     const reader=new FileReader();
-    reader.onload=(e)=>{
+    reader.onload=async(e)=>{
       try{
-        const data=new Uint8Array(e.target.result);
-        const wb=XLSX.read(data,{type:'array',cellDates:true});
-        if(!wb.SheetNames||wb.SheetNames.length===0){setError('No sheets found in workbook');return;}
+        // readWorkbook lazy-imports exceljs (~400KB chunk, only loads
+        // when an XLSX file is actually picked). See src/shared/excel.js.
+        const wb=await readWorkbook(e.target.result);
+        const sheetNames=getSheetNames(wb);
+        if(sheetNames.length===0){setError('No sheets found in workbook');return;}
         setWorkbook(wb);
-        setSheetNames(wb.SheetNames);
+        setSheetNames(sheetNames);
         // Default: prefer "Active Jobs" if present, else first sheet
-        const def=wb.SheetNames.find(n=>n.trim().toLowerCase()==='active jobs')||wb.SheetNames[0];
+        const def=sheetNames.find(n=>n.trim().toLowerCase()==='active jobs')||sheetNames[0];
         setSelectedSheet(def);
         setFileName(file.name);
       }catch(err){setError('Failed to parse file: '+err.message);}
@@ -18242,10 +18245,11 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
     setImporting(true);
     try{
       const buf=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
-      const sheetName=wb.SheetNames.find(n=>/sales|crm|pipeline|lead/i.test(n))||wb.SheetNames[0];
-      const sheet=wb.Sheets[sheetName];
-      const rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:false});
+      const wb=await readWorkbook(buf);
+      const sheetNames=getSheetNames(wb);
+      const sheetName=sheetNames.find(n=>/sales|crm|pipeline|lead/i.test(n))||sheetNames[0];
+      const sheet=wb.getWorksheet(sheetName);
+      const rows=rowsAsObjects(sheet);
       const existing=await sbGet('leads','select=company_name,project_description,estimated_value');
       const dedupeKey=(company,proj,val)=>`${(company||'').trim().toLowerCase()}|${(proj||'').trim().toLowerCase()}|${n(val)||0}`;
       const existKey=new Set((existing||[]).map(l=>dedupeKey(l.company_name,l.project_description,l.estimated_value)));
