@@ -44,6 +44,11 @@ import {
 // Used by both EditPanel Documents tab and PMReportPhotos.
 import { convertHeicIfNeeded, usePasteUpload } from './shared/upload';
 
+// Job ID resolution utility -- normalizes inputs that might be either a
+// UUID (jobs.id) or human-readable job_number ("24H007") at boundaries
+// where both forms can arrive (PIS flow, deep-link params).
+import { resolveJobId } from './shared/jobs';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -2014,12 +2019,10 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     if(!pisEmail.trim()){alert('Please enter a recipient email address');return;}
     setPisSending(true);
     try{
-      // Resolve true jobs table UUID via job_number to avoid passing a lead ID by mistake
-      let resolvedJobId=job.id;
-      if(job.job_number){
-        const rows=await sbGet('jobs',`job_number=eq.${job.job_number}&select=id`);
-        if(Array.isArray(rows)&&rows.length>0)resolvedJobId=rows[0].id;
-      }
+      // Resolve true jobs.id via shared util -- avoids passing a lead-id
+      // by mistake when `job` was constructed from leads instead of jobs.
+      // Falls back to job.id if resolution misses (rare: typo'd job_number).
+      const resolvedJobId = (await resolveJobId(job)) || job.id;
       const res=await fetch(`${SB}/functions/v1/pis-send`,{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},

@@ -99,6 +99,28 @@ Don't put informational content in red boxes. (Bug we fixed: the Sales Origin ca
 
 Never set these directly. If you need a different value, change the upstream input.
 
+### Two ID conventions on jobs
+
+`jobs` has two keys, used for different purposes — codified to stop the back-and-forth:
+
+| Field | When to use |
+|---|---|
+| `jobs.id` (UUID) | Joins, FKs, REST filters, anything the database ingests. The technical key. |
+| `jobs.job_number` (text, e.g. `"24H007"`) | Display, search, conversation, customer-facing references (PIS links, contract docs). The human-readable key. |
+
+When you receive input that might be either form (e.g., the PIS send flow takes a `job` object that occasionally is a lead, or URL deep-link params), use the shared utility instead of rolling your own:
+
+```js
+import { resolveJobId, isUuid } from './shared/jobs';
+
+const id = await resolveJobId(input); // returns canonical jobs.id, or null
+if (!id) { /* handle "couldn't resolve" — typically a not-found error to the user */ }
+```
+
+`isUuid(str)` is the synchronous companion when you want to skip the DB roundtrip for already-UUID inputs.
+
+**Structural debt** (separate from this utility): some child tables (`job_line_items`, `leads`) FK by `job_number` text rather than `job_id` UUID. That's a real inconsistency, not addressed by `resolveJobId()`. Eventually those should be migrated to UUID FKs. Until then, queries against those tables filter by `job_number=eq.${...}` and that's expected.
+
 ### App.jsx editing strategy (when working on the monolith)
 
 1. **View first, edit second.** App.jsx is 1.93 MB — always grep before editing to confirm anchor uniqueness.
@@ -159,7 +181,7 @@ Findings from the 2026-05-02 architecture review. Ordered by impact, not sequenc
 🟡 **MEDIUM**
 5. ~~**PM Daily Report** has its own upload path with no HEIC/paste support.~~ ✅ Resolved 2026-05-02: extracted `convertHeicIfNeeded` + `usePasteUpload` hook to `src/shared/upload.js`; wired HEIC conversion into PMReportPhotos. Paste support not added there (PMs are on phones; paste-from-clipboard is a desktop flow). Hook is available for any future surface.
 6. **`companies` dedup risk** — 1 of 3 resolved 2026-05-02 (Peltier merged via `20260502_merge_peltier_dup.sql`; clean orphan delete, 0 dependents). **Franklin** (Austin vs San Antonio jobs) and **Watermark** (DFW vs Austin jobs) need Matt's confirmation — could be one company in two markets OR two distinct companies; addresses are all NULL so data alone can't tell. Decision items for Matt: (a) Is "Franklin Construction LTD" (AUS) the same business as "Franklin Construction, Ltd" (SA)? (b) Is "Watermark Commercial Contractors" (DFW) the same as "Watermark Commercial Contractors, LLC" (AUS)? After resolution, add unique normalized-name index as a ratchet to prevent new dupes.
-7. **Two ID conventions on `jobs`** — `id` (UUID) and `job_number` (text). Both used as keys depending on context. Codify rule: id for joins/REST, job_number for display. Add `resolveJobId()` utility.
+7. ~~**Two ID conventions on `jobs`**~~ ✅ Resolved 2026-05-02: `src/shared/jobs.js` exports `resolveJobId(input)` (handles UUID strings, job_number strings, and job-shaped objects) plus `isUuid(str)` for the sync case. Convention documented under "Critical Patterns You Must Know" → "Two ID conventions on jobs". The PIS send flow now uses it (`src/App.jsx` around line 2018). Structural follow-up (some child tables still FK by `job_number` text, not `job_id` UUID) noted in the pattern doc as separate work.
 8. ~~**Readiness UI duplicated** across Workbench + EditPanel.~~ ✅ Resolved 2026-05-02: `src/shared/readiness.js` is now the single source of truth (`AUTO_LABELS`, `MANUAL_ITEMS`, `MANUAL_LABELS`, `REQUIRED_MANUAL`). Imported by Workbench, EditPanel readiness card, and CoPilotHome blocked-contracts insight. The pattern is now established for future shared-module extractions (STATUS_LABELS, STATUS_COLORS, etc., when needed).
 
 **Architecture confirmed solid (no action needed):** Phase 3 doc fan-out is properly wired in BOTH directions — `trg_jobs_auto_attach_company_docs_ai` (jobs INSERT) AND `trg_jobs_auto_attach_company_docs_au` (jobs UPDATE when company_id changes). Zero adoption today is purely because no docs uploaded yet, not a plumbing gap.
