@@ -125,8 +125,12 @@ interface DriveChild {
 }
 
 async function listFolderChildren(driveId: string, folderId: string): Promise<DriveChild[]> {
+  // No $select — Graph sometimes drops the @microsoft.graph.downloadUrl OData
+  // annotation when $select narrows the projection. Fetching the full item
+  // shape ensures the download URL is present, and the payload size is fine
+  // for typical project folders (<200 items).
   const resp = await graphFetch(
-    `/drives/${driveId}/items/${folderId}/children?$select=id,name,webUrl,size,lastModifiedDateTime,file,folder,@microsoft.graph.downloadUrl&$top=200`
+    `/drives/${driveId}/items/${folderId}/children?$top=200`
   );
   if (!resp.ok) throw new Error(`Folder list failed: ${await resp.text()}`);
   const data = await resp.json();
@@ -155,6 +159,16 @@ function pickPisFile(children: DriveChild[]): DriveChild | null {
 async function downloadFileBytes(downloadUrl: string): Promise<Uint8Array> {
   const resp = await fetch(downloadUrl);
   if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${await resp.text()}`);
+  const buf = await resp.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+// Fallback download path: hit /drives/{drive}/items/{item}/content directly.
+// The 302 redirect to the actual blob URL requires the auth token, so we use
+// graphFetch which attaches it automatically. Returns the raw bytes.
+async function downloadFileBytesById(driveId: string, itemId: string): Promise<Uint8Array> {
+  const resp = await graphFetch(`/drives/${driveId}/items/${itemId}/content`);
+  if (!resp.ok) throw new Error(`Download by id failed: ${resp.status} ${await resp.text()}`);
   const buf = await resp.arrayBuffer();
   return new Uint8Array(buf);
 }
@@ -524,11 +538,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4. Download
+    // Prefer the pre-authenticated downloadUrl (no auth header needed). Some Graph
+    // responses omit it; fall back to /content which uses the bearer token.
     const downloadUrl = pis["@microsoft.graph.downloadUrl"];
-    if (!downloadUrl) {
-      return new Response(JSON.stringify({ error: "PIS file has no downloadUrl" }), { status: 502, headers: jsonHeaders() });
-    }
-    const bytes = await downloadFileBytes(downloadUrl);
+    const bytes = downloadUrl
+      ? await downloadFileBytes(downloadUrl)
+      : await downloadFileBytesById(driveId, pis.id);
 
     // 5. Parse
     const wb = new ExcelJS.Workbook();
