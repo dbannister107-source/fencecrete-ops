@@ -179,6 +179,83 @@ async function sbStorageSign(bucket, path, expiresIn = 300) {
   return data;
 }
 
+// ─── Auth (GoTrue REST) ─────────────────────────────────────────────────────
+// Sessions live in localStorage under fc_auth (managed by AuthProvider in
+// App.jsx). When a session is active the app calls applySharedAuthToken
+// above so H.Authorization carries the user's JWT instead of the anon key.
+//
+// All sbAuth* helpers throw on non-2xx with a useful message extracted from
+// the GoTrue error envelope (error_description / msg / error fall-through).
+
+const _authHeaders = () => ({ apikey: KEY, 'Content-Type': 'application/json' });
+
+async function _authParse(res, op) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data.error_description || data.msg || data.error || `${op} failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+// Sign in with email + password. Returns { access_token, refresh_token, user, ... }.
+async function sbAuthSignIn(email, password) {
+  const res = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: _authHeaders(),
+    body: JSON.stringify({ email, password }),
+  });
+  return _authParse(res, 'Sign in');
+}
+
+// Sign out. Best-effort (ignores network errors, since the user has already
+// effectively signed out client-side by clearing their session storage).
+async function sbAuthSignOut(accessToken) {
+  try {
+    await fetch(`${SB}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { ..._authHeaders(), Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (_) { /* network errors don't matter — local session is gone */ }
+}
+
+// Send a password-recovery email. redirectTo defaults to current origin.
+async function sbAuthRecover(email, redirectTo) {
+  const res = await fetch(`${SB}/auth/v1/recover`, {
+    method: 'POST', headers: _authHeaders(),
+    body: JSON.stringify({ email, redirect_to: redirectTo || (typeof window !== 'undefined' ? window.location.origin : '') }),
+  });
+  return _authParse(res, 'Password recovery');
+}
+
+// Read the current user from a session token. Throws on non-2xx (including
+// 401 — caller distinguishes "session expired" from "real error" via the
+// thrown error message and typically retries via sbAuthRefresh).
+async function sbAuthGetUser(accessToken) {
+  const res = await fetch(`${SB}/auth/v1/user`, {
+    headers: { ..._authHeaders(), Authorization: `Bearer ${accessToken}` },
+  });
+  return _authParse(res, 'Session expired');
+}
+
+// Refresh a session using its refresh token.
+async function sbAuthRefresh(refreshToken) {
+  const res = await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST', headers: _authHeaders(),
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  return _authParse(res, 'Session refresh');
+}
+
+// Update the signed-in user's password (used by the recover flow).
+async function sbAuthUpdatePassword(accessToken, newPassword) {
+  const res = await fetch(`${SB}/auth/v1/user`, {
+    method: 'PUT',
+    headers: { ..._authHeaders(), Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ password: newPassword }),
+  });
+  return _authParse(res, 'Update password');
+}
+
 // ─── Edge Functions ─────────────────────────────────────────────────────────
 const sbFunctionUrl = (name) => `${SB}/functions/v1/${name}`;
 const sbAuthHeader = () => H.Authorization;
@@ -212,6 +289,8 @@ export {
   sbGet, sbGetOne, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc,
   // Storage
   sbStorageUpload, sbStorageDelete, sbStorageSign,
+  // Auth (GoTrue)
+  sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
   // Edge functions
   sbFunctionUrl, sbAuthHeader, sbFn,
 };

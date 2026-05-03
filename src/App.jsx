@@ -29,7 +29,11 @@ import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWork
 // Module-level setter exported by shared/sb.js so feature modules' H stays
 // in sync with App.jsx's H whenever auth state changes. Called alongside
 // every applyAuthToken() call below.
-import { applySharedAuthToken } from './shared/sb';
+import {
+  applySharedAuthToken,
+  sbGet, sbPost, sbPatch, sbDel, sbFn,
+  sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
+} from './shared/sb';
 
 // Shared readiness definitions — single source of truth for the auto-check
 // labels and manual-item list. Used by EditPanel's Contract Readiness card
@@ -77,55 +81,27 @@ const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZi
 // helpers imported from src/shared/permissions.js at the top of this file.
 // Adding/removing a permission for a user is now a SQL UPDATE — no deploy.
 
+// H constant kept as a transitional shim for the ~73 inline fetches in this
+// file that haven't been migrated to sb.js helpers yet. Each migration retires
+// one warning and one H reference; when the count hits zero, this constant
+// can go too. See tech-debt #6 Phase 2 in CLAUDE.md.
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
-const sbGet = async (t, q = '') => (await fetch(`${SB}/rest/v1/${t}?${q}`, { headers: H })).json();
-const sbPatch = async (t, id, b) => { const r = await fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'PATCH', headers: {...H, Prefer: 'return=minimal'}, body: JSON.stringify(b) }); if (!r.ok && r.status !== 204) { const txt = await r.text(); throw new Error(`PATCH ${t} failed (${r.status}): ${txt}`); } return {}; };
-const sbPost = async (t, b) => (await fetch(`${SB}/rest/v1/${t}`, { method: 'POST', headers: H, body: JSON.stringify(b) })).json();
-const sbDel = async (t, id) => fetch(`${SB}/rest/v1/${t}?id=eq.${id}`, { method: 'DELETE', headers: H });
-// Auth — GoTrue REST helpers (Supabase Auth). Sessions are stored in localStorage
-// under fc_auth. When a session is active, H.Authorization carries the user's JWT
-// (instead of the anon key); PostgREST accepts both so existing "public all" RLS
-// policies keep working.
+// sbGet / sbPost / sbPatch / sbDel are imported from shared/sb.js at the top
+// of this file (replacing the prior local wrappers, retired 2026-05-03).
+// Behavior differences from the prior local versions:
+//   - sbDel now throws on non-2xx instead of returning a Response object.
+//     Callers that read .ok / .status / .text() on the return value were
+//     adapted in the same migration commit.
+//   - sbPatch returns null instead of {}. Same falsy semantics; no callers
+//     checked the truthy value.
+// Auth — GoTrue REST. Helpers (sbAuthSignIn / sbAuthSignOut / sbAuthRecover /
+// sbAuthGetUser / sbAuthRefresh / sbAuthUpdatePassword) live in shared/sb.js
+// and are imported at the top of this file (migrated from local wrappers,
+// 2026-05-03). Sessions are stored in localStorage under fc_auth. When a
+// session is active, H.Authorization carries the user's JWT (instead of the
+// anon key); PostgREST accepts both so existing "public all" RLS policies
+// keep working.
 const AUTH_STORAGE_KEY = 'fc_auth';
-const authHeaders = () => ({ apikey: KEY, 'Content-Type': 'application/json' });
-const authSignIn = async (email, password) => {
-  const res = await fetch(`${SB}/auth/v1/token?grant_type=password`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password }) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.msg || data.error || 'Invalid email or password');
-  return data;
-};
-const authSignOut = async (accessToken) => {
-  try { await fetch(`${SB}/auth/v1/logout`, { method: 'POST', headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } }); } catch(e) {}
-};
-const authRecover = async (email) => {
-  const redirectTo = window.location.origin;
-  const res = await fetch(`${SB}/auth/v1/recover`, {
-    method: 'POST',
-    headers: { apikey: KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, gotrue_meta_security: {} })
-  });
-  if (!res.ok) {
-    let msg = 'Could not send reset email';
-    try { const d = await res.json(); msg = d.error_description || d.msg || d.message || msg; } catch(e) {}
-    throw new Error(msg);
-  }
-};
-const authGetUser = async (accessToken) => {
-  const res = await fetch(`${SB}/auth/v1/user`, { headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) throw new Error('Session expired');
-  return res.json();
-};
-const authRefresh = async (refreshToken) => {
-  const res = await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ refresh_token: refreshToken }) });
-  if (!res.ok) throw new Error('Refresh failed');
-  return res.json();
-};
-const authUpdatePassword = async (accessToken, newPassword) => {
-  const res = await fetch(`${SB}/auth/v1/user`, { method: 'PUT', headers: { ...authHeaders(), Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ password: newPassword }) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.msg || 'Could not update password');
-  return data;
-};
 const loadStoredSession = () => { try { const raw = localStorage.getItem(AUTH_STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; } };
 const saveStoredSession = (s) => { try { if (s) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(s)); else localStorage.removeItem(AUTH_STORAGE_KEY); } catch(e) {} };
 const applyAuthToken = (accessToken) => {
@@ -142,7 +118,7 @@ const applyAuthToken = (accessToken) => {
 const AuthContext = React.createContext(null);
 const useAuth = () => React.useContext(AuthContext);
 
-const fireAlert = (type, job) => { try { fetch(`${SB}/functions/v1/send-alert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` }, body: JSON.stringify({ event: type, job }) }); } catch(e) {} };
+const fireAlert = (type, job) => { try { sbFn('send-alert', { event: type, job }).catch(()=>{}); } catch(e) {} };
 
 // Module-level current-user tracker. AuthProvider's useEffect calls
 // setCurrentUserEmail() whenever the user object changes. logAct reads from
@@ -212,21 +188,17 @@ const syncFenceAddons = (row) => {
 const fireNewProjectEmail = (j) => {
   if (!j) return;
   try {
-    fetch(`${SB}/functions/v1/billing-alerts`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'new_project',
-        jobNumber: j.job_number || '',
-        jobName: j.job_name || '',
-        market: j.market || '',
-        pm: j.pm || '',
-        salesRep: j.sales_rep || '',
-        contractValue: Number(j.contract_value) || 0,
-        status: j.status || '',
-        recipient: 'violet@fencecrete.com',
-        subject: `New Project Created — ${j.job_name || 'Untitled'} (${j.job_number || '—'})`
-      })
+    sbFn('billing-alerts', {
+      type: 'new_project',
+      jobNumber: j.job_number || '',
+      jobName: j.job_name || '',
+      market: j.market || '',
+      pm: j.pm || '',
+      salesRep: j.sales_rep || '',
+      contractValue: Number(j.contract_value) || 0,
+      status: j.status || '',
+      recipient: 'violet@fencecrete.com',
+      subject: `New Project Created — ${j.job_name || 'Untitled'} (${j.job_number || '—'})`
     }).catch(e => console.error('[new_project email] failed:', e));
   } catch (e) { console.error('[new_project email] threw:', e); }
 };
@@ -1435,12 +1407,7 @@ function JobDiagnostic({jobId}){
     if(!jobId)return;
     setBusy(true);setError(null);
     try{
-      const res=await fetch(`${SB}/functions/v1/job-explainer`,{
-        method:'POST',
-        headers:H,
-        body:JSON.stringify({job_id:jobId}),
-      });
-      const d=await res.json();
+      const d=await sbFn('job-explainer', {job_id:jobId});
       if(d.error)throw new Error(d.error);
       setExplanation(d.explanation);
       setSummary(d.data_summary);
@@ -2111,13 +2078,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       // by mistake when `job` was constructed from leads instead of jobs.
       // Falls back to job.id if resolution misses (rare: typo'd job_number).
       const resolvedJobId = (await resolveJobId(job)) || job.id;
-      const res=await fetch(`${SB}/functions/v1/pis-send`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${KEY}`},
-        body:JSON.stringify({job_id:resolvedJobId,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'}),
-      });
-      const data=await res.json();
-      if(!res.ok||!data.success){throw new Error(data.error||'Send failed');}
+      const data=await sbFn('pis-send', {job_id:resolvedJobId,job_number:job.job_number,job_name:job.job_name,sent_to_email:pisEmail.trim(),sent_to_name:pisName.trim()||pisEmail.trim(),sent_by:auth?.user?.email||'contracts@fencecrete.com'});
+      if(!data.success){throw new Error(data.error||'Send failed');}
       setPisEmail('');setPisName('');
       setPisToast('Sent to '+pisEmail.trim()+'. Customer will receive email shortly.');
       loadPisData();
@@ -2158,13 +2120,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     try{
       const payload={job_id:job.id,source:sharepointSource};
       if(sharepointSource==='existing')payload.source_folder_url=sharepointSourceUrl;
-      const res=await fetch(`${SB}/functions/v1/create-sharepoint-folder`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json',apikey:KEY,Authorization:`Bearer ${KEY}`},
-        body:JSON.stringify(payload),
-      });
-      const data=await res.json().catch(()=>({}));
-      if(!res.ok||!data.success){throw new Error(data.error||`Folder creation failed (${res.status})`);}
+      const data=await sbFn('create-sharepoint-folder', payload);
+      if(!data.success){throw new Error(data.error||'Folder creation failed');}
       setForm(p=>({...p,sharepoint_folder_url:data.url}));
       logAct(job,'field_update','sharepoint_folder_url','',data.url||'');
       // Emit a system event so the spine can route a notification to Amiee
@@ -2318,7 +2275,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         if(!liRes.ok){const txt=await liRes.text();console.error('CO sub-lines save failed:',txt);setCOToast({msg:'CO header saved but sub-lines failed: '+txt.slice(0,120),kind:'error'});}
       }
       // Non-blocking email alert
-      fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:autoNum,amount:computedAmount,description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${autoNum}`})}).catch(e=>console.error('CO email alert failed:',e));
+      sbFn('billing-alerts', {type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:autoNum,amount:computedAmount,description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${autoNum}`}).catch(e=>console.error('CO email alert failed:',e));
       setShowCOForm(false);
       setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{bu:'',obj:'',subs:'',description:'',amount:''}]});
       await reloadCOs();
@@ -2731,13 +2688,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                   setPisExtractResult(null);
                   setPisExtractError(null);
                   try {
-                    const res = await fetch(`${SB}/functions/v1/pis-extract-from-sharepoint`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}`, apikey: KEY },
-                      body: JSON.stringify({ job_id: job.id }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || data.details || `HTTP ${res.status}`);
+                    const data = await sbFn('pis-extract-from-sharepoint', { job_id: job.id });
                     if (!data.found) throw new Error(data.reason || 'No PIS file found in the SharePoint folder.');
                     setPisExtractResult(data);
                   } catch (e) {
@@ -4014,8 +3965,7 @@ function CommandPalette({open,onClose,jobs,onNavPage,onOpenJob}){
       setAiSearching(true);
       try{
         const jobSummary=(jobs||[]).slice(0,150).map(j=>({id:j.id,name:j.job_name,number:j.job_number,customer:j.customer_name,market:j.market,status:j.status,pm:j.pm,value:j.adj_contract_value||j.contract_value,lf:j.total_lf,rep:j.sales_rep}));
-        const res=await fetch(`${SB}/functions/v1/chat-assistant`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message:`You are a search filter for Fencecrete OPS. Given this query: "${q}", return a JSON array of job IDs from the following jobs that match. Return ONLY a JSON array of id strings, no other text. Jobs: ${JSON.stringify(jobSummary)}`})});
-        const data=await res.json();
+        const data=await sbFn('chat-assistant', {message:`You are a search filter for Fencecrete OPS. Given this query: "${q}", return a JSON array of job IDs from the following jobs that match. Return ONLY a JSON array of id strings, no other text. Jobs: ${JSON.stringify(jobSummary)}`});
         const text=data?.response||data?.content?.[0]?.text||'';
         const match=text.match(/\[[\s\S]*?\]/);
         if(match){
@@ -4105,7 +4055,7 @@ function WeeklyDigest({jobs,active}){
     });
   },[jobs,active]);
   const sendDigest=async()=>{setSending(true);try{
-    await fetch(`${SB}/functions/v1/billing-alerts`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${KEY}`},body:JSON.stringify(digestStats?{productionRemovals:digestStats.productionRemovals}:{})});
+    await sbFn('billing-alerts', digestStats?{productionRemovals:digestStats.productionRemovals}:{});
     setLastSent(new Date().toLocaleString());
   }catch(e){}setSending(false);};
   const pr=digestStats?.productionRemovals;
@@ -4143,7 +4093,7 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   useEffect(()=>{setLastRefreshed(new Date());},[refreshKey]);
   const[remindSending,setRemindSending]=useState(false);
   const[dashToast,setDashToast]=useState(null);
-  const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
+  const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const data=await sbFn('bill-sheet-reminder');setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
   const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
@@ -4826,7 +4776,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const[bilQuickView,setBilQuickView]=useState(null);
   
   const[bilRemindSending,setBilRemindSending]=useState(false);
-  const sendBilReminders=async()=>{setBilRemindSending(true);try{const res=await fetch(`${SB}/functions/v1/bill-sheet-reminder`,{method:'POST',headers:{Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'}});const txt=await res.text();if(!res.ok)throw new Error(txt);const data=txt?JSON.parse(txt):{};setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
+  const sendBilReminders=async()=>{setBilRemindSending(true);try{const data=await sbFn('bill-sheet-reminder');setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
@@ -5867,7 +5817,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
         setSubs(prev=>[rec,...prev]);
       }
       setToast(`Submitted: ${job.job_name}`);
-      fetch(`${SB}/functions/v1/bill-sheet-submitted-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:rec,job})}).catch(e=>console.error('Notification failed:',e));
+      sbFn('bill-sheet-submitted-notification', {submission:rec,job}).catch(e=>console.error('Notification failed:',e));
       setEditingRow(null);
       setExpandedRow(null);
     }catch(e){
@@ -8975,7 +8925,7 @@ function MaterialCalcPage({jobs,preJob,onNav}){
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Linear Feet</span><div style={{fontWeight:700,fontSize:14}}>{n(lf).toLocaleString()}</div></div>
         <div><span style={{fontSize:10,color:'#9E9B96',textTransform:'uppercase'}}>Sections</span><div style={{fontWeight:700,fontSize:14}}>{result.sections}</div></div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          {selJob&&<button onClick={async()=>{try{const shouldAdvance=selJob.status==='contract_review';const matBody={material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString(),drainage_needed:!!drainageNeeded,drainage_style:drainageNeeded?(drainageStyle||null):null,drainage_bottom_count:drainageNeeded?n(drainageBottom)||0:0,drainage_top_count:drainageNeeded?n(drainageTop)||0:0,number_of_gates:n(numGates)||0,gate_height:gateHeight||null,gate_size:gateSize||null,...(shouldAdvance&&{status:'production_queue'})};await sbPatch('jobs',selJob.id,matBody);setToast(shouldAdvance?'Materials saved + job moved to Production Queue':'Materials saved to '+selJob.job_name);fetch(`${SB}/functions/v1/production-order-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:{...selJob,...matBody}})}).catch(e=>console.error('Production order notification failed:',e));if(shouldAdvance){/* Spine handles status-change notifications via trg_jobs_status_changed_emit on the sbPatch above. */}}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save & Send to Production</button>}
+          {selJob&&<button onClick={async()=>{try{const shouldAdvance=selJob.status==='contract_review';const matBody={material_posts_line:ov('linePosts',result.linePosts),material_posts_corner:ov('cornerPosts',result.cornerPosts),material_posts_stop:ov('stopPosts',result.stopPosts),material_panels_regular:ov('regularPanels',result.regularPanels),material_panels_half:ov('halfPanels',result.halfPanels)||0,material_rails_regular:ov('capRails',result.capRails),material_rails_top:ov('topRails',result.topRails),material_rails_bottom:ov('bottomRails',result.bottomRails),material_rails_center:ov('middleRails',result.middleRails),material_caps_line:ov('lineCaps',result.lineCaps),material_caps_stop:ov('stopCaps',result.stopCaps),material_post_height:result.postHeight,material_calc_date:new Date().toISOString(),drainage_needed:!!drainageNeeded,drainage_style:drainageNeeded?(drainageStyle||null):null,drainage_bottom_count:drainageNeeded?n(drainageBottom)||0:0,drainage_top_count:drainageNeeded?n(drainageTop)||0:0,number_of_gates:n(numGates)||0,gate_height:gateHeight||null,gate_size:gateSize||null,...(shouldAdvance&&{status:'production_queue'})};await sbPatch('jobs',selJob.id,matBody);setToast(shouldAdvance?'Materials saved + job moved to Production Queue':'Materials saved to '+selJob.job_name);sbFn('production-order-notification', {job:{...selJob,...matBody}}).catch(e=>console.error('Production order notification failed:',e));if(shouldAdvance){/* Spine handles status-change notifications via trg_jobs_status_changed_emit on the sbPatch above. */}}catch(e){setToast('Save failed');}}} style={{...btnP,background:'#065F46',padding:'6px 16px',fontSize:12}}>Save & Send to Production</button>}
           <button onClick={()=>setShowPrint(true)} style={{...btnP,padding:'6px 16px',fontSize:12}}>Print Production Order</button>
         </div>
       </div>
@@ -9864,25 +9814,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       } catch (e) { /* fall back to baseline */ }
 
       // Call production-scheduler edge function (holds API key securely)
-      const response = await fetch(`${SB}/functions/v1/production-scheduler`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${KEY}`
-        },
-        body: JSON.stringify({
-          jobs: eligibleJobs,
-          weekStart: weekStart.toISOString().split('T')[0],
-          horizonEnd: horizonEnd.toISOString().split('T')[0],
-          styleCapacity,
-          poolCapacity,
-          installCrewLfPerDay: 50,  // per David: 4-person crew installs 50 LF/day (precast)
-          leaderCount,
-        })
+      const parsed = await sbFn('production-scheduler', {
+        jobs: eligibleJobs,
+        weekStart: weekStart.toISOString().split('T')[0],
+        horizonEnd: horizonEnd.toISOString().split('T')[0],
+        styleCapacity,
+        poolCapacity,
+        installCrewLfPerDay: 50,  // per David: 4-person crew installs 50 LF/day (precast)
+        leaderCount,
       });
-
-      if (!response.ok) throw new Error(`Edge function error: ${response.status}`);
-      const parsed = await response.json();
       
       if (parsed.error) throw new Error(parsed.error + (parsed.details ? ': ' + parsed.details : ''));
 
@@ -10243,7 +10183,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         }
       }
       setToast({msg:`Plan saved for ${planDate}`,ok:true});
-      fetch(`${SB}/functions/v1/production-plan-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals})}).catch(()=>{});
+      sbFn('production-plan-notification', {plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals}).catch(()=>{});
     }catch(e){console.error('Save plan error:',e);setToast({msg:'Save failed: '+e.message,ok:false});}
     setSavingPlan(false);
   };
@@ -11253,7 +11193,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         }
       }
       setToast({msg:`Plan saved for ${planDate}`,ok:true});
-      fetch(`${SB}/functions/v1/production-plan-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals})}).catch(e=>console.error('Plan notification failed:',e));
+      sbFn('production-plan-notification', {plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals}).catch(e=>console.error('Plan notification failed:',e));
     }catch(e){console.error('Save plan error:',e);setToast({msg:'Save failed: '+e.message,ok:false});}
     setSavingPlan(false);
   };
@@ -11377,7 +11317,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         }
       }catch(e){console.error('Auto-advance inventory check failed:',e);}
       setToast({msg:`Shift ${shift} report submitted for ${actualsDate}`,ok:true});
-      fetch(`${SB}/functions/v1/production-actuals-notification`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actuals_date:actualsDate,shift,logged_by:loggedBy,crew_size:crewSize,lines:toSubmit,totals:actualsTotals,shift_notes:actualsNotes})}).catch(e=>console.error('Actuals notification failed:',e));
+      sbFn('production-actuals-notification', {actuals_date:actualsDate,shift,logged_by:loggedBy,crew_size:crewSize,lines:toSubmit,totals:actualsTotals,shift_notes:actualsNotes}).catch(e=>console.error('Actuals notification failed:',e));
       // Clear for next shift + refresh shift submissions
       setActualsLines(prev=>prev.map(l=>{const blankAct={};PIECE_TYPES.forEach(pt=>{blankAct[pt.key]='';});return{...l,actual:blankAct,actual_lf:'',adjustment_reason:'',notes:''};}));
       setActualsNotes('');
@@ -11933,8 +11873,7 @@ function MoldInventoryPage(){
     setDelBusy(true);
     const id=confirmDel.id;
     try{
-      const r=await sbDel('mold_inventory',id);
-      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      await sbDel('mold_inventory',id);  // throws on non-2xx; outer catch handles
       setConfirmDel(null);
       toast.success('Mold record deleted');
       fetchRows();
@@ -12228,8 +12167,7 @@ function MoldPostsTab({rows,setRows,isAdmin,loading,styleOptions}){
     const removed=confirmDel;
     setRows(rs=>rs.filter(r=>r.id!==id));
     try{
-      const r=await sbDel('mold_inventory_post',id);
-      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      await sbDel('mold_inventory_post',id);  // throws on non-2xx; outer catch handles
       toast.success('Removed');
       setConfirmDel(null);
     }catch(e){
@@ -12439,8 +12377,7 @@ function MoldRailsTab({rows,setRows,isAdmin,loading,styleOptions}){
     const id=confirmDel.id;const removed=confirmDel;
     setRows(rs=>rs.filter(r=>r.id!==id));
     try{
-      const r=await sbDel('mold_inventory_rail',id);
-      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      await sbDel('mold_inventory_rail',id);  // throws on non-2xx; outer catch handles
       toast.success('Removed');setConfirmDel(null);
     }catch(e){
       setRows(rs=>[...rs,removed]);
@@ -12643,8 +12580,7 @@ function MoldCapsTab({rows,setRows,isAdmin,loading,styleOptions}){
     const id=confirmDel.id;const removed=confirmDel;
     setRows(rs=>rs.filter(r=>r.id!==id));
     try{
-      const r=await sbDel('mold_inventory_cap',id);
-      if(r&&r.ok===false&&r.status!==204){const txt=await r.text();throw new Error(`(${r.status}) ${txt}`);}
+      await sbDel('mold_inventory_cap',id);  // throws on non-2xx; outer catch handles
       toast.success('Removed');setConfirmDel(null);
     }catch(e){
       setRows(rs=>[...rs,removed]);
@@ -13306,12 +13242,7 @@ function ProposalValidatorPage(){
     setError(null);setResult(null);setBusy(true);
     try{
       const body=mode==='text'?{text}:{pdfBase64,filename:pdfFile?.name};
-      const res=await fetch(`${SB}/functions/v1/proposal-validator`,{
-        method:'POST',
-        headers:H,
-        body:JSON.stringify(body),
-      });
-      const d=await res.json();
+      const d=await sbFn('proposal-validator', body);
       if(d.error)throw new Error(d.error);
       setResult(d.result);
       setUsage({tokens_in:d.tokens_in,tokens_out:d.tokens_out,model:d.model});
@@ -13658,12 +13589,7 @@ function DigestSender(){
   const call=async(dryRun)=>{
     setBusy(true);setError(null);setSentOK(false);
     try{
-      const res=await fetch(`${SB}/functions/v1/demand-digest`,{
-        method:'POST',
-        headers:H,
-        body:JSON.stringify(dryRun?{dryRun:true}:{}),
-      });
-      const d=await res.json();
+      const d=await sbFn('demand-digest', dryRun?{dryRun:true}:{});
       if(d.error)throw new Error(d.error);
       if(dryRun){setPreview(d.digest);}
       else{setSentOK(true);setPreview(d.digest);}
@@ -14252,12 +14178,7 @@ function DemandPlannerCopilot({tab,data}){
     setMessages(newConv);
     setAsking(true);
     try{
-      const res=await fetch(`${SB}/functions/v1/demand-copilot`,{
-        method:'POST',
-        headers:H,
-        body:JSON.stringify({question:q,snapshot:buildSnapshot(),conversation:messages}),
-      });
-      const d=await res.json();
+      const d=await sbFn('demand-copilot', {question:q,snapshot:buildSnapshot(),conversation:messages});
       if(d.error){
         setMessages(c=>[...c,{role:'assistant',content:`⚠️ ${d.error}`}]);
       }else{
@@ -20695,10 +20616,7 @@ function FleetPage({jobs}){
         }
 
         try{
-          await fetch(`${SB}/functions/v1/fleet-defect-alert`,{
-            method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-            body:JSON.stringify({equipment:inspectEquip,inspection:inspectForm,defects:failed,workOrderId:woId})
-          });
+          await sbFn('fleet-defect-alert', {equipment:inspectEquip,inspection:inspectForm,defects:failed,workOrderId:woId});
         }catch(e){console.warn('Alert failed',e);}
 
         setToast({msg:`⚠ ${failed.length} defect(s) logged — Work Order created`,ok:true});
@@ -21430,11 +21348,7 @@ function ProspectingPage({jobs}){
   const runResearch=async()=>{
     setResearching(true);setResearchResult(null);
     try{
-      const resp=await fetch(`${SB}/functions/v1/prospect-researcher`,{
-        method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({})
-      });
-      const data=await resp.json();
+      const data=await sbFn('prospect-researcher', {});
       setResearchResult(data);
       if(data.new_targets_found>0){setToast({msg:`✅ Found ${data.new_targets_found} new target${data.new_targets_found>1?'s':''}! Refreshing...`,ok:true});load();}
       else{setToast({msg:'Research complete — no new targets found this week',ok:true});}
@@ -21447,12 +21361,8 @@ function ProspectingPage({jobs}){
     try{
       const coContacts=contacts.filter(c=>c.company_id===co.id);
       const coActivities=activities.filter(a=>a.company_id===co.id).slice(0,5);
-      const resp=await fetch(`${SB}/functions/v1/prospect-outreach`,{
-        method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({company:co,contacts:coContacts,recentActivities:coActivities,
-          existingCustomer:co.fencecrete_relationship==='active_customer'})
-      });
-      const data=await resp.json();
+      const data=await sbFn('prospect-outreach', {company:co,contacts:coContacts,recentActivities:coActivities,
+        existingCustomer:co.fencecrete_relationship==='active_customer'});
       if(data.subject&&data.body){setAiDraft(data);}
       else{setToast({msg:'AI draft failed: '+(data.error||'Unknown error'),ok:false});}
     }catch(e){setToast({msg:'AI draft failed: '+e.message,ok:false});}
@@ -25280,7 +25190,7 @@ function LoginPage(){
   const forgot = async (e) => {
     e.preventDefault(); setError(''); setLoading(true);
     try {
-      await authRecover(email.trim());
+      await sbAuthRecover(email.trim());
       setForgotSent(true);
     } catch (err) {
       const msg = err.message || '';
@@ -25353,7 +25263,7 @@ function RecoveryPage({ accessToken, onDone }){
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setLoading(true);
-    try { await authUpdatePassword(accessToken, password); onDone(); }
+    try { await sbAuthUpdatePassword(accessToken, password); onDone(); }
     catch (err) { setError(err.message || 'Could not set password'); }
     setLoading(false);
   };
@@ -25420,7 +25330,7 @@ function ProfileModal({ onClose }){
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setSaving(true);
-    try { await authUpdatePassword(session.access_token, password); __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Password updated'})); setMode('view'); setPassword(''); setConfirm(''); }
+    try { await sbAuthUpdatePassword(session.access_token, password); __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Password updated'})); setMode('view'); setPassword(''); setConfirm(''); }
     catch (err) { setError(err.message || 'Could not update password'); }
     setSaving(false);
   };
@@ -25709,7 +25619,7 @@ export default function App(){
       if (!stored || !stored.access_token) { setLoading(false); return; }
       applyAuthToken(stored.access_token);
       try {
-        const u = await authGetUser(stored.access_token);
+        const u = await sbAuthGetUser(stored.access_token);
         setSession(stored); setUser(u);
         const rows = await sbGet('user_profiles', `email=eq.${encodeURIComponent(u.email||'')}&limit=1`);
         setProfile((rows&&rows[0])||null);
@@ -25717,7 +25627,7 @@ export default function App(){
         // Try refresh
         if (stored.refresh_token) {
           try {
-            const fresh = await authRefresh(stored.refresh_token);
+            const fresh = await sbAuthRefresh(stored.refresh_token);
             saveStoredSession(fresh); applyAuthToken(fresh.access_token);
             setSession(fresh); setUser(fresh.user);
             const rows = await sbGet('user_profiles', `email=eq.${encodeURIComponent(fresh.user?.email||'')}&limit=1`);
@@ -25731,11 +25641,11 @@ export default function App(){
       }
       setLoading(false);
       // Auto-reconnect: if page becomes visible after being hidden, re-check session
-      const handleVisibility=()=>{if(document.visibilityState==='visible'){const s=loadStoredSession();if(s&&s.refresh_token){authRefresh(s.refresh_token).then(fresh=>{saveStoredSession(fresh);applyAuthToken(fresh.access_token);setSession(fresh);setUser(fresh.user);}).catch(()=>{});}}};document.addEventListener('visibilitychange',handleVisibility);return()=>document.removeEventListener('visibilitychange',handleVisibility);
+      const handleVisibility=()=>{if(document.visibilityState==='visible'){const s=loadStoredSession();if(s&&s.refresh_token){sbAuthRefresh(s.refresh_token).then(fresh=>{saveStoredSession(fresh);applyAuthToken(fresh.access_token);setSession(fresh);setUser(fresh.user);}).catch(()=>{});}}};document.addEventListener('visibilitychange',handleVisibility);return()=>document.removeEventListener('visibilitychange',handleVisibility);
     })();
   },[]);
   const signIn = useCallback(async (email, password) => {
-    const data = await authSignIn(email, password);
+    const data = await sbAuthSignIn(email, password);
     saveStoredSession(data); applyAuthToken(data.access_token);
     setSession(data); setUser(data.user);
     try {
@@ -25744,7 +25654,7 @@ export default function App(){
     } catch(e) { setProfile(null); }
   },[]);
   const signOut = useCallback(async () => {
-    if (session?.access_token) await authSignOut(session.access_token);
+    if (session?.access_token) await sbAuthSignOut(session.access_token);
     saveStoredSession(null); applyAuthToken(null);
     setSession(null); setUser(null); setProfile(null);
   },[session]);
