@@ -53,6 +53,20 @@ async function sbGetOne(t, q = '') {
   return res.json();
 }
 
+// Count rows matching the query without reading the row data. Uses
+// PostgREST's `Prefer: count=exact` + `Range: 0-0` to get the count via the
+// response's Content-Range header. ~100x faster than fetching all rows just
+// to get .length when the table is large.
+async function sbCount(t, q = '') {
+  const res = await fetch(`${SB}/rest/v1/${t}?${q}${q ? '&' : ''}select=id&limit=1`, {
+    headers: { ...H, Prefer: 'count=exact' },
+  });
+  await _check(res, `COUNT ${t}`);
+  const cr = res.headers.get('content-range') || '';
+  const total = parseInt(cr.split('/')[1] || '0', 10);
+  return Number.isFinite(total) ? total : 0;
+}
+
 // ─── REST: POST (insert) ────────────────────────────────────────────────────
 // Default behavior preserved (returns .json() without throwing) for backward
 // compat with existing App.jsx callers. Opts:
@@ -286,7 +300,7 @@ export {
   // Core
   SB, KEY, H, applySharedAuthToken,
   // REST
-  sbGet, sbGetOne, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc,
+  sbGet, sbGetOne, sbCount, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc,
   // Storage
   sbStorageUpload, sbStorageDelete, sbStorageSign,
   // Auth (GoTrue)

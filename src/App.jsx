@@ -31,7 +31,7 @@ import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWork
 // every applyAuthToken() call below.
 import {
   applySharedAuthToken,
-  sbGet, sbPost, sbPatch, sbDel, sbFn,
+  sbGet, sbGetOne, sbCount, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc, sbFn,
   sbStorageUpload, sbStorageSign, sbStorageDelete,
   sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
 } from './shared/sb';
@@ -151,19 +151,15 @@ const logEvent = (event_type, { entity_type=null, entity_id=null, payload={}, ac
     // job/customer data). return=representation requires SELECT permission to
     // echo the row back, so it falsely surfaces as a 42501 RLS error. We don't
     // need the response anyway — this is fire-and-forget.
-    fetch(`${SB}/rest/v1/system_events`, {
-      method: 'POST',
-      headers: { ...H, Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        event_type,
-        event_category,
-        actor_type: 'user',
-        actor_label: actor_email || 'desktop',
-        entity_type,
-        entity_id,
-        payload,
-      }),
-    });
+    sbPost('system_events', {
+      event_type,
+      event_category,
+      actor_type: 'user',
+      actor_label: actor_email || 'desktop',
+      entity_type,
+      entity_id,
+      payload,
+    }, { returnMinimal: true }).catch(()=>{});
   } catch(e) { /* spine emission is never allowed to break the UI */ }
 };
 // Keeps fence_addons in sync with a job row's scalar fields. Adds/removes the
@@ -832,13 +828,9 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
       setPisRow(Array.isArray(rows)&&rows.length>0?rows[0]:null);
     }).catch(()=>{if(!cancelled)setPisRow(null);});
     // PostgREST count via Prefer: count=exact + a HEAD-like select=id&limit=1 (fastest signal)
-    fetch(`${SB}/rest/v1/project_attachments?job_id=eq.${job.id}&deleted_at=is.null&select=id&limit=1`,{
-      headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,Prefer:'count=exact'},
-    }).then(r=>{
-      const cr=r.headers.get('content-range')||'';
-      const total=parseInt(cr.split('/')[1]||'0',10);
-      if(!cancelled)setDocCount(Number.isFinite(total)?total:0);
-    }).catch(()=>{if(!cancelled)setDocCount(null);});
+    sbCount('project_attachments', `job_id=eq.${job.id}&deleted_at=is.null`)
+      .then(total=>{if(!cancelled)setDocCount(total);})
+      .catch(()=>{if(!cancelled)setDocCount(null);});
     // Company master fetch — only when job.company_id is set. is_residential
     // jobs and unlinked jobs skip this entirely (no wasted query).
     if(job.company_id){
@@ -1688,12 +1680,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       not_applicable:action==='not_applicable',
       updated_at:now,
     };
-    // Use upsert via PostgREST — on_conflict on (job_id,item_key)
-    await fetch(`${SB}/rest/v1/contract_readiness_items?on_conflict=job_id,item_key`,{
-      method:'POST',
-      headers:{...H,'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body:JSON.stringify(body),
-    });
+    // Upsert via PostgREST — on_conflict on (job_id,item_key)
+    await sbUpsert('contract_readiness_items', body, { onConflict: 'job_id,item_key', returnRepresentation: false });
     fetchReadiness();
   };
 
@@ -1751,19 +1739,14 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         if(k==='bonding_required'||k==='taxable'){payload[k]=v===true||v==='true'?true:v===false||v==='false'?false:null;}
         else payload[k]=v===''||v==null?null:v;
       });
-      let res;
       if(latest&&latest.id){
         // PATCH existing row
-        res=await fetch(`${SB}/rest/v1/project_info_sheets?id=eq.${latest.id}`,{
-          method:'PATCH',
-          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
-          body:JSON.stringify(payload),
-        });
+        await sbPatch('project_info_sheets', latest.id, payload);
       }else{
         // INSERT new row — minimum columns required: job_id (NOT NULL), plus
         // job_number / job-address fields hydrated from the job row so reports
         // and email rules find the same data shape as a customer-submitted PIS.
-        const insertPayload={
+        await sbPost('project_info_sheets', {
           ...payload,
           job_id:job.id,
           job_number:job.job_number||null,
@@ -1772,14 +1755,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           job_state:job.state||null,
           job_zip:job.zip||null,
           // submitted_at intentionally NULL — flags this as Amiee-entered, not customer-submitted
-        };
-        res=await fetch(`${SB}/rest/v1/project_info_sheets`,{
-          method:'POST',
-          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
-          body:JSON.stringify(insertPayload),
-        });
+        }, { throwOnError: true });
       }
-      if(!res.ok){const txt=await res.text();throw new Error(`Save failed (${res.status}): ${txt.slice(0,200)}`);}
       setPartiesToast({kind:'success',msg:'Parties saved'});
       // Refresh the PIS sheets list so the next render seeds from latest values
       await loadPisData();
@@ -1830,13 +1807,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   useEffect(()=>{
     if(!job?.id){setHeaderDocCount(null);return;}
     let cancelled=false;
-    fetch(`${SB}/rest/v1/project_attachments?job_id=eq.${job.id}&deleted_at=is.null&select=id&limit=1`,{
-      headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,Prefer:'count=exact'},
-    }).then(r=>{
-      const cr=r.headers.get('content-range')||'';
-      const total=parseInt(cr.split('/')[1]||'0',10);
-      if(!cancelled)setHeaderDocCount(Number.isFinite(total)?total:0);
-    }).catch(()=>{if(!cancelled)setHeaderDocCount(null);});
+    sbCount('project_attachments', `job_id=eq.${job.id}&deleted_at=is.null`)
+      .then(total=>{if(!cancelled)setHeaderDocCount(total);})
+      .catch(()=>{if(!cancelled)setHeaderDocCount(null);});
     return()=>{cancelled=true;};
   },[job?.id]);
 
@@ -1950,17 +1923,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         uploaded_by_email:(typeof currentUserEmail==='string'?currentUserEmail:null)||null,
         uploaded_by_name:friendlyName,
       };
-      const insertRes=await fetch(`${SB}/rest/v1/project_attachments`,{
-        method:'POST',
-        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
-        body:JSON.stringify(meta),
-      });
-      if(!insertRes.ok){
+      try{
+        await sbPost('project_attachments', meta, { throwOnError: true });
+      }catch(insertErr){
         // Storage put succeeded but DB insert failed. Try to clean up the
         // orphaned Storage object so we don't accumulate ghost files.
-        const txt=await insertRes.text();
         try{await sbStorageDelete('project-attachments', path);}catch(_){}
-        throw new Error(`Database insert failed (${insertRes.status}): ${txt.slice(0,200)}`);
+        throw new Error(`Database insert failed: ${(insertErr.message||'').slice(0,200)}`);
       }
       setUploadQueue(q=>q.filter(x=>x.id!==queueId));
       return{ok:true};
@@ -1981,12 +1950,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         deleted_by_email:(typeof currentUserEmail==='string'?currentUserEmail:'unknown')||'unknown',
         deleted_reason:reason||'no reason given',
       };
-      const res=await fetch(`${SB}/rest/v1/project_attachments?id=eq.${att.id}`,{
-        method:'PATCH',
-        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify(payload),
-      });
-      if(!res.ok){const txt=await res.text();throw new Error(`Delete failed (${res.status}): ${txt.slice(0,200)}`);}
+      await sbPatch('project_attachments', att.id, payload);
       return{ok:true};
     }catch(e){console.error('[Documents delete]',e);return{ok:false,error:e.message};}
   };
@@ -2154,7 +2118,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     }catch(e){setSaveErr('Reopen failed: '+e.message);}
     setReopening(false);
   };
-  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok)throw new Error(txt);const saved=txt?JSON.parse(txt):[];if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(rest)});const txt=await res.text();if(!res.ok&&res.status!==204)throw new Error(`Save failed (${res.status}): ${txt}`);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const saved=await sbPost('jobs',rest,{throwOnError:true});if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
   const handleSaveInstallDateOnly=async()=>{
     /* Narrow save path for sales reps and PMs who can edit Install Date but
        nothing else. Patches est_start_date only -- no other column is sent to
@@ -2163,12 +2127,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     setSaving(true);setSaveErr(null);
     try{
       const iso=form.est_start_date||null;
-      const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{
-        method:'PATCH',
-        headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
-        body:JSON.stringify({est_start_date:iso,updated_at:new Date().toISOString()})
-      });
-      if(!res.ok&&res.status!==204){const txt=await res.text();throw new Error(`Save failed (${res.status}): ${txt}`);}
+      await sbPatch('jobs', job.id, {est_start_date:iso,updated_at:new Date().toISOString()});
       fireAlert('job_updated',{id:job.id,est_start_date:iso});
       logAct(job,'field_update','est_start_date',job.est_start_date||'',iso||'');
       setSaving(false);
@@ -2231,9 +2190,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     const body={job_id:job.id,job_number:job.job_number||null,co_number:autoNum,amount:computedAmount,description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null,pdf_storage_path:pdfStoragePath};
     try{
       // Insert CO header, get back the id
-      const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});
-      if(!res.ok){const txt=await res.text();throw new Error(`CO save failed (${res.status}): ${txt}`);}
-      const saved=JSON.parse(await res.text());
+      const saved=await sbPost('change_orders', body, { throwOnError: true });
       const newCO=saved&&saved[0];
       // Insert sub-lines with co_id pointing to the new CO. Each line is flat-cost
       // (lf=1, contract_rate=amount, category='change_order') so line_value=amount.
@@ -2250,8 +2207,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           bu:l.bu||null, obj:l.obj||null, subs:l.subs||null,
           description:l.description||null,
         }));
-        const liRes=await fetch(`${SB}/rest/v1/job_line_items`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(lineRows)});
-        if(!liRes.ok){const txt=await liRes.text();console.error('CO sub-lines save failed:',txt);setCOToast({msg:'CO header saved but sub-lines failed: '+txt.slice(0,120),kind:'error'});}
+        try{
+          await sbPost('job_line_items', lineRows, { returnMinimal: true, throwOnError: true });
+        }catch(liErr){console.error('CO sub-lines save failed:',liErr);setCOToast({msg:'CO header saved but sub-lines failed: '+(liErr.message||'').slice(0,120),kind:'error'});}
       }
       // Non-blocking email alert
       sbFn('billing-alerts', {type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:autoNum,amount:computedAmount,description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${autoNum}`}).catch(e=>console.error('CO email alert failed:',e));
@@ -2288,8 +2246,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     if(!window.confirm(`Delete CO #${c.co_number||'—'}? This will also delete its line items. Cannot be undone.`))return;
     try{
       // Delete sub-lines first (FK constraint), then the CO header
-      await fetch(`${SB}/rest/v1/job_line_items?co_id=eq.${c.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
-      await fetch(`${SB}/rest/v1/change_orders?id=eq.${c.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+      await sbDelWhere('job_line_items', `co_id=eq.${c.id}`);
+      await sbDel('change_orders', c.id);
       await reloadCOs();
       if (typeof onRefresh === 'function') onRefresh();
       setCOToast({msg:'CO and its line items deleted',kind:'gray'});
@@ -3581,16 +3539,8 @@ function NewProjectForm({jobs,onClose,onSaved}){
         if(lt==='Lump Sum / Other')return n(li.amount)>0||n(li.rate)>0||(li.description||'').trim();
         return n(li.lf)>0||n(li.rate)>0;
       });
-      // STEP 1 — Insert the jobs row with explicit fetch + response.ok check so errors surface clearly
-      const jobRes=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
-      const jobTxt=await jobRes.text();
-      if(!jobRes.ok){
-        // Try to extract a useful error message from PostgREST's JSON error body
-        let msg=`Job insert failed (${jobRes.status})`;
-        try{const err=JSON.parse(jobTxt);msg=err.message||err.hint||err.details||msg;}catch(_){if(jobTxt)msg=jobTxt.slice(0,200);}
-        throw new Error(msg);
-      }
-      const saved=jobTxt?JSON.parse(jobTxt):[];
+      // STEP 1 — Insert the jobs row (sbPost throws on non-2xx with PostgREST error body extracted)
+      const saved=await sbPost('jobs', body, { throwOnError: true });
       if(!saved||!saved[0]||!saved[0].id){
         throw new Error('Job created but no row was returned from Supabase. Check PostgREST Prefer header.');
       }
@@ -3602,15 +3552,10 @@ function NewProjectForm({jobs,onClose,onSaved}){
         const dbItems=filled.map((li,i)=>toDBLineItem(li,i,jobRow)).filter(Boolean);
         if(dbItems.length>0){
           try{
-            const liRes=await fetch(`${SB}/rest/v1/job_line_items`,{method:'POST',headers:H,body:JSON.stringify(dbItems)});
-            if(!liRes.ok){
-              const liTxt=await liRes.text();
-              console.error('[NewProject] line items POST failed:',liRes.status,liTxt);
-              liWarning=`Job saved, but line items failed: ${liTxt.slice(0,150)}. Edit the project to add them.`;
-            }
+            await sbPost('job_line_items', dbItems, { throwOnError: true });
           }catch(liErr){
-            console.error('[NewProject] line items save threw:',liErr);
-            liWarning=`Job saved, but line items failed: ${liErr.message}. Edit the project to add them.`;
+            console.error('[NewProject] line items POST failed:',liErr);
+            liWarning=`Job saved, but line items failed: ${(liErr.message||'').slice(0,150)}. Edit the project to add them.`;
           }
         }
       }
@@ -4824,7 +4769,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const fetchInvEntries=useCallback(async(jobId,force=false)=>{if(!jobId)return;if(!force&&invCacheRef.current.has(jobId)){setInvEntries(invCacheRef.current.get(jobId));return;}setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);const arr=d||[];invCacheRef.current.set(jobId,arr);setInvEntries(arr);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
   const fetchArCOs=useCallback(async(jobId)=>{if(!jobId)return;try{const d=await sbGet('change_orders',`job_id=eq.${jobId}&order=created_at.asc`);setArCOs(d||[]);}catch(e){setArCOs([]);}},[]);
   const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
-  const deleteInvEntry=async(entryId,jobId)=>{try{await fetch(`${SB}/rest/v1/invoice_entries?id=eq.${entryId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
+  const deleteInvEntry=async(entryId,jobId)=>{try{await sbDel('invoice_entries',entryId);invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
@@ -5017,7 +4962,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
   const arUnreviewed=useMemo(()=>arSubs.filter(s=>!s.ar_reviewed),[arSubs]);
   const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
   const hasAnyReviewed=arReviewedCount>0;
-  const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${s.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
+  const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await sbDel('pm_bill_submissions',s.id);deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
   const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'Wood',bg:'#FEF3C7',fields:[['Wood Fencing','wood_fencing']]},{title:'One Line Items',bg:'#FAEEDA',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'};
   return(<div>
@@ -5744,7 +5689,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     setExpandedRow(job.id);
   };
 
-  const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
+  const resetSub=async(job,isAdmin)=>{const sub=subByJob[job.id];if(!sub)return;try{await sbDel('pm_bill_submissions',sub.id);if(isAdmin){try{await sbPost('activity_log',{job_id:job.id,job_number:job.job_number,job_name:job.job_name,action:'admin_bill_sheet_reset',field_name:'pm_bill_submissions',old_value:'reviewed',new_value:'reset',changed_by:'admin'});}catch(e2){}}setSubs(prev=>prev.filter(s=>s.id!==sub.id));setConfirmReset(null);setAdminPinJob(null);setAdminPin('');setToast(isAdmin?'Submission reset by admin':`Bill sheet reset for ${job.job_name}`);}catch(e){setToast({message:e.message||'Reset failed',isError:true});}};
 
   // Precast labor_post_* fields are STORED AS THE CONVERTED LF so the
   // downstream totals, AR dashboard, and read-only displays keep working
@@ -5770,25 +5715,14 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     try{
       const payload=buildPayload(job,form);
       const existing=subByJob[job.id];
-      let res;
+      let saved;
       if(existing&&existing.id){
         // EDIT path — PATCH the existing row by id.
-        res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{
-          method:'PATCH',
-          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
-          body:JSON.stringify(payload)
-        });
+        saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${existing.id}`, payload, { returnRepresentation: true });
       } else {
         // NEW submission — plain INSERT.
-        res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{
-          method:'POST',
-          headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},
-          body:JSON.stringify(payload)
-        });
+        saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });
       }
-      const resTxt=await res.text();
-      if(!res.ok)throw new Error(`Save failed (${res.status}): ${resTxt}`);
-      const saved=resTxt?JSON.parse(resTxt):[];
       const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
       if(existing){
         setSubs(prev=>prev.map(s=>s.id===existing.id?{...rec,id:existing.id}:s));
@@ -5822,21 +5756,14 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     const nowIso=new Date().toISOString();
     try{
       const existing=subByJob[job.id];
-      let res,saved;
       if(existing&&existing.id){
         const patch={...zeroed,total_lf:0,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,ytd_applied:false,submitted_by:selPM,submitted_at:nowIso};
-        res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${existing.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(patch)});
-        const txt=await res.text();
-        if(!res.ok)throw new Error(`Save failed (${res.status}): ${txt}`);
-        saved=txt?JSON.parse(txt):[];
+        const saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${existing.id}`, patch, { returnRepresentation: true });
         const rec=(Array.isArray(saved)?saved[0]:saved)||{...existing,...patch};
         setSubs(prev=>prev.map(s=>s.id===existing.id?{...rec,id:existing.id}:s));
       }else{
         const payload={billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:0,...zeroed,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,notes:'No bill required',ytd_applied:false,submitted_by:selPM,submitted_at:nowIso,ar_reviewed:false};
-        res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});
-        const txt=await res.text();
-        if(!res.ok)throw new Error(`Save failed (${res.status}): ${txt}`);
-        saved=txt?JSON.parse(txt):[];
+        const saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });
         const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
         setSubs(prev=>[rec,...prev]);
       }
@@ -5857,10 +5784,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const undoNoBill=async(job,sub)=>{
     if(!sub||!sub.id)return;
     try{
-      const res=await fetch(`${SB}/rest/v1/pm_bill_submissions?id=eq.${sub.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({no_bill_required:false,no_bill_reason:null,no_bill_notes:null})});
-      const txt=await res.text();
-      if(!res.ok)throw new Error(`Undo failed (${res.status}): ${txt}`);
-      const saved=txt?JSON.parse(txt):[];
+      const saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${sub.id}`, {no_bill_required:false,no_bill_reason:null,no_bill_notes:null}, { returnRepresentation: true });
       const rec=(Array.isArray(saved)?saved[0]:saved)||{...sub,no_bill_required:false,no_bill_reason:null,no_bill_notes:null};
       setSubs(prev=>prev.map(s=>s.id===sub.id?{...rec,id:sub.id}:s));
       setForms(prev=>({...prev,[job.id]:emptyForm()}));
@@ -5875,7 +5799,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
   const toggleSelect=(jobId)=>setSelected(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
   const toggleSelectAll=()=>{if(selected.size===missingJobs.length)setSelected(new Set());else setSelected(new Set(missingJobs.map(j=>j.id)));};
-  const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const res=await fetch(`${SB}/rest/v1/pm_bill_submissions`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});if(res.ok){const txt=await res.text();const saved=JSON.parse(txt);newRecs.push(saved[0]||saved);success++;}}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
+  const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });newRecs.push((Array.isArray(saved)?saved[0]:saved)||payload);success++;}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
 
   if(!selPM)return(<div>
     <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:24}}>PM Bill Sheet</h1>
@@ -6378,15 +6302,7 @@ function InstallDateEditor({j,locked,onSaved}){
     setSaving(true);setErr(null);
     try{
       const body={active_install_date:newDate||null};
-      const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${j.id}`,{
-        method:'PATCH',
-        headers:{apikey:KEY,Authorization:H.Authorization,'Content-Type':'application/json',Prefer:'return=minimal'},
-        body:JSON.stringify(body),
-      });
-      if(!res.ok&&res.status!==204){
-        const txt=await res.text();
-        throw new Error(`PATCH failed ${res.status}: ${txt}`);
-      }
+      await sbPatch('jobs', j.id, body);  // throws on non-2xx; outer catch handles
       // Audit log via the standard logAct path
       try{logAct(j,'install_date_edit','active_install_date',j.active_install_date||'(none)',newDate||'(cleared)');}catch(e){}
       // Refresh this job from the server so we pick up trigger-side changes
@@ -6555,7 +6471,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const submitPin=()=>{if(pinInput==='2020'){setEditUnlocked(true);setShowPinModal(false);setPinInput('');setPinError(false);}else{setPinError(true);setPinInput('');}};
   useEffect(()=>{if(!showPinModal)return;const onKey=(e)=>{if(e.key==='Escape'){setShowPinModal(false);setPinInput('');setPinError(false);}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[showPinModal]);
   const[moveToast,setMoveToast]=useState(null);
-  const move=async(job,ns)=>{if(!editUnlocked){console.warn('[Kanban] Move blocked — editing locked');return;}const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='material_ready')u.inventory_ready_date=today;if(ns==='active_install')u.active_install_date=today;if(ns==='fence_complete')u.fence_complete_date=today;if(ns==='fully_complete')u.fully_complete_date=today;if(ns==='closed')u.closed_date=today;if(ns==='canceled')u.canceled_date=today;try{const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${job.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(u)});if(!res.ok){const txt=await res.text();console.error('[Kanban] PATCH failed:',res.status,txt);setMoveToast({msg:`Move failed (${res.status}): ${txt}`,ok:false});return;}setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);setMoveToast({msg:`Moved ${job.job_name} to ${SL[ns]||ns}`,ok:true});/* Spine handles status-change notifications: the DB trigger trg_jobs_status_changed_emit (migration job_status_changed_event_emission_2026_04_27) emits a job.status_changed event when the PATCH above changes status, which the dispatcher routes through notifyJobStatusChangedRule. */}catch(e){console.error('[Kanban] Move error:',e);setMoveToast({msg:e.message||'Move failed',ok:false});}};
+  const move=async(job,ns)=>{if(!editUnlocked){console.warn('[Kanban] Move blocked — editing locked');return;}const u={status:ns};const today=new Date().toISOString().split('T')[0];if(ns==='material_ready')u.inventory_ready_date=today;if(ns==='active_install')u.active_install_date=today;if(ns==='fence_complete')u.fence_complete_date=today;if(ns==='fully_complete')u.fully_complete_date=today;if(ns==='closed')u.closed_date=today;if(ns==='canceled')u.canceled_date=today;try{await sbPatch('jobs', job.id, u);setJobs(prev=>prev.map(j=>j.id===job.id?{...j,...u}:j));fireAlert('job_updated',{...job,...u});logAct(job,'status_change','status',job.status,ns);setMoveToast({msg:`Moved ${job.job_name} to ${SL[ns]||ns}`,ok:true});/* Spine handles status-change notifications: the DB trigger trg_jobs_status_changed_emit (migration job_status_changed_event_emission_2026_04_27) emits a job.status_changed event when the PATCH above changes status, which the dispatcher routes through notifyJobStatusChangedRule. */}catch(e){console.error('[Kanban] Move error:',e);setMoveToast({msg:e.message||'Move failed',ok:false});}};
   // Merges a partial job update (e.g. install date edited inline on the card)
   // into the jobs list so the card re-renders without a full refetch. Used
   // as the onJobUpdated prop for ProdCard's InstallDateEditor.
@@ -9546,12 +9462,7 @@ function SplitAcrossDaysWidget({line, planDate, onSplit}){
         run_segment_seq: 1,
         planned_panels: split[0],
       };
-      const r1 = await fetch(`${SB}/rest/v1/production_plan_lines?id=eq.${line.id}`, {
-        method: 'PATCH',
-        headers: {...H, Prefer: 'return=minimal'},
-        body: JSON.stringify(seg1Patch),
-      });
-      if (!r1.ok && r1.status !== 204) throw new Error(`Seg 1 patch failed: ${await r1.text()}`);
+      await sbPatch('production_plan_lines', line.id, seg1Patch);
 
       // Step 2: For each future segment, find-or-create the production_plans row, then insert plan_line.
       for (let i = 0; i < futureDates.length; i++) {
@@ -9560,20 +9471,11 @@ function SplitAcrossDaysWidget({line, planDate, onSplit}){
         const panels = split[seq - 1];
 
         // Find or create the plan for this date
-        const findRes = await fetch(`${SB}/rest/v1/production_plans?plan_date=eq.${date}&select=id&limit=1`, {headers: H});
+        const rows = await sbGet('production_plans', `plan_date=eq.${date}&select=id&limit=1`);
         let dayPlanId = null;
-        if (findRes.ok) {
-          const rows = await findRes.json();
-          if (Array.isArray(rows) && rows[0]) dayPlanId = rows[0].id;
-        }
+        if (Array.isArray(rows) && rows[0]) dayPlanId = rows[0].id;
         if (!dayPlanId) {
-          const cr = await fetch(`${SB}/rest/v1/production_plans`, {
-            method: 'POST',
-            headers: {...H, Prefer: 'return=representation'},
-            body: JSON.stringify({plan_date: date, created_by: 'Split Workflow', plan_notes: `Auto-created by split-across-days from plan ${planDate}`}),
-          });
-          if (!cr.ok) throw new Error(`Create plan ${date} failed: ${await cr.text()}`);
-          const created = await cr.json();
+          const created = await sbPost('production_plans', {plan_date: date, created_by: 'Split Workflow', plan_notes: `Auto-created by split-across-days from plan ${planDate}`}, { throwOnError: true });
           dayPlanId = Array.isArray(created) ? created[0]?.id : created?.id;
         }
         if (!dayPlanId) throw new Error(`Could not resolve plan_id for ${date}`);
@@ -9598,12 +9500,7 @@ function SplitAcrossDaysWidget({line, planDate, onSplit}){
           run_segment_seq: seq,
           sort_order: 99,  // appended to bottom of that day's plan
         };
-        const ir = await fetch(`${SB}/rest/v1/production_plan_lines`, {
-          method: 'POST',
-          headers: {...H, Prefer: 'return=minimal'},
-          body: JSON.stringify(segLine),
-        });
-        if (!ir.ok) throw new Error(`Insert seg ${seq} failed: ${await ir.text()}`);
+        await sbPost('production_plan_lines', segLine, { returnMinimal: true, throwOnError: true });
       }
 
       setOpen(false);
@@ -9816,22 +9713,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       }
 
       // 2. Create new schedule record
-      const schedRes = await fetch(`${SB}/rest/v1/ai_production_schedules`, {
-        method: 'POST',
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({
-          week_start: weekStart.toISOString().split('T')[0],
-          plan_horizon_weeks: 1,
-          status: 'active',
-          agent_reasoning: reasoning,
-          generated_by: 'Claude AI Agent'
-        })
-      });
-      const schedTxt = await schedRes.text();
-      if (!schedRes.ok) throw new Error(`Failed to save schedule: ${schedRes.status} ${schedTxt}`);
-      const schedData = schedTxt ? JSON.parse(schedTxt) : [];
+      const schedData = await sbPost('ai_production_schedules', {
+        week_start: weekStart.toISOString().split('T')[0],
+        plan_horizon_weeks: 1,
+        status: 'active',
+        agent_reasoning: reasoning,
+        generated_by: 'Claude AI Agent'
+      }, { throwOnError: true });
       const schedRecord = Array.isArray(schedData) ? schedData[0] : schedData;
-      if (!schedRecord?.id) throw new Error(`Schedule record missing id: ${schedTxt}`);
+      if (!schedRecord?.id) throw new Error('Schedule record missing id');
 
       // 3. Save schedule entries
       const entries = schedule.map(e => ({
@@ -9857,14 +9747,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
 
       let savedEntries = [];
       if (entries.length > 0) {
-        const entRes = await fetch(`${SB}/rest/v1/ai_schedule_entries`, {
-          method: 'POST',
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-          body: JSON.stringify(entries)
-        });
-        const entTxt = await entRes.text();
-        if (!entRes.ok) throw new Error(`Failed to save entries: ${entRes.status} ${entTxt}`);
-        savedEntries = entTxt ? JSON.parse(entTxt) : [];
+        savedEntries = await sbPost('ai_schedule_entries', entries, { throwOnError: true }) || [];
       }
       setAiSchedule({ scheduleId: schedRecord.id, entries: savedEntries, reasoning, generatedAt: new Date() });
       setAiScheduleView(true);
@@ -10120,12 +10003,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
     try{
       let curId=planId;
       if(curId){
-        await fetch(`${SB}/rest/v1/production_plans?id=eq.${curId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({plan_notes:planNotes||null,updated_at:new Date().toISOString()})});
-        await fetch(`${SB}/rest/v1/production_plan_lines?plan_id=eq.${curId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+        await sbPatch('production_plans', curId, {plan_notes:planNotes||null,updated_at:new Date().toISOString()});
+        await sbDelWhere('production_plan_lines', `plan_id=eq.${curId}`);
       }else{
-        const res=await fetch(`${SB}/rest/v1/production_plans`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({plan_date:planDate,created_by:'Max',plan_notes:planNotes||null})});
-        if(!res.ok)throw new Error(await res.text());
-        const saved=await res.json();curId=saved[0].id;setPlanId(curId);
+        const saved=await sbPost('production_plans', {plan_date:planDate,created_by:'Max',plan_notes:planNotes||null}, { throwOnError: true });
+        curId=saved[0].id;setPlanId(curId);
       }
       if(planLines.length>0){
         const lineRows=planLines.map((l,i)=>{
@@ -10136,6 +10018,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};
         });
         const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift_assignment'];
+        // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column loop reads response.text() to detect schema drift; sbPost would obscure the body inspection. See comment a few lines below.
         let res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         let attempts=0;let currentRows=lineRows;
         while(!res2.ok&&attempts<15){
@@ -10144,6 +10027,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           if(!missingCol){throw new Error(errTxt);}
           console.warn(`Retrying production_plan_lines POST without column "${missingCol}"`);
           currentRows=currentRows.map(r=>{const c={...r};delete c[missingCol];return c;});
+          // eslint-disable-next-line no-restricted-syntax -- same retry-on-missing-column pattern as above
           res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(currentRows)});
           attempts++;
         }
@@ -10155,7 +10039,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         const j=jobs.find(x=>x.id===l.job_id);
         if(j&&j.status==='production_queue'){
           try{
-            await fetch(`${SB}/rest/v1/jobs?id=eq.${j.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'in_production',production_start_date:j.production_start_date||today2})});
+            await sbPatch('jobs', j.id, {status:'in_production',production_start_date:j.production_start_date||today2});
             if(setJobs)setJobs(prev=>prev.map(x=>x.id===j.id?{...x,status:'in_production',production_start_date:x.production_start_date||today2}:x));
             /* Spine handles status-change notifications via trg_jobs_status_changed_emit on the PATCH above. */
           }catch(e){console.error('Auto-advance failed:',e);}
@@ -10253,7 +10137,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         };
 
         const deleteEntry = async (entryId) => {
-          await fetch(`${SB}/rest/v1/ai_schedule_entries?id=eq.${entryId}`, {method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+          await sbDel('ai_schedule_entries', entryId);
           setAiSchedule(prev => ({...prev, entries: prev.entries.filter(e => e.id !== entryId)}));
         };
 
@@ -11132,12 +11016,11 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
     try{
       let curId=planId;
       if(curId){
-        await fetch(`${SB}/rest/v1/production_plans?id=eq.${curId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify({plan_notes:planNotes||null,updated_at:new Date().toISOString()})});
-        await fetch(`${SB}/rest/v1/production_plan_lines?plan_id=eq.${curId}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
+        await sbPatch('production_plans', curId, {plan_notes:planNotes||null,updated_at:new Date().toISOString()});
+        await sbDelWhere('production_plan_lines', `plan_id=eq.${curId}`);
       }else{
-        const res=await fetch(`${SB}/rest/v1/production_plans`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({plan_date:planDate,created_by:'Max',plan_notes:planNotes||null})});
-        if(!res.ok)throw new Error(await res.text());
-        const saved=await res.json();curId=saved[0].id;setPlanId(curId);
+        const saved=await sbPost('production_plans', {plan_date:planDate,created_by:'Max',plan_notes:planNotes||null}, { throwOnError: true });
+        curId=saved[0].id;setPlanId(curId);
       }
       if(planLines.length>0){
         const lineRows=planLines.map((l,i)=>{
@@ -11148,6 +11031,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
           return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};
         });
         const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift_assignment'];
+        // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column loop reads response.text() to detect schema drift; sbPost would obscure the body inspection. See comment a few lines below.
         let res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         let attempts=0;let currentRows=lineRows;
         while(!res2.ok&&attempts<15){
@@ -11156,6 +11040,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
           if(!missingCol){throw new Error(errTxt);}
           console.warn(`Retrying production_plan_lines POST without column "${missingCol}"`);
           currentRows=currentRows.map(r=>{const c={...r};delete c[missingCol];return c;});
+          // eslint-disable-next-line no-restricted-syntax -- same retry-on-missing-column pattern as above
           res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(currentRows)});
           attempts++;
         }
@@ -11166,7 +11051,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
       for(const l of planLines){
         const j=jobs.find(x=>x.id===l.job_id);
         if(j&&j.status==='production_queue'){
-          try{await fetch(`${SB}/rest/v1/jobs?id=eq.${j.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'in_production',production_start_date:j.production_start_date||today2})});
+          try{await sbPatch('jobs', j.id, {status:'in_production',production_start_date:j.production_start_date||today2});
             /* Spine handles status-change notifications via trg_jobs_status_changed_emit on the PATCH above. */
           }catch(e){console.error('Auto-advance failed:',j.job_number,e);}
         }
@@ -11193,15 +11078,13 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
     if(!jobId){setActualsLines(prev=>prev.filter((_,i)=>i!==idx));setRemoveConfirmIdx(null);setRemoveReason('');setRemoveNotes('');setToast({msg:`${jobName} removed from today's log`,ok:true});return;}
     setRemoveBusyIdx(idx);
     try{
-      const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${jobId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'production_queue'})});
-      if(!res.ok)throw new Error(await res.text());
+      await sbPatch('jobs', jobId, {status:'production_queue'});
       // Log the removal to production_removals — non-blocking, failures only go to console
       try{
-        const logRes=await fetch(`${SB}/rest/v1/production_removals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({
+        await sbPost('production_removals', {
           job_id:jobId,job_number:line.job_number||null,job_name:jobName,
           removed_date:actualsDate,shift:`Shift ${shift}`,reason,removed_by:loggedBy||'Luis Rodriguez',notes
-        })});
-        if(!logRes.ok){const t=await logRes.text();console.error('production_removals log failed (non-blocking):',t);}
+        }, { returnMinimal: true, throwOnError: true });
       }catch(logErr){console.error('production_removals log failed (non-blocking):',logErr);}
       // Success — drop from local state and toast
       setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
@@ -11264,6 +11147,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
       });
       // POST — if PostgREST rejects an unknown column, progressively strip optional columns and retry
       const OPTIONAL_COLS=['variance_reason','submitted_at','actual_posts','actual_panels','actual_rails','actual_caps','shift_notes','crew_size','unplanned'];
+      // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column reads response.text() to detect schema drift; sbPost would obscure the body inspection.
       let res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(rows)});
       if(!res.ok){
         const errTxt=await res.text();
@@ -11272,6 +11156,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
         if(missingCol){
           console.warn(`Retrying production_actuals POST without column "${missingCol}"`);
           const cleanRows=rows.map(r=>{const c={...r};delete c[missingCol];return c;});
+          // eslint-disable-next-line no-restricted-syntax -- same retry-on-missing-column pattern as above
           res=await fetch(`${SB}/rest/v1/production_actuals`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(cleanRows)});
           if(!res.ok)throw new Error(await res.text());
         }else{
@@ -11290,7 +11175,7 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
           const maxPlanned=Math.max(...(allPlanned||[]).map(l=>n(l.planned_pieces)),0);
           if(maxPlanned>0&&totalActual>=maxPlanned){
             const today3=new Date().toISOString().split('T')[0];
-            await fetch(`${SB}/rest/v1/jobs?id=eq.${jobId}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({status:'material_ready',inventory_ready_date:today3})});
+            await sbPatch('jobs', jobId, {status:'material_ready',inventory_ready_date:today3});
             /* Spine handles status-change notifications via trg_jobs_status_changed_emit. */
           }
         }
@@ -12128,10 +12013,8 @@ function MoldPostsTab({rows,setRows,isAdmin,loading,styleOptions}){
     setAdding(true);
     const body={style_name:sn,height_ft:h,line_count:line,corner_count:corner,stop_count:stop,notes:addForm.notes||null};
     try{
-      const res=await fetch(`${SB}/rest/v1/mold_inventory_post`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
-      const txt=await res.text();
-      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
-      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      const inserted=await sbPost('mold_inventory_post', body, { throwOnError: true });
+      const newRow=Array.isArray(inserted)?inserted[0]:inserted;
       if(newRow)setRows(rs=>[...rs,newRow]);
       toast.success('Post mold record added');
       setShowAdd(false);
@@ -12339,10 +12222,8 @@ function MoldRailsTab({rows,setRows,isAdmin,loading,styleOptions}){
     setAdding(true);
     const body={style_name:sn,rail_type:addForm.rail_type,height_ft:height,count:cnt,notes:addForm.notes||null};
     try{
-      const res=await fetch(`${SB}/rest/v1/mold_inventory_rail`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
-      const txt=await res.text();
-      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
-      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      const inserted=await sbPost('mold_inventory_rail', body, { throwOnError: true });
+      const newRow=Array.isArray(inserted)?inserted[0]:inserted;
       if(newRow)setRows(rs=>[...rs,newRow]);
       toast.success('Rail mold record added');
       setShowAdd(false);
@@ -12542,10 +12423,8 @@ function MoldCapsTab({rows,setRows,isAdmin,loading,styleOptions}){
     setAdding(true);
     const body={style_name:sn,cap_type:addForm.cap_type,height_ft:height,count:cnt,notes:addForm.notes||null};
     try{
-      const res=await fetch(`${SB}/rest/v1/mold_inventory_cap`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
-      const txt=await res.text();
-      if(!res.ok)throw new Error(`(${res.status}) ${txt.slice(0,200)}`);
-      const inserted=JSON.parse(txt);const newRow=Array.isArray(inserted)?inserted[0]:inserted;
+      const inserted=await sbPost('mold_inventory_cap', body, { throwOnError: true });
+      const newRow=Array.isArray(inserted)?inserted[0]:inserted;
       if(newRow)setRows(rs=>[...rs,newRow]);
       toast.success('Cap mold record added');
       setShowAdd(false);
@@ -12787,7 +12666,7 @@ function ChangeOrdersPage({jobs}){
   const coStatusC={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
   const openNew=()=>{setEditCO(null);setCOForm({job_id:'',co_number:'',date_submitted:new Date().toISOString().split('T')[0],amount:'',description:'',status:'Pending',approved_by:'',date_approved:'',notes:''});setJobSearch('');setShowForm(true);};
   const openEditCO=(o)=>{setEditCO(o);setCOForm({job_id:o.job_id,co_number:o.co_number||'',date_submitted:o.date_submitted||'',amount:o.amount||'',description:o.description||'',status:o.status||'Pending',approved_by:o.approved_by||'',date_approved:o.date_approved||'',notes:o.notes||''});setJobSearch(o._jobName||'');setShowForm(true);};
-  const saveCO=async()=>{const body={job_id:coForm.job_id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};if(!body.job_id){setToast({message:'Select a job',isError:true});return;}try{if(editCO){await fetch(`${SB}/rest/v1/change_orders?id=eq.${editCO.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});}else{const res=await fetch(`${SB}/rest/v1/change_orders`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});if(!res.ok){const txt=await res.text();throw new Error(txt);}}setShowForm(false);fetchOrders();setToast(editCO?'Change order updated':'Change order added');}catch(e){setToast({message:e.message||'Save failed',isError:true});}};
+  const saveCO=async()=>{const body={job_id:coForm.job_id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};if(!body.job_id){setToast({message:'Select a job',isError:true});return;}try{if(editCO){await sbPatch('change_orders', editCO.id, body);}else{await sbPost('change_orders', body, { throwOnError: true });}setShowForm(false);fetchOrders();setToast(editCO?'Change order updated':'Change order added');}catch(e){setToast({message:e.message||'Save failed',isError:true});}};
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
@@ -13011,13 +12890,7 @@ function CalibrateButton({onDone}){
   const run=async()=>{
     setBusy(true);setError(null);
     try{
-      const res=await fetch(`${SB}/rest/v1/rpc/recalibrate_install_rates`,{
-        method:'POST',
-        headers:{...H,'Content-Type':'application/json','Prefer':'return=representation'},
-        body:JSON.stringify({min_n:20}),
-      });
-      if(!res.ok){const txt=await res.text();throw new Error(`${res.status}: ${txt}`);}
-      const d=await res.json();
+      const d=await sbRpc('recalibrate_install_rates', {min_n:20});
       setResults(Array.isArray(d)?d:[]);
     }catch(e){setError(e.message);}
     setBusy(false);
@@ -13230,25 +13103,21 @@ function ProposalValidatorPage(){
       try{
         const r=d.result||{};
         const errs=Array.isArray(r.errors)?r.errors:[];
-        await fetch(`${SB}/rest/v1/proposal_validations`,{
-          method:'POST',
-          headers:{...H,'Content-Type':'application/json','Prefer':'return=minimal'},
-          body:JSON.stringify({
-            validated_by_email:auth?.user?.email||'unknown',
-            validated_by_name:auth?.profile?.name||null,
-            source:mode,
-            filename:pdfFile?.name||null,
-            passed:!!r.passed,
-            summary:r.summary||null,
-            error_count:errs.length,
-            critical_error_count:errs.filter(e=>e.severity==='critical').length,
-            recompute_delta:r.recompute_delta||null,
-            result:r,
-            tokens_in:d.tokens_in||null,
-            tokens_out:d.tokens_out||null,
-            model:d.model||null,
-          }),
-        });
+        await sbPost('proposal_validations', {
+          validated_by_email:auth?.user?.email||'unknown',
+          validated_by_name:auth?.profile?.name||null,
+          source:mode,
+          filename:pdfFile?.name||null,
+          passed:!!r.passed,
+          summary:r.summary||null,
+          error_count:errs.length,
+          critical_error_count:errs.filter(e=>e.severity==='critical').length,
+          recompute_delta:r.recompute_delta||null,
+          result:r,
+          tokens_in:d.tokens_in||null,
+          tokens_out:d.tokens_out||null,
+          model:d.model||null,
+        }, { returnMinimal: true });
       }catch(logErr){console.warn('[ProposalValidator] audit log failed:',logErr);}
     }catch(e){setError(e.message);}
     setBusy(false);
@@ -15345,9 +15214,7 @@ function CrewLeadersAdminPage(){
         pay_rate:f.pay_rate===''?null:parseFloat(f.pay_rate),
         active:true,
       };
-      const res=await fetch(`${SB}/rest/v1/crew_leaders`,{method:'POST',headers:{...H,Prefer:'return=representation'},body:JSON.stringify(body)});
-      if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
-      const created=await res.json();
+      const created=await sbPost('crew_leaders', body, { throwOnError: true });
       setRows(rs=>[...rs,...(Array.isArray(created)?created:[created])]);
       setAddForm({name:'',market:f.market,role:'Crew Leader',department_code:'1500',pay_rate:''});
       showToast('Crew leader added');
@@ -15662,8 +15529,7 @@ function PMDailyReportPage({jobs}){
         setToast({message:'Report updated',isError:false});
       }else{
         const insertBody={...body,submitted_at:new Date().toISOString()};
-        const res=await fetch(`${SB}/rest/v1/pm_daily_reports`,{method:'POST',headers:H,body:JSON.stringify(insertBody)});
-        if(res.status!==201){const txt=await res.text();throw new Error(`Supabase ${res.status}: ${txt||'no body'}`);}
+        await sbPost('pm_daily_reports', insertBody, { throwOnError: true });
         setToast({message:'Report submitted',isError:false});
       }
       setEditingReport(null);
@@ -16224,9 +16090,9 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       // Third pass: ensure every row has every key (fill missing with null) — required by PostgREST batch insert
       const batch=rawRows.map(r=>{const out={};allKeys.forEach(k=>{out[k]=(k in r&&r[k]!==undefined&&r[k]!=='')?r[k]:null;});return out;});
       try{
-        const res=await fetch(`${SB}/rest/v1/jobs`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(batch)});
-        if(res.ok){inserted+=batch.length;}else{const txt=await res.text();errors.push({type:'insert_batch',error:txt.substring(0,200)});}
-      }catch(e){errors.push({type:'insert_batch',error:e.message});}
+        await sbPost('jobs', batch, { throwOnError: true });
+        inserted+=batch.length;
+      }catch(e){errors.push({type:'insert_batch',error:e.message.substring(0,200)});}
       setProgress({done:Math.min(i+50,preview.newJobs.length),total});
     }
     // Update existing jobs one by one (PATCH by job_number)
@@ -16238,9 +16104,9 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
       DATE_FIELDS_TO_NORMALIZE.forEach(f=>{if(f in body)body[f]=safeDate(body[f]);});
       if(Object.keys(body).length===0)continue;
       try{
-        const res=await fetch(`${SB}/rest/v1/jobs?id=eq.${u.existing.id}`,{method:'PATCH',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
-        if(res.ok){updated++;}else{const txt=await res.text();errors.push({type:'update',job:u.existing.job_number,error:txt.substring(0,200)});}
-      }catch(e){errors.push({type:'update',job:u.existing.job_number,error:e.message});}
+        await sbPatch('jobs', u.existing.id, body);
+        updated++;
+      }catch(e){errors.push({type:'update',job:u.existing.job_number,error:e.message.substring(0,200)});}
       setProgress({done:preview.newJobs.length+i+1,total});
     }
     setResults({inserted,updated,skipped:preview.warnings.length+skipUpdates.size,errors});
@@ -18200,7 +18066,7 @@ function NewLeadForm({onClose,onSaved,contacts,initial,sourceProspectId,sourcePr
       if(sourceProspectId){
         try{
           await sbPatch('prospect_companies',sourceProspectId,{status:'proposal',last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()});
-          await fetch(`${SB}/rest/v1/prospect_activities`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({company_id:sourceProspectId,activity_type:'note',subject:'Converted to Pipeline lead',body:`New lead created from prospect: ${f.project_description||'(no description)'}`,outcome:'Converted',activity_date:new Date().toISOString()})});
+          await sbPost('prospect_activities', {company_id:sourceProspectId,activity_type:'note',subject:'Converted to Pipeline lead',body:`New lead created from prospect: ${f.project_description||'(no description)'}`,outcome:'Converted',activity_date:new Date().toISOString()}, { returnMinimal: true, throwOnError: true });
         }catch(e){console.warn('Prospect sync failed (lead still saved):',e);}
       }
       onSaved&&onSaved();
@@ -18305,8 +18171,7 @@ function LeadEditDrawer({lead,onClose,onSaved,onDeleted,contacts}){
   const del=async()=>{
     setDeleting(true);
     try{
-      const r=await fetch(`${SB}/rest/v1/leads?id=eq.${lead.id}`,{method:'DELETE',headers:{...H,Prefer:'return=minimal'}});
-      if(!r.ok&&r.status!==204){const txt=await r.text();throw new Error(`DELETE failed (${r.status}): ${txt}`);}
+      await sbDel('leads', lead.id);  // throws on non-2xx; outer catch handles
       onDeleted&&onDeleted();
       onClose();
     }catch(e){alert('Delete failed: '+(e.message||'unknown error'));setDeleting(false);}
@@ -18734,21 +18599,17 @@ function PipelinePage({jobs,onRefresh,onOpenProject}){
         }
         // Log the bypass so it appears in the History tab
         try{
-          await fetch(`${SB}/rest/v1/proposal_validations`,{
-            method:'POST',
-            headers:{...H,'Content-Type':'application/json','Prefer':'return=minimal'},
-            body:JSON.stringify({
-              validated_by_email:repEmail,
-              validated_by_name:auth?.profile?.full_name||null,
-              source:'bypass',
-              lead_id:lead.id,
-              passed:false,
-              summary:`BYPASS: Rep skipped validation when promoting "${(lead.company_name||'lead').replace(/[\\"]/g,'')}" to proposal_sent.`,
-              error_count:1,
-              critical_error_count:1,
-              result:{bypass:true,lead_id:lead.id,reason:'no_recent_passing_validation'},
-            }),
-          });
+          await sbPost('proposal_validations', {
+            validated_by_email:repEmail,
+            validated_by_name:auth?.profile?.full_name||null,
+            source:'bypass',
+            lead_id:lead.id,
+            passed:false,
+            summary:`BYPASS: Rep skipped validation when promoting "${(lead.company_name||'lead').replace(/[\\"]/g,'')}" to proposal_sent.`,
+            error_count:1,
+            critical_error_count:1,
+            result:{bypass:true,lead_id:lead.id,reason:'no_recent_passing_validation'},
+          }, { returnMinimal: true });
         }catch(_){}
       }
     }catch(_){
@@ -19099,8 +18960,7 @@ function TasksPage({jobs}){
   const deleteTask=async(t)=>{
     if(!window.confirm(`Delete task "${t.title}"? This can't be undone.`))return;
     try{
-      const r=await fetch(`${SB}/rest/v1/tasks?id=eq.${t.id}`,{method:'DELETE',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}});
-      if(!r.ok)throw new Error(await r.text());
+      await sbDel('tasks', t.id);  // throws on non-2xx; outer catch handles
       setTasks(prev=>prev.filter(x=>x.id!==t.id));
       setEditTask(null);
       setToast('Task deleted');
@@ -20533,25 +20393,21 @@ function FleetPage({jobs}){
       const hasDefects=failed.length>0||inspectForm.defects_found;
       const overall=hasDefects?'fail':'pass';
 
-      const insResp=await fetch(`${SB}/rest/v1/fleet_inspections`,{
-        method:'POST',headers:{...H,Prefer:'return=representation'},
-        body:JSON.stringify({
-          equipment_id:inspectEquip.id,
-          inspection_date:new Date().toISOString().split('T')[0],
-          inspection_type:'daily',
-          inspector_name:inspectForm.inspector_name,
-          inspector_email:auth?.user?.email,
-          odometer_reading:inspectForm.odometer_reading||null,
-          hours_reading:inspectForm.hours_reading||null,
-          overall_status:overall,
-          checks:inspectForm.checks,
-          defects_found:inspectForm.defects_found||null,
-          notes:inspectForm.notes||null,
-          photo_urls:inspectForm.photos||[],
-          submitted_via:v.mobile?'mobile':'web',
-        })
-      });
-      const ins=await insResp.json();
+      const ins=await sbPost('fleet_inspections', {
+        equipment_id:inspectEquip.id,
+        inspection_date:new Date().toISOString().split('T')[0],
+        inspection_type:'daily',
+        inspector_name:inspectForm.inspector_name,
+        inspector_email:auth?.user?.email,
+        odometer_reading:inspectForm.odometer_reading||null,
+        hours_reading:inspectForm.hours_reading||null,
+        overall_status:overall,
+        checks:inspectForm.checks,
+        defects_found:inspectForm.defects_found||null,
+        notes:inspectForm.notes||null,
+        photo_urls:inspectForm.photos||[],
+        submitted_via:v.mobile?'mobile':'web',
+      }, { throwOnError: true });
       const insId=Array.isArray(ins)?ins[0]?.id:ins?.id;
 
       if(hasDefects&&insId){
@@ -20559,22 +20415,18 @@ function FleetPage({jobs}){
           `Failed items: ${failed.map(k=>INSPECT_ITEMS.find(i=>i.key===k)?.label||k).join(', ')}`+
           (inspectForm.defects_found?`\n\nNotes: ${inspectForm.defects_found}`:'');
 
-        const woResp=await fetch(`${SB}/rest/v1/fleet_work_orders`,{
-          method:'POST',headers:{...H,Prefer:'return=representation'},
-          body:JSON.stringify({
-            equipment_id:inspectEquip.id,
-            inspection_id:insId,
-            title:`Inspection Defects — ${inspectEquip.unit_number} ${inspectEquip.make_model}`,
-            description:defectDesc,
-            wo_type:'corrective',
-            priority:failed.length>=3?'high':'medium',
-            status:'new',
-            reported_by:inspectForm.inspector_name,
-            reported_by_email:auth?.user?.email,
-            photo_urls:inspectForm.photos||[],
-          })
-        });
-        const wo=await woResp.json();
+        const wo=await sbPost('fleet_work_orders', {
+          equipment_id:inspectEquip.id,
+          inspection_id:insId,
+          title:`Inspection Defects — ${inspectEquip.unit_number} ${inspectEquip.make_model}`,
+          description:defectDesc,
+          wo_type:'corrective',
+          priority:failed.length>=3?'high':'medium',
+          status:'new',
+          reported_by:inspectForm.inspector_name,
+          reported_by_email:auth?.user?.email,
+          photo_urls:inspectForm.photos||[],
+        }, { throwOnError: true });
         const woId=Array.isArray(wo)?wo[0]?.id:wo?.id;
         if(woId&&insId)await sbPatch('fleet_inspections',insId,{work_order_id:woId});
 
@@ -20603,23 +20455,20 @@ function FleetPage({jobs}){
     if(!woEquip||!woForm.title){setToast({msg:'Title required',ok:false});return;}
     setSubmitting(true);
     try{
-      await fetch(`${SB}/rest/v1/fleet_work_orders`,{
-        method:'POST',headers:{...H,Prefer:'return=minimal'},
-        body:JSON.stringify({
-          equipment_id:woEquip.id,
-          title:woForm.title,
-          description:woForm.description,
-          wo_type:woForm.wo_type,
-          priority:woForm.priority,
-          status:'new',
-          reported_by:auth?.profile?.full_name||auth?.user?.email,
-          reported_by_email:auth?.user?.email,
-          assigned_to:woForm.assigned_to||null,
-          assigned_to_email:woForm.assigned_to_email||null,
-          due_date:woForm.due_date||null,
-          photo_urls:woForm.photos||[],
-        })
-      });
+      await sbPost('fleet_work_orders', {
+        equipment_id:woEquip.id,
+        title:woForm.title,
+        description:woForm.description,
+        wo_type:woForm.wo_type,
+        priority:woForm.priority,
+        status:'new',
+        reported_by:auth?.profile?.full_name||auth?.user?.email,
+        reported_by_email:auth?.user?.email,
+        assigned_to:woForm.assigned_to||null,
+        assigned_to_email:woForm.assigned_to_email||null,
+        due_date:woForm.due_date||null,
+        photo_urls:woForm.photos||[],
+      }, { returnMinimal: true, throwOnError: true });
       setToast({msg:'Work order created',ok:true});
       setShowWOForm(false);
       setWoForm({title:'',description:'',wo_type:'corrective',priority:'medium',assigned_to:'',assigned_to_email:'',due_date:'',photos:[]});
@@ -20634,16 +20483,13 @@ function FleetPage({jobs}){
     try{
       const qty=parseFloat(partForm.quantity_used)||1;
       const cost=parseFloat(partForm.unit_cost)||0;
-      await fetch(`${SB}/rest/v1/fleet_wo_parts`,{
-        method:'POST',headers:{...H,Prefer:'return=minimal'},
-        body:JSON.stringify({
-          work_order_id:woId,
-          part_name:partForm.part_name,
-          quantity_used:qty,
-          unit_cost:cost||null,
-          notes:partForm.notes||null,
-        })
-      });
+      await sbPost('fleet_wo_parts', {
+        work_order_id:woId,
+        part_name:partForm.part_name,
+        quantity_used:qty,
+        unit_cost:cost||null,
+        notes:partForm.notes||null,
+      }, { returnMinimal: true, throwOnError: true });
       // Update WO parts cost
       if(cost>0){
         const wo=workOrders.find(w=>w.id===woId);
@@ -21283,7 +21129,7 @@ function ProspectingPage({jobs}){
         await sbPatch('prospect_companies',editCo.id,{...form,updated_at:new Date().toISOString()});
         setToast({msg:'Company updated',ok:true});
       }else{
-        await fetch(`${SB}/rest/v1/prospect_companies`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify(form)});
+        await sbPost('prospect_companies', form, { returnMinimal: true, throwOnError: true });
         setToast({msg:'Company added',ok:true});
       }
       setShowForm(false);load();
@@ -21293,7 +21139,7 @@ function ProspectingPage({jobs}){
   const saveContact=async()=>{
     if(!detail)return;
     try{
-      await fetch(`${SB}/rest/v1/prospect_contacts`,{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({...newContact,company_id:detail.id})});
+      await sbPost('prospect_contacts', {...newContact,company_id:detail.id}, { returnMinimal: true, throwOnError: true });
       setToast({msg:'Contact added',ok:true});setShowContactForm(false);
       setNewContact({name:'',title:'',email:'',phone:'',linkedin_url:'',is_primary:false,contact_notes:''});
       load();
@@ -21303,8 +21149,7 @@ function ProspectingPage({jobs}){
   const logActivity=async()=>{
     if(!detail)return;
     try{
-      await fetch(`${SB}/rest/v1/prospect_activities`,{method:'POST',headers:{...H,Prefer:'return=minimal'},
-        body:JSON.stringify({...newActivity,company_id:detail.id,created_by:auth?.user?.email,activity_date:new Date().toISOString()})});
+      await sbPost('prospect_activities', {...newActivity,company_id:detail.id,created_by:auth?.user?.email,activity_date:new Date().toISOString()}, { returnMinimal: true, throwOnError: true });
       // Update last_activity_at on company
       await sbPatch('prospect_companies',detail.id,{last_activity_at:new Date().toISOString(),updated_at:new Date().toISOString()});
       setToast({msg:'Activity logged',ok:true});setShowActivityForm(false);
@@ -21959,14 +21804,10 @@ function ProposalsPage({ jobs }) {
   const patchBulk = async (ids, patch) => {
     if (!ids.length) return;
     const idList = ids.join(",");
-    const res = await fetch(`${SB}/rest/v1/proposals?id=in.(${idList})`, {
-      method: "PATCH",
-      headers: { ...H, Prefer: "return=minimal" },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok && res.status !== 204) {
-      const txt = await res.text();
-      throw new Error(`Bulk PATCH failed (${res.status}): ${txt}`);
+    try {
+      await sbPatchWhere('proposals', `id=in.(${idList})`, patch);
+    } catch (e) {
+      throw new Error(`Bulk PATCH failed: ${e.message}`);
     }
   };
 
