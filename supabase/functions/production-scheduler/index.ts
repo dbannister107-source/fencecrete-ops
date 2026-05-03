@@ -1,6 +1,25 @@
+// production-scheduler edge function
+//
+// Generates a 4-week production schedule from the queue. Receives:
+//   - jobs:           the eligible job list with material requirements
+//   - weekStart, horizonEnd: the planning horizon
+//   - styleCapacity:  per-style daily LF limits from v_mold_capacity (added 2026-05-03)
+//   - poolCapacity:   per-mold-family pool limits for shared molds (added 2026-05-03)
+//   - installCrewLfPerDay: 50 LF/day per 4-person crew (per David)
+//   - leaderCount: total active W-2 crew leaders
+//
+// Emits a JSON schedule to be persisted in ai_schedule_entries.
+//
+// 2026-05-03: replaced flat "5000 LF/weekday" with per-style + per-pool limits.
+// Mold-pool sharing example: Wood + Boxed Wood + Vertical Wood share one
+// 26-mold pool — running them in parallel can't exceed pool capacity total.
+//
+// Bumped model claude-sonnet-4-20250514 -> claude-sonnet-4-5.
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
+const MODEL = 'claude-sonnet-4-5';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,7 +44,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { jobs, weekStart, horizonEnd } = body;
+    const {
+      jobs,
+      weekStart,
+      horizonEnd,
+      styleCapacity,            // [{style, mold_pool_family, bottleneck_lf_per_day, bottleneck_component, panel_lf, panels_per_mold}, ...]
+      poolCapacity,             // [{mold_pool_family, pool_capacity_lf_per_day}, ...]
+      installCrewLfPerDay,      // 50 (default)
+      leaderCount,              // 26 (default)
+    } = body;
 
     const businessDays: string[] = [];
     const cursor = new Date(weekStart + 'T12:00:00Z');
@@ -38,42 +65,106 @@ Deno.serve(async (req: Request) => {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    const slimJobs = jobs.map((j: any) => ({
+    const slimJobs = (jobs || []).map((j: any) => ({
       n: j.job_number,
       name: j.job_name?.slice(0, 40),
       lf: j.lf,
-      style: j.style?.slice(0, 20),
+      style: j.style?.slice(0, 30),
       color: j.color?.slice(0, 15),
       ht: j.height,
       install: j.install_date,
       posts: (j.posts_line || 0) + (j.posts_corner || 0) + (j.posts_stop || 0),
       panels: (j.panels_regular || 0) + (j.panels_half || 0),
+      caps: (j.caps_line || 0) + (j.caps_stop || 0),
       status: j.status,
       produced_lf: j.produced_lf || 0,
     }));
 
+    // Compact representation of per-style limits — only styles in the job list,
+    // with the fields the AI needs to reason about constraints.
+    const slimStyleCapacity = Array.isArray(styleCapacity)
+      ? styleCapacity.map((s: any) => ({
+          style: s.style,
+          pool: s.mold_pool_family,
+          lf_per_day: s.bottleneck_lf_per_day,
+          bottleneck: s.bottleneck_component,
+          panel_lf: s.panel_lf,
+          panels_per_mold: s.panels_per_mold,
+        }))
+      : [];
+
+    const slimPoolCapacity = Array.isArray(poolCapacity)
+      ? poolCapacity.map((p: any) => ({
+          pool: p.mold_pool_family,
+          pool_lf_per_day: p.pool_capacity_lf_per_day,
+        }))
+      : [];
+
+    const crewWeeklyLF = (Number(leaderCount) || 26) * (Number(installCrewLfPerDay) || 50) * 5;
+
     const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer.
 
-CAPACITY: 5000 LF/weekday (2 shifts), 0 on weekends.
+PLANT OPERATING REALITY:
+- Plant runs 2 shifts: Shift 1 Mon-Sat 8a-4p + Shift 2 Mon-Fri 6p-2a (88h/wk vs 168h theoretical, derate ≈ 0.524).
+- Every panel mold is a 12-cavity gang mold: 1 cycle pours 12 panels.
+- Panel LF and cycle time vary per style; capacity per style is provided in style_capacity (already factors in cure_time, gang molds, and bottleneck component).
 
-PRIORITY: 1) Install date (earliest first). 2) Size (larger first). 3) Style+color grouping (batch same style/color). 4) Posts-first: if delaying panels for grouping, schedule posts entry first on an earlier date.
+PER-STYLE DAILY LIMITS (do not exceed):
+The style_capacity input tells you each style's bottlenecked_lf_per_day. This is the
+realistic daily plant output AFTER the binding constraint (panels, posts, rails, OR caps —
+whichever is shortest for that style). NEVER schedule more LF for a style on a single day
+than its bottleneck_lf_per_day.
+
+MOLD POOL SHARING (additional constraint):
+Some style families share one panel-mold pool. If multiple styles in the same mold_pool_family
+run on the same day, their COMBINED LF cannot exceed the pool's pool_capacity_lf_per_day.
+Example: Wood + Boxed Wood + Vertical Wood share a 26-mold pool. You can run any one of them
+at full pool capacity, OR split between them — but the total can't exceed the pool's daily LF.
+
+INSTALL-VS-PRODUCTION RACE CHECK:
+Install crews can install ${installCrewLfPerDay || 50} LF/day per crew (1 lead + 3 helpers = 4 people).
+Total install capacity = ${leaderCount || 26} leaders × ${installCrewLfPerDay || 50} LF/day × 5 days = ${crewWeeklyLF} LF/week.
+If a job's panels finish but install can't keep up, flag it in notes: "panels ready ahead of install — Houston install backlog".
+
+PRIORITY (in order):
+1. INSTALL DATE: jobs with earliest install dates get scheduled first.
+2. POSTS-FIRST: Posts can be produced before panels. If a job's install date is close,
+   schedule posts on an earlier day, panels later. Posts ≈ 20% of LF, panels ≈ 80% by default
+   (use actual job posts/panels counts when present).
+3. SIZE: among jobs with similar install dates, schedule larger LF jobs first.
+4. STYLE+COLOR BATCHING: batch same style/color back-to-back to reduce mold changeover (~25 min
+   per change). May delay panels (NOT posts) by up to 3 days for batching.
 
 RULES:
 - ONLY schedule on these exact business days: ${businessDays.join(', ')}
 - NEVER schedule on weekends — no Saturdays or Sundays
-- Never exceed 5000 LF per day
-- Split large jobs across multiple days if needed
-- production_type: "posts" | "panels" | "full"
-- Posts = ~20% of job LF, Panels = ~80%
-- If capacity is exceeded, schedule highest priority jobs first
-- Only output entries for the ${businessDays.length} business days listed above
+- Per-style daily limit from style_capacity[].lf_per_day MUST NOT be exceeded
+- Pool limit from pool_capacity[].pool_lf_per_day MUST NOT be exceeded across styles in same pool
+- Split large jobs across multiple days when needed
+- production_type: "posts" | "panels" | "caps" | "full"
+- If a style has no entry in style_capacity, treat as 200 LF/day default and add a note.
 
-Respond ONLY with minified JSON:
-{"reasoning":"brief 2-3 sentence summary","schedule":[{"n":"JOB_NUM","name":"NAME","date":"YYYY-MM-DD","type":"posts|panels|full","lf":NUMBER,"style":"STYLE","color":"COLOR","install":"YYYY-MM-DD","seq":1,"notes":"optional"}]}`;
+OUTPUT (minified JSON only, no markdown):
+{
+  "reasoning": "2-4 sentence summary citing key constraints encountered",
+  "schedule": [
+    {"n":"JOB_NUM","name":"NAME","date":"YYYY-MM-DD","type":"posts|panels|full",
+     "lf":NUMBER,"style":"STYLE","color":"COLOR","install":"YYYY-MM-DD",
+     "seq":1,"notes":"optional — flag any constraints hit"}
+  ]
+}`;
 
     const userPrompt = `Today: ${new Date().toISOString().split('T')[0]}.
 Schedule ONLY these ${businessDays.length} business days: ${businessDays.join(', ')}.
-Jobs to schedule: ${JSON.stringify(slimJobs)}`;
+
+style_capacity (per-style daily limits — DO NOT EXCEED):
+${JSON.stringify(slimStyleCapacity)}
+
+pool_capacity (per-pool combined daily limits when multiple styles share):
+${JSON.stringify(slimPoolCapacity)}
+
+Jobs to schedule:
+${JSON.stringify(slimJobs)}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -83,7 +174,7 @@ Jobs to schedule: ${JSON.stringify(slimJobs)}`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL,
         max_tokens: 8000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
@@ -139,7 +230,7 @@ Jobs to schedule: ${JSON.stringify(slimJobs)}`;
           planned_lf: e.lf || e.planned_lf || 0,
           planned_posts: e.posts || e.planned_posts || 0,
           planned_panels: e.panels || e.planned_panels || 0,
-          planned_caps: 0,
+          planned_caps: e.caps || e.planned_caps || 0,
           style: e.style || '',
           color: e.color || '',
           height: e.ht || e.height || '',

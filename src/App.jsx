@@ -9607,72 +9607,71 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         produced_posts: n(j.produced_posts) || 0,
       }));
 
-      // Build the AI prompt
-      const systemPrompt = `You are a production scheduling AI for Fencecrete, a precast concrete fence manufacturer in Texas.
+      // The system prompt + per-style/per-pool capacity reasoning lives in the edge function
+      // (supabase/functions/production-scheduler/index.ts) since that's where ANTHROPIC_API_KEY
+      // is held. We pass the per-style + per-pool capacity arrays in the body so the AI can
+      // reason about real plant limits instead of a flat "5000 LF/day" assumption.
 
-PLANT CAPACITY:
-- Shift 1: Monday-Saturday, 8am-4pm — 2,500 LF per shift
-- Shift 2: Monday-Friday, 6pm-2am — 2,500 LF per shift  
-- Weekday max: 5,000 LF/day (both shifts)
-- Saturday max: 2,500 LF/day (Shift 1 only)
-- Sunday: no production
+      // Fetch per-style mold capacity from v_mold_capacity (already computes 12-cavity gang
+      // mold × 24/cure_time_hours × bottleneck-of-component math in the DB). Fold in pool
+      // sharing: styles in the same style_family share one panel-mold pool.
+      let styleCapacity = [];
+      let poolCapacity = [];
+      try {
+        const capRows = await sbGet('v_mold_capacity', 'select=style_name,style_family,mold_inventory_alias,direct_molds,effective_pool_molds,panels_per_mold,panel_lf,bottlenecked_lf_per_day,bottleneck_component');
+        if (Array.isArray(capRows)) {
+          styleCapacity = capRows
+            .filter(r => r && r.bottlenecked_lf_per_day && Number(r.bottlenecked_lf_per_day) > 0)
+            .map(r => ({
+              style: r.style_name,
+              mold_pool_family: r.style_family,
+              bottleneck_lf_per_day: Number(r.bottlenecked_lf_per_day),
+              bottleneck_component: r.bottleneck_component,
+              panel_lf: Number(r.panel_lf) || 4.54,
+              panels_per_mold: Number(r.panels_per_mold) || 12,
+            }));
+          // Pool capacity: when multiple styles in the same family share a mold pool, the daily
+          // pool LF is the family's effective_pool_molds × panels_per_mold × 24/cure × panel_lf.
+          // Approximate as max bottlenecked_lf_per_day for any panel-bound style in the family.
+          // (When the family is panels-bound, the bottleneck IS the pool.)
+          const byFam = {};
+          (capRows || []).forEach(r => {
+            if (!r.style_family || !r.bottlenecked_lf_per_day) return;
+            const lf = Number(r.bottlenecked_lf_per_day);
+            if (!byFam[r.style_family]) byFam[r.style_family] = lf;
+            else if (r.bottleneck_component === 'panels' && lf > byFam[r.style_family]) byFam[r.style_family] = lf;
+          });
+          poolCapacity = Object.entries(byFam).map(([fam, lf]) => ({
+            mold_pool_family: fam,
+            pool_capacity_lf_per_day: Math.round(lf),
+          }));
+        }
+      } catch (e) {
+        console.warn('[generateAISchedule] v_mold_capacity fetch failed; AI scheduler will use defaults:', e);
+      }
 
-SCHEDULING RULES (in priority order):
-1. MATERIAL READINESS: Posts can be produced before panels. If a job's posts can be ready before install date, schedule posts first, then panels. This shows the customer work has started.
-2. INSTALL DATE: Schedule to meet install deadlines. Jobs with earlier install dates get priority.
-3. JOB SIZE: Among jobs with similar install dates, schedule larger LF jobs first.
-4. STYLE/COLOR GROUPING: Batch jobs with the same style and color back-to-back to minimize mold changeovers. You may delay a job's PANELS (not posts) by up to 3 days to batch with a similar style/color job, AS LONG AS posts have already been scheduled for that job first.
-5. Never schedule more than daily capacity per day.
-
-PLANNING HORIZON: 4 weeks from ${weekStart.toISOString().split('T')[0]} to ${horizonEnd.toISOString().split('T')[0]}
-
-OUTPUT FORMAT: Respond ONLY with a valid JSON object, no markdown, no explanation:
-{
-  "reasoning": "brief explanation of key scheduling decisions",
-  "schedule": [
-    {
-      "job_number": "25H001",
-      "job_name": "Job Name",
-      "date": "2026-04-21",
-      "production_type": "posts",
-      "planned_lf": 200,
-      "planned_posts": 45,
-      "planned_panels": 0,
-      "planned_caps": 0,
-      "style": "Rock Style",
-      "color": "Tan",
-      "height": "8",
-      "install_date": "2026-05-01",
-      "total_job_lf": 1200,
-      "day_sequence": 1,
-      "notes": "Posts first — panels to follow"
-    }
-  ]
-}
-
-production_type must be one of: "posts", "panels", "caps", "full"
-Include one entry per job per day. A job may span multiple days if LF exceeds daily capacity.
-Do not schedule on Sundays.
-Saturday only gets Shift 1 (2,500 LF max).`;
-
-      const userPrompt = `Schedule these ${eligibleJobs.length} precast jobs for the next 4 weeks:
-
-${JSON.stringify(eligibleJobs, null, 2)}
-
-Today is ${today.toISOString().split('T')[0]}.
-Generate the optimal 4-week production schedule following all rules.`;
+      // Total active leader count across markets — install-vs-production race check on the AI side.
+      let leaderCount = 26;  // documented baseline; overwritten by the fetch below
+      try {
+        const cls = await sbGet('crew_leaders', 'select=id&active=eq.true');
+        if (Array.isArray(cls)) leaderCount = cls.length;
+      } catch (e) { /* fall back to baseline */ }
 
       // Call production-scheduler edge function (holds API key securely)
       const response = await fetch(`${SB}/functions/v1/production-scheduler`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${KEY}`
         },
         body: JSON.stringify({
           jobs: eligibleJobs,
           weekStart: weekStart.toISOString().split('T')[0],
-          horizonEnd: horizonEnd.toISOString().split('T')[0]
+          horizonEnd: horizonEnd.toISOString().split('T')[0],
+          styleCapacity,
+          poolCapacity,
+          installCrewLfPerDay: 50,  // per David: 4-person crew installs 50 LF/day (precast)
+          leaderCount,
         })
       });
 
@@ -9950,7 +9949,45 @@ Generate the optimal 4-week production schedule following all rules.`;
     const m={};planLines.forEach(l=>{const canonical=canonicalStyle(l.style||'—');if(!m[canonical]){const children=MOLD_CHILDREN[canonical]||[];const ppm=panelsPerMoldForStyle(canonical);m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),panelsPerMold:ppm,confirmed:ppm!=null};}m[canonical].panels+=linePanels(l);});
     return Object.values(m).filter(x=>x.panels>0||x.capacity>0||!x.confirmed&&x.panels>0).sort((a,b)=>b.panels-a.panels);
   },[planLines,moldCapacityPanels,moldsForStyle,panelsPerMoldForStyle]);
-  const leadershipTable=useMemo(()=>physicalMolds.map(m=>{const ppm=panelsPerMoldForStyle(m.style_name);const confirmed=ppm!=null;const capacity=confirmed?Math.floor(m.total_molds*ppm*MOLD_UTIL_RATE):0;const inUse=moldUsageByStyle.find(u=>u.style===m.style_name)?.panels||0;const pct=capacity>0?Math.round(inUse/capacity*100):0;const children=MOLD_CHILDREN[m.style_name]||[];return{style:m.style_name,label:children.length>0?`${m.style_name} / ${children.join(' / ')}`:m.style_name,molds:m.total_molds,panelsPerMold:ppm,confirmed,capacity,inUse,available:confirmed?Math.max(capacity-inUse,0):0,pct,notPlanned:inUse===0};}),[physicalMolds,panelsPerMoldForStyle,MOLD_UTIL_RATE,moldUsageByStyle]);
+  const leadershipTable=useMemo(()=>physicalMolds.map(m=>{
+    const ppm=panelsPerMoldForStyle(m.style_name);
+    const confirmed=ppm!=null;
+    const capacity=confirmed?Math.floor(m.total_molds*ppm*MOLD_UTIL_RATE):0;
+    const inUse=moldUsageByStyle.find(u=>u.style===m.style_name)?.panels||0;
+    const pct=capacity>0?Math.round(inUse/capacity*100):0;
+    const children=MOLD_CHILDREN[m.style_name]||[];
+    // Determine binding mold component for this style (the column derived from
+    // capacityLookup's per-component daily totals — panels vs posts vs rails vs caps).
+    // When something OTHER than panels is the smallest, that's what limits today's run
+    // even if you have enough panel molds. Mirrors v_mold_capacity logic.
+    const cap = (capacityLookup || []).find(c =>
+      (c.style_name || '').toLowerCase() === (m.style_name || '').toLowerCase()
+    );
+    let bottleneck_component = null;
+    let bottleneck_count = null;
+    if (cap) {
+      const candidates = [
+        { c: 'panels', d: Number(cap.panels_per_day_realized), q: Number(cap.panels_owned) },
+        { c: 'posts',  d: Number(cap.posts_per_day_realized),  q: Number(cap.posts_total_at_height) },
+        { c: 'rails',  d: Number(cap.rails_per_day_realized),  q: Number(cap.rails_total) },
+        { c: 'caps',   d: Number(cap.caps_per_day_realized),   q: Number(cap.caps_total) },
+      ].filter(x => x.q > 0 && Number.isFinite(x.d) && x.d > 0);
+      if (candidates.length > 0) {
+        const least = candidates.reduce((a, b) => (a.d <= b.d ? a : b));
+        bottleneck_component = least.c;
+        bottleneck_count = least.q;
+      }
+    }
+    return{
+      style:m.style_name,
+      label:children.length>0?`${m.style_name} / ${children.join(' / ')}`:m.style_name,
+      molds:m.total_molds,panelsPerMold:ppm,confirmed,capacity,inUse,
+      available:confirmed?Math.max(capacity-inUse,0):0,
+      pct,notPlanned:inUse===0,
+      bottleneck_component,
+      bottleneck_count,
+    };
+  }),[physicalMolds,panelsPerMoldForStyle,MOLD_UTIL_RATE,moldUsageByStyle,capacityLookup]);
 
   // Save plan
   const savePlan=async()=>{
@@ -10556,7 +10593,7 @@ Generate the optimal 4-week production schedule following all rules.`;
       {leadershipOpen&&<div style={{padding:16,borderTop:'1px solid #E5E3E0'}}>
         <div style={{fontSize:11,color:'#625650',marginBottom:10}}>Physical mold sets — {totalMoldsOwned} total molds across {physicalMolds.length} sets</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':i===6?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Limited by','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':(i===6||i===7)?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
           <tbody>
             {leadershipTable.map(r=>{
               if(!r.confirmed)return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:'#FAFAF8'}}>
@@ -10566,6 +10603,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#6B7280'}}>TBD</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',color:'#6B7280'}}>—</td>
+                <td style={{padding:'6px 8px',color:'#9E9B96',fontSize:10}}>—</td>
                 <td style={{padding:'6px 8px'}}><span style={{fontSize:10,color:'#6B7280',fontWeight:700,background:'#F4F4F2',padding:'2px 6px',borderRadius:4}}>⚙️ Verify with Max</span></td>
               </tr>;
               const col=r.pct>=70?'#B45309':'#15803D';
@@ -10576,6 +10614,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#854F0B'}}>{r.capacity.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#B45309':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
+                <td style={{padding:'6px 8px',fontSize:10}}>{r.bottleneck_component&&r.bottleneck_component!=='panels'?<span title="This component is shorter than panels — adding panel molds wouldn't help; add this." style={{background:'#FEF3C7',color:'#854F0B',fontWeight:700,padding:'2px 6px',borderRadius:4}}>{r.bottleneck_component} ({r.bottleneck_count})</span>:r.bottleneck_component==='panels'?<span style={{color:'#9E9B96'}}>panels</span>:<span style={{color:'#9E9B96'}}>—</span>}</td>
                 <td style={{padding:'6px 8px'}}>{r.notPlanned?<span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Not planned</span>:<div style={{display:'flex',alignItems:'center',gap:6}}>
                   <div style={{flex:1,height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden',maxWidth:120}}><div style={{width:`${Math.min(r.pct,100)}%`,height:'100%',background:col}}/></div>
                   <span style={{fontSize:10,fontWeight:700,color:col,minWidth:32}}>{r.pct}%</span>
@@ -14423,20 +14462,35 @@ function DemandPlanningPage(){
       styleBacklog[s].backlog_lf+=Number(j.total_lf)||0;
       styleBacklog[s].jobs+=1;
     });
-    // Compute weeks-to-clear at 1 turn/day, 5d/week assumption.
-    // Each mold produces one panel per day. Panel width varies by style; we use
-    // a global rough average of 4.5 ft/panel (54" panel width is the spec for
-    // most styles). Documented as an assumption in the UI.
-    const FT_PER_PANEL=4.5;
-    const TURNS_PER_WEEK=5;
+    // Compute weeks-to-clear from v_mold_capacity (single source of truth on this page).
+    // The view already factors in:
+    //   - 12-cavity gang molds (panels_per_mold)
+    //   - cure time per style (panels × 24/cure_time_hours = panels/day)
+    //   - bottleneck component (panels OR posts OR rails OR caps — shortest wins)
+    //   - family-shared mold pools (Wood/Boxed Wood/Vertical Wood share 26 molds)
+    // Multiplied by SHIFT_FACTOR (88h/wk plant coverage / 168h theoretical ≈ 0.524) to get
+    // realized weekly capacity. This MATCHES what MoldsWhatIf shows below; same source of
+    // truth, both surfaces agree. The legacy `FT_PER_PANEL × TURNS_PER_WEEK = 22.5 LF/mold/wk`
+    // formula was retired 2026-05-03.
+    const SHIFT_FACTOR = (8 * 6 + 8 * 5) / (24 * 7);  // 88/168 ≈ 0.524
     Object.values(styleBacklog).forEach(r=>{
-      const weeklyCapacity=r.molds*FT_PER_PANEL*TURNS_PER_WEEK;
-      r.weekly_capacity_lf=weeklyCapacity;
-      r.weeks_to_clear=weeklyCapacity>0?(r.backlog_lf/weeklyCapacity):null;
-      r.utilization_label=weeklyCapacity===0?(r.molds===0?'no molds tracked':'no capacity'):null;
+      const cap = (moldCapacity || []).find(c =>
+        (c.style_name || '').toLowerCase() === r.style.toLowerCase() ||
+        (c.mold_inventory_alias || '').toLowerCase() === r.style.toLowerCase()
+      );
+      const lfPerDayTheo = cap && cap.bottlenecked_lf_per_day ? Number(cap.bottlenecked_lf_per_day) : null;
+      const weeklyCapacity = lfPerDayTheo ? lfPerDayTheo * SHIFT_FACTOR * 5 : 0;
+      r.weekly_capacity_lf = weeklyCapacity;
+      r.weeks_to_clear = weeklyCapacity > 0 ? (r.backlog_lf / weeklyCapacity) : null;
+      r.bottleneck_component = cap ? cap.bottleneck_component : null;
+      r.utilization_label = weeklyCapacity === 0
+        ? (r.molds === 0 ? 'no molds tracked' : (cap ? `bottleneck: ${cap.bottleneck_component}` : 'no capacity'))
+        : (cap && cap.bottleneck_component && cap.bottleneck_component !== 'panels'
+            ? `${cap.bottleneck_component}-bound`
+            : null);
     });
     return Object.values(styleBacklog).sort((a,b)=>b.backlog_lf-a.backlog_lf);
-  },[productionJobs,molds]);
+  },[productionJobs,molds,moldCapacity]);
 
   // ── CREW LOAD ──
   const crewLoadByMarket=useMemo(()=>{
@@ -14766,13 +14820,13 @@ function DemandPlanningPage(){
                 <td style={{padding:'10px 12px'}}>{r.has_mold_data?r.molds:<span style={{color:'#9E9B96',fontSize:11}}>untracked</span>}</td>
                 <td style={{padding:'10px 12px'}}>{r.weekly_capacity_lf>0?fmtLF(r.weekly_capacity_lf):'—'}</td>
                 <td style={{padding:'10px 12px',fontWeight:600,color:r.weeks_to_clear>8?'#8A261D':r.weeks_to_clear>4?'#B45309':'#1A1A1A'}}>{r.weeks_to_clear!=null?fmtN(r.weeks_to_clear)+' wk':'—'}</td>
-                <td style={{padding:'10px 12px',fontSize:11}}>{r.weeks_to_clear>8?<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>MOLD-CONSTRAINED</span>:r.utilization_label?<span style={{color:'#9E9B96'}}>{r.utilization_label}</span>:''}</td>
+                <td style={{padding:'10px 12px',fontSize:11}}>{r.weeks_to_clear>8?<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{r.bottleneck_component&&r.bottleneck_component!=='panels'?(r.bottleneck_component.toUpperCase()+' MOLDS'):'MOLD'}-CONSTRAINED</span>:r.utilization_label?<span style={{color:'#9E9B96'}}>{r.utilization_label}</span>:''}</td>
               </tr>)}
             </tbody>
           </table>
         </div>
         <div style={captionStyle}>
-          *Weekly capacity assumes 1 mold turn/day × 5 days/week × 4.5 ft per panel (avg). <b>This is an assumption, not a measurement.</b> Real cycle time varies with color changeover (~25 min) and curing. Once Max instruments mold turn rate (Track 2D), this column becomes calibrated.
+          *Weekly capacity = bottlenecked LF/day from v_mold_capacity × derate (88/168 ≈ 0.524 for 2-shift operation) × 5 days/wk. The DB view already factors in 12-cavity gang molds, cure time per style, and the binding component (panels/posts/rails/caps). The Bottleneck column names the binding component when it's NOT panels (e.g. <code>caps</code>-bound for Rock Style means cap molds are the constraint, not panel molds). MoldsWhatIf below uses the same numbers.
         </div>
       </div>
       <MoldsWhatIf

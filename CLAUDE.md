@@ -121,6 +121,21 @@ if (!id) { /* handle "couldn't resolve" — typically a not-found error to the u
 
 **Structural debt** (separate from this utility): some child tables (`job_line_items`, `leads`) FK by `job_number` text rather than `job_id` UUID. That's a real inconsistency, not addressed by `resolveJobId()`. Eventually those should be migrated to UUID FKs. Until then, queries against those tables filter by `job_number=eq.${...}` and that's expected.
 
+### Two plant-capacity models — coexist on purpose
+
+There are **two correct ways** to talk about plant capacity, answering **different questions**:
+
+| Model | Formula | Question it answers | Where used |
+|---|---|---|---|
+| **Daily run capacity** | `molds × panels_per_mold × MOLD_UTIL_RATE (0.88)` | "Can today's plan fit in the plant?" | Production Planning's leadership table; daily plan-line capacity stripe; DailyReport |
+| **Horizon capacity / weeks-to-clear** | `LEAST(panels, posts, rails, caps) × (24 / cure_time_hours) × SHIFT_FACTOR (0.524) × 5 days` | "How many weeks to clear backlog at our actual binding constraint?" | Demand Planning Capacity tab; Co-Pilot home insights; AI scheduler; MoldsWhatIf |
+
+Both numbers can be true at the same time. **Daily** measures shop-floor cycle output; **horizon** measures backlog burndown after the binding mold component is exhausted. The "Limited by" column on the Production Planning leadership table bridges the two — if a style shows `caps (28)` there, you can run today's panels but the cap-mold inventory will bottleneck the WEEK's output even though daily panels can still go.
+
+`SHIFT_FACTOR` = 88h plant operation / 168h theoretical (Shift 1 Mon–Sat 8a–4p + Shift 2 Mon–Fri 6p–2a). v_mold_capacity exposes `theoretical_lf_per_day` assuming 24/7 operation; multiply by SHIFT_FACTOR for what actually ships.
+
+`v_mold_capacity` is the source of truth for the horizon model. Don't roll your own panel-LF math elsewhere — read this view.
+
 ### Supabase calls go through `src/shared/sb.js` only
 
 All REST / Storage / Edge-function calls go through helpers exported from `src/shared/sb.js` (`sbGet`, `sbGetOne`, `sbPost`, `sbPatch`, `sbPatchWhere`, `sbDel`, `sbDelWhere`, `sbUpsert`, `sbRpc`, `sbStorageUpload`, `sbStorageDelete`, `sbStorageSign`, `sbFn`). An ESLint rule (`no-restricted-syntax`) errors on direct `fetch(\`${SB}/...\`)` outside that file. Phase-1 transition: `src/App.jsx` is grandfathered as `warn`-only until its ~95 inline fetches are migrated; new code there still surfaces a warning. If your call pattern isn't covered by an existing helper, add a new one in `sb.js` rather than reaching around the rule.
