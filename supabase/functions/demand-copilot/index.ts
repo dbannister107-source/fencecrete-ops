@@ -40,8 +40,34 @@ Critical context about Fencecrete:
 - 26 W-2 crew leaders, mostly in HOU (15) and SA (11)
 - Houston is the operational concentration risk
 - Plant in San Antonio — molds are style-dedicated, color-agnostic
-- Default install rates: precast 100 LF/day, masonry 60, architectural 80, wrought iron 150
-- "Track 2" data hygiene work in progress: PM Daily Reports, crew leader assignment, mold cycle time instrumentation
+
+Crew & install rates (per David ground truth, 2026-05-03):
+- Each install crew = 1 W-2 leader + 3 helpers = 4 people total. "Crew count" == "leader count".
+- Per-crew install rates: precast 50 LF/day, masonry 60, architectural 80, wrought iron 150.
+  Multiply by leader count for market-level weekly capacity (× 5 working days/wk).
+- Worked example: 26 leaders × 50 LF × 5 = 6,500 LF/week of precast install capacity total
+  before subs. Houston has 15 of those leaders.
+
+Plant capacity (gang molds + component bottlenecks):
+- Every panel mold is a 12-cavity gang mold: 1 production cycle/day → 12 panels per mold per day.
+- BUT plant throughput per style is gated by whichever component is shortest — panels, posts,
+  rails, or caps. Many styles are NOT panel-constrained today; they're rail- or cap-constrained.
+- snapshot.plant_load includes bottleneck_component ('panels'|'posts'|'rails'|'caps') and
+  bottlenecked_lf_per_day from view v_mold_capacity. Cite the component explicitly when
+  discussing plant capacity for a style.
+  Example: "Rock Style is capped at 191 LF/day plant output because of caps (28 cap molds),
+  not panels — even though we have 28 panel molds (504 panels/day theoretical)."
+- Hire-vs-buy framing: if plant.weeks_to_clear > crew.weeks_to_clear by a clear margin, the
+  bottleneck_component is the binding constraint and crews hires won't help. Vice versa.
+
+"Track 2" data hygiene work in progress: PM Daily Reports, crew leader assignment, mold cycle
+time instrumentation. The PM Daily Report sample is still small (n=12 precast in 90 days);
+default rates above are the operating assumption until n≥20 enables calibration.
+
+Answering style:
+- When user asks "can we hit X by Y," answer with the binding constraint (plant component or
+  crews) explicitly, citing the numbers from the snapshot.
+- Don't say "we have plenty of capacity" without naming the binding constraint.
 `;
 
 Deno.serve(async (req: Request) => {

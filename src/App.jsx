@@ -3702,7 +3702,19 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('Active Entry Date')}<input type="date" value={f.active_entry_date} onChange={e=>set('active_entry_date',e.target.value)} style={inputS}/></div>
         <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
         <div>{fLbl('Est. Complete Date')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Auto-computed from Install Date + Install Duration. Recomputes when LF, style, install date, or duration override changes.">{f.est_complete_date?fD(f.est_complete_date):<span style={{color:'#9E9B96'}}>need install date + LF</span>}</div></div>
-        <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{f.install_duration_days&&f.total_lf?<span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>({Math.round((Number(f.total_lf)||0)/Number(f.install_duration_days)*1)/1} LF/day)</span>:''}</div></div>
+        <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{(()=>{
+          if(!f.install_duration_days||!f.total_lf)return '';
+          const impliedLfPerDay=Math.round((Number(f.total_lf)||0)/Number(f.install_duration_days));
+          // Per David ground truth 2026-05-03: precast = 50 LF/day per 4-person crew.
+          // Warn when implied rate exceeds 75 (50% headroom over baseline) for precast.
+          const ftype=(f.fence_type||f.primary_fence_type||'').toUpperCase();
+          const isPrecast=ftype==='PC'||ftype==='PRECAST';
+          const overRate=isPrecast&&impliedLfPerDay>75;
+          return <>
+            <span style={{fontSize:11,color:'#9E9B96',marginLeft:8}}>({impliedLfPerDay} LF/day)</span>
+            {overRate&&<span style={{fontSize:11,color:'#B45309',marginLeft:6,fontWeight:600}} title="Default precast rate is 50 LF/day per 4-person crew. Implied rate above ~75 implies multiple crews on this job — confirm before committing the install date.">⚠ above 50 default</span>}
+          </>;
+        })()}</div></div>
         <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
       {/* JobDiagnostic intentionally omitted here — NewProjectForm creates a job; there is no jobs.id to diagnose until after first save. EditPanel renders the diagnostic on its own schedule tab. */}
@@ -13253,6 +13265,7 @@ function CoPilotHome({onNav}){
   const[invoices,setInvoices]=useState([]);
   const[installRates,setInstallRates]=useState([]);
   const[molds,setMolds]=useState([]);
+  const[moldCapacity,setMoldCapacity]=useState([]);  // v_mold_capacity rows
   const[readiness,setReadiness]=useState([]);
 
   useEffect(()=>{
@@ -13267,7 +13280,10 @@ function CoPilotHome({onNav}){
       sbGet('proposal_validations','select=id,validated_at,validated_by_email,passed&order=validated_at.desc&limit=200'),
       sbGet('leads','select=id,sales_rep,stage,proposal_sent_date,proposal_value&proposal_sent_date=gte.'+new Date(Date.now()-30*86400000).toISOString().slice(0,10)),
       sbGet('v_contract_readiness','select=job_id,job_number,job_name,status,is_ready,auto_checks,manual_items&status=in.(contract_review)'),
-    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30,rdy])=>{
+      // v_mold_capacity = pre-computed bottleneck math: gang molds (12 panels/cycle) + posts/rails/caps,
+      // returns bottleneck_component + bottlenecked_lf_per_day per style. Source of truth for plant load.
+      sbGet('v_mold_capacity','select=style_name,style_family,mold_inventory_alias,direct_molds,effective_pool_molds,shares_pool,panels_per_mold,panel_lf,theoretical_lf_per_day,bottlenecked_panels_per_day,bottlenecked_lf_per_day,bottleneck_component,posts_total,rails_total,caps_total,data_quality'),
+    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30,rdy,mc])=>{
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
@@ -13278,6 +13294,7 @@ function CoPilotHome({onNav}){
       setValidations(Array.isArray(pv)?pv:[]);
       setRecentProposals(Array.isArray(ls30)?ls30:[]);
       setReadiness(Array.isArray(rdy)?rdy:[]);
+      setMoldCapacity(Array.isArray(mc)?mc:[]);
       setLoading(false);
     }).catch(e=>{setErr(e.message);setLoading(false);});
   },[]);
@@ -13289,7 +13306,13 @@ function CoPilotHome({onNav}){
     const productionJobs=openJobs.filter(j=>['production_queue','in_production','material_ready'].includes(j.status));
     const activeInstallJobs=openJobs.filter(j=>j.status==='active_install');
 
-    // Plant load by style
+    // ── PLANT LOAD ──
+    // Source of truth: v_mold_capacity (pre-computed in DB). Honors:
+    //   - 12-panel gang mold (panels_per_mold = 12 for every confirmed precast style)
+    //   - Family-shared mold pools (Wood/Boxed Wood/Vertical Wood share 26 molds, etc.)
+    //   - Component-level bottleneck: panels OR posts OR rails OR caps — whichever is shortest
+    //     binds the daily plant LF output for that style
+    // Fall back to NULL fields when style has no mold data; insights gracefully skip.
     const styleAgg={};
     openJobs.forEach(j=>{
       const s=j.style||'(no style)';
@@ -13297,19 +13320,32 @@ function CoPilotHome({onNav}){
       styleAgg[s].jobs+=1;
       styleAgg[s].backlog_lf+=Number(j.total_lf)||0;
     });
-    const moldByStyle={};
-    molds.forEach(m=>{
-      const key=(m.style_alias||m.style||'').toLowerCase();
-      if(!key)return;
-      moldByStyle[key]=(moldByStyle[key]||0)+(Number(m.panel_mold_count)||0);
-    });
+    const findCap=(styleName)=>{
+      if(!styleName||!Array.isArray(moldCapacity))return null;
+      const k=styleName.toLowerCase();
+      return moldCapacity.find(c=>
+        (c.style_name||'').toLowerCase()===k ||
+        (c.mold_inventory_alias||'').toLowerCase()===k
+      )||null;
+    };
     const plantLoad=Object.values(styleAgg).map(s=>{
-      const moldCount=moldByStyle[s.style.toLowerCase()]||0;
-      const has_mold_data=moldCount>0;
-      // Rough: 50 LF per mold per day, 5 days/wk
-      const weekly_capacity=moldCount*50*5;
-      const weeks_to_clear=weekly_capacity>0?(s.backlog_lf/weekly_capacity):null;
-      return{...s,molds:moldCount,has_mold_data,weeks_to_clear};
+      const cap=findCap(s.style);
+      const lfPerDay=cap?Number(cap.bottlenecked_lf_per_day)||null:null;
+      const weekly_capacity=lfPerDay?lfPerDay*5:null;
+      const weeks_to_clear=weekly_capacity?(s.backlog_lf/weekly_capacity):null;
+      return{
+        ...s,
+        molds: cap?Number(cap.direct_molds)||0:0,
+        effective_pool_molds: cap?Number(cap.effective_pool_molds)||0:0,
+        panels_per_mold: cap?Number(cap.panels_per_mold)||null:null,
+        bottleneck_component: cap?cap.bottleneck_component:null, // 'panels'|'posts'|'rails'|'caps'|'no_data'
+        bottleneck_lf_per_day: lfPerDay,
+        posts_count: cap?Number(cap.posts_total)||0:0,
+        rails_count: cap?Number(cap.rails_total)||0:0,
+        caps_count: cap?Number(cap.caps_total)||0:0,
+        has_mold_data: !!(cap && lfPerDay),
+        weeks_to_clear,
+      };
     }).sort((a,b)=>b.backlog_lf-a.backlog_lf);
 
     // Crew load by market
@@ -13514,7 +13550,7 @@ function CoPilotHome({onNav}){
       reports,crewLeaders,leads,
       validationStats,
     };
-  },[jobs,molds,crewLeaders,invoices,installRates,reports,leads,validations,recentProposals]);
+  },[jobs,molds,moldCapacity,crewLeaders,invoices,installRates,reports,leads,validations,recentProposals]);
 
   if(loading)return<div style={{padding:14,fontSize:13,color:'#9E9B96',textAlign:'center'}}>Loading insights…</div>;
   if(err)return<div style={{padding:14,fontSize:13,color:'#8A261D',background:'#FEE2E2',borderRadius:6}}>Co-Pilot offline: {err}</div>;
@@ -13556,12 +13592,46 @@ function DemandPlannerCopilot({tab,data}){
       out.push({severity:'critical',icon:'⚠️',title:`Houston concentration: ${Math.round(houstonRow.weeks_per_leader)} weeks of work per leader`,body:`${houstonRow.active_jobs} active jobs across ${houstonRow.leaders} W-2 leaders. Single leader unavailable = $${Math.round((houstonRow.active_lf||0)/1000)}k LF impact.`,action:'Hiring decision: 1-2 additional Houston crew leaders by Q3'});
     }
 
-    const moldConstrained=plantLoad.filter(p=>p.weeks_to_clear&&p.weeks_to_clear>8);
-    if(moldConstrained.length>0){
-      moldConstrained.forEach(p=>{
-        out.push({severity:'critical',icon:'🏭',title:`${p.style} mold-constrained: ${p.weeks_to_clear.toFixed(1)} weeks to clear`,body:`${p.jobs} jobs / ${Math.round(p.backlog_lf).toLocaleString()} LF backlog against ${p.molds} panel molds. At assumed 1 turn/day, this is the ceiling.`,action:'Either acquire more molds or shift jobs to a parity style if the customer allows'});
+    // Plant vs crew binding-constraint analysis per top-N styles.
+    // Uses v_mold_capacity's bottleneck_component (panels|posts|rails|caps) so the
+    // recommendation names the SPECIFIC mold component to acquire — not just "molds".
+    // Crew capacity uses ground-truth 50 LF/day per crew (1 leader + 3 helpers = 4 ppl).
+    const PRECAST_LF_PER_CREW_DAY = 50;
+    // Sum leaders across markets — crewLeaders array isn't in the data prop here, but
+    // crewLoadByMarket.leaders is the same source rolled up. Subs (DFW/AUS/CS) intentionally
+    // included; their LF/day per crew is similar even when not W-2.
+    const totalLeaders = crewLoadByMarket.reduce((s, r) => s + (r.leaders || 0), 0);
+    const totalCrewWeeklyLF = totalLeaders * PRECAST_LF_PER_CREW_DAY * 5;
+    const componentLabel = (c) => c==='panels'?'panel':c==='posts'?'post':c==='rails'?'rail':c==='caps'?'cap':c;
+    const componentCount = (p) => p.bottleneck_component==='panels' ? (p.effective_pool_molds||p.molds)
+      : p.bottleneck_component==='posts' ? p.posts_count
+      : p.bottleneck_component==='rails' ? p.rails_count
+      : p.bottleneck_component==='caps'  ? p.caps_count : 0;
+    plantLoad
+      .filter(p => p.has_mold_data && p.weeks_to_clear && p.bottleneck_component && p.bottleneck_component!=='no_data')
+      .slice(0, 4)
+      .forEach(p => {
+        const styleCrewWeeks = totalCrewWeeklyLF > 0 ? (p.backlog_lf / totalCrewWeeklyLF) : null;
+        if (styleCrewWeeks == null) return;
+        // Plant binding when plant-weeks materially exceed crew-weeks AND plant-weeks high enough to matter
+        if (p.weeks_to_clear > styleCrewWeeks * 1.5 && p.weeks_to_clear > 6) {
+          out.push({
+            severity: p.weeks_to_clear > 12 ? 'critical' : 'warning',
+            icon: '🏭',
+            title: `${p.style}: ${componentLabel(p.bottleneck_component)} molds are the binding constraint (${p.weeks_to_clear.toFixed(1)} weeks of plant)`,
+            body: `${p.jobs} jobs / ${Math.round(p.backlog_lf).toLocaleString()} LF backlog. Plant output is ${Math.round(p.bottleneck_lf_per_day)} LF/day, capped on ${componentCount(p)} ${componentLabel(p.bottleneck_component)} mold${componentCount(p)===1?'':'s'} (panel molds: ${p.effective_pool_molds||p.molds}, panels-per-mold: ${p.panels_per_mold||12}). Crews could clear this style in ${styleCrewWeeks.toFixed(1)} weeks — adding crew leaders has zero impact until ${componentLabel(p.bottleneck_component)} molds are added.`,
+            action: `Mold acquisition: more ${componentLabel(p.bottleneck_component)} molds for ${p.style}`,
+          });
+        } else if (styleCrewWeeks > p.weeks_to_clear * 1.5 && styleCrewWeeks > 6) {
+          out.push({
+            severity: 'warning',
+            icon: '👷',
+            title: `${p.style}: crews are the binding constraint (${styleCrewWeeks.toFixed(1)} weeks of crew vs ${p.weeks_to_clear.toFixed(1)} weeks of plant)`,
+            body: `${p.jobs} jobs / ${Math.round(p.backlog_lf).toLocaleString()} LF backlog. Plant could pump out ${Math.round(p.bottleneck_lf_per_day)} LF/day. Adding ${componentLabel(p.bottleneck_component)} molds for this style is wasted spend — hire crew leaders instead.`,
+            action: 'Hiring decision: crew leaders (this style is plant-loose)',
+          });
+        }
       });
-    }
 
     const conflictRows=ganttRows.rows.filter(r=>r.conflicts>0);
     if(conflictRows.length>0){
@@ -13700,7 +13770,7 @@ function DemandPlannerCopilot({tab,data}){
         backlog_lf:data.openJobs.reduce((s,j)=>s+(Number(j.total_lf)||0),0),
         contract_value:data.openJobs.reduce((s,j)=>s+(Number(j.adj_contract_value)||0),0),
       },
-      plant_load:data.plantLoad.map(p=>({style:p.style,jobs:p.jobs,backlog_lf:Math.round(p.backlog_lf),molds:p.molds,weeks_to_clear:p.weeks_to_clear?Number(p.weeks_to_clear.toFixed(1)):null,has_mold_data:p.has_mold_data})),
+      plant_load:data.plantLoad.map(p=>({style:p.style,jobs:p.jobs,backlog_lf:Math.round(p.backlog_lf),molds:p.molds,effective_pool_molds:p.effective_pool_molds,panels_per_mold:p.panels_per_mold,bottleneck_component:p.bottleneck_component,bottleneck_lf_per_day:p.bottleneck_lf_per_day?Math.round(p.bottleneck_lf_per_day):null,posts_count:p.posts_count,rails_count:p.rails_count,caps_count:p.caps_count,weeks_to_clear:p.weeks_to_clear?Number(p.weeks_to_clear.toFixed(1)):null,has_mold_data:p.has_mold_data})),
       crew_load:data.crewLoadByMarket.map(r=>({market:r.market,label:r.label,active_lf:Math.round(r.active_lf),active_jobs:r.active_jobs,leaders:r.leaders,uses_subs:r.uses_subs,total_install_days:r.total_install_days?Math.round(r.total_install_days):null,weeks_per_leader:r.weeks_per_leader?Number(r.weeks_per_leader.toFixed(1)):null})),
       schedule_13wk:data.scheduleByWeek.weeks.map(w=>({week:w.label,starting:w.installs_starting.length,lf_starting:Math.round(w.lf_starting),completing:w.installs_completing.length,lf_completing:Math.round(w.lf_completing),revenue_completing:Math.round(w.$_completing)})),
       schedule_unscheduled:{jobs:data.scheduleByWeek.unscheduled_jobs,lf:Math.round(data.scheduleByWeek.unscheduled_lf)},
@@ -13857,8 +13927,13 @@ function HiringWhatIf({crewLoadByMarket}){
   const reset=()=>setDeltas({});
   const totalAdded=Object.values(deltas).reduce((s,n)=>s+(n>0?n:0),0);
   const totalRemoved=Object.values(deltas).reduce((s,n)=>s+(n<0?-n:0),0);
-  // Cost assumption: ~$110k/yr fully loaded W-2 crew leader (wages + benefits + taxes + truck)
+  // Cost assumption: ~$110k/yr fully loaded W-2 crew leader (wages + benefits + taxes + truck).
+  // Each crew leader anchors a 4-person crew (1 lead + 3 helpers); that ratio is documented in
+  // install_rates.people_per_crew. The +3 helpers' loaded cost is folded into project labor
+  // burden, not this line — this is the leader-only delta.
   const COST_PER_LEADER_PER_YEAR=110000;
+  const PRECAST_LF_PER_CREW_DAY=50;  // ground truth per David 2026-05-03 (4-person crew)
+  const PEOPLE_PER_CREW=4;
   const annualCost=totalAdded*COST_PER_LEADER_PER_YEAR;
 
   return<div style={{...card,padding:18,marginTop:14,background:'#F0F9FF',border:'1px solid #BFDBFE'}}>
@@ -13872,25 +13947,33 @@ function HiringWhatIf({crewLoadByMarket}){
     <div style={{overflowX:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'rgba(255,255,255,0.6)',borderBottom:'1px solid #BFDBFE'}}>
-          {['Market','Active Days','Current Leaders','Adjust','New Leaders','Current Wks/Leader','New Wks/Leader','Change'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,color:'#1E40AF',textTransform:'uppercase'}}>{h}</th>)}
+          {['Market','Active LF','Leaders → People (×4)','Adjust','New Leaders','Wks @ 50 LF/day','New Wks @ 50 LF/day','Δ'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,color:'#1E40AF',textTransform:'uppercase'}}>{h}</th>)}
         </tr></thead>
         <tbody>
           {crewLoadByMarket.map(r=>{
             const d=deltas[r.market]||0;
             const newLeaders=Math.max(1,(r.leaders||0)+d);
-            const currentWPL=r.weeks_per_leader;
-            const newWPL=r.total_install_days?r.total_install_days/newLeaders/5:null;  // 5 install days/wk
+            // Use the GROUND-TRUTH 50 LF/day per crew rate, not the historically-stored
+            // install_duration_days field (which mixes old 100 LF/day estimates with new 50 LF/day
+            // estimates). This is the honest "weeks of crew capacity per leader" view.
+            const weeksPerLeaderFromLF=(leaderCount)=>{
+              if(!leaderCount||!r.active_lf)return null;
+              const totalCrewWeeklyLF=leaderCount*PRECAST_LF_PER_CREW_DAY*5;
+              return totalCrewWeeklyLF>0 ? r.active_lf/totalCrewWeeklyLF : null;
+            };
+            const currentWPL=weeksPerLeaderFromLF(r.leaders||0);
+            const newWPL=weeksPerLeaderFromLF(newLeaders);
             const change=(currentWPL!=null&&newWPL!=null)?newWPL-currentWPL:null;
             return<tr key={r.market} style={{borderBottom:'1px solid #DBEAFE'}}>
               <td style={{padding:'8px 10px',fontWeight:700}}>{r.label||r.market}</td>
-              <td style={{padding:'8px 10px'}}>{r.total_install_days?Math.round(r.total_install_days)+' d':'—'}</td>
-              <td style={{padding:'8px 10px',fontWeight:600}}>{r.leaders||0}</td>
+              <td style={{padding:'8px 10px'}}>{r.active_lf?Math.round(r.active_lf).toLocaleString()+' LF':'—'}</td>
+              <td style={{padding:'8px 10px',fontWeight:600}}>{r.leaders||0} → <span style={{color:'#625650'}}>{(r.leaders||0)*PEOPLE_PER_CREW} ppl</span></td>
               <td style={{padding:'8px 10px'}}>
                 <button onClick={()=>adjust(r.market,-1)} style={{padding:'4px 10px',border:'1px solid #BFDBFE',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:14,cursor:'pointer'}}>−</button>
                 <span style={{display:'inline-block',width:36,textAlign:'center',fontWeight:700,color:d>0?'#0F6E56':d<0?'#8A261D':'#1A1A1A'}}>{d>0?'+':''}{d}</span>
                 <button onClick={()=>adjust(r.market,1)} style={{padding:'4px 10px',border:'1px solid #BFDBFE',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:14,cursor:'pointer'}}>+</button>
               </td>
-              <td style={{padding:'8px 10px',fontWeight:700,color:d!==0?'#1E40AF':'#1A1A1A'}}>{newLeaders}</td>
+              <td style={{padding:'8px 10px',fontWeight:700,color:d!==0?'#1E40AF':'#1A1A1A'}}>{newLeaders} <span style={{color:'#625650',fontWeight:400,fontSize:11}}>({newLeaders*PEOPLE_PER_CREW} ppl)</span></td>
               <td style={{padding:'8px 10px'}}>{currentWPL!=null?currentWPL.toFixed(1)+' wk':'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:700,color:newWPL!=null?(newWPL>6?'#8A261D':newWPL>3?'#B45309':'#0F6E56'):'#9E9B96'}}>{newWPL!=null?newWPL.toFixed(1)+' wk':'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:700,color:change!=null?(change<0?'#0F6E56':change>0?'#8A261D':'#9E9B96'):'#9E9B96'}}>{change!=null?(change>0?'+':'')+change.toFixed(1)+' wk':'—'}</td>
