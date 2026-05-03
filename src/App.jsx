@@ -16415,9 +16415,13 @@ function MapPage({ jobs, onNav }) {
   const pinBorder = prefersDark ? '#FFFFFF' : '#1A1A1A';
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const markersRef = useRef([]);  // active marker DOM elements for cleanup
+  const layersAddedRef = useRef(false);  // gate so we only addSource/addLayer once
   const [selected, setSelected] = useState(null);
   const [mapReady, setMapReady] = useState(false);
+  // Refs so map event handlers can read latest state without re-binding
+  const filteredRef = useRef([]);
+  const setSelectedRef = useRef(setSelected);
+  useEffect(() => { setSelectedRef.current = setSelected; });
 
   // Initialize map ONCE
   useEffect(() => {
@@ -16444,75 +16448,115 @@ function MapPage({ jobs, onNav }) {
     map.on('load', () => { setMapReady(true); });
     mapRef.current = map;
     return () => {
-      markersRef.current.forEach(m => m.remove());
-      markersRef.current = [];
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+      layersAddedRef.current = false;
     };
   }, [prefersDark]);
 
-  // Re-render markers when the filtered set or color mode changes.
-  // IMPORTANT: 'selected' is intentionally NOT in this deps array. Including it
-  // caused every click on a dot to destroy and recreate ALL markers (because
-  // setSelected re-fired this effect), which made the just-clicked dot flicker
-  // out of view as its DOM element was swapped. Selected state is now handled
-  // by a separate effect (below) that mutates the existing element's style in
-  // place without rebuilding the whole marker set.
+  // Build the GeoJSON FeatureCollection rendered by the jobs layers below.
+  // _color is precomputed per feature so paint can read it via ['get','_color'] —
+  // simpler than a Mapbox match-expression branching on colorMode (especially
+  // for crew mode, which hashes uuid -> hsl in JS and isn't expressible in
+  // Mapbox expression syntax).
+  const featureCollection = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: filtered
+      .filter(j => j.lat && j.lng)
+      .map(j => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [j.lng, j.lat] },
+        properties: {
+          id: j.id,
+          job_number: j.job_number || '',
+          job_name: j.job_name || '',
+          _color: colorForJob(j),
+        },
+      })),
+  }), [filtered, colorForJob]);
+
+  // Keep filteredRef in sync so the click handler (bound once) can resolve
+  // the clicked feature's id back to the full job object.
+  useEffect(() => { filteredRef.current = filtered; }, [filtered]);
+
+  // ─── Add source + layers ONCE when the map is ready ───
+  // Previously each filter change rebuilt every DOM marker (1 element per
+  // job, hundreds of event listeners). The layer-based approach renders on
+  // the GPU and updates via setData -- no DOM churn, no flicker bugs.
+  // Three layers:
+  //   jobs-pins      visible circles, data-driven color from feature props
+  //   jobs-hit       transparent 18px-radius circles for finger-friendly tap
+  //   jobs-selected  red halo, filter targets the currently-selected feature
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || layersAddedRef.current) return;
+    const map = mapRef.current;
+
+    map.addSource('jobs', { type: 'geojson', data: featureCollection });
+
+    map.addLayer({
+      id: 'jobs-pins',
+      type: 'circle',
+      source: 'jobs',
+      paint: {
+        // Slightly larger pins as you zoom in
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 5, 10, 8, 14, 12],
+        'circle-color': ['get', '_color'],
+        'circle-stroke-color': pinBorder,
+        'circle-stroke-width': 2,
+      },
+    });
+
+    // Invisible larger hit-area for tap accuracy on mobile (WCAG 2.5.5).
+    // Layered on top of the visible pins so clicks resolve to a feature
+    // even when fingers don't land precisely on the small visible dot.
+    map.addLayer({
+      id: 'jobs-hit',
+      type: 'circle',
+      source: 'jobs',
+      paint: { 'circle-radius': 18, 'circle-opacity': 0 },
+    });
+
+    // Selected halo. Filter starts as a never-match; setFilter below points
+    // it at the actual selected id whenever selection changes.
+    map.addLayer({
+      id: 'jobs-selected',
+      type: 'circle',
+      source: 'jobs',
+      filter: ['==', ['get', 'id'], '__none__'],
+      paint: {
+        'circle-radius': 14,
+        'circle-color': 'transparent',
+        'circle-stroke-color': '#8A261D',
+        'circle-stroke-width': 3,
+      },
+    });
+
+    map.on('click', 'jobs-hit', (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const job = filteredRef.current.find(j => j.id === f.properties.id);
+      if (job) setSelectedRef.current?.(job);
+    });
+    map.on('mouseenter', 'jobs-hit', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'jobs-hit', () => { map.getCanvas().style.cursor = ''; });
+
+    layersAddedRef.current = true;
+  }, [mapReady, featureCollection, pinBorder]);
+
+  // Update source data when filter or color mode changes.
+  // Replaces the DOM-marker rebuild with a single setData call -- no churn.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const src = mapRef.current.getSource('jobs');
+    if (src) src.setData(featureCollection);
+  }, [featureCollection, mapReady]);
+
+  // Update selected halo. setFilter is cheap (no rerender of other layers).
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
-    // Clear existing markers
-    markersRef.current.forEach(m => m.remove());
-    markersRef.current = [];
-    // Add a marker per job
-    filtered.forEach(j => {
-      if (!j.lat || !j.lng) return;
-      const color = colorForJob(j);
-      const el = document.createElement('div');
-      el.className = 'fc-pin';
-      el.dataset.jobId = j.id;
-      // DIAGNOSTIC VERSION (2026-04-30 evening): no transform on hover. Earlier
-      // attempts to fix "dot disappears on hover" assumed the scale transform
-      // was causing a re-render flicker. Removing the transform entirely as a
-      // diagnostic — if dots still disappear, the bug is NOT in our hover
-      // handler and we need to look at mapbox-gl marker behavior directly.
-      // Also forcing visibility:visible !important and opacity:1 !important to
-      // rule out a CSS rule from somewhere else hiding the dot.
-      el.style.cssText = `
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        background: ${color};
-        border: 2px solid ${pinBorder};
-        cursor: pointer;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        visibility: visible !important;
-        opacity: 1 !important;
-        pointer-events: auto;
-      `;
-      el.title = `${j.job_number || ''} ${j.job_name || ''}`;
-      el.addEventListener('click', (e) => { e.stopPropagation(); setSelected(j); });
-      const marker = new mapboxgl.Marker(el).setLngLat([j.lng, j.lat]).addTo(map);
-      markersRef.current.push(marker);
-    });
-  }, [filtered, mapReady, colorForJob]);
-
-  // Apply selected-state styling to existing markers without rebuilding them.
-  // Resizes the selected dot to 22px and resets all others to 14px. Runs on
-  // every selection change but only mutates DOM styles, no marker churn.
-  useEffect(() => {
-    if (!mapReady) return;
-    markersRef.current.forEach(marker => {
-      const el = marker.getElement();
-      if (!el) return;
-      const isSelected = selected && el.dataset.jobId === selected.id;
-      el.style.width = isSelected ? '22px' : '14px';
-      el.style.height = isSelected ? '22px' : '14px';
-      // Bring selected marker visually to the front by raising its parent's z-index.
-      // Mapbox sets a z-index per marker; we just bump it above the rest when picked.
-      const parent = el.parentElement;
-      if (parent) parent.style.zIndex = isSelected ? '10' : '';
-    });
-  }, [selected, mapReady, filtered]);
+    if (!map.getLayer('jobs-selected')) return;
+    map.setFilter('jobs-selected', ['==', ['get', 'id'], selected?.id || '__none__']);
+  }, [selected, mapReady]);
 
   // Fit bounds when filter set changes meaningfully
   useEffect(() => {
