@@ -8053,11 +8053,22 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
       // the pressure bars + demand table where the user can see the gap and
       // act on it via Customer Master.
       const banneredFamilies=moldPressure.filter(p=>!isUnmappedFamily(p.style_family)&&(p.pressure_band==='critical_bottleneck'||p.pressure_band==='tight'));
-      // Per-style "Realized" rate per spec: bottlenecked × (8/24) × (5/7) =
-      // single 8-hr shift × 5-day week against a 24/7 theoretical baseline.
-      // SHIFT_FACTOR ≈ 0.238. We compute realized for both panels/day and
-      // LF/day so the per-style card can show both columns.
-      const SHIFT_FACTOR=(8/24)*(5/7);
+      // Per-style "Realized" rate: bottlenecked × derate_factor.
+      //
+      // Plant operating reality (per David, 2026-05-03):
+      //   - Shift 1: Mon-Sat  8am-4pm  (8h × 6 days = 48h/wk)
+      //   - Shift 2: Mon-Fri  6pm-2am  (8h × 5 days = 40h/wk)
+      //   - Total operating hours: 88h/wk vs theoretical 168h/wk (24/7)
+      //   - Realized factor = 88/168 ≈ 0.524
+      //
+      // v_mold_capacity.theoretical_lf_per_day is computed as
+      // panels × (24/cure_time_hours), i.e. it assumes 24/7 plant coverage.
+      // The derate brings it back to actual operating hours.
+      //
+      // Was incorrectly (8/24)*(5/7) = 0.238 (single shift, 5 days) before
+      // 2026-05-03. install_rates.shifts_per_day codifies the 2-shift model.
+      const PLANT_HOURS_PER_WEEK = (8 * 6) + (8 * 5);  // 88h/wk
+      const SHIFT_FACTOR = PLANT_HOURS_PER_WEEK / (24 * 7);  // ≈ 0.524
       // Group capacity by family for section 3.
       const capacityByFamily=(()=>{
         const m=new Map();
@@ -8130,7 +8141,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         {/* Subtitle + exports */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:12,flexWrap:'wrap'}}>
           <div style={{fontSize:12,color:'#625650',maxWidth:640,lineHeight:1.5}}>
-            Production capacity intelligence. Bottleneck-aware: factors in posts, rails, caps — not just panels. Single shift / 5-day week assumption.
+            Production capacity intelligence. Bottleneck-aware: factors in posts, rails, caps — not just panels. Two-shift operating reality: Shift 1 Mon–Sat 8a–4p + Shift 2 Mon–Fri 6p–2a (88h/wk vs 168h theoretical, derate ≈ 0.524).
           </div>
           <div style={{display:'flex',gap:8,flexShrink:0}}>
             <button onClick={exportCapacity} style={btnS}>Export Capacity</button>
@@ -8933,7 +8944,7 @@ function MaterialCalcPage({jobs,preJob,onNav}){
             </table>
           </div>
           <div style={{padding:'8px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2'}}>
-            Read-only. Compares the planned run against current mold inventory and realized daily capacity (single shift, 5-day week). Saving the production order is not blocked.
+            Read-only. Compares the planned run against current mold inventory and realized daily capacity (two-shift operating reality: 88h/wk plant coverage). Saving the production order is not blocked.
           </div>
         </div>;
       })()}
@@ -9329,6 +9340,180 @@ function SchedulePage({jobs}){
   </div>);
 }
 
+// SplitAcrossDaysWidget — splits a SAVED plan line into N segments across N
+// consecutive working days (skips weekends). Each segment becomes a regular
+// production_plan_line on its own production_plan, tied together by run_id.
+//
+// Workflow:
+//   1. User saves a plan line normally (clicks Save Plan first).
+//   2. Click "📅 Split across days" on the saved line to expand the form.
+//   3. Set segment count + auto-distributed panels per segment.
+//   4. Submit: generates run_id, finds-or-creates production_plans per date,
+//      inserts plan_lines for segments 2..N, updates segment 1 (this line)
+//      with run_id metadata, then reloads.
+//
+// run_id grouping enables future "Run X of N — Y/Z panels (P%)" progress views
+// across multiple plan_dates. Schema: production_plan_lines.run_id +
+// run_total_panels + run_segment_seq (migration 20260503_..._add_run_grouping).
+function SplitAcrossDaysWidget({line, planDate, onSplit}){
+  const [open, setOpen] = useState(false);
+  const [segments, setSegments] = useState(2);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Already-split badge — show segment position, no further action.
+  if (line && line.run_id) {
+    return <div style={{marginTop:6, padding:'4px 8px', background:'#DBEAFE', borderRadius:4, fontSize:11, color:'#1E40AF', fontWeight:700, display:'inline-block'}}>
+      🔗 Segment {line.run_segment_seq || '?'} of run · {line.run_total_panels || '?'} total panels
+    </div>;
+  }
+
+  // Unsaved line — must save first before splitting (we need an id to update).
+  if (!line || !line.id) {
+    return null;
+  }
+
+  const totalPanels = Number(line.planned_panels) || 0;
+  if (totalPanels <= 0) return null;
+
+  // Distribute panels evenly; remainder goes to the last segment.
+  const distribute = (total, n) => {
+    const base = Math.floor(total / n);
+    const rem = total - base * n;
+    return Array.from({length: n}, (_, i) => base + (i === n - 1 ? rem : 0));
+  };
+  // Generate consecutive working dates (skip Sat/Sun) starting from the day AFTER planDate.
+  const nextWorkingDates = (start, count) => {
+    const out = [];
+    const d = new Date(start + 'T12:00:00');
+    while (out.length < count) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  };
+
+  const handleSplit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const runId = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'r' + Date.now() + Math.random().toString(36).slice(2, 8);
+      const split = distribute(totalPanels, segments);
+      const futureDates = nextWorkingDates(planDate, segments - 1);
+
+      // Step 1: PATCH the existing line — this becomes segment 1.
+      const seg1Patch = {
+        run_id: runId,
+        run_total_panels: totalPanels,
+        run_segment_seq: 1,
+        planned_panels: split[0],
+      };
+      const r1 = await fetch(`${SB}/rest/v1/production_plan_lines?id=eq.${line.id}`, {
+        method: 'PATCH',
+        headers: {...H, Prefer: 'return=minimal'},
+        body: JSON.stringify(seg1Patch),
+      });
+      if (!r1.ok && r1.status !== 204) throw new Error(`Seg 1 patch failed: ${await r1.text()}`);
+
+      // Step 2: For each future segment, find-or-create the production_plans row, then insert plan_line.
+      for (let i = 0; i < futureDates.length; i++) {
+        const date = futureDates[i];
+        const seq = i + 2;
+        const panels = split[seq - 1];
+
+        // Find or create the plan for this date
+        const findRes = await fetch(`${SB}/rest/v1/production_plans?plan_date=eq.${date}&select=id&limit=1`, {headers: H});
+        let dayPlanId = null;
+        if (findRes.ok) {
+          const rows = await findRes.json();
+          if (Array.isArray(rows) && rows[0]) dayPlanId = rows[0].id;
+        }
+        if (!dayPlanId) {
+          const cr = await fetch(`${SB}/rest/v1/production_plans`, {
+            method: 'POST',
+            headers: {...H, Prefer: 'return=representation'},
+            body: JSON.stringify({plan_date: date, created_by: 'Split Workflow', plan_notes: `Auto-created by split-across-days from plan ${planDate}`}),
+          });
+          if (!cr.ok) throw new Error(`Create plan ${date} failed: ${await cr.text()}`);
+          const created = await cr.json();
+          dayPlanId = Array.isArray(created) ? created[0]?.id : created?.id;
+        }
+        if (!dayPlanId) throw new Error(`Could not resolve plan_id for ${date}`);
+
+        // Insert the segment plan_line
+        const segLine = {
+          plan_id: dayPlanId,
+          job_id: line.job_id,
+          job_number: line.job_number,
+          job_name: line.job_name,
+          style: line.style || null,
+          color: line.color || null,
+          height: line.height || null,
+          planned_pieces: panels,
+          planned_panels: panels,
+          planned_lf: 0,  // LF re-derived from material calc; user can edit segment-by-segment after
+          is_partial_run: true,
+          partial_run_reason: `Segment ${seq} of ${segments}-day run (${runId.slice(0, 8)})`,
+          notes: line.notes || null,
+          run_id: runId,
+          run_total_panels: totalPanels,
+          run_segment_seq: seq,
+          sort_order: 99,  // appended to bottom of that day's plan
+        };
+        const ir = await fetch(`${SB}/rest/v1/production_plan_lines`, {
+          method: 'POST',
+          headers: {...H, Prefer: 'return=minimal'},
+          body: JSON.stringify(segLine),
+        });
+        if (!ir.ok) throw new Error(`Insert seg ${seq} failed: ${await ir.text()}`);
+      }
+
+      setOpen(false);
+      setError(null);
+      if (typeof onSplit === 'function') onSplit();
+    } catch (e) {
+      console.error('[SplitAcrossDays] failed:', e);
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return <button
+      onClick={() => setOpen(true)}
+      style={{marginTop:8, padding:'4px 10px', background:'#FFF', border:'1px solid #BFDBFE', color:'#1E40AF', borderRadius:4, fontSize:11, fontWeight:700, cursor:'pointer'}}>
+      📅 Split across days
+    </button>;
+  }
+
+  const split = distribute(totalPanels, segments);
+  const futureDates = nextWorkingDates(planDate, segments - 1);
+
+  return <div style={{marginTop:8, padding:10, background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:6}}>
+    <div style={{fontSize:11, fontWeight:700, color:'#1E40AF', marginBottom:6}}>📅 Split this {totalPanels}-panel run across multiple days</div>
+    <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8}}>
+      <label style={{fontSize:11, color:'#625650'}}>Segments:</label>
+      <input type="number" min={2} max={10} value={segments} onChange={e => setSegments(Math.max(2, Math.min(10, Number(e.target.value) || 2)))}
+        style={{...inputS, padding:'3px 6px', width:60, fontSize:12}}/>
+      <span style={{fontSize:11, color:'#625650'}}>→ {split.join(' + ')} panels</span>
+    </div>
+    <div style={{fontSize:10, color:'#625650', marginBottom:8}}>
+      Day 1 ({planDate}, this line): {split[0]} panels · {futureDates.map((d, i) => `Day ${i+2} (${d}): ${split[i+1]} panels`).join(' · ')}
+    </div>
+    {error && <div style={{padding:'4px 8px', background:'#FEE2E2', color:'#991B1B', fontSize:11, fontWeight:600, borderRadius:4, marginBottom:6}}>⚠ {error}</div>}
+    <div style={{display:'flex', gap:6}}>
+      <button onClick={() => setOpen(false)} disabled={busy} style={{padding:'4px 10px', background:'#FFF', border:'1px solid #BFDBFE', borderRadius:4, fontSize:11, cursor:busy?'wait':'pointer'}}>Cancel</button>
+      <button onClick={handleSplit} disabled={busy} style={{padding:'4px 10px', background:'#1E40AF', color:'#FFF', border:'none', borderRadius:4, fontSize:11, fontWeight:700, cursor:busy?'wait':'pointer', opacity:busy?0.6:1}}>
+        {busy ? 'Splitting…' : `Create ${segments-1} additional segment${segments-1>1?'s':''}`}
+      </button>
+    </div>
+  </div>;
+}
+
 /* ═══ PRODUCTION PLANNING PAGE — queue (left) + plan builder (right) ═══ */
 function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   const v=useViewport();
@@ -9629,6 +9814,11 @@ Generate the optimal 4-week production schedule following all rules.`;
       partial_run_reason:existing?.partial_run_reason||'',notes:existing?.notes||'',
       material_calc_date_at_plan:existing?existing.material_calc_date_at_plan||null:currentCalcDate,
       quantities_stale:staleFromDB||staleFromCompare,
+      // Multi-day partial run grouping (set by SplitAcrossDaysWidget; null = single-segment plan line)
+      run_id:existing?.run_id||null,
+      run_total_panels:existing?.run_total_panels||null,
+      run_segment_seq:existing?.run_segment_seq||null,
+      planned_panels:existing?.planned_panels||null,  // surface for SplitAcrossDaysWidget's totalPanels reference
     };
   },[groupTotals]);
 
@@ -9640,7 +9830,7 @@ Generate the optimal 4-week production schedule following all rules.`;
         setPlanId(plans[0].id);setPlanNotes(plans[0].plan_notes||'');
         // Explicit column list forces PostgREST to return per-piece columns even if schema cache is stale
         const pieceCols=PLAN_PIECE_KEYS.map(k=>'planned_'+k).join(',');
-        const selectList=`id,plan_id,job_id,job_number,job_name,style,color,height,sort_order,planned_pieces,planned_lf,planned_post_height,${pieceCols},planned_posts,planned_panels,planned_rails,planned_caps,is_partial_run,partial_run_reason,notes,material_calc_date_at_plan,quantities_stale`;
+        const selectList=`id,plan_id,job_id,job_number,job_name,style,color,height,sort_order,planned_pieces,planned_lf,planned_post_height,${pieceCols},planned_posts,planned_panels,planned_rails,planned_caps,is_partial_run,partial_run_reason,notes,material_calc_date_at_plan,quantities_stale,run_id,run_total_panels,run_segment_seq`;
         let lines=null;
         try{lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&select=${selectList}&order=sort_order.asc`);}
         catch(e1){console.warn('Explicit column fetch failed, falling back to select=*',e1);lines=await sbGet('production_plan_lines',`plan_id=eq.${plans[0].id}&order=sort_order.asc`);}
@@ -10325,6 +10515,7 @@ Generate the optimal 4-week production schedule following all rules.`;
                 <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:800,textTransform:'uppercase',marginBottom:3}}>⚡ Partial run reason (required)</label>
                 <input value={l.partial_run_reason} onChange={e=>updatePlanLine(idx,'partial_run_reason',e.target.value)} placeholder="Why is today's run less than the full order?" style={{...inputS,padding:'6px 8px',fontSize:11,background:'#FFF'}}/>
               </div>}
+              <SplitAcrossDaysWidget line={l} planDate={planDate} onSplit={()=>loadPlan(planDate)}/>
               <div style={{marginTop:6}}>
                 <input value={l.notes} onChange={e=>updatePlanLine(idx,'notes',e.target.value)} placeholder="Notes..." style={{...inputS,padding:'5px 8px',fontSize:11}}/>
               </div>
@@ -13993,6 +14184,176 @@ function HiringWhatIf({crewLoadByMarket}){
   </div>;
 }
 
+// MoldsWhatIf — pure client-side simulator. Per-style sliders for panel /
+// post / rail / cap molds with live recompute of weeks_to_clear AND
+// crew-vs-plant binding-constraint flip detection. Source data: v_mold_capacity
+// already loaded by DemandPlanningPage. No DB writes, no LLM — deterministic
+// math the same way the existing v_mold_capacity view computes:
+//
+//   panels_theo  = (panels_owned + Δpanels) × panels_per_mold × (24/cure_time)
+//   posts_theo   = (posts_owned  + Δposts ) × (24/cure_time)
+//   rails_theo   = (rails_owned  + Δrails ) × (24/cure_time)
+//   caps_theo    = (caps_owned   + Δcaps  ) × (24/cure_time)
+//   bottleneck   = LEAST(panels_theo, posts_theo OR ∞ if no posts, rails OR ∞, caps OR ∞)
+//   lf_per_day   = bottleneck × panel_lf
+//   weeks_clear  = backlog_lf / (lf_per_day × derate_factor × 5 days/wk)
+//
+// Cost defaults are PLACEHOLDERS — David/Carlos to tune to actual mold costs.
+function MoldsWhatIf({moldCapacity, plantLoad, totalLeaders, shiftFactor}){
+  const PRECAST_LF_PER_CREW_DAY = 50;
+  const DEFAULT_COSTS = { panel: 25000, post: 5000, rail: 3000, cap: 1500 };
+  const [deltas, setDeltas] = useState({});  // {styleKey: {panel: +N, post: +N, rail: +N, cap: +N}}
+  const [costs, setCosts] = useState(DEFAULT_COSTS);
+
+  // Match plantLoad rows to v_mold_capacity rows so we have cure_time, panels_per_mold, panel_lf.
+  // Top 6 by backlog (plantLoad is already sorted desc by backlog_lf). Filter to rows where we have
+  // BOTH backlog (plant.has_mold_data implies the style ships precast) AND a usable cap row.
+  const styleRows = useMemo(() => {
+    return (plantLoad || [])
+      .filter(p => p.backlog_lf > 0)
+      .slice(0, 12)
+      .map(p => {
+        const cap = (moldCapacity || []).find(c =>
+          (c.style_name || '').toLowerCase() === (p.style || '').toLowerCase() ||
+          (c.mold_inventory_alias || '').toLowerCase() === (p.style || '').toLowerCase()
+        );
+        return { plant: p, cap: cap || null };
+      })
+      .filter(r => r.cap && r.cap.panels_per_mold && r.cap.cure_time_hours)  // need full math inputs
+      .slice(0, 6);
+  }, [plantLoad, moldCapacity]);
+
+  const adjust = (styleKey, comp, n) => setDeltas(d => ({
+    ...d,
+    [styleKey]: { ...(d[styleKey] || {}), [comp]: ((d[styleKey] || {})[comp] || 0) + n },
+  }));
+  const reset = () => setDeltas({});
+
+  // Compute the simulated bottleneck for one style row given an explicit delta.
+  // Pass {} for current state. Mirrors v_mold_capacity's formula 1:1.
+  const simWithDelta = (row, d) => {
+    const c = row.cap;
+    const cure = Number(c.cure_time_hours) || 16;
+    const cyclesPerDay = 24 / cure;
+    const panelsPerMold = Number(c.panels_per_mold) || 12;
+    const panelLf = Number(c.panel_lf) || 4.54;
+    const newPanelMolds = Math.max(0, Number(c.effective_pool_molds || c.direct_molds || 0) + (d.panel || 0));
+    const newPosts      = Math.max(0, Number(c.posts_total || 0) + (d.post  || 0));
+    const newRails      = Math.max(0, Number(c.rails_total || 0) + (d.rail  || 0));
+    const newCaps       = Math.max(0, Number(c.caps_total  || 0) + (d.cap   || 0));
+    const panelsTheo = newPanelMolds * panelsPerMold * cyclesPerDay;
+    // Components with 0 today are TREATED as not-required for that style (some styles legitimately
+    // have no caps/no rails). Mirrors v_mold_capacity's 999999 sentinel for NULL component totals.
+    const postsTheo = newPosts > 0 ? newPosts * cyclesPerDay : Infinity;
+    const railsTheo = newRails > 0 ? newRails * cyclesPerDay : Infinity;
+    const capsTheo  = newCaps  > 0 ? newCaps  * cyclesPerDay : Infinity;
+    const bottlePanels = Math.min(panelsTheo, postsTheo, railsTheo, capsTheo);
+    let bottleComp = 'panels';
+    if (postsTheo < panelsTheo && postsTheo <= railsTheo && postsTheo <= capsTheo) bottleComp = 'posts';
+    else if (railsTheo < panelsTheo && railsTheo <= capsTheo) bottleComp = 'rails';
+    else if (capsTheo < panelsTheo) bottleComp = 'caps';
+    const lfPerDayTheo = bottlePanels * panelLf;
+    const lfPerDayRealized = lfPerDayTheo * shiftFactor;
+    const weeklyLF = lfPerDayRealized * 5;
+    const weeksClear = weeklyLF > 0 ? row.plant.backlog_lf / weeklyLF : null;
+    const crewWeeklyLF = totalLeaders * PRECAST_LF_PER_CREW_DAY * 5;
+    const crewWeeks = crewWeeklyLF > 0 ? row.plant.backlog_lf / crewWeeklyLF : null;
+    return { bottleComp, lfPerDayRealized, weeksClear, crewWeeks, newPanelMolds, newPosts, newRails, newCaps };
+  };
+
+  const totalCost = Object.entries(deltas).reduce((s, [, d]) => {
+    return s
+      + Math.max(0, d.panel || 0) * costs.panel
+      + Math.max(0, d.post  || 0) * costs.post
+      + Math.max(0, d.rail  || 0) * costs.rail
+      + Math.max(0, d.cap   || 0) * costs.cap;
+  }, 0);
+  const totalAdded = Object.values(deltas).reduce((s, d) =>
+    s + Math.max(0, d.panel || 0) + Math.max(0, d.post || 0) + Math.max(0, d.rail || 0) + Math.max(0, d.cap || 0), 0);
+
+  if (styleRows.length === 0) {
+    return null;  // no styles to simulate (no mold data) — silently hide
+  }
+
+  const componentColors = { panel: '#8A261D', post: '#854F0B', rail: '#185FA5', cap: '#0F6E56' };
+
+  return <div style={{...card, padding:18, marginTop:14, background:'#FEF6E7', border:'1px solid #FCD34D'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12,flexWrap:'wrap',gap:10}}>
+      <div>
+        <div style={{fontFamily:'Syne',fontSize:15,fontWeight:800}}>🏭 Mold Investment Scenario</div>
+        <div style={{fontSize:12,color:'#625650',marginTop:4}}>Add panel / post / rail / cap molds per style and see the impact on weeks-to-clear AND whether plant or crews become the new binding constraint. Math is deterministic — same formula as v_mold_capacity.</div>
+      </div>
+      {totalAdded > 0 && <button onClick={reset} style={{...btnS, fontSize:12}}>Reset</button>}
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(380px, 1fr))',gap:12}}>
+      {styleRows.map(row => {
+        const styleKey = row.plant.style;
+        const d = deltas[styleKey] || {};
+        const cur  = simWithDelta(row, {});
+        const next = simWithDelta(row, d);
+        const flipped = cur.bottleComp !== next.bottleComp;
+        const crewWeeks = next.crewWeeks;
+        const newBinding = (next.weeksClear != null && crewWeeks != null && crewWeeks > next.weeksClear) ? 'crews' : 'plant';
+        const components = [
+          { key: 'panel', label: 'Panel molds', current: row.cap.effective_pool_molds || row.cap.direct_molds || 0, sub: row.cap.panels_per_mold ? `${row.cap.panels_per_mold} cavities each` : '' },
+          { key: 'post',  label: 'Post molds',  current: row.cap.posts_total || 0, sub: '' },
+          { key: 'rail',  label: 'Rail molds',  current: row.cap.rails_total || 0, sub: '' },
+          { key: 'cap',   label: 'Cap molds',   current: row.cap.caps_total  || 0, sub: '' },
+        ];
+        return <div key={styleKey} style={{background:'#FFF', border:'1px solid #FCD34D', borderRadius:8, padding:14}}>
+          <div style={{fontWeight:800, fontSize:14, marginBottom:6}}>{styleKey}</div>
+          <div style={{fontSize:11, color:'#625650', marginBottom:10}}>
+            {Math.round(row.plant.backlog_lf).toLocaleString()} LF backlog · current bottleneck: <b style={{color: componentColors[cur.bottleComp] || '#1A1A1A'}}>{cur.bottleComp}</b>
+          </div>
+          {components.map(comp => {
+            const delta = d[comp.key] || 0;
+            return <div key={comp.key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,fontSize:12}}>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontWeight:600}}>
+                  <span style={{color:componentColors[comp.key], fontWeight:800}}>{comp.label}</span>: <span style={{fontFamily:'monospace'}}>{comp.current}{delta !== 0 ? ` → ${comp.current + delta}` : ''}</span>
+                </div>
+                {comp.sub && <div style={{fontSize:10,color:'#9E9B96'}}>{comp.sub}</div>}
+              </div>
+              <button onClick={() => adjust(styleKey, comp.key, -1)} style={{padding:'2px 8px',border:'1px solid #FCD34D',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:13,cursor:'pointer'}}>−</button>
+              <span style={{display:'inline-block',width:32,textAlign:'center',fontWeight:700,fontSize:11,color:delta>0?'#0F6E56':delta<0?'#8A261D':'#9E9B96'}}>{delta>0?'+':''}{delta}</span>
+              <button onClick={() => adjust(styleKey, comp.key, 1)} style={{padding:'2px 8px',border:'1px solid #FCD34D',background:'#FFF',borderRadius:4,fontWeight:700,fontSize:13,cursor:'pointer'}}>+</button>
+            </div>;
+          })}
+          <div style={{marginTop:10,padding:10,background:'#FAFAF8',border:'1px solid #E5E3E0',borderRadius:6}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Result</div>
+            <div style={{fontSize:12,lineHeight:1.7}}>
+              <div>Plant LF/day: <b>{Math.round(cur.lfPerDayRealized)}</b> → <b style={{color: next.lfPerDayRealized > cur.lfPerDayRealized ? '#0F6E56' : next.lfPerDayRealized < cur.lfPerDayRealized ? '#8A261D' : '#1A1A1A'}}>{Math.round(next.lfPerDayRealized)}</b></div>
+              <div>Weeks to clear (plant): <b>{cur.weeksClear ? cur.weeksClear.toFixed(1) : '—'}</b> → <b style={{color: next.weeksClear < cur.weeksClear ? '#0F6E56' : next.weeksClear > cur.weeksClear ? '#8A261D' : '#1A1A1A'}}>{next.weeksClear ? next.weeksClear.toFixed(1) : '—'}</b></div>
+              <div>Weeks at crew capacity: <b>{crewWeeks ? crewWeeks.toFixed(1) : '—'}</b></div>
+              {flipped && <div style={{marginTop:4,padding:'4px 8px',background:'#DBEAFE',borderRadius:4,fontSize:11,fontWeight:700,color:'#1E40AF'}}>⚡ Bottleneck flipped: {cur.bottleComp} → {next.bottleComp}</div>}
+              <div style={{marginTop:4, fontWeight:700, color: newBinding === 'plant' ? '#854F0B' : '#1E40AF'}}>
+                Binding constraint after change: <b>{newBinding === 'plant' ? 'plant ('+next.bottleComp+')' : 'crews'}</b>
+              </div>
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>
+
+    {totalAdded > 0 && <div style={{marginTop:14,padding:12,background:'#FFF',border:'1px solid #FCD34D',borderRadius:6}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#854F0B'}}>SCENARIO COST</div>
+        <div style={{fontSize:11,color:'#9E9B96'}}>(per-mold costs are placeholders — tune below)</div>
+      </div>
+      <div style={{fontSize:14,marginBottom:10}}>
+        <b>{totalAdded}</b> mold{totalAdded!==1?'s':''} added → estimated investment <b style={{color:'#854F0B'}}>${totalCost.toLocaleString()}</b>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:8,fontSize:11}}>
+        {['panel','post','rail','cap'].map(comp => <div key={comp}>
+          <label style={{display:'block',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{comp} mold ($)</label>
+          <input type="number" value={costs[comp]} onChange={e => setCosts(c => ({...c, [comp]: Math.max(0, Number(e.target.value) || 0)}))} style={{...inputS, padding:'4px 8px', fontSize:12}}/>
+        </div>)}
+      </div>
+    </div>}
+  </div>;
+}
+
 // ═══ DEMAND PLANNING (v0) ═══
 // Track 1 visibility tool — answers three operational questions on one page:
 //   1. Plant load — are we mold-constrained on the styles we have backlog for?
@@ -14006,6 +14367,7 @@ function DemandPlanningPage(){
   const[loading,setLoading]=useState(true);
   const[jobs,setJobs]=useState([]);
   const[molds,setMolds]=useState([]);
+  const[moldCapacity,setMoldCapacity]=useState([]);  // v_mold_capacity rows for MoldsWhatIf
   const[crewLeaders,setCrewLeaders]=useState([]);
   const[invoices,setInvoices]=useState([]);
   const[installRates,setInstallRates]=useState([]);
@@ -14023,7 +14385,10 @@ function DemandPlanningPage(){
       sbGet('install_rates','select=*&order=category.asc'),
       sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date&lf_panels_installed=gt.0'),
       sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
-    ]).then(([j,m,cl,inv,ir,r,ld])=>{
+      // v_mold_capacity: pre-computed bottleneck math (panels × 24/cure_time, posts/rails/caps).
+      // Powers MoldsWhatIf simulator on the Capacity tab.
+      sbGet('v_mold_capacity','select=style_name,mold_inventory_alias,direct_molds,effective_pool_molds,panels_per_mold,panel_lf,cure_time_hours,posts_total,rails_total,caps_total,bottleneck_component,bottlenecked_lf_per_day'),
+    ]).then(([j,m,cl,inv,ir,r,ld,mc])=>{
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
@@ -14031,6 +14396,7 @@ function DemandPlanningPage(){
       setInstallRates(Array.isArray(ir)?ir:[]);
       setReports(Array.isArray(r)?r:[]);
       setLeads(Array.isArray(ld)?ld:[]);
+      setMoldCapacity(Array.isArray(mc)?mc:[]);
       setLoading(false);
     }).catch(e=>{setError(e.message);setLoading(false);});
   },[]);
@@ -14409,6 +14775,12 @@ function DemandPlanningPage(){
           *Weekly capacity assumes 1 mold turn/day × 5 days/week × 4.5 ft per panel (avg). <b>This is an assumption, not a measurement.</b> Real cycle time varies with color changeover (~25 min) and curing. Once Max instruments mold turn rate (Track 2D), this column becomes calibrated.
         </div>
       </div>
+      <MoldsWhatIf
+        moldCapacity={moldCapacity || []}
+        plantLoad={plantLoad}
+        totalLeaders={crewLoadByMarket.reduce((s, r) => s + (r.leaders || 0), 0)}
+        shiftFactor={(8 * 6 + 8 * 5) / (24 * 7)}
+      />
     </div>}
 
     {/* ─── (Material Readiness now lives under Capacity) ─── */}
