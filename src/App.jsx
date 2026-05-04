@@ -13681,45 +13681,22 @@ function CrewLeaderAssignmentPage(){
     return r;
   },[jobs,mktFilter,statusFilter,onlyMissing,search]);
 
-  // Per-job leader options (market-filtered, sub markets default to SA)
+  // Per-job leader options (market-filtered, sub markets default to SA).
+  // Placeholders (TBD, Subcontractor — role='Placeholder') always come along
+  // regardless of the market filter so PMs / Carlos can flag a job as TBD or
+  // sub-managed in any market.
   const leaderOptionsForJob=(job)=>{
     const long=SHORT_TO_LONG[job.market];
     const isSub=SUB_MARKETS.has(job.market);
     const target=isSub?'San Antonio':long;
-    return target?leaders.filter(cl=>cl.market===target):leaders;
+    const placeholders=leaders.filter(cl=>cl.role==='Placeholder');
+    const realLeaders=leaders.filter(cl=>cl.role!=='Placeholder');
+    const filteredReal=target?realLeaders.filter(cl=>cl.market===target):realLeaders;
+    return [...placeholders,...filteredReal];
   };
 
   const assign=async(job,leaderId)=>{
     if(!canEdit)return;
-    // Special case: clearing the leader on an active_install job. The
-    // enforce_crew_leader_for_active_install trigger blocks NULL crew_leader_id
-    // when status='active_install', so a straight PATCH would 400. Offer to
-    // demote status atomically alongside the unassignment — same UPDATE means
-    // the trigger sees {status:'material_ready', crew_leader_id:null}, which
-    // it allows. Admins (David, Carlos, Alex, etc.) get this escape hatch when
-    // they need to swap leaders or pause a project; the gate continues to
-    // protect against PMs forgetting in normal flows.
-    if(!leaderId&&job.status==='active_install'&&job.crew_leader_id){
-      const proceed=window.confirm(
-        `Unassigning the crew leader on ${job.job_number} (${job.job_name}).\n\n`+
-        `This job is in Active Install — the system requires a crew leader at that stage. `+
-        `Continuing will move the status back to Material Ready in the same save.\n\n`+
-        `Proceed?`
-      );
-      if(!proceed){
-        // Force the dropdown to revert visually by re-emitting the existing leader.
-        setJobs(js=>js.map(j=>j.id===job.id?{...j}:j));
-        return;
-      }
-      setSaving(s=>({...s,[job.id]:true}));
-      try{
-        await sbPatch('jobs',job.id,{crew_leader_id:null,status:'material_ready'});
-        setJobs(js=>js.map(j=>j.id===job.id?{...j,crew_leader_id:null,status:'material_ready'}:j));
-        showToast(`${job.job_number} unassigned and demoted to Material Ready`);
-      }catch(e){showToast('Save failed: '+e.message,true);}
-      setSaving(s=>{const n={...s};delete n[job.id];return n;});
-      return;
-    }
     setSaving(s=>({...s,[job.id]:true}));
     try{
       await sbPatch('jobs',job.id,{crew_leader_id:leaderId||null});
@@ -13913,8 +13890,12 @@ function CrewLeaderAssignmentPage(){
            <div>
              <select value={j.crew_leader_id||''} onChange={e=>assign(j,e.target.value)} style={{...cellInp,width:'100%'}}>
                <option value="">— Unassigned —</option>
-               {opts.length===0&&<option disabled>No leaders for {SHORT_TO_LONG[j.market]||j.market}</option>}
-               {opts.map(cl=><option key={cl.id} value={cl.id}>{cl.name}</option>)}
+               {/* Placeholders (TBD, Subcontractor) at the top with a star
+                   marker, separated from real leaders below by a divider. */}
+               {opts.filter(cl=>cl.role==='Placeholder').map(cl=><option key={cl.id} value={cl.id}>★ {cl.name}</option>)}
+               {opts.some(cl=>cl.role==='Placeholder')&&opts.some(cl=>cl.role!=='Placeholder')&&<option disabled>──────────────</option>}
+               {opts.filter(cl=>cl.role!=='Placeholder').length===0&&!opts.some(cl=>cl.role==='Placeholder')&&<option disabled>No leaders for {SHORT_TO_LONG[j.market]||j.market}</option>}
+               {opts.filter(cl=>cl.role!=='Placeholder').map(cl=><option key={cl.id} value={cl.id}>{cl.name}</option>)}
              </select>
              <div style={{fontSize:10,color:'#9E9B96',marginTop:2}}>{j.pm||'—'}</div>
            </div>
@@ -15854,12 +15835,20 @@ function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
   // matching <option>. The leader is rendered with their market suffix so the
   // PM can see it's an out-of-market pick. (Fixes the second visible-name
   // gotcha alongside the auto-populate fix in selectJob.)
-  const filteredBase=showAll?leaders:leaders.filter(cl=>!jobMarket||cl.market===jobMarket);
+  //
+  // Placeholders (role='Placeholder' — TBD, Subcontractor) are surfaced in
+  // every market regardless of filter. They live at the top of the option
+  // list with a separator so they're easy to spot.
+  const isPlaceholder=(cl)=>cl.role==='Placeholder';
+  const placeholders=leaders.filter(isPlaceholder);
+  const realLeaders=leaders.filter(cl=>!isPlaceholder(cl));
+  const filteredBase=showAll?realLeaders:realLeaders.filter(cl=>!jobMarket||cl.market===jobMarket);
   const assignedLeader=value?leaders.find(cl=>cl.id===value):null;
-  const filtered=(assignedLeader&&!filteredBase.some(cl=>cl.id===value))
+  const filteredReal=(assignedLeader&&!isPlaceholder(assignedLeader)&&!filteredBase.some(cl=>cl.id===value))
     ?[assignedLeader,...filteredBase]
     :filteredBase;
-  const assignedIsOutOfMarket=!!(assignedLeader&&jobMarket&&assignedLeader.market!==jobMarket);
+  const filtered=[...placeholders,...filteredReal];
+  const assignedIsOutOfMarket=!!(assignedLeader&&!isPlaceholder(assignedLeader)&&jobMarket&&assignedLeader.market!==jobMarket);
   // Show sub banner only when filtering is driven by the PM (no job picked yet)
   // AND the PM's territory is subcontracted. Once a job is selected, the job's
   // market is authoritative and the banner becomes noise.
@@ -15870,8 +15859,13 @@ function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
     </div>}
     <select value={value||''} onChange={e=>{const id=e.target.value;const cl=leaders.find(x=>x.id===id);onChange(id,cl?cl.name:'');}} style={style}>
       <option value="">— Select —</option>
-      {filtered.length===0&&<option disabled>No crew leaders for {jobMarket||'this market'}</option>}
-      {filtered.map(cl=>{
+      {/* Placeholders (TBD, Subcontractor) at the top, separated visually
+          from the real-leader list below. They render without a market
+          suffix because they're universal. */}
+      {placeholders.length>0&&placeholders.map(cl=><option key={cl.id} value={cl.id}>★ {cl.name}</option>)}
+      {placeholders.length>0&&filteredReal.length>0&&<option disabled>──────────────</option>}
+      {filteredReal.length===0&&placeholders.length===0&&<option disabled>No crew leaders for {jobMarket||'this market'}</option>}
+      {filteredReal.map(cl=>{
         const isAssignedOutOfMarket=cl.id===value&&jobMarket&&cl.market!==jobMarket;
         const marketSuffix=showAll||isAssignedOutOfMarket?` (${cl.market})`:'';
         return<option key={cl.id} value={cl.id}>{cl.name}{marketSuffix}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')}`:''}</option>;
