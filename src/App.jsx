@@ -1928,6 +1928,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const [attachmentsToast,setAttachmentsToast]=useState(null);
   const [draggingOver,setDraggingOver]=useState(false);
   const fileInputRef=React.useRef(null);
+  // Camera-only input (separate ref so the "Take Photo" button targets a different
+  // <input> with capture="environment" — iOS opens the rear camera directly).
+  const cameraInputRef=React.useRef(null);
 
   // Lightweight count fetch — runs on job change so the tab nav can show
   // "📂 N" even before the user opens Documents tab.
@@ -2932,9 +2935,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               </label>
             </div>
             <div style={{textAlign:'center',padding:'8px 0'}}>
+              {/* Two file inputs: a generic one (any file type) and a camera-only
+                  one. The camera input uses capture="environment" so iOS opens
+                  the rear camera directly — PMs in the field can tap "Take Photo"
+                  and snap a job-site photo without leaving the app or going
+                  through the share sheet. The generic input still allows PDFs,
+                  Office docs, DWG, etc. for the Contracts/Drawings/etc. flows.
+                  Added 2026-05-04 (Tier 1A mobile-PM improvement). */}
               <input ref={fileInputRef} type="file" multiple onChange={e=>{handleFiles(e.target.files);e.target.value='';}} style={{display:'none'}}/>
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple onChange={e=>{handleFiles(e.target.files);e.target.value='';}} style={{display:'none'}}/>
               <div style={{fontSize:13,color:'#625650',marginBottom:8,fontWeight:600}}>
-                {draggingOver?'Drop to upload':<>Drag files here or <button onClick={()=>fileInputRef.current?.click()} style={{background:'none',border:'none',color:'#8A261D',fontWeight:700,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:'inherit'}}>browse</button></>}
+                {draggingOver?'Drop to upload':<>
+                  <button onClick={()=>cameraInputRef.current?.click()} style={{background:'#8A261D',color:'#FFF',border:'none',borderRadius:6,padding:'8px 14px',fontWeight:700,cursor:'pointer',fontSize:13,marginRight:8}}>📷 Take Photo</button>
+                  <button onClick={()=>fileInputRef.current?.click()} style={{background:'#FFF',color:'#1A1A1A',border:'1px solid #E5E3E0',borderRadius:6,padding:'8px 14px',fontWeight:700,cursor:'pointer',fontSize:13}}>📄 Upload File</button>
+                </>}
               </div>
               <div style={{fontSize:10,color:'#9E9B96'}}>PDF · Images (HEIC OK — auto-converts) · Office docs · DWG/DXF · 25 MB max · Paste screenshots with ⌘/Ctrl+V</div>
             </div>
