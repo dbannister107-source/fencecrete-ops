@@ -15707,7 +15707,7 @@ function CrewLeadersAdminPage(){
           : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>{addForm.department_code||'—'}</div>}</div>
         <div><div style={lbl}>$/hr</div>{canEditPayroll
           ? <input type="number" step="0.01" value={addForm.pay_rate} onChange={e=>setAddForm(f=>({...f,pay_rate:e.target.value}))} style={cellInp}/>
-          : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>—</div>}</div>
+          : <div title="Pay rate is restricted to David, Alex, Carlos, Violet" style={{...cellInp,background:'#F4F4F2',color:'#9E9B96',cursor:'not-allowed',display:'flex',alignItems:'center',fontFamily:'monospace',letterSpacing:1}}>••••</div>}</div>
         <button onClick={submitAdd} disabled={adding||!addForm.name.trim()} style={{...btnP,padding:'8px 16px',fontSize:13,opacity:(adding||!addForm.name.trim())?0.5:1,cursor:(adding||!addForm.name.trim())?'not-allowed':'pointer'}}>{adding?'Adding…':'+ Add'}</button>
       </div>
     </div>
@@ -15756,7 +15756,7 @@ function CrewLeadersAdminPage(){
               <td style={{padding:'8px 12px',width:90}}>
                 {canEditPayroll
                   ? <input type="number" step="0.01" defaultValue={r.pay_rate||''} onBlur={e=>{const v=e.target.value;if(String(r.pay_rate||'')!==v)updateField(r.id,'pay_rate',v);}} style={cellInp}/>
-                  : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>{r.pay_rate?'$'+Number(r.pay_rate).toFixed(2):'—'}</div>}
+                  : <div title="Pay rate is restricted to David, Alex, Carlos, Violet" style={{...cellInp,background:'#F4F4F2',color:'#9E9B96',cursor:'not-allowed',display:'flex',alignItems:'center',fontFamily:'monospace',letterSpacing:1}}>{r.pay_rate?'••••':'—'}</div>}
               </td>
               <td style={{padding:'8px 12px',width:80,textAlign:'center'}}>
                 <button onClick={()=>toggleActive(r)} style={{background:r.active===false?'#F4F4F2':'#D1FAE5',color:r.active===false?'#9E9B96':'#065F46',border:'none',borderRadius:6,padding:'4px 12px',fontSize:11,fontWeight:700,cursor:'pointer'}}>{r.active===false?'Inactive':'Active'}</button>
