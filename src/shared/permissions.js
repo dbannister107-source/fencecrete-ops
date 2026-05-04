@@ -23,6 +23,11 @@ export const PERMS = {
   APPROVE_CO:         'approve_co',
   VIEW_SYSTEM_EVENTS: 'view_system_events',
   EDIT_PLANT_WO:      'edit_plant_wo',
+  // Payroll-sensitive fields on the Crew Leaders Admin page (department code +
+  // hourly pay rate). Held by David, Alex, Carlos, and Violet so a stray edit
+  // by a different admin can't change comp data. Granted via DB UPDATE on
+  // user_profiles.permissions (no app deploy needed). Added 2026-05-04.
+  EDIT_CREW_PAYROLL:  'edit_crew_payroll',
 };
 
 // Generic check — fails closed. profile may be null/undefined during the
@@ -41,3 +46,4 @@ export const canViewWorkbench    = (p) => hasPerm(p, PERMS.VIEW_WORKBENCH);
 export const canApproveCO        = (p) => hasPerm(p, PERMS.APPROVE_CO);
 export const canViewSystemEvents = (p) => hasPerm(p, PERMS.VIEW_SYSTEM_EVENTS);
 export const canEditPlantWO      = (p) => hasPerm(p, PERMS.EDIT_PLANT_WO);
+export const canEditCrewPayroll  = (p) => hasPerm(p, PERMS.EDIT_CREW_PAYROLL);

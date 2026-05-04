@@ -71,6 +71,7 @@ import { resolveJobId } from './shared/jobs';
 import {
   canEditProjects, canEditStatus, canReopen, canEditInstallDate,
   canViewWorkbench, canApproveCO, canViewSystemEvents, canEditPlantWO,
+  canEditCrewPayroll,
 } from './shared/permissions';
 
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
@@ -15581,6 +15582,12 @@ function DemandPlanningPage(){
 function CrewLeadersAdminPage(){
   const auth=useAuth();
   const isAdmin=auth?.profile?.role==='admin';
+  // Payroll-sensitive fields (Dept + $/HR) are gated to a small group: David,
+  // Alex, Carlos, Violet — granted via the edit_crew_payroll permission on
+  // user_profiles. Other admins (Chester, Mike Kell, etc.) can edit name,
+  // market, role, and active status, but the comp columns render as read-only
+  // for them.
+  const canEditPayroll=canEditCrewPayroll(auth?.profile);
   const[rows,setRows]=useState([]);
   const[loading,setLoading]=useState(true);
   const[search,setSearch]=useState('');
@@ -15695,8 +15702,12 @@ function CrewLeadersAdminPage(){
         <div><div style={lbl}>Name</div><input value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))} placeholder="First Last" style={cellInp}/></div>
         <div><div style={lbl}>Market</div><select value={addForm.market} onChange={e=>setAddForm(f=>({...f,market:e.target.value}))} style={cellInp}>{MARKETS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
         <div><div style={lbl}>Role</div><select value={addForm.role} onChange={e=>setAddForm(f=>({...f,role:e.target.value}))} style={cellInp}>{ROLES.map(r=><option key={r} value={r}>{r}</option>)}</select></div>
-        <div><div style={lbl}>Dept</div><select value={addForm.department_code} onChange={e=>setAddForm(f=>({...f,department_code:e.target.value}))} style={cellInp}>{DEPTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div>
-        <div><div style={lbl}>$/hr</div><input type="number" step="0.01" value={addForm.pay_rate} onChange={e=>setAddForm(f=>({...f,pay_rate:e.target.value}))} style={cellInp}/></div>
+        <div><div style={lbl}>Dept</div>{canEditPayroll
+          ? <select value={addForm.department_code} onChange={e=>setAddForm(f=>({...f,department_code:e.target.value}))} style={cellInp}>{DEPTS.map(d=><option key={d} value={d}>{d}</option>)}</select>
+          : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>{addForm.department_code||'—'}</div>}</div>
+        <div><div style={lbl}>$/hr</div>{canEditPayroll
+          ? <input type="number" step="0.01" value={addForm.pay_rate} onChange={e=>setAddForm(f=>({...f,pay_rate:e.target.value}))} style={cellInp}/>
+          : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>—</div>}</div>
         <button onClick={submitAdd} disabled={adding||!addForm.name.trim()} style={{...btnP,padding:'8px 16px',fontSize:13,opacity:(adding||!addForm.name.trim())?0.5:1,cursor:(adding||!addForm.name.trim())?'not-allowed':'pointer'}}>{adding?'Adding…':'+ Add'}</button>
       </div>
     </div>
@@ -15735,13 +15746,17 @@ function CrewLeadersAdminPage(){
                 <select defaultValue={r.role} onChange={e=>updateField(r.id,'role',e.target.value)} style={cellInp}>{ROLES.map(rl=><option key={rl} value={rl}>{rl}</option>)}{!ROLES.includes(r.role)&&<option value={r.role}>{r.role}</option>}</select>
               </td>
               <td style={{padding:'8px 12px',width:80}}>
-                <select defaultValue={r.department_code||''} onChange={e=>updateField(r.id,'department_code',e.target.value||null)} style={cellInp}>
-                  <option value="">—</option>
-                  {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
-                </select>
+                {canEditPayroll
+                  ? <select defaultValue={r.department_code||''} onChange={e=>updateField(r.id,'department_code',e.target.value||null)} style={cellInp}>
+                      <option value="">—</option>
+                      {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
+                    </select>
+                  : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>{r.department_code||'—'}</div>}
               </td>
               <td style={{padding:'8px 12px',width:90}}>
-                <input type="number" step="0.01" defaultValue={r.pay_rate||''} onBlur={e=>{const v=e.target.value;if(String(r.pay_rate||'')!==v)updateField(r.id,'pay_rate',v);}} style={cellInp}/>
+                {canEditPayroll
+                  ? <input type="number" step="0.01" defaultValue={r.pay_rate||''} onBlur={e=>{const v=e.target.value;if(String(r.pay_rate||'')!==v)updateField(r.id,'pay_rate',v);}} style={cellInp}/>
+                  : <div title="Payroll-sensitive — David, Alex, Carlos, Violet only" style={{...cellInp,background:'#F4F4F2',color:'#625650',cursor:'not-allowed',display:'flex',alignItems:'center'}}>{r.pay_rate?'$'+Number(r.pay_rate).toFixed(2):'—'}</div>}
               </td>
               <td style={{padding:'8px 12px',width:80,textAlign:'center'}}>
                 <button onClick={()=>toggleActive(r)} style={{background:r.active===false?'#F4F4F2':'#D1FAE5',color:r.active===false?'#9E9B96':'#065F46',border:'none',borderRadius:6,padding:'4px 12px',fontSize:11,fontWeight:700,cursor:'pointer'}}>{r.active===false?'Inactive':'Active'}</button>
@@ -25456,7 +25471,16 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
   const role=auth?.profile?.role;
   const allowedGroups=role&&ROLE_NAV_GROUPS[role]?ROLE_NAV_GROUPS[role]:null;
   const baseGroups=navGroups||NAV_GROUPS;
-  const groups=allowedGroups?baseGroups.filter(g=>allowedGroups.has(g.label)):baseGroups;
+  // Permission-based override: users granted edit_crew_payroll need to reach
+  // the Crew Leaders page (lives under ADMIN group). Without this override,
+  // a viewer-role user with the perm (e.g., Violet) would have the page
+  // injected into their navGroups but the role filter would strip the whole
+  // ADMIN group out. Lets ADMIN through — page-level + field-level gates
+  // continue to enforce what the user can actually do.
+  const hasPayrollPerm=canEditCrewPayroll(auth?.profile);
+  const groups=allowedGroups
+    ?baseGroups.filter(g=>allowedGroups.has(g.label)||(g.label==='ADMIN'&&hasPayrollPerm))
+    :baseGroups;
   const[userMenuOpen,setUserMenuOpen]=useState(false);
   const menuRef=useRef(null);
   useEffect(()=>{
@@ -25537,11 +25561,16 @@ function SidebarRefreshButton({collapsed}){
 
 function MoreMenuSheet({page,setPage,onClose,jobs}){
   // Apply same role-based nav filter as the desktop Sidebar so the mobile
-  // "More" sheet doesn't expose nav items the user shouldn't see.
+  // "More" sheet doesn't expose nav items the user shouldn't see. Mirror
+  // the edit_crew_payroll override so a permission-granted viewer reaches
+  // ADMIN group from mobile too.
   const auth=useAuth();
   const role=auth?.profile?.role;
   const allowedGroups=role&&ROLE_NAV_GROUPS[role]?ROLE_NAV_GROUPS[role]:null;
-  const visibleGroups=allowedGroups?NAV_GROUPS.filter(g=>allowedGroups.has(g.label)):NAV_GROUPS;
+  const hasPayrollPerm=canEditCrewPayroll(auth?.profile);
+  const visibleGroups=allowedGroups
+    ?NAV_GROUPS.filter(g=>allowedGroups.has(g.label)||(g.label==='ADMIN'&&hasPayrollPerm))
+    :NAV_GROUPS;
   const _micons={dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>',projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>',production:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>',production_planning:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>',material_calc:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>',billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>',pm_billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>',reports:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>',schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>',weather_days:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>',change_orders:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>',pm_daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>',install_schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>',sales_dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>',prospecting:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>',pipeline:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>',proposals:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',contacts:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>',estimating:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>',map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>',import_projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>',bid_advisor:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};
   return <div style={{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.6)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#1A1A1A',borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:'88vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -25893,16 +25922,20 @@ function AppShell(){
   // as a duplicated "ADMIN" header in the sidebar — caught in the 2026-05-04
   // app sweep). We now merge into the existing ADMIN group so there's exactly
   // one ADMIN section regardless of which conditional items are visible.
+  // Crew Leaders admin item is also shown to anyone with edit_crew_payroll
+  // permission — lets non-admin users (e.g., Violet) reach the page so they
+  // can edit the payroll-sensitive fields they're permissioned for.
+  const canEditPayroll=canEditCrewPayroll(profile);
   const filteredNav=useMemo(()=>{
     const conditionalAdminItems=[];
     if(isAdmin)conditionalAdminItems.push({key:'admin',label:'User Management',icon:'🔐'});
     if(canFolderAdmin)conditionalAdminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
     if(canFolderAdmin)conditionalAdminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
-    if(isAdmin)conditionalAdminItems.push({key:'crew_leaders_admin',label:'Crew Leaders',icon:'👷'});
+    if(isAdmin||canEditPayroll)conditionalAdminItems.push({key:'crew_leaders_admin',label:'Crew Leaders',icon:'👷'});
     if(canSystemEvents)conditionalAdminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
     if(conditionalAdminItems.length===0)return NAV_GROUPS;
     return NAV_GROUPS.map(g=>g.label==='ADMIN'?{...g,items:[...g.items,...conditionalAdminItems]}:g);
-  },[isAdmin,canFolderAdmin,canSystemEvents]);
+  },[isAdmin,canFolderAdmin,canSystemEvents,canEditPayroll]);
   const[page,setPage]=useState('dashboard');
   const[pageHistory,setPageHistory]=useState([]);
   const navigateTo=(newPage)=>{if(newPage===page)return;setPageHistory(h=>[...h,page]);setPage(newPage);};
