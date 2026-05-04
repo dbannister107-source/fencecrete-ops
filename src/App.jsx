@@ -1413,7 +1413,7 @@ function LineItemsEditor({job,onChange,registerSave}){
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -3621,12 +3621,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 const NP_SECS=['info','fence','contract','requirements','schedule','review'];
 const NP_LABELS={info:'Job Info',fence:'Fence & Dimensions',contract:'Contract & Billing',requirements:'Requirements',schedule:'Schedule',review:'Review & Submit'};
 const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt==='SA')return'Ray Garcia';if(mkt==='HOU'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
-const LINE_TYPES=['Precast','Single Wythe','Wrought Iron','Wood','Gate','Removal','Lump Sum / Other'];
+const LINE_TYPES=['Precast','Single Wythe','Wrought Iron','Wood','Gate','Gate Controls','Removal','Lump Sum / Other'];
 const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:''});
 const lineSubtotal=(li)=>{
   const lt=li.line_type;
   if(lt==='Gate')return n(li.quantity)*n(li.rate);
-  if(lt==='Lump Sum / Other')return n(li.amount);
+  // Gate Controls: amount-based (per Amiee 2026-05-04 — sometimes priced
+  // as a lump sum, sometimes left at 0 when the cost is rolled into the
+  // per-LF fence rate). Either way the subtotal is what's typed in Amount.
+  if(lt==='Lump Sum / Other'||lt==='Gate Controls')return n(li.amount);
   return n(li.lf)*n(li.rate);
 };
 function NewProjectForm({jobs,onClose,onSaved}){
@@ -3705,7 +3708,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
   },0);
   // Derive legacy aggregate fields from line items for back-compat with existing jobs-table schema
   const lineAgg=useMemo(()=>{
-    const a={lf_precast:0,height_precast:null,style:null,color:null,contract_rate_precast:null,lf_single_wythe:0,height_single_wythe:null,style_single_wythe:null,contract_rate_single_wythe:null,lf_wrought_iron:0,height_wrought_iron:null,contract_rate_wrought_iron:null,lf_removal:0,height_removal:null,removal_material_type:null,contract_rate_removal:null,lf_other:0,contract_rate_other:null,number_of_gates:0,gate_height:null,gate_description:null,gate_rate:null,lump_sum_amount:0,lump_sum_description:null};
+    const a={lf_precast:0,height_precast:null,style:null,color:null,contract_rate_precast:null,lf_single_wythe:0,height_single_wythe:null,style_single_wythe:null,contract_rate_single_wythe:null,lf_wrought_iron:0,height_wrought_iron:null,contract_rate_wrought_iron:null,lf_removal:0,height_removal:null,removal_material_type:null,contract_rate_removal:null,lf_other:0,contract_rate_other:null,number_of_gates:0,gate_height:null,gate_description:null,gate_rate:null,gate_controls_qty:0,lump_sum_amount:0,lump_sum_description:null};
     f.lineItems.forEach(li=>{
       if(li.line_type==='Precast'){a.lf_precast+=n(li.lf);if(a.height_precast==null)a.height_precast=li.height||null;if(a.style==null)a.style=li.style||null;if(a.color==null)a.color=li.color||null;if(a.contract_rate_precast==null)a.contract_rate_precast=n(li.rate)||null;}
       else if(li.line_type==='Single Wythe'){a.lf_single_wythe+=n(li.lf);if(a.height_single_wythe==null)a.height_single_wythe=li.height||null;if(a.style_single_wythe==null)a.style_single_wythe=li.style||null;if(a.contract_rate_single_wythe==null)a.contract_rate_single_wythe=n(li.rate)||null;}
@@ -3713,6 +3716,12 @@ function NewProjectForm({jobs,onClose,onSaved}){
       else if(li.line_type==='Wood'){a.lf_other+=n(li.lf);if(a.contract_rate_other==null)a.contract_rate_other=n(li.rate)||null;}
       else if(li.line_type==='Removal'){a.lf_removal+=n(li.lf);if(a.height_removal==null)a.height_removal=li.height||null;if(a.removal_material_type==null)a.removal_material_type=li.material_type||null;if(a.contract_rate_removal==null)a.contract_rate_removal=n(li.rate)||null;}
       else if(li.line_type==='Gate'){a.number_of_gates+=n(li.quantity);if(a.gate_height==null)a.gate_height=li.height||null;if(a.gate_description==null)a.gate_description=li.description||null;if(a.gate_rate==null)a.gate_rate=n(li.rate)||null;}
+      // Gate Controls roll up the count of control sets into jobs.gate_controls_qty
+      // (existing column). The dollar amount lives on the line item itself —
+      // not aggregated into a job-level total because the cost is sometimes
+      // bundled into the LF rate (Laura's pattern) so a separate roll-up
+      // would double-count. Subtotal is captured via lineSubtotal → contract_value.
+      else if(li.line_type==='Gate Controls'){a.gate_controls_qty+=n(li.quantity);}
       else if(li.line_type==='Lump Sum / Other'){a.lump_sum_amount+=n(li.amount);if(a.lump_sum_description==null)a.lump_sum_description=li.description||null;}
     });
     return a;
@@ -3921,6 +3930,15 @@ function NewProjectForm({jobs,onClose,onSaved}){
                 <div>{fLbl('Gate Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Gate Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} style={inputS}/></div>
                 <div>{fLbl('Rate ($) each')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={rateHint('gate_rate')} style={inputS}/></div>
+              </>}
+              {/* Gate Controls — separate line so the SOV can call them out
+                  even when the price is rolled into the LF rate (Laura's
+                  pattern). Leave Amount=0 if cost is bundled; the line is
+                  informational. Otherwise enter the lump-sum cost. */}
+              {lt==='Gate Controls'&&<>
+                <div>{fLbl('Quantity (control sets)')}<input type="number" value={li.quantity} onChange={e=>u('quantity',e.target.value)} placeholder="e.g. 1, 2" style={inputS}/></div>
+                <div>{fLbl('Amount ($)')}<input type="number" value={li.amount} onChange={e=>u('amount',e.target.value)} placeholder="0 if rolled into LF rate" style={inputS}/></div>
+                <div style={{gridColumn:'1/-1'}}>{fLbl('Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} placeholder="e.g. 16ft Sliding Gate operator + keypad" style={inputS}/></div>
               </>}
               {lt==='Removal'&&<>
                 <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
