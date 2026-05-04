@@ -1725,7 +1725,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
   },[onClose]);
-  const[form,setForm]=useState({...job});const[tab,setTab]=useState(isNew?'details':canEditInstallDateOnly?'dates':'lineitems');const[saving,setSaving]=useState(false);
+  // Default tab: 'details' for both new and existing projects (was 'lineitems'
+  // for existing projects pre-2026-05-04). The 2-level nav grouping puts
+  // Details under Setup — landing on Setup → Details matches the natural
+  // "review who/where/when first" flow when reopening a project. Install-
+  // date-only edit mode still drops the user straight on the dates tab so
+  // the relevant field is one click away.
+  const[form,setForm]=useState({...job});const[tab,setTab]=useState(canEditInstallDateOnly?'dates':'details');const[saving,setSaving]=useState(false);
   /* 2026-04-29 bug fix (Amiee, Emberly Sec 8-11): when the user navigates between
      jobs via the prev/next arrow without closing the panel, the `job` prop
      changes but `form` was initialized via useState({...job}) which only runs
@@ -5498,9 +5504,9 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
           <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Contract Breakdown</div>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
             <span style={{color:'#625650'}}>Original Contract</span>
-            <span style={{fontWeight:700}}>{$(arCOs.reduce((sum,co)=>sum,n(s.adj_contract_value)-arCOs.filter(c=>c.status==='approved').reduce((s2,c)=>s2+n(c.amount),0)))}</span>
+            <span style={{fontWeight:700}}>{$(arCOs.reduce((sum,co)=>sum,n(s.adj_contract_value)-arCOs.filter(c=>(c.status||'').toLowerCase()==='approved').reduce((s2,c)=>s2+n(c.amount),0)))}</span>
           </div>
-          {arCOs.filter(c=>c.status==='approved').map((co,i)=><div key={co.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}>
+          {arCOs.filter(c=>(c.status||'').toLowerCase()==='approved').map((co,i)=><div key={co.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:2}}>
             <span style={{color:'#625650'}}>CO #{i+1}{co.description?' — '+co.description.slice(0,40):''}</span>
             <span style={{fontWeight:600,color:n(co.amount)>=0?'#065F46':'#DC2626'}}>{n(co.amount)>=0?'+':''}{$(Math.abs(n(co.amount)))}</span>
           </div>)}
@@ -12933,7 +12939,12 @@ function ChangeOrdersPage({jobs}){
   const filtered=useMemo(()=>{let f=enriched;if(statusF)f=f.filter(o=>o.status===statusF);return f;},[enriched,statusF]);
   const totalApproved=enriched.filter(o=>o.status==='Approved').reduce((s,o)=>s+n(o.amount),0);
   const totalPending=enriched.filter(o=>o.status==='Pending').reduce((s,o)=>s+n(o.amount),0);
+  // Status palette keyed on canonical InitCap form. The DB was normalized to
+  // 'Pending' / 'Approved' / 'Rejected' on 2026-05-04 (was a mix of 'approved'
+  // lowercase + 'Pending' titlecase). Defensive lookup helper below capitalizes
+  // the first letter so any future lowercase straggler still hits the palette.
   const coStatusC={Pending:['#B45309','#FEF3C7'],Approved:['#065F46','#D1FAE5'],Rejected:['#991B1B','#FEE2E2']};
+  const fmtCOStatus = (s) => { const v=(s||'').trim(); return v ? v.charAt(0).toUpperCase()+v.slice(1).toLowerCase() : '—'; };
   const openNew=()=>{setEditCO(null);setCOForm({job_id:'',co_number:'',date_submitted:new Date().toISOString().split('T')[0],amount:'',description:'',status:'Pending',approved_by:'',date_approved:'',notes:''});setJobSearch('');setShowForm(true);};
   const openEditCO=(o)=>{setEditCO(o);setCOForm({job_id:o.job_id,co_number:o.co_number||'',date_submitted:o.date_submitted||'',amount:o.amount||'',description:o.description||'',status:o.status||'Pending',approved_by:o.approved_by||'',date_approved:o.date_approved||'',notes:o.notes||''});setJobSearch(o._jobName||'');setShowForm(true);};
   const saveCO=async()=>{const body={job_id:coForm.job_id,co_number:coForm.co_number||null,amount:n(coForm.amount),description:coForm.description||null,status:coForm.status||'Pending',date_submitted:coForm.date_submitted||null,date_approved:coForm.date_approved||null,approved_by:coForm.approved_by||null,notes:coForm.notes||null};if(!body.job_id){setToast({message:'Select a job',isError:true});return;}try{if(editCO){await sbPatch('change_orders', editCO.id, body);}else{await sbPost('change_orders', body, { throwOnError: true });}setShowForm(false);fetchOrders();setToast(editCO?'Change order updated':'Change order added');}catch(e){setToast({message:e.message||'Save failed',isError:true});}};
@@ -12961,7 +12972,7 @@ function ChangeOrdersPage({jobs}){
             <div style={{fontSize:15,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o._jobName}</div>
             <div style={{fontSize:12,color:'#625650',marginTop:2}}>{o.co_number||'—'}{o.date_submitted?` · ${fD(o.date_submitted)}`:''}</div>
           </div>
-          <span style={pill(sc2,sb2,sc2)}>{o.status||'—'}</span>
+          <span style={pill(sc2,sb2,sc2)}>{fmtCOStatus(o.status)}</span>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #F1EFEC'}}>
           <div>
@@ -12983,7 +12994,7 @@ function ChangeOrdersPage({jobs}){
           <td style={{padding:'8px 10px'}}>{fD(o.date_submitted)}</td>
           <td style={{padding:'8px 10px',fontFamily:'Inter',fontWeight:700,color:o.status==='Rejected'?'#991B1B':n(o.amount)>0?'#065F46':'#1A1A1A'}}>{o.status==='Rejected'?<s>{$(o.amount)}</s>:$(o.amount)}</td>
           <td style={{padding:'8px 10px',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#625650'}}>{o.description||'—'}</td>
-          <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{o.status||'—'}</span></td>
+          <td style={{padding:'8px 10px'}}><span style={pill(sc2,sb2)}>{fmtCOStatus(o.status)}</span></td>
           <td style={{padding:'8px 10px'}}>{o.approved_by||'—'}</td>
           <td style={{padding:'8px 10px'}}>{fD(o.date_approved)}</td>
           <td style={{padding:'8px 10px'}}><button onClick={()=>openEditCO(o)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:600,cursor:'pointer',padding:'3px 10px'}}>Edit</button></td>
@@ -24571,40 +24582,60 @@ function SalesDashboardPage({jobs,onNav}){
   </div>;
 }
 
+// Top-bar page label keyed on the `page` state. Missing entries fall back to
+// 'Fencecrete' (the brand name) which made several pages display the wrong
+// header — caught in the 2026-05-04 app sweep on Mold Inventory, Weather
+// Days, Customer Master, and others. New pages added below; keep this in
+// sync with NAV_GROUPS keys.
 const PAGE_LABELS={
   dashboard:'Dashboard',
-  projects:'Projects',
-  map:'Project Map',
-  production:'Production Board',
-  production_planning:'Production Planning',
-  production_orders:'Production Orders',
-  material_calc:'Material Calculator',
-  daily_report:'Daily Report',
-  pm_billing:'PM Billing',
-  billing:'AR Billing',
-  change_orders:'Change Orders',
-  estimating:'Estimating',
-  reports:'Reports',
-  import_projects:'Import Projects',
+  my_plate:'My Plate',
+  // Sales
   sales_dashboard:'Sales Dashboard',
-  pipeline:'Sales Pipeline',
   prospecting:'Prospecting',
+  pipeline:'Sales Pipeline',
   proposals:'Proposals',
-  proposal_triage:'Proposal Triage',
   bid_advisor:'Bid Advisor',
   proposal_validator:'Proposal Validator',
+  proposal_triage:'Proposal Triage',
+  tasks:'Tasks',
   contacts:'Contacts',
-  fleet:'Fleet',
-  admin:'Admin',
-  system_events:'System Events',
-  specialty_visits:'Specialty Install',
-  cv_reconciliation:'Contract Reconciliation',
-  my_plate:'My Plate',
-  sharepoint_links:'SharePoint Links',
-  crew_leaders_admin:'Crew Leaders',
-  crew_assignment:'Crew Assignment',
-  demand_planning:'Demand Planning',
+  estimating:'Estimating',
+  // Contracts & Projects
+  projects:'Projects',
   contracts_workbench:'Contracts Workbench',
+  map:'Project Map',
+  // Project Management
+  pm_billing:'PM Bill Sheet',
+  pm_daily_report:'PM Daily Report',
+  schedule:'Install Schedule',
+  specialty_visits:'Specialty Install',
+  // Production
+  demand_planning:'Demand Planning',
+  production_planning:'Production Planning',
+  production:'Production Board',
+  production_orders:'Production Orders',
+  daily_report:'Daily Production Report',
+  crew_assignment:'Crew Assignment',
+  material_calc:'Material Calculator',
+  mold_inventory:'Mold Inventory',
+  // Finance
+  billing:'AR Billing',
+  change_orders:'Change Order Log',
+  cv_reconciliation:'Contract Reconciliation',
+  weather_days:'Weather Days',
+  reports:'Reports',
+  // Fleet & Equipment
+  fleet:'Fleet Assets',
+  fleet_wo:'Fleet Work Orders',
+  plant_maintenance:'Plant Work Orders',
+  // Admin
+  import_projects:'Import Projects',
+  admin:'User Management',
+  sharepoint_links:'SharePoint Links',
+  customer_master:'Customer Master',
+  crew_leaders_admin:'Crew Leaders',
+  system_events:'System Events',
 };
 
 /* ═══ BID ADVISOR — Phase 4a MVP ═══ */
@@ -25656,15 +25687,20 @@ function AppShell(){
   // ADMIN group is shown when the user qualifies for at least one admin item.
   // Items inside the group are independently gated so we can grow this list
   // without coupling the User Management gate to the System Events gate.
+  // Build the per-role nav by extending the existing ADMIN group's items with
+  // role-conditional entries (was a separate appended group, which rendered
+  // as a duplicated "ADMIN" header in the sidebar — caught in the 2026-05-04
+  // app sweep). We now merge into the existing ADMIN group so there's exactly
+  // one ADMIN section regardless of which conditional items are visible.
   const filteredNav=useMemo(()=>{
-    const adminItems=[];
-    if(isAdmin)adminItems.push({key:'admin',label:'User Management',icon:'🔐'});
-    if(canFolderAdmin)adminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
-    if(canFolderAdmin)adminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
-    if(isAdmin)adminItems.push({key:'crew_leaders_admin',label:'Crew Leaders',icon:'👷'});
-    if(canSystemEvents)adminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
-    if(adminItems.length===0)return NAV_GROUPS;
-    return[...NAV_GROUPS,{label:'ADMIN',color:'#4B5563',iconColor:'#9CA3AF',items:adminItems}];
+    const conditionalAdminItems=[];
+    if(isAdmin)conditionalAdminItems.push({key:'admin',label:'User Management',icon:'🔐'});
+    if(canFolderAdmin)conditionalAdminItems.push({key:'sharepoint_links',label:'SharePoint Links',icon:'🔗'});
+    if(canFolderAdmin)conditionalAdminItems.push({key:'customer_master',label:'Customer Master',icon:'🏢'});
+    if(isAdmin)conditionalAdminItems.push({key:'crew_leaders_admin',label:'Crew Leaders',icon:'👷'});
+    if(canSystemEvents)conditionalAdminItems.push({key:'system_events',label:'System Events',icon:'⚡'});
+    if(conditionalAdminItems.length===0)return NAV_GROUPS;
+    return NAV_GROUPS.map(g=>g.label==='ADMIN'?{...g,items:[...g.items,...conditionalAdminItems]}:g);
   },[isAdmin,canFolderAdmin,canSystemEvents]);
   const[page,setPage]=useState('dashboard');
   const[pageHistory,setPageHistory]=useState([]);
