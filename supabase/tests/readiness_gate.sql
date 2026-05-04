@@ -79,11 +79,16 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────
 -- Test 2: trigger blocks status move when is_ready=false
 -- Regression target: enforce_contract_readiness() forcing function
+-- Also asserts the error message lists specific blockers (regression
+-- target: 20260504_readiness_gate_specific_blockers_in_error.sql) so a
+-- future change can't quietly drop the field-by-field guidance Amiee
+-- needs.
 -- ─────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
   v_job_id  uuid;
   v_blocked boolean := false;
+  v_msg     text;
 BEGIN
   SELECT job_id INTO v_job_id
   FROM v_contract_readiness
@@ -102,12 +107,19 @@ BEGIN
     RAISE EXCEPTION 'TEST 2: status move should have been blocked but went through';
   EXCEPTION WHEN check_violation THEN
     v_blocked := true;
+    GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
   END;
 
   IF NOT v_blocked THEN
     RAISE EXCEPTION 'TEST 2: expected check_violation';
   END IF;
   INSERT INTO _test_results (test) VALUES ('2: trigger blocks status move when is_ready=false');
+
+  -- 2B: error message lists specific blockers, not just generic text
+  IF v_msg NOT ILIKE '%missing%' THEN
+    RAISE EXCEPTION 'TEST 2B: error message should contain "missing — <items>" with specific blockers, got: %', v_msg;
+  END IF;
+  INSERT INTO _test_results (test) VALUES ('2B: error message lists specific blockers');
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────
