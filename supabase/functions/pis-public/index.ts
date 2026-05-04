@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const SB_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SB_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const APP_URL = 'https://fencecrete-ops.vercel.app';
+const APP_URL = 'https://forms.fencecrete.com';
 
 // Contracts role mailbox—NOT amiee@fencecrete.com.
 const CONTRACTS_EMAIL = 'contracts@fencecrete.com';

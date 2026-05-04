@@ -2730,7 +2730,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             {pisTokens.map(t=>{
               // Form URL points at the React app (the Supabase edge function only serves JSON;
               // text/html is rewritten to text/plain on default Supabase domains).
-              const formUrl=`https://fencecrete-ops.vercel.app/#/pis/${t.token}`;
+              const formUrl=`https://forms.fencecrete.com/#/pis/${t.token}`;
               const isExpired=new Date(t.expires_at)<new Date();
               const isTest=t.sent_to_name==='TEST';
               const statusBg=t.submitted_at?'#D1FAE5':isExpired?'#FEE2E2':'#FEF3C7';
@@ -20081,7 +20081,7 @@ async function uploadPhoto(file, bucket, folder) {
 
 /* ── QR Code Generator using inline SVG ── */
 function FleetQRCode({ equipmentId, unitNumber, qrToken }) {
-  const qrData = `https://fencecrete-ops.vercel.app?fleet_qr=${qrToken}`;
+  const qrData = `https://ops.fencecrete.com?fleet_qr=${qrToken}`;
   return (
     <div style={{ textAlign: 'center', padding: 16 }}>
       <div style={{ background: '#FFF', padding: 16, borderRadius: 12, display: 'inline-block', border: '1px solid #E5E3E0' }}>

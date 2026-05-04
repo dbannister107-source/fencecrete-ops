@@ -193,7 +193,7 @@ Focus on companies with 50+ lots. Prioritize: new community announcements, groun
       ? `**Market Intelligence:**\n` + (parsed.market_intel || []).map((m: string) => `• ${m}`).join('\n')
       : '',
     '',
-    `View your full prospecting list: https://fencecrete-ops.vercel.app`,
+    `View your full prospecting list: https://ops.fencecrete.com`,
   ].filter(Boolean).join('\n');
 
   return { newCompanies: inserted, digest };

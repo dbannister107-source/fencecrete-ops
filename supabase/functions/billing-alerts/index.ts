@@ -3,7 +3,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const APP_URL = 'https://fencecrete-ops.vercel.app';
+const APP_URL = 'https://ops.fencecrete.com';
 const LOGO_URL = `${APP_URL}/logo.png`;
 const FROM_ADDRESS = 'Fencecrete <ops@mail.fencecrete.com>';
 

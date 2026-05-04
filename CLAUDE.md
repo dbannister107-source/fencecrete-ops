@@ -19,7 +19,7 @@ I am very sensitive about data loss after the recent folder deletion incident.
 
 **Fencecrete OPS** is the internal operations platform for Fencecrete America, LLC — a Texas-based precast concrete fence and wall manufacturer/installer. The platform replaces the company's Excel-based tracking and serves as the system of record for projects, billing, production, scheduling, sales, and fleet operations.
 
-- **Live URL:** https://fencecrete-ops.vercel.app
+- **Live URL:** https://ops.fencecrete.com (custom domain — `fencecrete-ops.vercel.app` is the underlying Vercel host but should not be linked from emails / docs / QR codes)
 - **GitHub:** dbannister107-source/fencecrete-ops
 - **Local path:** `C:\Users\DavidBannister\fencecrete-ops`
 - **Deployment:** Vercel auto-deploys on push to `main`. ~90 sec build time.
@@ -457,7 +457,7 @@ git push origin main   # Vercel auto-deploys
 
 **Verify production deploys** by fetching the deployed JS bundle URL from the HTML and grepping for specific string literals:
 ```bash
-curl -sk https://fencecrete-ops.vercel.app/ | grep -o '/static/js/main\.[a-f0-9]*\.js' | head -1 | xargs -I {} curl -sk "https://fencecrete-ops.vercel.app{}" -o bundle.js
+curl -sk https://ops.fencecrete.com/ | grep -o '/static/js/main\.[a-f0-9]*\.js' | head -1 | xargs -I {} curl -sk "https://ops.fencecrete.com{}" -o bundle.js
 grep -F -c "expected_string" bundle.js
 ```
 

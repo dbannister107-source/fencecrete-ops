@@ -3,7 +3,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 const SB_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SB_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const RESEND_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const APP_URL = 'https://fencecrete-ops.vercel.app';
+const APP_URL = 'https://ops.fencecrete.com';
 const LOGO_URL = `${APP_URL}/logo.png`;
 const FROM_ADDRESS = 'Fencecrete <ops@mail.fencecrete.com>';
 
