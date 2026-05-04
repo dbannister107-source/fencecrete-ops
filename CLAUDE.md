@@ -158,7 +158,7 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 
 ### Recently shipped (2026-05-04)
 
-**Session summary (2026-05-04):** 4 commits to `main`, 2 DB migrations, 1 new shared module, 2 new DB triggers + backfill, 1 new test file. All driven by a live-app review of ops.fencecrete.com (the entire 20-finding review is captured in chat history). Top-of-list items retired: crew-leader bulk assignment + forcing-function gate; canonical billing metrics; two passes of color-vocabulary audit; PRODUCT-vs-PRIMARY-TYPE auto-sync; currency formatting on EditPanel money fields; Project Map clusters now colored by readiness state.
+**Session summary (2026-05-04, FINAL — full day + extended evening):** 12 commits to `main` (`492b5ef`..`7137b6b`), 2 DB migrations, 1 new shared module, 2 new DB triggers + backfill, 1 new test file. Driven entirely by a live-app review of ops.fencecrete.com — **all 20 findings (P0/P1/P2/P3) closed by end of day**. Plus: Tier 1 mobile improvements for PM workflows (role-driven bottom nav, camera-first photo capture, PM Bill Sheet mobile card layout), TDZ crash fix on Material Calculator caught mid-QA-sweep, sidebar icon dict completion (28 → 41 entries), sidebar count alignment with Dashboard's canonical `active` definition. App.jsx gained ~280 lines net across the day (consolidations + new mobile-aware branches + new icons). All builds green; all CI green.
 
 **By commit:**
 
@@ -179,31 +179,75 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - PM Daily Report "Clear Form" → warm gray.
 - Net effect: red on the live app drops from "everywhere" to "only the actions you actually need to look at."
 
-🔧 **`<TBD next commit>` — Three P1s from live review**
+🔧 **`4e0328c` — Three P1s from live review**
 - **PRODUCT vs PRIMARY TYPE contradiction retired**: `sync_product_from_primary_fence_type()` trigger auto-populates `jobs.product` from `jobs.primary_fence_type` on INSERT/UPDATE. Mapping: Precast→Precast Fence, Masonry→Masonry, Wood→Wood, Wrought Iron→Wrought Iron. Legacy values (custom strings, primary_fence_type=NULL or 'Other') are preserved. Backfill resolved ~6 active contradictions plus ~37 NULL-product rows; snapshot in `_bak_product_drift_20260504`. EditPanel marks the `product` field as Auto (read-only) with a tooltip pointing at `primary_fence_type`. Migration: `20260504_sync_product_with_primary_fence_type.sql`.
 - **Currency formatting on EditPanel money fields**: new `MoneyInput` component (in App.jsx near the SkeletonRows helpers) renders `$891,280` formatted by default, switches to raw editing on click/focus. Storage value stays a numeric string. `MONEY_FIELDS` set lists the ~16 fields that route through it (`contract_value`, `adj_contract_value`, `sales_tax_amount`, `bonds_amount`, all line-item rates, etc.). Retires the 2026-05-03 review finding that Contract & Billing tab showed `891280` while the project list showed `$891,280` for the same field.
 - **Project Map clusters colored by readiness**: `clusterProperties` aggregator on the GeoJSON source counts `_is_overdue` / `_is_risk` / `_is_ready` flags per cluster. Bubble paint is now a `case` expression: any overdue → red `#DC2626`, any risk → amber `#EAB308`, all ready → green `#16A34A`, fall-through → slate `#475569` (used in 'crew' / 'market' colorMode where readiness doesn't apply). Replaces the "all clusters brand red" rendering that misled review readers into "everything Houston is overdue."
 
-**State going into 2026-05-05:**
+🌆 **Evening session — every remaining live-review finding closed + Tier 1 mobile + sidebar polish**
+
+`d22707e` — **9 more live-review items at once** (P1 #4 + P1 #9 + P2 #10-16 + P3 #17 + P3 #20). Initial pass at the EditPanel 2-level tab grouping (Setup/Money/Workflow), Map loading skeleton scaffolding, status palette differentiation, and Sunday-zero stats softening on capacity tiles. (Most of these got further hardened in `87c7197` later in the session.)
+
+`c224ee7` — **Material Calc TDZ fix** caught mid-QA-sweep. `useEffect` on line 8742 had `calcCfg` in dep array, but `calcCfg` (a `useMemo`) was declared on line 8766 — temporal dead zone. The page crashed on first render with `ReferenceError: Cannot access 'ee' before initialization` (mangled minified name). Moved `calcCfg` above the useEffect.
+
+`81e8d4b` — **5 quick wins from final QA sweep**:
+- Duplicate ADMIN sidebar group: `filteredNav` was appending a second 'ADMIN' group via `[...NAV_GROUPS, {label:'ADMIN', items:conditional}]` instead of merging. Now uses `NAV_GROUPS.map(g => g.label==='ADMIN' ? {...g, items:[...g.items, ...conditional]} : g)`. Single ADMIN section regardless of which conditional items render.
+- Page header showing "Fencecrete" everywhere: `PAGE_LABELS` dict was missing 11 keys (`mold_inventory`, `weather_days`, `customer_master`, etc.) so the topbar fell back to the brand name. Expanded the dict with every NAV_GROUPS key, organized by group.
+- TEST leads polluting Sales Dashboard counts: 2 leads with company_name='TEST' and NULL elsewhere. `DELETE FROM leads WHERE company_name='TEST' AND fields NULL`.
+- Change Order status casing inconsistency: DB had 27 'approved' (lowercase) and 4 'Pending' (titlecase). `UPDATE INITCAP` normalize + new `fmtCOStatus()` helper + made 3 lowercase comparisons case-insensitive.
+- EditPanel default tab landing on `lineitems` for existing projects (which 404'd briefly when LineItemsEditor's data hadn't loaded). Default for both new + existing is now `details` so the user always lands on something coherent.
+
+`8457c54` — **Role-based sidebar nav** (live-review #18 + #19). `ROLE_NAV_GROUPS` dict maps role → `Set` of nav-group labels. Sidebar filters via `baseGroups.filter(g => allowedGroups.has(g.label))`. Falls open if role is missing/unknown so a profile-fetch failure can't lock anyone out. PMs see `HOME / PROJECT MANAGEMENT / CONTRACTS & PROJECTS`; sales reps see `HOME / SALES`; production sees `HOME / PRODUCTION / FLEET & EQUIPMENT`; billing sees `HOME / FINANCE / CONTRACTS & PROJECTS`. Admin sees all. Same dict shape backs `MOBILE_NAV_BY_ROLE` for the bottom-nav (Tier 1B below).
+
+📱 **Tier 1 mobile improvements (PM workflow priority — 3 commits)**
+
+`6901d9b` — **Tier 1B: role-driven mobile bottom nav.** `MOBILE_NAV_BY_ROLE` dict gives each role its 5 most-used items: PMs get `Dashboard / My Plate / Bill Sheet / Daily / More`; sales reps get `Dashboard / Pipeline / Proposals / Tasks / More`; etc. Hit-tap saving for PMs in the field who were previously tapping `More → PM Bill Sheet` every cycle.
+
+`be35cd7` — **Tier 1A: camera-first photo capture on EditPanel Documents.** Dual file inputs: a hidden one with `capture="environment"` (rear camera direct on iOS), a hidden plain file picker, and two labeled buttons — 📷 Take Photo (brand red, primary action) and 📄 Upload File (white, secondary). PMs no longer detour through the Files app.
+
+`18d4389` — **Tier 1C: PM Bill Sheet rows wrap to a card on mobile.** Was a single horizontal flex row that overflowed on `<768px`. Now `flexWrap:'wrap'` on the outer row, `flexBasis:'100%'` on the job-name span, action buttons drop to a full-width line with a dashed top-border separator. Submit / No Bill buttons hit 44px min-height on mobile (iOS HIG). iPad + desktop layouts byte-for-byte unchanged.
+
+🧹 **`87c7197` — Final live-review cleanup pass (P1 #4 + #9 final + P2 + P3 polish)**
+
+- **P1 #4 — Notes tab folded into Details.** Notes was a single textarea wasting a top-level tab slot. Now appended to `Details` field list. Workflow group: 4 → 3 tabs (Documents / Tasks / History). Combined with the 2-level Setup/Money/Workflow grouping from `d22707e` earlier, the EditPanel reads cleaner.
+- **P1 #9 — Map blank-on-load hardened.** Skeleton now hides on Mapbox `'idle'` (tiles painted) instead of `'load'` (style ready). Added a `ResizeObserver` around the map container — Mapbox snapshots its container size at construction; in flex layouts the container can be 0px tall for a frame, then grow, leaving the canvas stuck at 0 (looks blank). Observer triggers `.resize()` on any subsequent change.
+- **P2 — Production Planning + Mold Utilization labels:**
+  - Mold Inventory tabs: 🪺 → 🎩 (Caps).
+  - Production Planning leadership "Limited by" column: lowercased raw component names ("caps (28)") title-cased + tooltip rewritten to name the style.
+  - Demand Planning weeks-to-clear pill: "CAPS MOLDS-CONSTRAINED" → "Caps molds-constrained" with explanatory tooltip. Stop shouting.
+
+🎨 **`72dddb6` — Sidebar icons for 13 missing nav items.** The `_icons` SVG dict had drifted out of sync with NAV_GROUPS. Items rendering an empty 16x16 spacer next to their label: `my_plate`, `proposal_validator`, `proposal_triage`, `contracts_workbench`, `specialty_visits`, `demand_planning`, `crew_assignment`, `cv_reconciliation`, `admin`, `sharepoint_links`, `customer_master`, `crew_leaders_admin`, `system_events`. All new icons follow the existing 16×16 stroked-line style (stroke-width 1.5, `currentColor`) so they inherit the active/inactive sidebar color treatment automatically.
+
+🔢 **`7137b6b` — Sidebar count alignment.** First pass (`87c7197`) split the count into `active · total`, but used a custom Set that included `fully_complete` as "active". The Dashboard's canonical `active` filter (line 4211) excludes `fully_complete` via `CLOSED_SET` because the work is done — the job's awaiting close-out. Aligned the sidebar to reuse `CLOSED_SET` so the two surfaces never drift.
+
+**State going into 2026-05-05 (FINAL — all 20 live-review findings closed):**
 
 | Live-review finding | Status |
 |---|---|
-| P0 #1 — 0/55 active install jobs had a crew leader | ✅ Bulk UI + DB gate shipped; data backfill is operational (Carlos clicks the bulk UI when he's ready) |
-| P0 #2 — Billing metric mismatch dashboard vs Billing page | ✅ Single source of truth shipped; metrics consistent |
-| P0 #3 — "325 days to 1st invoice" — bug or real cycle? | ✅ Real cycle (median 268d). Relabelled, distribution shown |
-| P0 #4 — "Everything is red" color-vocabulary problem | ✅ Pass 1 + Pass 2 done; red now means action-required |
-| P1 #5 — Number formatting inconsistency on Contract & Billing | ✅ MoneyInput component routes ~16 money fields through currency formatting |
-| P1 #6 — PRODUCT vs PRIMARY TYPE contradiction | ✅ DB trigger + backfill + UI Auto badge |
-| P1 #8 — Project Map clusters all rendered red | ✅ Cluster bubble paint now reflects readiness state |
-| P1 #4 — EditPanel: 12 tabs is too many | Open (medium scope, requires UX exploration) |
-| P1 #9 — Map loads slowly and shows blank initially | Open (Mapbox tile preload or skeleton) |
-| P2 #10–16 — Production Planning + Mold Utilization labels + PM Bill Sheet alarm | Open (scattered small fixes) |
-| P3 #17–20 — Status pill differentiation, role-based nav, sidebar count, Sunday-zero stats | Open (polish) |
+| P0 #1 — 0/55 active install jobs had a crew leader | ✅ Bulk UI + DB gate shipped (Carlos backfills operationally) |
+| P0 #2 — Billing metric mismatch | ✅ `src/shared/billing.js` single source of truth |
+| P0 #3 — "325 days to 1st invoice" | ✅ Real cycle (median 268d). Relabelled, distribution shown |
+| P0 #4 — "Everything is red" | ✅ Pass 1 + Pass 2; red now means action-required |
+| P1 #4 — EditPanel: 12 tabs too many | ✅ 2-level Setup/Money/Workflow grouping + Notes folded into Details |
+| P1 #5 — Money field formatting | ✅ MoneyInput component routes ~16 money fields |
+| P1 #6 — PRODUCT vs PRIMARY TYPE | ✅ DB trigger + backfill + UI Auto badge |
+| P1 #8 — Map clusters all red | ✅ Cluster bubble paint reflects readiness state |
+| P1 #9 — Map blank-on-load | ✅ Skeleton + 'idle' event + ResizeObserver |
+| P2 #10–16 — Production Planning + Mold labels + PM Bill Sheet alarm | ✅ Title-case labels, weekend-aware capacity tiles, missing-bill softening pre-cutoff |
+| P3 #17 — Status pill differentiation | ✅ Each post-production stage gets distinct shade (`SC` / `SB_` arrays diff'd 2026-05-04) |
+| P3 #18 — Role-based sidebar nav | ✅ `ROLE_NAV_GROUPS` dict |
+| P3 #19 — Sidebar project count | ✅ `253 active · 1,019 total` format using same `CLOSED_SET` as Dashboard |
+| P3 #20 — Sunday-zero stats | ✅ Capacity tiles say "No production scheduled — weekend" instead of 0% |
+| All 13 nav items missing icons | ✅ SVG dict expanded 28 → 41 entries |
 
-**Pickup tomorrow:**
-- The remaining open items above are all 30-min to 2-hr fixes individually; pick by user pain.
-- **Operational, no engineering**: Carlos opens Crew Assignment, multi-selects all unassigned jobs, picks a leader, hits Assign. 5-minute task that'll backfill the 55-job gap.
+**Pickup tomorrow (2026-05-05):**
+
+- **Operational, no engineering**: Carlos backfills crew leaders on 55 active_install jobs via the bulk UI (5 minutes of clicks).
 - **Operational, no engineering**: David runs the bulk PIS pull on Customer Master to populate the 133 eligible projects.
+- Live-review backlog is **fully closed** — David's review notes are retired. Next iteration of issues comes from real users hitting the live app.
+- Tech-debt #11 (latent ESLint warnings ~134) is the natural next-up engineering chip, but it's mechanical cleanup, not user-facing. Defer until after a real-user pain point surfaces.
+- Refactor retry-on-missing-column pattern (~1 hr) — 6 eslint-disabled fetches in production_plan_lines + production_actuals. Last bits of the H constant.
+- Identity-by-email FK conversion for the remaining ~27 columns (workflow backlog #3, low priority — convert as features need them).
 
 ### Recently shipped (2026-05-03)
 
@@ -454,4 +498,4 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 3, 2026 — FINAL end-of-day. 28 commits across the full-day + evening session (`b99c7c5`..`7222c7b`), 5 DB migrations, 4 edge function deploys (demand-copilot v2, production-scheduler v13, pis-extract-from-sharepoint v1→v4, bill-sheet-submitted-notification v15→v16), 1 GitHub Actions workflow wired and verified green. 9 backlog items retired or substantially advanced. Demand Planning + Production Planning + AI Scheduler + Co-Pilot Q&A integrated with v_mold_capacity (single source of truth). Bulk PIS pull from SharePoint shipped end-to-end with quality filter + audit log. **App.jsx fetch migration 113 → 0 (100% retired)** across Phases 2A + 2B + 2C. CI runs `supabase/tests/*.sql` on every push and PR. Power Automate retired from inventory (the docs caught up — flows were already disabled). xlsx replaced with exceljs (closed only prod-path high-severity vulnerability). All builds green, CI green on every commit. See "Recently shipped (2026-05-03)" for the full breakdown and "Pickup tomorrow morning" for the prioritized list of what's next. Tomorrow's likely pickup: refactor the retry-on-missing-column pattern (~1 hr) to retire the last 6 eslint-disabled fetches and the H constant; or run the bulk PIS pull on the 133 eligible projects; or chip at latent ESLint warnings (~134 remaining, now actually visible).*
+*Last updated: May 4, 2026 — FINAL end-of-day. 12 commits across the full-day session (`492b5ef`..`7137b6b`), 2 DB migrations, 0 edge function deploys. **Every one of the 20 live-review findings closed** (P0/P1/P2/P3) plus Tier 1 mobile improvements for PM workflows (role-driven bottom nav, camera-first photo capture on Documents, PM Bill Sheet mobile card view) plus a TDZ crash fix on Material Calculator caught during the QA sweep. Notable systems-level adds: 2-level EditPanel tab grouping (Setup / Money / Workflow); `MoneyInput` component with currency formatting; `MOBILE_NAV_BY_ROLE` + `ROLE_NAV_GROUPS` role-aware nav; sidebar icon dict completed (28 → 41 entries — every nav item now has an icon); sidebar count split into `active · total` aligned with Dashboard's canonical `CLOSED_SET` definition. Two new DB triggers + backfills (crew_leader_id forcing-function gate; PRODUCT ↔ PRIMARY_TYPE auto-sync). New shared module: `src/shared/billing.js` as the single source of truth for billing metrics. **State going into 2026-05-05:** live-review backlog fully closed; David's review notes retired. Tomorrow is operational (Carlos backfills crew leaders via the bulk UI, David runs the bulk PIS pull on Customer Master) — no engineering pressure unless real users surface new issues. Next-up engineering chips when needed: tech-debt #11 (latent ESLint warnings ~134 mechanical cleanup); retire-on-missing-column pattern (~1 hr — last 6 eslint-disabled fetches); identity-by-email FK conversion for the remaining ~27 columns. All builds green, all CI green on every commit.*
