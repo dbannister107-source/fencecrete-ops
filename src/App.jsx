@@ -15205,7 +15205,7 @@ function DemandPlanningPage(){
                   <td style={{padding:'10px 12px'}}>{j.market}</td>
                   <td style={{padding:'10px 12px'}}>{j.style||<span style={{color:'#9E9B96'}}>—</span>}</td>
                   <td style={{padding:'10px 12px',fontWeight:600}}>{fmtLF(j.total_lf)}</td>
-                  <td style={{padding:'10px 12px',fontSize:11}}><span style={{background:j.status==='in_production'?'#FEF3C7':j.status==='production_queue'?'#DBEAFE':'#FEE2E2',color:j.status==='in_production'?'#92400E':j.status==='production_queue'?'#1E40AF':'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{j.status}</span></td>
+                  <td style={{padding:'10px 12px',fontSize:11}}><span style={{background:j.status==='in_production'?'#FEF3C7':j.status==='production_queue'?'#DBEAFE':'#FEE2E2',color:j.status==='in_production'?'#92400E':j.status==='production_queue'?'#1E40AF':'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{SL[j.status]||j.status}</span></td>
                   <td style={{padding:'10px 12px'}}>{j.pm}</td>
                 </tr>;
               })}
@@ -25231,8 +25231,18 @@ const MOBILE_NAV=[
 ];
 
 function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}){
-  const groups=navGroups||NAV_GROUPS;
   const auth=useAuth();
+  // Role-based nav filter (added 2026-05-04 to address live-review #19).
+  // ROLE_NAV_GROUPS is defined below (in the same module) and maps each
+  // role → Set of group labels they should see. Unknown / missing role →
+  // show everything (admin-equivalent), so a profile fetch failure or a
+  // role we haven't preset for doesn't lock anyone out. The Sidebar
+  // accepts a `navGroups` prop override for tests / future per-user
+  // customizations; that path bypasses the role filter.
+  const role=auth?.profile?.role;
+  const allowedGroups=role&&ROLE_NAV_GROUPS[role]?ROLE_NAV_GROUPS[role]:null;
+  const baseGroups=navGroups||NAV_GROUPS;
+  const groups=allowedGroups?baseGroups.filter(g=>allowedGroups.has(g.label)):baseGroups;
   const[userMenuOpen,setUserMenuOpen]=useState(false);
   const menuRef=useRef(null);
   useEffect(()=>{
@@ -25302,6 +25312,12 @@ function SidebarRefreshButton({collapsed}){
 }
 
 function MoreMenuSheet({page,setPage,onClose,jobs}){
+  // Apply same role-based nav filter as the desktop Sidebar so the mobile
+  // "More" sheet doesn't expose nav items the user shouldn't see.
+  const auth=useAuth();
+  const role=auth?.profile?.role;
+  const allowedGroups=role&&ROLE_NAV_GROUPS[role]?ROLE_NAV_GROUPS[role]:null;
+  const visibleGroups=allowedGroups?NAV_GROUPS.filter(g=>allowedGroups.has(g.label)):NAV_GROUPS;
   const _micons={dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>',projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>',production:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>',production_planning:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>',material_calc:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>',billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>',pm_billing:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>',reports:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>',schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>',weather_days:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>',change_orders:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>',pm_daily_report:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>',install_schedule:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>',sales_dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>',prospecting:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>',pipeline:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>',proposals:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>',contacts:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>',estimating:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>',map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>',import_projects:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>',bid_advisor:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>'};
   return <div style={{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.6)',display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:'#1A1A1A',borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:'88vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -25311,7 +25327,7 @@ function MoreMenuSheet({page,setPage,onClose,jobs}){
         <button onClick={onClose} style={{background:'rgba(255,255,255,0.08)',border:'none',borderRadius:8,color:'#9E9B96',fontSize:18,width:34,height:34,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>✕</button>
       </div>
       {/* Nav items */}
-      <div style={{overflowY:'auto',padding:'8px 10px 80px',flex:1}}>{NAV_GROUPS.map(g=><div key={g.label||'top'}>
+      <div style={{overflowY:'auto',padding:'8px 10px 80px',flex:1}}>{visibleGroups.map(g=><div key={g.label||'top'}>
         {g.label&&<div style={{fontSize:9,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.12em',fontWeight:700,padding:'14px 10px 4px',display:'flex',alignItems:'center',gap:6}}>{g.label}</div>}
         {g.items.map(ni=>{const _svg=_micons[ni.key]||'';return <button key={ni.key} onClick={()=>{setPage(ni.key);onClose();}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'13px 10px',marginBottom:1,borderRadius:8,border:'none',background:page===ni.key?`${g.color||'#8A261D'}20`:'transparent',color:page===ni.key?'#FFFFFF':'rgba(255,255,255,0.78)',fontSize:14,fontWeight:page===ni.key?500:400,cursor:'pointer',textAlign:'left',borderLeft:page===ni.key?`2px solid ${g.color||'#8A261D'}`:'2px solid transparent'}}>
           {_svg?<span style={{display:'inline-flex',alignItems:'center',width:18,height:18,flexShrink:0,opacity:0.8}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{width:18,height:18,display:'inline-block',flexShrink:0}}/>}
@@ -25353,12 +25369,23 @@ const ROLE_META = {
 // MAINTENANCE→FLEET & EQUIPMENT. New groups CONTRACTS & PROJECTS and ADMIN.
 // Sales reps now see CONTRACTS & PROJECTS so the Contracts Workbench is reachable.
 // PMs keep their own PROJECT MANAGEMENT group as their workflow home.
+// Role → Set of NAV_GROUPS labels visible in the sidebar. Wired into Sidebar
+// + MoreMenuSheet on 2026-05-04 (was defined but unused, per the latent
+// ESLint warning population). Roles match user_profiles.role values from
+// the auth profile. Unknown / missing role => no filter (admin-equivalent
+// fallback) so a profile-fetch failure can't lock anyone out.
+//
+// Adjustments from the original definition:
+//   - 'production' was too narrow (HOME + PRODUCTION only); production
+//     team (Max, Carlos) needs CONTRACTS & PROJECTS to look up jobs
+//     waiting in the queue, plus FLEET & EQUIPMENT for plant maintenance.
+//   - Added 'pm' coverage of FLEET (PMs report defects on field equipment).
 const ROLE_NAV_GROUPS = {
   admin:          new Set(['HOME','SALES','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FINANCE','FLEET & EQUIPMENT','ADMIN','HELP']),
   sales_director: new Set(['HOME','SALES','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FINANCE','HELP']),
   sales_rep:      new Set(['HOME','SALES','CONTRACTS & PROJECTS','HELP']),
-  pm:             new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','HELP']),
-  production:    new Set(['HOME','PRODUCTION','HELP']),
+  pm:             new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FLEET & EQUIPMENT','HELP']),
+  production:     new Set(['HOME','CONTRACTS & PROJECTS','PRODUCTION','FLEET & EQUIPMENT','HELP']),
   billing:        new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','FINANCE','HELP']),
   viewer:         new Set(['HOME','CONTRACTS & PROJECTS','HELP']),
 };
