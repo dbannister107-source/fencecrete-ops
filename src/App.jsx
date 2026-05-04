@@ -8739,6 +8739,25 @@ function MaterialCalcPage({jobs,preJob,onNav}){
   // selStyle is canonical, the view is keyed on the legacy name.
   const[capacity,setCapacity]=useState(null);
   const[capacityLoading,setCapacityLoading]=useState(false);
+  // Resolve the selected canonical style to a material_calc_styles row.
+  // Must be declared BEFORE the capacity-fetching useEffect below — the effect
+  // reads `calcCfg` in its dep array, and `const` declarations are temporally
+  // dead-zoned during render. (Pre-2026-05-04 the effect was above this memo
+  // and the page crashed under React 18's strict-mode behaviors with a
+  // "Cannot access 'calcCfg' before initialization" ReferenceError; that
+  // crash was masked from devs by Sentry's ErrorBoundary on the production
+  // build. Live-app review on 2026-05-04 caught the broken page state.)
+  // Order of preference:
+  //   1. canonical → CANONICAL_TO_MATERIAL_CALC[canonical] → exact match on style_name
+  //   2. selStyle itself matches a style_name (legacy/manual selection)
+  //   3. null → caller uses plant_config defaults and renders a "no data" notice
+  const calcCfg=useMemo(()=>{
+    if(!selStyle)return null;
+    const legacy=CANONICAL_TO_MATERIAL_CALC[selStyle];
+    if(legacy)return calcStyles.find(s=>s.style_name===legacy)||null;
+    if(legacy===null)return null;
+    return calcStyles.find(s=>s.style_name===selStyle)||null;
+  },[calcStyles,selStyle]);
   useEffect(()=>{
     if(!selStyle){setCapacity(null);return;}
     const lookupName=(calcCfg&&calcCfg.style_name)||selStyle;
@@ -8758,18 +8777,6 @@ function MaterialCalcPage({jobs,preJob,onNav}){
       .catch(e=>{console.warn('[MaterialCalc] capacity fetch failed:',e);setCapacity(null);})
       .finally(()=>setCapacityLoading(false));
   },[selStyle,height,calcCfg]);
-  // Resolve the selected canonical style to a material_calc_styles row.
-  // Order of preference:
-  //   1. canonical → CANONICAL_TO_MATERIAL_CALC[canonical] → exact match on style_name
-  //   2. selStyle itself matches a style_name (legacy/manual selection)
-  //   3. null → caller uses plant_config defaults and renders a "no data" notice
-  const calcCfg=useMemo(()=>{
-    if(!selStyle)return null;
-    const legacy=CANONICAL_TO_MATERIAL_CALC[selStyle];
-    if(legacy)return calcStyles.find(s=>s.style_name===legacy)||null;
-    if(legacy===null)return null;
-    return calcStyles.find(s=>s.style_name===selStyle)||null;
-  },[calcStyles,selStyle]);
   // Canonical style chosen but no matching calc row → show the defaults notice
   const usingDefaultCfg=!!selStyle&&!calcCfg;
   // Fetch plant_config once for fallback CY values and global ratios (rebar/PVC/silicone).
