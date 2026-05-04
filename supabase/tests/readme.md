@@ -34,6 +34,7 @@ Every test file should:
 | File | Targets | Regression sources |
 |---|---|---|
 | `readiness_gate.sql` | `v_contract_readiness`, `enforce_contract_readiness()` | `20260502_fix_customer_linked_gate.sql`, `20260502_fix_readiness_trigger_fail_open.sql` |
+| `crew_leader_gate.sql` | `enforce_crew_leader_for_active_install()` | `20260504_active_install_requires_crew_leader.sql` |
 
 ## Adding a test file
 

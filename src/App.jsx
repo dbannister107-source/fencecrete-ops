@@ -35,6 +35,15 @@ import {
   sbStorageUpload, sbStorageSign, sbStorageDelete,
   sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
 } from './shared/sb';
+// Canonical billing metric definitions — see src/shared/billing.js for the
+// exact filter rules. Aliased on import so the existing inline references
+// (`neverBilledJobs`) keep working.
+import {
+  neverBilledJobs as neverBilledJobsFn,
+  neverBilledTotal as neverBilledTotalFn,
+  daysToFirstInvoice as daysToFirstInvoiceFn,
+  BILLING_ELIGIBLE_STATUSES,
+} from './shared/billing';
 
 // Shared readiness definitions — single source of truth for the auto-check
 // labels and manual-item list. Used by EditPanel's Contract Readiness card
@@ -551,7 +560,11 @@ const useIsMobile = (bp = 768) => {
   return isMobile;
 };
 const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#625650' });
-const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#9E9B96' });
+// Filter-pill style. Active state uses blue (#1D4ED8) instead of brand red,
+// per the 2026-05-04 color-vocabulary audit: red is reserved for action-required
+// and danger states, not "this filter is on." Active-state preserves the
+// shipped pill weight + size; only the color hue changes.
+const fpill = a => ({ padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer', border:a?'1px solid #1D4ED8':'1px solid #E5E3E0', background:a?'#DBEAFE':'#FFF', color:a?'#1D4ED8':'#9E9B96' });
 
 // Back button for detail views. Clears the drill-in state via onBack on all
 // viewports — state-based routing means window.history.back() is an
@@ -4079,9 +4092,10 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const ACTIVE_STS=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
   const backlogJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status));
   const tBacklog=backlogJobs.reduce((s,j)=>s+n(j.left_to_bill),0);
-  // Never billed = active jobs with $0 invoiced
-  const neverBilledJobs=allBillable.filter(j=>ACTIVE_STS.has(j.status)&&n(j.ytd_invoiced)===0);
-  const tNeverBilled=neverBilledJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+  // Never billed = eligible-stage jobs with $0 invoiced. Uses canonical defs from
+  // src/shared/billing.js so this metric matches the Billing page filter exactly.
+  const neverBilledJobs=neverBilledJobsFn(jobs);
+  const tNeverBilled=neverBilledTotalFn(jobs);
   // Stale = last billed before 2026, still open
   const today=new Date().toISOString().split('T')[0];
   // Stale = job has real invoice activity but most recent REAL (non-migration)
@@ -4704,7 +4718,13 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const withBal=useMemo(()=>[...active].filter(j=>n(j.left_to_bill)>0).sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)),[active]);
   const ty=active.reduce((s,j)=>s+n(j.ytd_invoiced),0);const tl=active.reduce((s,j)=>s+n(j.left_to_bill),0);
-  const cutoff='2024-01-01';const avgDaysFirst=jobs.filter(j=>{if(!j.contract_date||!j.last_billed)return false;if(j.contract_date<cutoff)return false;const cd=new Date(j.contract_date).getTime();const lb=new Date(j.last_billed).getTime();return lb>=cd;}).map(j=>Math.round((new Date(j.last_billed).getTime()-new Date(j.contract_date).getTime())/86400000));const avgD=avgDaysFirst.length?Math.round(avgDaysFirst.reduce((s,d)=>s+d,0)/avgDaysFirst.length):-1;const avgDColor=avgD<0?'#9E9B96':avgD<=30?'#1D4ED8':avgD<=60?'#B45309':'#991B1B';
+  // "Days from contract to first invoice" — canonical definition in
+  // src/shared/billing.js. Returns mean + median + p25/p75 + n. We display
+  // the median (more stable than mean against the long-tail outliers we have
+  // in the dataset; max is currently 794d which drags the mean way up).
+  const daysFirstStats=useMemo(()=>daysToFirstInvoiceFn(jobs),[jobs]);
+  const avgD=daysFirstStats?daysFirstStats.median:-1;
+  const avgDColor=avgD<0?'#9E9B96':avgD<=30?'#1D4ED8':avgD<=60?'#B45309':'#991B1B';
   const fully=active.filter(j=>n(j.pct_billed)>=0.99).length;
   const[billingTab,setBillingTab]=useState('submissions');
   const[toast,setToast]=useState(null);
@@ -4718,8 +4738,8 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const confirmUndo=async()=>{if(!undoJob)return;const j=undoJob;const adj=n(j.adj_contract_value||j.contract_value);const u={ytd_invoiced:0,pct_billed:0,left_to_bill:adj};await sbPatch('jobs',j.id,u);fireAlert('billing_logged',{...j,...u});logAct(j,'billing_update','ytd_invoiced',j.ytd_invoiced,0);setUndoJob(null);setToast(`Undo: ${j.job_name} YTD reset to $0`);onRefresh();};
   const recentlyBilled=useMemo(()=>jobs.filter(j=>n(j.pct_billed)>=0.99).sort((a,b)=>(b.last_billed||'').localeCompare(a.last_billed||'')).slice(0,10),[jobs]);
   const shown=useMemo(()=>{let f=withBal;if(billingF)f=f.filter(j=>j.billing_method===billingF);if(bSearch){const q=bSearch.toLowerCase();f=f.filter(j=>`${j.job_name} ${j.job_number} ${j.customer_name}`.toLowerCase().includes(q));}if(bMktF)f=f.filter(j=>j.market===bMktF);if(bPmF)f=f.filter(j=>j.pm===bPmF);if(bStatusF==='zero')f=f.filter(j=>n(j.pct_billed)===0);
-    if(bStatusF==='never_billed')f=f.filter(j=>n(j.ytd_invoiced)===0&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));
-    if(bStatusF==='stale')f=f.filter(j=>n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01'&&['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'].includes(j.status));return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF]);
+    if(bStatusF==='never_billed')f=f.filter(j=>n(j.ytd_invoiced)===0&&BILLING_ELIGIBLE_STATUSES.includes(j.status));
+    if(bStatusF==='stale')f=f.filter(j=>n(j.ytd_invoiced)>0&&j.last_billed&&j.last_billed<'2026-01-01'&&BILLING_ELIGIBLE_STATUSES.includes(j.status));return f;},[withBal,billingF,bSearch,bMktF,bPmF,bStatusF]);
   const auth=useAuth();
   const currentUserEmail=(auth?.user?.email||'').trim();
   // ─── PM Submissions (AR Exception Dashboard) ───
@@ -4968,7 +4988,17 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800,marginBottom:20}}>Billing</h1>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}><KPI label="YTD Billed" value={$k(ty)} color="#065F46"/><KPI label="Left to Bill" value={$k(tl)} color="#B45309"/><KPI label="Avg Days to 1st Invoice" value={avgD>=0?avgD+'d':'—'} color={avgDColor}/><KPI label="100% Billed" value={fully} color="#065F46"/></div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
+      <KPI label="YTD Billed" value={$k(ty)} color="#065F46"/>
+      <KPI label="Left to Bill" value={$k(tl)} color="#B45309"/>
+      <KPI
+        label="Median Days to 1st Invoice"
+        value={avgD>=0?avgD+'d':'—'}
+        color={avgDColor}
+        sub={daysFirstStats?`${daysFirstStats.n} jobs · P25 ${daysFirstStats.p25}d · P75 ${daysFirstStats.p75}d`:'no cohort data yet'}
+      />
+      <KPI label="100% Billed" value={fully} color="#065F46"/>
+    </div>
     {/* Tabs — 2 only */}
     <div style={{display:'flex',gap:4,marginBottom:20,borderBottom:'2px solid #E5E3E0'}}>
       {[['submissions','PM Submissions'],['alljobs','All Jobs']].map(([k,l])=><button key={k} onClick={()=>setBillingTab(k)} style={{padding:'10px 20px',border:'none',background:'transparent',color:billingTab===k?'#8A261D':'#625650',fontWeight:billingTab===k?700:400,fontSize:14,cursor:'pointer',borderBottom:billingTab===k?'2px solid #8A261D':'2px solid transparent',marginBottom:-2}}>{l}{k==='submissions'&&arStats.missing>0&&<span style={{marginLeft:6,background:'#FEE2E2',color:'#991B1B',padding:'1px 6px',borderRadius:8,fontSize:11,fontWeight:700}}>{arStats.missing} missing</span>}</button>)}
@@ -13280,6 +13310,12 @@ function CrewLeaderAssignmentPage(){
   const[saving,setSaving]=useState({});
   const[toastMsg,setToastMsg]=useState(null);
   const showToast=(m,err=false)=>{setToastMsg({message:m,isError:err});};
+  // Bulk-assign state — set of selected job IDs + the picked leader for the bulk apply.
+  // Built 2026-05-04 to retire the per-row click slog (54 unassigned jobs in active_install
+  // = 54 dropdown clicks otherwise). Bulk apply patches everything in parallel via sbPatch.
+  const[selected,setSelected]=useState(()=>new Set());
+  const[bulkLeaderId,setBulkLeaderId]=useState('');
+  const[bulkSaving,setBulkSaving]=useState(false);
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
@@ -13331,6 +13367,74 @@ function CrewLeaderAssignmentPage(){
     setSaving(s=>{const n={...s};delete n[job.id];return n;});
   };
 
+  // Selection helpers — toggle one row, toggle every visible (filtered) row, clear all.
+  const toggleOne=(jobId)=>setSelected(prev=>{const n=new Set(prev);if(n.has(jobId))n.delete(jobId);else n.add(jobId);return n;});
+  const allFilteredSelected=filtered.length>0&&filtered.every(j=>selected.has(j.id));
+  const toggleAllVisible=()=>setSelected(prev=>{
+    const n=new Set(prev);
+    if(allFilteredSelected){filtered.forEach(j=>n.delete(j.id));} // un-check all visible
+    else{filtered.forEach(j=>n.add(j.id));} // check all visible
+    return n;
+  });
+  const clearSelection=()=>setSelected(new Set());
+
+  // Bulk apply — assigns the picked leader to every selected job in parallel via sbPatch.
+  // Pre-validates that the leader's market matches each selected job's market (since the
+  // dropdown options are market-filtered per row, this defends against UI race conditions
+  // where someone selects a leader, then changes the market filter before clicking apply).
+  // Updates local state once everything resolves; toast reports success vs partial failure.
+  const bulkAssign=async()=>{
+    if(!canEdit||!bulkLeaderId||selected.size===0)return;
+    const leader=leaders.find(l=>l.id===bulkLeaderId);
+    if(!leader){showToast('Leader not found',true);return;}
+    const jobsToUpdate=jobs.filter(j=>selected.has(j.id));
+    // Cross-market sanity check — warn if any selected jobs are in a different market
+    // than the picked leader. SUB_MARKETS (DFW/AUS/CS) all default to San Antonio crew pool,
+    // so leader.market='San Antonio' is acceptable for sub-market jobs.
+    const mismatches=jobsToUpdate.filter(j=>{
+      const long=SHORT_TO_LONG[j.market];
+      const isSub=SUB_MARKETS.has(j.market);
+      const target=isSub?'San Antonio':long;
+      return target&&leader.market!==target;
+    });
+    if(mismatches.length>0){
+      const goAhead=window.confirm(`${mismatches.length} of ${jobsToUpdate.length} selected jobs are in a different market than ${leader.name} (${leader.market}). Assign anyway?`);
+      if(!goAhead)return;
+    }
+    setBulkSaving(true);
+    try{
+      // Parallel PATCHes; sbPatch throws on non-2xx so allSettled gives us per-row outcomes.
+      const results=await Promise.allSettled(jobsToUpdate.map(j=>sbPatch('jobs',j.id,{crew_leader_id:bulkLeaderId})));
+      const ok=results.filter(r=>r.status==='fulfilled').length;
+      const fail=results.length-ok;
+      // Optimistically update local state for the rows that succeeded.
+      const successIds=new Set(jobsToUpdate.filter((_,i)=>results[i].status==='fulfilled').map(j=>j.id));
+      setJobs(js=>js.map(j=>successIds.has(j.id)?{...j,crew_leader_id:bulkLeaderId}:j));
+      clearSelection();
+      setBulkLeaderId('');
+      showToast(fail>0?`Assigned ${ok} of ${results.length} — ${fail} failed`:`Assigned ${ok} jobs to ${leader.name}`,fail>0);
+    }catch(e){showToast('Bulk assign failed: '+e.message,true);}
+    setBulkSaving(false);
+  };
+
+  // For the bulk-assign leader picker: when the selection spans multiple markets,
+  // show all leaders. When all selected jobs are in the same target market, restrict
+  // to that market's leaders so Carlos can't accidentally cross-assign a Houston leader
+  // to a San Antonio job. Sub-markets (DFW/AUS/CS) collapse to San Antonio.
+  const bulkLeaderOptions=useMemo(()=>{
+    const selJobs=jobs.filter(j=>selected.has(j.id));
+    if(selJobs.length===0)return leaders;
+    const targetMarkets=new Set(selJobs.map(j=>{
+      const isSub=SUB_MARKETS.has(j.market);
+      return isSub?'San Antonio':SHORT_TO_LONG[j.market];
+    }).filter(Boolean));
+    if(targetMarkets.size===1){
+      const m=[...targetMarkets][0];
+      return leaders.filter(l=>l.market===m);
+    }
+    return leaders; // mixed-market selection — show all
+  },[jobs,selected,leaders]);
+
   // Summary counts
   const counts=useMemo(()=>{
     const all=jobs.length;
@@ -13374,10 +13478,25 @@ function CrewLeaderAssignmentPage(){
       </div>
     </div>
 
+    {/* Bulk-assign action bar — appears when at least one row is selected. Sticks below the
+        header so it's always visible while scrolling. Picker is market-filtered when the
+        selection is single-market; shows all leaders when selection spans markets. */}
+    {selected.size>0&&<div style={{position:'sticky',top:0,zIndex:10,background:'#1A1A1A',color:'#FFF',padding:'10px 14px',borderRadius:8,marginBottom:12,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',boxShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
+      <div style={{fontSize:13,fontWeight:700}}>{selected.size} job{selected.size===1?'':'s'} selected</div>
+      <select value={bulkLeaderId} onChange={e=>setBulkLeaderId(e.target.value)} disabled={bulkSaving} style={{padding:'6px 8px',fontSize:13,borderRadius:6,border:'1px solid #444',background:'#2A2A2A',color:'#FFF',minWidth:240}}>
+        <option value="">— Pick crew leader —</option>
+        {bulkLeaderOptions.map(l=><option key={l.id} value={l.id}>{l.name} · {l.market}</option>)}
+      </select>
+      <button onClick={bulkAssign} disabled={!bulkLeaderId||bulkSaving} style={{padding:'6px 14px',fontSize:13,fontWeight:700,borderRadius:6,border:'none',background:bulkLeaderId&&!bulkSaving?'#0F6E56':'#444',color:'#FFF',cursor:bulkLeaderId&&!bulkSaving?'pointer':'not-allowed'}}>
+        {bulkSaving?'⏳ Assigning…':`✓ Assign ${selected.size}`}
+      </button>
+      <button onClick={clearSelection} disabled={bulkSaving} style={{padding:'6px 12px',fontSize:13,borderRadius:6,border:'1px solid #555',background:'transparent',color:'#FFF',cursor:'pointer'}}>Clear</button>
+    </div>}
+
     {/* Filters */}
     <div style={{display:'flex',gap:10,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
       <div style={{display:'flex',gap:4}}>
-        {[['active','Active install only'],['production','Production stage'],['all','All']].map(([v,l])=><button key={v} onClick={()=>setStatusFilter(v)} style={{padding:'6px 12px',borderRadius:6,border:`1px solid ${statusFilter===v?'#8A261D':'#E5E3E0'}`,background:statusFilter===v?'#8A261D':'#FFF',color:statusFilter===v?'#FFF':'#1A1A1A',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l}</button>)}
+        {[['active','Active install only'],['production','Production stage'],['all','All']].map(([v,l])=><button key={v} onClick={()=>setStatusFilter(v)} style={{padding:'6px 12px',borderRadius:6,border:`1px solid ${statusFilter===v?'#1D4ED8':'#E5E3E0'}`,background:statusFilter===v?'#1D4ED8':'#FFF',color:statusFilter===v?'#FFF':'#1A1A1A',fontSize:12,fontWeight:700,cursor:'pointer'}}>{l}</button>)}
       </div>
       <select value={mktFilter} onChange={e=>setMktFilter(e.target.value)} style={{...cellInp,width:160}}>
         <option value="">All markets</option>
@@ -13399,16 +13518,34 @@ function CrewLeaderAssignmentPage(){
        ✓ {onlyMissing?'No unassigned jobs match these filters.':'No jobs match these filters.'}
      </div>:
      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+       {/* Select-all header — gives Carlos a single-click way to select everything filtered.
+           Using the same grid template as rows so the checkbox aligns with row checkboxes. */}
+       <div style={{padding:'10px 14px',background:'#F9F8F6',borderRadius:6,display:'grid',gridTemplateColumns:'30px 1.5fr 0.6fr 1fr 0.8fr 0.8fr 1.5fr 0.4fr',gap:12,alignItems:'center',fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>
+         <label style={{display:'flex',alignItems:'center',cursor:'pointer'}} title={allFilteredSelected?'Deselect all visible':'Select all visible'}>
+           <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllVisible} style={{width:16,height:16,accentColor:'#1A1A1A',cursor:'pointer'}}/>
+         </label>
+         <div>Job</div>
+         <div>Status</div>
+         <div>Market</div>
+         <div>Total LF</div>
+         <div>Est. Start</div>
+         <div>Crew Leader</div>
+         <div></div>
+       </div>
        {filtered.map(j=>{
          const opts=leaderOptionsForJob(j);
          const isSub=SUB_MARKETS.has(j.market);
          const [bg,fg]=(STATUS_COLORS[j.status]||'#F4F4F2 #625650').split(' ');
-         return<div key={j.id} style={{...card,padding:14,display:'grid',gridTemplateColumns:'1.5fr 0.6fr 1fr 0.8fr 0.8fr 1.5fr 0.4fr',gap:12,alignItems:'center'}}>
+         const isSelected=selected.has(j.id);
+         return<div key={j.id} style={{...card,padding:14,display:'grid',gridTemplateColumns:'30px 1.5fr 0.6fr 1fr 0.8fr 0.8fr 1.5fr 0.4fr',gap:12,alignItems:'center',background:isSelected?'#FFFBEB':'#FFF',borderColor:isSelected?'#FBBF24':'#E5E3E0'}}>
+           <label style={{display:'flex',alignItems:'center',cursor:'pointer'}}>
+             <input type="checkbox" checked={isSelected} onChange={()=>toggleOne(j.id)} style={{width:16,height:16,accentColor:'#1A1A1A',cursor:'pointer'}}/>
+           </label>
            <div>
              <div style={{fontWeight:700,fontSize:13}}>{j.job_number} · {j.job_name||'—'}</div>
              <div style={{fontSize:11,color:'#9E9B96'}}>{j.style||'(no style)'}</div>
            </div>
-           <div><span style={{background:bg,color:fg,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700}}>{j.status}</span></div>
+           <div><span style={{background:bg,color:fg,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:700}}>{SL[j.status]||j.status}</span></div>
            <div><div style={{fontSize:12,fontWeight:600}}>{SHORT_TO_LONG[j.market]||j.market}</div>{isSub&&<div style={{fontSize:10,color:'#92400E'}}>subs+SA pool</div>}</div>
            <div style={{fontSize:12,fontWeight:600}}>{fmtLF(j.total_lf)}</div>
            <div style={{fontSize:12}}>{fmtD(j.est_start_date)}</div>
