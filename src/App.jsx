@@ -293,6 +293,16 @@ const PM_HOME_MARKET={
 // in those geographies). Used to render an inline note above the dropdown.
 const PM_USES_SUBS=new Set(['Doug Monroe']);
 
+// Houston team co-management: Hugo and Israel run jobs day-to-day for
+// Manuel + Jr in Houston, so they need visibility AND filing access to
+// Manuel's and Jr's projects on the PM Daily Report. Map each PM to the
+// set of OTHER PM names whose jobs they should see in their job picker.
+// (No team mapping for Manuel / Jr / Doug / Ray — they only see their own.)
+const PM_TEAM_VISIBILITY={
+  'Hugo Rodriguez':new Set(['Manuel Salazar','Rafael Anaya Jr.']),
+  'Israel Santibanez':new Set(['Manuel Salazar','Rafael Anaya Jr.']),
+};
+
 // Maps underlying style values to their display labels. DB values are preserved
 // for back-compat; only the user-visible label changes.
 const STYLE_LABEL = (v) => /cmu|split.?face.*block/i.test(v||'') ? 'Block Style' : v;
@@ -15861,7 +15871,18 @@ function PMDailyReportPage({jobs}){
   const clearForm=()=>{if(window.confirm('Clear all fields? This cannot be undone.')){setForm(emptyForm());setSelJobId('');setJobTotals(null);}};
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
   const pickPM=(pm)=>{setSelPM(pm);localStorage.setItem('selected_pm',pm);setForm(f=>({...f,submitted_by:pm}));setSelJobId('');setJobTotals(null);};
-  const pmJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)&&j.pm===selPM),[jobs,selPM]);
+  // Job picker filter — own jobs PLUS any teammate's jobs the PM has been
+  // granted visibility to via PM_TEAM_VISIBILITY (e.g. Hugo + Israel see
+  // Manuel + Jr's Houston projects). Submission's submitted_by still records
+  // whoever picked the PM tile, so authorship is preserved.
+  const pmJobs=useMemo(()=>{
+    const teammates=PM_TEAM_VISIBILITY[selPM]||null;
+    return jobs.filter(j=>{
+      if(CLOSED_SET.has(j.status))return false;
+      if(j.pm===selPM)return true;
+      return teammates?teammates.has(j.pm):false;
+    });
+  },[jobs,selPM]);
   const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');set('crew_leader_id',job.crew_leader_id||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
