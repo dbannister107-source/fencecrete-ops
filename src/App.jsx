@@ -559,7 +559,11 @@ const useIsMobile = (bp = 768) => {
   }, [bp]);
   return isMobile;
 };
-const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #8A261D':'1px solid #E5E3E0', background:a?'#FDF4F4':'#FFF', color:a?'#8A261D':'#625650' });
+// Group/view-mode pill style. Same color-vocabulary rationale as fpill (active state
+// is info blue, not brand red): toggling a view (Kanban / List, Group By, etc.) is
+// a UI-mechanic state, not an action-required signal. Brand red on these would
+// dilute the meaning of red on actual primary actions and danger states.
+const gpill = a => ({ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', border:a?'1px solid #1D4ED8':'1px solid #E5E3E0', background:a?'#DBEAFE':'#FFF', color:a?'#1D4ED8':'#625650' });
 // Filter-pill style. Active state uses blue (#1D4ED8) instead of brand red,
 // per the 2026-05-04 color-vocabulary audit: red is reserved for action-required
 // and danger states, not "this filter is on." Active-state preserves the
@@ -4270,8 +4274,13 @@ function Dashboard({jobs,onNav,refreshKey=0}){
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
         <div style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#1A1A1A'}}>Bill Sheets — {monthLabel(dashBillingMonth)}</div>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} title="Send reminder emails to PMs with missing bill sheets" style={{background:'none',border:'none',color:'#8A261D',fontSize:12,fontWeight:700,cursor:'pointer',opacity:remindSending?0.5:1}}>{remindSending?'Sending...':'📧 Send Reminders'}</button>
-          {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#8A261D',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
+          {/* Send Reminders is a nudge action (emails PMs, not a creation/save), so it
+              uses the warning amber color (#B45309) instead of brand red. Brand red is
+              reserved for the primary action per screen + danger states. */}
+          <button onClick={()=>setShowRemindConfirm(true)} disabled={remindSending} title="Send reminder emails to PMs with missing bill sheets" style={{background:'none',border:'none',color:'#B45309',fontSize:12,fontWeight:700,cursor:'pointer',opacity:remindSending?0.5:1}}>{remindSending?'Sending...':'📧 Send Reminders'}</button>
+          {/* "View All" is pure navigation; warm gray (brand secondary) keeps it visible
+              without claiming primary-action attention. */}
+          {onNav&&<button onClick={()=>onNav('billing')} style={{background:'none',border:'none',color:'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>View All →</button>}
         </div>
       </div>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
@@ -4646,14 +4655,14 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={[...PM_LIST.map(p=>({v:p.id,l:p.label})),{v:'__blank__',l:'No PM assigned'}]}/>
         <MultiSelect label="All Types" width={140} selected={primaryTypeF} onChange={setPrimaryTypeF} options={[{v:'Precast',l:'Precast'},{v:'Masonry',l:'Masonry'},{v:'Wrought Iron',l:'Wrought Iron'}]}/>
         <MultiSelect label="All Add-ons" width={160} selected={addonsF} onChange={setAddonsF} options={[{v:'has_any',l:'Has Any Add-on'},{v:'G',l:'Gates (G)'},{v:'C',l:'Columns (C)'},{v:'WI',l:'Wrought Iron (WI)'},{v:'SW',l:'Single Wythe (SW)'},{v:'R',l:'Removal (R)'},{v:'LS',l:'Lump Sum (LS)'}]}/>
-        {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
+        {(statusF.size+mktF.size+pmF.size+primaryTypeF.size+addonsF.size>0)&&<button onClick={clearAllFilters} style={{background:'none',border:'1px solid #625650',borderRadius:6,padding:'6px 12px',color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='closed'&&<div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search closed projects..." style={{...inputS,width:'min(240px,45vw)'}}/>
         <MultiSelect label="All Markets" width={160} selected={mktF} onChange={setMktF} options={MKTS.map(m=>({v:m,l:m}))}/>
         <MultiSelect label="All PMs" width={160} selected={pmF} onChange={setPmF} options={[...PM_LIST.map(p=>({v:p.id,l:p.label})),{v:'__blank__',l:'No PM assigned'}]}/>
         <select value={closedYearF} onChange={e=>setClosedYearF(e.target.value)} style={{...inputS,width:140}}><option value="">All Years</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="older">2023 & Earlier</option></select>
-        {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
+        {(mktF.size+pmF.size>0||closedYearF)&&<button onClick={()=>{clearAllFilters();setClosedYearF('');}} style={{background:'none',border:'1px solid #625650',borderRadius:6,padding:'6px 12px',color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>Clear All</button>}
       </div>}
       {projTab==='active'&&<div style={{fontSize:12,color:'#625650',padding:'4px 0'}}>Showing {filtered.length} jobs | {$k(fTC)} contract value | {$k(fLTB)} left to bill | {Math.round(fAvgB*100)}% avg billed</div>}
     </div>
@@ -5089,7 +5098,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
               <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                <button onClick={()=>openArDetail(sub)} style={{background:'#FDF4F4',border:'1px solid #8A261D30',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>
+                <button onClick={()=>openArDetail(sub)} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>
                 {isPending&&<button onClick={()=>markReviewedInline(sub)} title="Mark this submission as reviewed" style={{background:'#065F46',border:'1px solid #065F46',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>✓ Mark Reviewed</button>}
                 {isReviewed&&arIsCurrent&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
               </div></td>
@@ -6573,9 +6582,12 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     {moveToast&&<Toast message={moveToast.msg} isError={!moveToast.ok} onDone={()=>setMoveToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
       <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>Production</h1>
+      {/* "Editing Unlocked" = elevated state (like sudo). Amber says "elevated, be
+          intentional" — not "danger" (red is reserved for that). View-only uses
+          warm gray, the brand secondary. */}
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {editUnlocked
-          ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FDF4F4',border:'1px solid #8A261D40',color:'#8A261D',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
+          ?<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#FEF3C7',border:'1px solid #FCD34D',color:'#92400E',fontSize:12,fontWeight:700}}>🔓 Editing Unlocked</span>
           :<span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,background:'#F4F4F2',border:'1px solid #E5E3E0',color:'#625650',fontSize:12,fontWeight:700}}>🔒 View Only</span>}
         
       </div>
@@ -15715,7 +15727,7 @@ function PMDailyReportPage({jobs}){
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
       <h1 style={{fontFamily:'Syne',fontSize:22,fontWeight:800}}>PM Daily Report</h1>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#8A261D',borderColor:'#E5C4C4'}}>Clear Form</button>}</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>setTab('new')} style={gpill(tab==='new')}>+ New Report</button><button onClick={()=>{setTab('history');fetchReports();}} style={gpill(tab==='history')}>History</button>{tab==='new'&&selPM&&<button onClick={clearForm} style={{...gpill(false),color:'#625650',borderColor:'#E5E3E0'}}>Clear Form</button>}</div>
     </div>
     {/* PM Selector - always visible */}
     <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
