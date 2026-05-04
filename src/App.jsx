@@ -1164,7 +1164,10 @@ const PM_BILL_LF_GROUPS=[
 // 4-5 second-level tabs is comfortable.
 const SECS=[
   // ─── Setup (who / where / when) ───
-  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},
+  // Note: 'notes' field is appended to Details so a single-textarea section
+  // doesn't waste a top-level tab. Was its own tab pre-2026-05-05; consolidated
+  // as part of P1 #4 (12-tabs-too-many follow-up).
+  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number','notes']},
   {key:'parties',label:'Parties',group:'Setup',fields:[]},
   {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},
   {key:'requirements',label:'Project Requirements',group:'Setup',fields:[]},
@@ -1177,7 +1180,6 @@ const SECS=[
   // ─── Workflow (ongoing project work) ───
   {key:'documents',label:'Documents',group:'Workflow',fields:[]},
   {key:'tasks',label:'Tasks',group:'Workflow',fields:[]},
-  {key:'notes',label:'Notes',group:'Workflow',fields:['notes']},
   {key:'history',label:'History',group:'Workflow',fields:[]},
 ];
 const SEC_GROUPS=['Setup','Money','Workflow'];
@@ -10917,7 +10919,16 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#854F0B'}}>{r.capacity.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.inUse>0?'#1A1A1A':'#9E9B96'}}>{r.inUse.toLocaleString()}</td>
                 <td style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:r.available===0?'#B45309':'#1A1A1A'}}>{r.available.toLocaleString()}</td>
-                <td style={{padding:'6px 8px',fontSize:10}}>{r.bottleneck_component&&r.bottleneck_component!=='panels'?<span title="This component is shorter than panels — adding panel molds wouldn't help; add this." style={{background:'#FEF3C7',color:'#854F0B',fontWeight:700,padding:'2px 6px',borderRadius:4}}>{r.bottleneck_component} ({r.bottleneck_count})</span>:r.bottleneck_component==='panels'?<span style={{color:'#9E9B96'}}>panels</span>:<span style={{color:'#9E9B96'}}>—</span>}</td>
+                <td style={{padding:'6px 8px',fontSize:10}}>{(()=>{
+                  // Title-cased display + clear "panel molds aren't the bottleneck"
+                  // wording. Was "caps (28)" / "posts (12)" — raw lowercase reads
+                  // like a column key, not a label. Cleaned up 2026-05-05.
+                  const c=r.bottleneck_component;
+                  if(!c)return<span style={{color:'#9E9B96'}}>—</span>;
+                  const label=c.charAt(0).toUpperCase()+c.slice(1);
+                  if(c!=='panels')return<span title={`${label} are the binding mold component for ${r.style_name} — adding panel molds wouldn't help today; add ${label.toLowerCase()} molds.`} style={{background:'#FEF3C7',color:'#854F0B',fontWeight:700,padding:'2px 6px',borderRadius:4}}>{label} ({r.bottleneck_count})</span>;
+                  return<span style={{color:'#9E9B96'}}>{label}</span>;
+                })()}</td>
                 <td style={{padding:'6px 8px'}}>{r.notPlanned?<span style={{fontSize:10,color:'#9E9B96',fontStyle:'italic'}}>Not planned</span>:<div style={{display:'flex',alignItems:'center',gap:6}}>
                   <div style={{flex:1,height:6,background:'#E5E3E0',borderRadius:3,overflow:'hidden',maxWidth:120}}><div style={{width:`${Math.min(r.pct,100)}%`,height:'100%',background:col}}/></div>
                   <span style={{fontSize:10,fontWeight:700,color:col,minWidth:32}}>{r.pct}%</span>
@@ -12126,7 +12137,7 @@ function MoldInventoryPage(){
       {tabBtn('panels','🧱 Panels')}
       {tabBtn('posts','🪵 Posts')}
       {tabBtn('rails','🪜 Rails')}
-      {tabBtn('caps','🪺 Caps')}
+      {tabBtn('caps','🎩 Caps')}
     </div>
 
     {/* ═══ PANELS TAB (existing matrix view, preserved) ═══ */}
@@ -15201,7 +15212,14 @@ function DemandPlanningPage(){
                 <td style={{padding:'10px 12px'}}>{r.has_mold_data?r.molds:<span style={{color:'#9E9B96',fontSize:11}}>untracked</span>}</td>
                 <td style={{padding:'10px 12px'}}>{r.weekly_capacity_lf>0?fmtLF(r.weekly_capacity_lf):'—'}</td>
                 <td style={{padding:'10px 12px',fontWeight:600,color:r.weeks_to_clear>8?'#8A261D':r.weeks_to_clear>4?'#B45309':'#1A1A1A'}}>{r.weeks_to_clear!=null?fmtN(r.weeks_to_clear)+' wk':'—'}</td>
-                <td style={{padding:'10px 12px',fontSize:11}}>{r.weeks_to_clear>8?<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{r.bottleneck_component&&r.bottleneck_component!=='panels'?(r.bottleneck_component.toUpperCase()+' MOLDS'):'MOLD'}-CONSTRAINED</span>:r.utilization_label?<span style={{color:'#9E9B96'}}>{r.utilization_label}</span>:''}</td>
+                <td style={{padding:'10px 12px',fontSize:11}}>{r.weeks_to_clear>8?(()=>{
+                  // Title-case the binding component instead of yelling in caps —
+                  // "Caps Molds Constrained" reads like a label, "CAPS MOLDS-CONSTRAINED"
+                  // looks like an alert. Same data; cleaner. (2026-05-05)
+                  const c=r.bottleneck_component;
+                  const label=c&&c!=='panels'?`${c.charAt(0).toUpperCase()+c.slice(1)} molds`:'Mold';
+                  return<span title={`Plant has >8 weeks of backlog and ${label.toLowerCase()} are the limiting component.`} style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:4,fontWeight:700}}>{label}-constrained</span>;
+                })():r.utilization_label?<span style={{color:'#9E9B96'}}>{r.utilization_label}</span>:''}</td>
               </tr>)}
             </tbody>
           </table>
@@ -17243,9 +17261,34 @@ function MapPage({ jobs, onNav }) {
       showUserHeading: true,
     }), 'top-left');
     map.addControl(new mapboxgl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
-    map.on('load', () => { setMapReady(true); });
+    // Why 'idle' instead of 'load' for setting mapReady:
+    //   - 'load' fires when style + visible tiles have *started* loading
+    //   - 'idle' fires when no further visual changes are pending (tiles
+    //             actually painted on the canvas)
+    // Using 'load' caused a brief blank-canvas flash on slow connections —
+    // skeleton hid, but the map hadn't drawn its first tile yet, so the user
+    // saw an empty rectangle for a beat. 'idle' is the canonical "everything
+    // is rendered" signal. The downstream "add jobs source + layers" effect
+    // (gated on mapReady) runs ~tile-paint moment, which is fine — layers
+    // were already deferred to mapReady=true so the timing of source/layer
+    // adds shifts by the same delay as the skeleton.
+    map.once('idle', () => { setMapReady(true); });
+    // ResizeObserver — Mapbox snapshots its container size at construction.
+    // When the page mounts inside a flex layout, the container can be 0px
+    // tall for a frame, then grow once the parent settles. Without resize(),
+    // the map is permanently sized to that initial 0px and tiles render
+    // into a tiny canvas that looks blank. Observer triggers resize() on
+    // any subsequent change. Cheap — only fires when the box actually moves.
+    let resizeObs = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObs = new ResizeObserver(() => {
+        if (mapRef.current) { try { mapRef.current.resize(); } catch (e) { /* map removed */ } }
+      });
+      resizeObs.observe(mapContainerRef.current);
+    }
     mapRef.current = map;
     return () => {
+      if (resizeObs) { try { resizeObs.disconnect(); } catch (e) {} }
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
       layersAddedRef.current = false;
     };
@@ -25368,7 +25411,15 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
     </div>
     <nav className="fc-nav-scroll" style={{flex:1,padding:collapsed?'4px 4px':'4px 8px',overflowY:'auto',overflowX:'hidden',scrollBehavior:'smooth'}}>{groups.map((g,gi)=><div key={g.label||'top'}>{!collapsed&&g.label&&<div style={{fontSize:11,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:800,padding:'22px 14px 8px',marginTop:gi===0?0:2,display:'flex',alignItems:'center',gap:9}}><span style={{width:18,height:3,background:g.iconColor||g.color||'rgba(255,255,255,0.4)',borderRadius:2,display:'inline-block',flexShrink:0}}/>{g.label}</div>}{collapsed&&<div style={{borderTop:'1px solid #2A2A2A',margin:'6px 4px'}}/>}{g.items.map(ni=>{const active=page===ni.key;return <button key={ni.key} onClick={()=>{setPage(ni.key);onNavClick&&onNavClick();}} title={ni.label} style={{display:'flex',alignItems:'center',gap:11,width:'100%',padding:collapsed?'11px 0':'9px 14px',marginBottom:1,borderRadius:8,border:'none',background:active?`${g.color||'#8A261D'}20`:'transparent',color:active?'#FFFFFF':'rgba(255,255,255,0.82)',fontSize:13,fontWeight:active?600:400,cursor:'pointer',textAlign:'left',justifyContent:collapsed?'center':'flex-start',borderLeft:active?`3px solid ${g.color||'#8A261D'}`:'3px solid transparent',transition:'background 0.12s,color 0.12s'}}>{(()=>{const _icons={'dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>','projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14"/></svg>','production':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="4" width="4" height="9" rx="1"/><rect x="6" y="2" width="4" height="11" rx="1"/><rect x="11" y="6" width="4" height="7" rx="1"/></svg>','production_planning':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>','material_calc':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h12v12H2zM2 6h12M6 2v12"/></svg>','billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/></svg>','pm_billing':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v14M4 5h6a2 2 0 010 4H6a2 2 0 000 4h6"/></svg>','reports':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l3-4 3 2 3-5 3 3"/><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg>','schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M5 10h2M9 10h2"/></svg>','weather_days':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="7" r="3"/><path d="M8 1v1.5M8 11.5V13M2.5 7H1M15 7h-1.5M4.4 4.4l-1-1M12.6 4.4l1-1M4 12a4 4 0 018 0"/></svg>','change_orders':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h5"/><path d="M11 10l2 2 2-2M13 12V8"/></svg>','pm_daily_report':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>','install_schedule':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="1" y="3" width="14" height="11" rx="1.5"/><path d="M5 3V1.5M11 3V1.5M1 7h14M4 10l2 2 4-4"/></svg>','sales_dashboard':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 11l4-5 3 3 3-5 4 4"/></svg>','prospecting':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>','pipeline':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5l7 4 7-4"/><path d="M1 9l7 4 7-4"/></svg>','proposals':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>','contacts':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>','tasks':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 7l2 2 4-4"/><path d="M5 11h6"/></svg>','estimating':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>','map':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2L1 4v10l5-2 4 2 5-2V2l-5 2-4-2zM6 2v10M10 4v10"/></svg>','import_projects':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>','bid_advisor':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/><rect x="4.5" y="3.5" width="7" height="2.5" rx="0.5"/><circle cx="5.3" cy="9" r="0.5"/><circle cx="8" cy="9" r="0.5"/><circle cx="10.7" cy="9" r="0.5"/><circle cx="5.3" cy="11.5" r="0.5"/><circle cx="8" cy="11.5" r="0.5"/><circle cx="10.7" cy="11.5" r="0.5"/></svg>','mold_inventory':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="3" rx="0.5"/><rect x="1" y="7" width="14" height="3" rx="0.5"/><rect x="1" y="11" width="14" height="3" rx="0.5"/><path d="M5 3v3M11 3v3M3 7v3M9 7v3M13 7v3M5 11v3M11 11v3"/></svg>','plant_maintenance':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 14h14"/><path d="M2 14V8l4 2V6l4 2V5l4 2v7"/><path d="M5 14v-2M9 14v-2M13 14v-2"/><path d="M11 2.5l1 1.5h-2z"/></svg>','fleet':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 11V5h7v6"/><path d="M8 7h4l2 2v2H8"/><circle cx="4" cy="12" r="1"/><circle cx="11.5" cy="12" r="1"/></svg>','fleet_wo':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2a3 3 0 0 0-2.6 4.4L2 13.3 2.7 14l6.9-6.9A3 3 0 1 0 11.5 2z"/><circle cx="11.5" cy="5" r="1"/></svg>'};const _svg=_icons[ni.key]||'';return _svg?<span style={{display:'inline-flex',alignItems:'center',width:16,height:16,flexShrink:0,color:active?'#FFF':(g.iconColor||g.color||'rgba(255,255,255,0.6)'),opacity:active?1:1}} dangerouslySetInnerHTML={{__html:_svg}}/>:<span style={{display:'inline-block',width:16,height:16,flexShrink:0}}/>;})()}{!collapsed&&ni.label}</button>;})}</div>)}</nav>
     <div style={{padding:collapsed?'10px 8px':'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',background:'rgba(0,0,0,0.15)'}}>
-      {!collapsed&&<div style={{fontSize:11,color:'#625650',marginBottom:8}}>{jobs.length} projects</div>}
+      {!collapsed&&(()=>{
+        // Sidebar count split — "1,019 projects" was uselessly large because
+        // it bundled hundreds of closed jobs with the live workload. Now the
+        // active backlog count leads (what people actually care about); total
+        // is parenthetical. (P3 #19, 2026-05-05)
+        const ACTIVE_S=new Set(['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
+        const activeCount=jobs.filter(j=>ACTIVE_S.has(j.status)).length;
+        return<div style={{fontSize:11,color:'#625650',marginBottom:8}}><b style={{color:'#1A1A1A'}}>{activeCount.toLocaleString()}</b> active <span style={{color:'#9E9B96'}}>· {jobs.length.toLocaleString()} total</span></div>;
+      })()}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
         <button onClick={()=>setUserMenuOpen(v=>!v)} title={collapsed?displayName:'Account menu'} style={{display:'flex',alignItems:'center',gap:8,width:'100%',background:userMenuOpen?'rgba(138,38,29,0.25)':'rgba(255,255,255,0.06)',border:`1px solid ${userMenuOpen?'rgba(138,38,29,0.4)':'rgba(255,255,255,0.08)'}`,borderRadius:10,color:'#E5E3E0',fontSize:12,cursor:'pointer',padding:collapsed?'8px 4px':'9px 12px',fontWeight:500,justifyContent:collapsed?'center':'flex-start',textAlign:'left',transition:'all 0.15s'}}>
           <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:'#8A261D',color:'#FFF',fontSize:11,fontWeight:800,flexShrink:0}}>{(displayName[0]||'U').toUpperCase()}</span>
