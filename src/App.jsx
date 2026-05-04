@@ -25260,13 +25260,64 @@ const NAV_GROUPS=[
   {label:'ADMIN',color:'#625650',iconColor:'#9E9B96',items:[{key:'import_projects',label:'Import Projects',icon:'📤'}]},
 ];
 
-const MOBILE_NAV=[
+// Role-driven mobile bottom nav. Each role gets a 5-item bar with the actions
+// they actually do most. Items not in the preset are reachable via the "More"
+// bottom-sheet (which inherits the same role filter via ROLE_NAV_GROUPS).
+//
+// Why this matters: PMs in the field were tapping More → PM Bill Sheet every
+// time — one extra tap on every cycle. Sales reps similarly tapped More to
+// reach Pipeline. The bottom nav is prime real estate; surface what each
+// role does daily.
+//
+// Built 2026-05-04 (Tier 1 mobile-PM improvement). Falls back to the legacy
+// generic 5-item bar when role is missing or unrecognized.
+const MOBILE_NAV_DEFAULT = [
   {key:'dashboard',label:'Dashboard',icon:'🏠'},
   {key:'projects',label:'Projects',icon:'🏗'},
   {key:'production',label:'Production',icon:'🗂'},
   {key:'billing',label:'Billing',icon:'💰'},
   {key:'__more',label:'More',icon:'☰'},
 ];
+const MOBILE_NAV_BY_ROLE = {
+  pm: [
+    {key:'dashboard',     label:'Dashboard', icon:'🏠'},
+    {key:'my_plate',      label:'My Plate',  icon:'🍽️'},
+    {key:'pm_billing',    label:'Bill Sheet',icon:'🧾'},
+    {key:'pm_daily_report',label:'Daily',    icon:'📝'},
+    {key:'__more',        label:'More',      icon:'☰'},
+  ],
+  production: [
+    {key:'dashboard',         label:'Dashboard', icon:'🏠'},
+    {key:'production',        label:'Production',icon:'🗂'},
+    {key:'demand_planning',   label:'Demand',    icon:'📈'},
+    {key:'crew_assignment',   label:'Crews',     icon:'👷'},
+    {key:'__more',            label:'More',      icon:'☰'},
+  ],
+  sales_rep: [
+    {key:'dashboard', label:'Dashboard',icon:'🏠'},
+    {key:'pipeline',  label:'Pipeline', icon:'🔁'},
+    {key:'proposals', label:'Proposals',icon:'📄'},
+    {key:'tasks',     label:'Tasks',    icon:'☑️'},
+    {key:'__more',    label:'More',     icon:'☰'},
+  ],
+  sales_director: [
+    {key:'dashboard',       label:'Dashboard',icon:'🏠'},
+    {key:'pipeline',        label:'Pipeline', icon:'🔁'},
+    {key:'sales_dashboard', label:'Sales',    icon:'📊'},
+    {key:'proposals',       label:'Proposals',icon:'📄'},
+    {key:'__more',          label:'More',     icon:'☰'},
+  ],
+  billing: [
+    {key:'dashboard',label:'Dashboard',icon:'🏠'},
+    {key:'billing',  label:'Billing',  icon:'💰'},
+    {key:'projects', label:'Projects', icon:'🏗'},
+    {key:'reports',  label:'Reports',  icon:'📑'},
+    {key:'__more',   label:'More',     icon:'☰'},
+  ],
+};
+// Resolve the bottom-nav config for a given role. Used by both MobileBottomNav
+// and the App shell to keep them aligned.
+const mobileNavForRole = (role) => MOBILE_NAV_BY_ROLE[role] || MOBILE_NAV_DEFAULT;
 
 function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}){
   const auth=useAuth();
@@ -25379,9 +25430,16 @@ function MoreMenuSheet({page,setPage,onClose,jobs}){
 function MobileBottomNav({page,setPage,onMore}){
   /* Apr 20 2026 fix: added paddingBottom for iOS home-indicator safe area,
      and increased overall height so touch targets are still 56px above it.
-     Without this, the home indicator overlaps the icons on notched iPhones. */
+     Without this, the home indicator overlaps the icons on notched iPhones.
+     2026-05-04: nav items now resolve from auth.profile.role via
+     mobileNavForRole(); PMs see Bill Sheet + Daily Report directly instead
+     of buried under "More". Falls back to the generic 5-tab nav when role
+     is missing or unrecognized. */
+  const auth=useAuth();
+  const role=auth?.profile?.role;
+  const items=mobileNavForRole(role);
   return <div style={{position:'fixed',left:0,right:0,bottom:0,minHeight:56,paddingBottom:'env(safe-area-inset-bottom)',background:'#1A1A1A',borderTop:'1px solid #2A2A2A',display:'flex',zIndex:600,boxShadow:'0 -2px 12px rgba(0,0,0,0.2)'}}>
-    {MOBILE_NAV.map(item=>{
+    {items.map(item=>{
       const isMore=item.key==='__more';
       const active=!isMore&&page===item.key;
       return <button key={item.key} onClick={()=>{if(isMore)onMore();else setPage(item.key);}} style={{flex:1,background:'transparent',border:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,color:active?'#8A261D':'#9E9B96',cursor:'pointer',borderTop:active?'3px solid #8A261D':'3px solid transparent',padding:0}}>
