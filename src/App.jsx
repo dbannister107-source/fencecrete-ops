@@ -15802,6 +15802,13 @@ function PMDailyReportPage({jobs}){
   const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);const[jobError,setJobError]=useState(false);
   const[showAllPMs,setShowAllPMs]=useState(false);
   const[editingReport,setEditingReport]=useState(null);
+  // Crew leader roster — page-level so selectJob can resolve a leader UUID
+  // back to the leader's name when auto-populating from jobs.crew_leader_id.
+  // Without this, picking a job pre-fills the dropdown with the leader (good)
+  // but leaves form.crew empty, which surfaces as '—' in the History column.
+  // Active filter matches CrewLeaderSelect so we don't include retired leaders.
+  const[leadersRoster,setLeadersRoster]=useState([]);
+  useEffect(()=>{sbGet('crew_leaders','select=id,name&active=eq.true').then(d=>setLeadersRoster(Array.isArray(d)?d:[]));},[]);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
   // Texas-based: edit window is "same day in America/Chicago".
@@ -15891,7 +15898,16 @@ function PMDailyReportPage({jobs}){
       return teammates?teammates.has(j.pm):false;
     });
   },[jobs,selPM]);
-  const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');set('crew_leader_id',job.crew_leader_id||'');const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
+  const selectJob=(jobId)=>{setSelJobId(jobId);if(jobId)setJobError(false);const job=jobs.find(j=>j.id===jobId);if(job){set('job_number',job.job_number||'');
+    // Auto-populate crew_leader_id AND crew (text name) from the assigned
+    // leader so the History view shows the leader's name without requiring
+    // the PM to interact with the dropdown. Roster lookup is in-memory —
+    // already fetched above. Fixes the gotcha where reports filed against
+    // pre-assigned jobs showed crew='—' on the History tab.
+    const assignedLeader=job.crew_leader_id?leadersRoster.find(l=>l.id===job.crew_leader_id):null;
+    set('crew_leader_id',job.crew_leader_id||'');
+    set('crew',assignedLeader?assignedLeader.name:'');
+    const ft=job.fence_type||'';const fs=ft.includes('SW')?'Single Wythe':ft.includes('WI')?'Wrought Iron':'Precast';set('fence_style',fs);sbGet('pm_daily_reports',`job_number=eq.${encodeURIComponent(job.job_number)}&select=lf_panels_installed,gates_installed,posts_placed,id`).then(d=>{if(d&&d.length){setJobTotals({lf:d.reduce((s,r)=>s+n(r.lf_panels_installed),0),gates:d.reduce((s,r)=>s+n(r.gates_installed),0),posts:d.reduce((s,r)=>s+n(r.posts_placed),0),count:d.length});}else{setJobTotals({lf:0,gates:0,posts:0,count:0});}});}else{setJobTotals(null);}};
   const fetchReports=useCallback(async()=>{setLoading(true);const d=await sbGet('pm_daily_reports','order=created_at.desc');setReports(d||[]);setLoading(false);},[]);
   useEffect(()=>{if(tab==='history'&&!detailRpt)fetchReports();},[tab,detailRpt]);
   const filteredReports=useMemo(()=>{if(showAllPMs)return reports;return selPM?reports.filter(r=>r.submitted_by===selPM):reports;},[reports,selPM,showAllPMs]);
