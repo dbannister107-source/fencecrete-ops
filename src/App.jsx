@@ -15770,7 +15770,19 @@ function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
   const[leaders,setLeaders]=useState([]);
   const[showAll,setShowAll]=useState(false);
   useEffect(()=>{sbGet('crew_leaders','select=*&active=eq.true&order=market.asc,name.asc').then(d=>setLeaders(d||[]));},[]);
-  const filtered=showAll?leaders:leaders.filter(cl=>!jobMarket||cl.market===jobMarket);
+  // Always include the currently-assigned leader in the dropdown options, even
+  // when their market doesn't match the job's market — without this, an
+  // out-of-market assignment (e.g., an SA leader covering a Houston job)
+  // would render as "blank" because the <select value=...> couldn't find a
+  // matching <option>. The leader is rendered with their market suffix so the
+  // PM can see it's an out-of-market pick. (Fixes the second visible-name
+  // gotcha alongside the auto-populate fix in selectJob.)
+  const filteredBase=showAll?leaders:leaders.filter(cl=>!jobMarket||cl.market===jobMarket);
+  const assignedLeader=value?leaders.find(cl=>cl.id===value):null;
+  const filtered=(assignedLeader&&!filteredBase.some(cl=>cl.id===value))
+    ?[assignedLeader,...filteredBase]
+    :filteredBase;
+  const assignedIsOutOfMarket=!!(assignedLeader&&jobMarket&&assignedLeader.market!==jobMarket);
   // Show sub banner only when filtering is driven by the PM (no job picked yet)
   // AND the PM's territory is subcontracted. Once a job is selected, the job's
   // market is authoritative and the banner becomes noise.
@@ -15782,8 +15794,15 @@ function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
     <select value={value||''} onChange={e=>{const id=e.target.value;const cl=leaders.find(x=>x.id===id);onChange(id,cl?cl.name:'');}} style={style}>
       <option value="">— Select —</option>
       {filtered.length===0&&<option disabled>No crew leaders for {jobMarket||'this market'}</option>}
-      {filtered.map(cl=><option key={cl.id} value={cl.id}>{cl.name}{showAll?` (${cl.market})`:''}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')}`:''}</option>)}
+      {filtered.map(cl=>{
+        const isAssignedOutOfMarket=cl.id===value&&jobMarket&&cl.market!==jobMarket;
+        const marketSuffix=showAll||isAssignedOutOfMarket?` (${cl.market})`:'';
+        return<option key={cl.id} value={cl.id}>{cl.name}{marketSuffix}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')}`:''}</option>;
+      })}
     </select>
+    {assignedIsOutOfMarket&&<div style={{fontSize:11,color:'#1D4ED8',marginTop:4,fontStyle:'italic'}}>
+      ℹ Assigned leader is from {assignedLeader.market} (cross-market coverage)
+    </div>}
     <label style={{fontSize:11,color:'#625650',display:'flex',alignItems:'center',gap:4,marginTop:4,cursor:'pointer'}}>
       <input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)} style={{margin:0}}/>
       Show all markets
