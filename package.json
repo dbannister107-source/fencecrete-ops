@@ -16,6 +16,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@sentry/react": "^10.51.0",
+    "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
@@ -50,12 +51,20 @@
     },
     "overrides": [
       {
-        "files": ["src/shared/sb.js"],
-        "rules": { "no-restricted-syntax": "off" }
+        "files": [
+          "src/shared/sb.js"
+        ],
+        "rules": {
+          "no-restricted-syntax": "off"
+        }
       },
       {
-        "files": ["src/App.jsx"],
-        "rules": { "no-restricted-syntax": "warn" }
+        "files": [
+          "src/App.jsx"
+        ],
+        "rules": {
+          "no-restricted-syntax": "warn"
+        }
       }
     ]
   },

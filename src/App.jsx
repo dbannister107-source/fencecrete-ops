@@ -73,6 +73,9 @@ import {
   canViewWorkbench, canApproveCO, canViewSystemEvents, canEditPlantWO,
 } from './shared/permissions';
 
+// Vercel Web Analytics
+import { Analytics } from '@vercel/analytics/react';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -26103,28 +26106,32 @@ export default function App(){
   // ops.fencecrete.com / vercel.app → redirect any incoming hash-format PIS
   // link to forms.fencecrete.com so legacy tokens in customer inboxes still
   // resolve to a working form.
-  if (isFormsHost) return pisToken ? <PISFormPage token={pisToken} /> : <PISLandingPage />;
+  if (isFormsHost) return <>{pisToken ? <PISFormPage token={pisToken} /> : <PISLandingPage />}<Analytics /></>;
   if (pisToken) {
     window.location.replace(`https://forms.fencecrete.com/#/pis/${pisToken}`);
     return null;
   }
   if (loading) {
-    return <div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
+    return <><div style={{minHeight:'100vh',background:'#F4F4F2',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <style>{`@keyframes fcShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:14}}>
         <img src="/logo.png" alt="Fencecrete" style={{maxWidth:200,width:'100%',height:'auto'}}/>
         <div style={{width:180,height:4,borderRadius:2,background:'linear-gradient(90deg,#EFEDE9 0%,#8A261D 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.2s ease-in-out infinite'}}/>
       </div>
-    </div>;
+    </div><Analytics /></>;
   }
   if (recoveryToken) {
-    return <AuthContext.Provider value={ctx}><RecoveryPage accessToken={recoveryToken} onDone={()=>{
+    return <AuthContext.Provider value={ctx}>
+      <RecoveryPage accessToken={recoveryToken} onDone={()=>{
       try { window.location.hash=''; } catch(e) {}
       setRecoveryToken(null);
       __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:'Password set — please sign in'}));
-    }}/></AuthContext.Provider>;
+    }}/>
+      <Analytics />
+    </AuthContext.Provider>;
   }
   return <AuthContext.Provider value={ctx}>
     {!session?<LoginPage/>:<AppShell/>}
+    <Analytics />
   </AuthContext.Provider>;
 }
