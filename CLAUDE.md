@@ -156,6 +156,55 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
+### Recently shipped (2026-05-04)
+
+**Session summary (2026-05-04):** 4 commits to `main`, 2 DB migrations, 1 new shared module, 2 new DB triggers + backfill, 1 new test file. All driven by a live-app review of ops.fencecrete.com (the entire 20-finding review is captured in chat history). Top-of-list items retired: crew-leader bulk assignment + forcing-function gate; canonical billing metrics; two passes of color-vocabulary audit; PRODUCT-vs-PRIMARY-TYPE auto-sync; currency formatting on EditPanel money fields; Project Map clusters now colored by readiness state.
+
+**By commit:**
+
+🔴 **`492b5ef` — All 3 P0s from live review in one shot**
+- **Crew Assignment bulk UI**: multi-select checkboxes + sticky black action bar that appears on N>0 selected, with market-filtered leader picker, cross-market warning, Promise.allSettled batch assign. Backstory: 0 of 174 active jobs had `crew_leader_id` set (the field existed but no data entry path was writing to it). Per-row dropdown made backfilling 55 jobs = 55 clicks; bulk UI makes it 1.
+- **Forcing-function gate**: `enforce_crew_leader_for_active_install()` trigger fires `BEFORE UPDATE OF status, crew_leader_id` (and `BEFORE INSERT`) on jobs; raises `check_violation` if the row would land in `active_install` with `crew_leader_id IS NULL`. Catches both transition INTO active_install AND clearing crew_leader_id ON active_install. Migration: `20260504_active_install_requires_crew_leader.sql`. Existing 55 unassigned active_install rows are NOT touched (trigger only fires on writes that touch those columns); first attempt to clear or replace will be the first validation. Test file: `supabase/tests/crew_leader_gate.sql` (5 PASS assertions, runs in CI).
+- **Billing metrics single source of truth**: new `src/shared/billing.js` exports `neverBilledJobs / neverBilledTotal / staleBillingJobs / daysToFirstInvoice / fullyBilledCount / totalLeftToBill / totalYtdInvoiced` plus `BILLING_ELIGIBLE_STATUSES`. Dashboard's "Never Billed" KPI + Billing page's "Never Billed" filter now consume the same definition. The "Avg Days to 1st Invoice" KPI relabelled "**Median Days to 1st Invoice**" (median 268d vs mean 312d in current cohort; max=794d outlier was dragging the mean ~50d off the typical experience). Sub-line shows N + P25 + P75 for distribution context.
+- **Color audit Pass 1**: `fpill()` filter-pill helper active state shifted from brand red `#8A261D` → info blue `#1D4ED8`. One-line change in a shared helper recolored ~30 filter chips across the app.
+
+🎨 **`48002a1` — Color audit Pass 2 (semantic discipline on tertiary surfaces)**
+- Brand-guide-informed (FC_logo_guide.pdf): only red `#8A261D` and warm gray `#625650` are official brand colors. Brand red now reserved for the SINGLE primary action per screen + actual danger states + the brand mark itself.
+- `gpill()` (group/view-mode toggles, ~10 surfaces) shifted from red active → blue active, matching `fpill()`.
+- "📧 Send Reminders" tertiary text-link → amber (warning, not primary).
+- "View All →" navigation → warm gray.
+- Two "Clear All" filter-clear buttons → warm gray.
+- AR "View" detail buttons → neutral gray.
+- "🔓 Editing Unlocked" badge → amber (elevated state, not danger).
+- PM Daily Report "Clear Form" → warm gray.
+- Net effect: red on the live app drops from "everywhere" to "only the actions you actually need to look at."
+
+🔧 **`<TBD next commit>` — Three P1s from live review**
+- **PRODUCT vs PRIMARY TYPE contradiction retired**: `sync_product_from_primary_fence_type()` trigger auto-populates `jobs.product` from `jobs.primary_fence_type` on INSERT/UPDATE. Mapping: Precast→Precast Fence, Masonry→Masonry, Wood→Wood, Wrought Iron→Wrought Iron. Legacy values (custom strings, primary_fence_type=NULL or 'Other') are preserved. Backfill resolved ~6 active contradictions plus ~37 NULL-product rows; snapshot in `_bak_product_drift_20260504`. EditPanel marks the `product` field as Auto (read-only) with a tooltip pointing at `primary_fence_type`. Migration: `20260504_sync_product_with_primary_fence_type.sql`.
+- **Currency formatting on EditPanel money fields**: new `MoneyInput` component (in App.jsx near the SkeletonRows helpers) renders `$891,280` formatted by default, switches to raw editing on click/focus. Storage value stays a numeric string. `MONEY_FIELDS` set lists the ~16 fields that route through it (`contract_value`, `adj_contract_value`, `sales_tax_amount`, `bonds_amount`, all line-item rates, etc.). Retires the 2026-05-03 review finding that Contract & Billing tab showed `891280` while the project list showed `$891,280` for the same field.
+- **Project Map clusters colored by readiness**: `clusterProperties` aggregator on the GeoJSON source counts `_is_overdue` / `_is_risk` / `_is_ready` flags per cluster. Bubble paint is now a `case` expression: any overdue → red `#DC2626`, any risk → amber `#EAB308`, all ready → green `#16A34A`, fall-through → slate `#475569` (used in 'crew' / 'market' colorMode where readiness doesn't apply). Replaces the "all clusters brand red" rendering that misled review readers into "everything Houston is overdue."
+
+**State going into 2026-05-05:**
+
+| Live-review finding | Status |
+|---|---|
+| P0 #1 — 0/55 active install jobs had a crew leader | ✅ Bulk UI + DB gate shipped; data backfill is operational (Carlos clicks the bulk UI when he's ready) |
+| P0 #2 — Billing metric mismatch dashboard vs Billing page | ✅ Single source of truth shipped; metrics consistent |
+| P0 #3 — "325 days to 1st invoice" — bug or real cycle? | ✅ Real cycle (median 268d). Relabelled, distribution shown |
+| P0 #4 — "Everything is red" color-vocabulary problem | ✅ Pass 1 + Pass 2 done; red now means action-required |
+| P1 #5 — Number formatting inconsistency on Contract & Billing | ✅ MoneyInput component routes ~16 money fields through currency formatting |
+| P1 #6 — PRODUCT vs PRIMARY TYPE contradiction | ✅ DB trigger + backfill + UI Auto badge |
+| P1 #8 — Project Map clusters all rendered red | ✅ Cluster bubble paint now reflects readiness state |
+| P1 #4 — EditPanel: 12 tabs is too many | Open (medium scope, requires UX exploration) |
+| P1 #9 — Map loads slowly and shows blank initially | Open (Mapbox tile preload or skeleton) |
+| P2 #10–16 — Production Planning + Mold Utilization labels + PM Bill Sheet alarm | Open (scattered small fixes) |
+| P3 #17–20 — Status pill differentiation, role-based nav, sidebar count, Sunday-zero stats | Open (polish) |
+
+**Pickup tomorrow:**
+- The remaining open items above are all 30-min to 2-hr fixes individually; pick by user pain.
+- **Operational, no engineering**: Carlos opens Crew Assignment, multi-selects all unassigned jobs, picks a leader, hits Assign. 5-minute task that'll backfill the 55-job gap.
+- **Operational, no engineering**: David runs the bulk PIS pull on Customer Master to populate the 133 eligible projects.
+
 ### Recently shipped (2026-05-03)
 
 **Session summary (2026-05-03, FINAL — full day plus evening):** 28 commits to `main`, 5 DB migrations, 4 edge function deploys, 1 GitHub Actions workflow added. **9 tech-debt + workflow backlog items retired**, 1 long-standing data bug fixed, 1 deploy chain fixed mid-session. Major surfaces shipped or completed: full Demand Planning + Production Planning + AI Scheduler integration with `v_mold_capacity`; full PIS-extract feature (single per-project pull + bulk pull on 133 eligible projects with quality filter + audit log); CI wired for DB tests and verified green; Power Automate retired from inventory (was already disabled — docs caught up to reality); **App.jsx fetch migration Phase 2 fully complete, 113 → 0 no-restricted-syntax warnings (100% retired)**; permissions moved from hardcoded email Sets to `user_profiles.permissions` JSONB; xlsx → exceljs (closed only production high-severity vulnerability); first DB test wrote precedent for `supabase/tests/*.sql`. All builds green; CI green on every commit.

@@ -747,6 +747,58 @@ function Toast({message,onDone,isError}){
 /* ═══ SKELETON LOADER ═══ */
 function Skeleton({w='100%',h=14,r=6,style}){return <div style={{width:w,height:h,borderRadius:r,background:'linear-gradient(90deg,#EFEDE9 0%,#F8F6F3 50%,#EFEDE9 100%)',backgroundSize:'200% 100%',animation:'fcShimmer 1.4s ease-in-out infinite',...style}}/>;}
 function SkeletonRows({rows=8,cols=6}){return <div>{Array.from({length:rows}).map((_,i)=><div key={i} style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:12,padding:'10px 12px',borderBottom:'1px solid #F4F4F2'}}>{Array.from({length:cols}).map((_,j)=><Skeleton key={j} h={14}/>)}</div>)}</div>;}
+
+// MoneyInput — currency-formatted display + raw editing on focus.
+//
+// Default state shows "$891,280" formatted; clicking enters edit mode showing
+// the raw "891280" so the user can type without fighting the mask. On blur,
+// flips back to formatted display. Storage value is always a numeric string
+// (no $ or commas), parsed via Number(v) by all existing computations.
+//
+// Built 2026-05-04 to fix the live-review finding that EditPanel money fields
+// (sales_tax_amount, contract_value, bonds_amount, etc.) showed raw numbers
+// like "891280" while display surfaces (project list, KPIs) showed formatted
+// "$891,280" — same field, two different presentations across tabs.
+function MoneyInput({value, onChange, disabled, style}){
+  const [editing, setEditing] = React.useState(false);
+  const num = Number(value);
+  const isEmpty = value === '' || value == null;
+  if(editing && !disabled){
+    return <input
+      type="text"
+      autoFocus
+      value={value??''}
+      onChange={e=>{
+        // Allow digits, one decimal point, and a leading minus.
+        const cleaned = e.target.value.replace(/[^0-9.\-]/g,'');
+        onChange(cleaned);
+      }}
+      onBlur={()=>setEditing(false)}
+      onKeyDown={e=>{ if(e.key==='Enter'||e.key==='Escape'){ e.target.blur(); } }}
+      style={style}
+    />;
+  }
+  const formatted = isEmpty || isNaN(num) ? '' : '$'+num.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+  return <div
+    onClick={()=>!disabled&&setEditing(true)}
+    title={disabled?'Read-only':'Click to edit'}
+    style={{...style, cursor:disabled?'default':'text', display:'flex', alignItems:'center', userSelect:'text'}}
+  >
+    {formatted || <span style={{color:'#9E9B96',fontStyle:'italic'}}>—</span>}
+  </div>;
+}
+
+// Money fields that should render through MoneyInput in EditPanel forms.
+// Add new fields here when the schema grows; the renderer at the field-loop
+// branches on this set.
+const MONEY_FIELDS = new Set([
+  'contract_value','adj_contract_value','net_contract_value','sales_tax_amount',
+  'bonds_amount','permit_amount','pp_bond_amount','maint_bond_amount',
+  'ytd_invoiced','left_to_bill','final_invoice_amount','retainage_held',
+  'lump_sum_amount','gate_rate','contract_rate_precast','contract_rate_single_wythe',
+  'contract_rate_wrought_iron','contract_rate_removal','contract_rate_other',
+]);
+
 function SkeletonKanban({cols=5,cards=3}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>{Array.from({length:cols}).map((_,i)=><div key={i}><Skeleton h={48} r={8} style={{marginBottom:8}}/>{Array.from({length:cards}).map((_,j)=><Skeleton key={j} h={110} r={10} style={{marginBottom:8}}/>)}</div>)}</div>;}
 function SkeletonKpis({n:nKpis=4}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${nKpis},1fr)`,gap:12}}>{Array.from({length:nKpis}).map((_,i)=><div key={i} style={{...card}}><Skeleton h={28} w="60%" style={{marginBottom:8}}/><Skeleton h={12} w="40%"/></div>)}</div>;}
 
@@ -3152,6 +3204,30 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 <span title="Computed from the Line Items tab — not editable here" style={{padding:'1px 7px',borderRadius:10,background:'#EFF6FF',color:'#1D4ED8',border:'1px solid #BFDBFE',fontSize:9,fontWeight:700,letterSpacing:0.3}}>Auto</span>
               </label>
               <div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{v>0?v.toLocaleString()+' LF':'—'}</div>
+            </div>;
+          }
+          // `product` is now auto-derived from `primary_fence_type` via the
+          // sync_product_from_primary_fence_type DB trigger (added 2026-05-04
+          // to retire the PRODUCT vs PRIMARY TYPE contradiction). Show as
+          // read-only with the Auto badge so users update primary_fence_type
+          // — the canonical field — instead of trying to edit product directly.
+          if(f==='product'){
+            return<div key={f} style={{marginBottom:12}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                {lbl}
+                <span title="Auto-synced from Primary Fence Type — edit that field instead" style={{padding:'1px 7px',borderRadius:10,background:'#EFF6FF',color:'#1D4ED8',border:'1px solid #BFDBFE',fontSize:9,fontWeight:700,letterSpacing:0.3}}>Auto</span>
+              </label>
+              <div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{form.product||'—'}</div>
+            </div>;
+          }
+          // Money fields render via MoneyInput (currency-formatted display +
+          // raw editing on focus). Retainage_pct is intentionally NOT in
+          // MONEY_FIELDS — it's a percentage, not a dollar amount.
+          if(MONEY_FIELDS.has(f)){
+            const ed=fieldEditable(f);
+            return<div key={f} style={{marginBottom:12}}>
+              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
+              <MoneyInput value={form[f]} onChange={v=>set(f,v)} disabled={!ed} style={{...inputS,fontFamily:'Inter',fontWeight:600,...(ed?{}:{background:'#F9F8F6',color:'#625650'})}}/>
             </div>;
           }
           // Billing Date: structured trigger + day-of-month / EOM / custom text.
@@ -17003,17 +17079,32 @@ function MapPage({ jobs, onNav }) {
     type: 'FeatureCollection',
     features: filtered
       .filter(j => j.lat && j.lng)
-      .map(j => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [j.lng, j.lat] },
-        properties: {
-          id: j.id,
-          job_number: j.job_number || '',
-          job_name: j.job_name || '',
-          _color: colorForJob(j),
-        },
-      })),
-  }), [filtered, colorForJob]);
+      .map(j => {
+        // Pre-compute readiness as boolean flags so the cluster aggregator
+        // (clusterProperties below) can sum them per cluster. Cluster bubble
+        // color is then a Mapbox `case` over those sums: any overdue → red,
+        // any production_risk → amber, all ready → green, else neutral. This
+        // replaces the "everything red" cluster rendering surfaced by the
+        // 2026-05-03 live-app review.
+        // colorMode 'status' is the default and shows readiness colors (the UI
+        // labels it "Readiness"). 'crew' and 'market' use job/market colors
+        // and the cluster bubble falls through to slate gray.
+        const readiness = colorMode === 'status' ? getReadiness(j, null) : null;
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [j.lng, j.lat] },
+          properties: {
+            id: j.id,
+            job_number: j.job_number || '',
+            job_name: j.job_name || '',
+            _color: colorForJob(j),
+            _is_overdue: readiness === 'overdue' ? 1 : 0,
+            _is_risk: readiness === 'production_risk' ? 1 : 0,
+            _is_ready: readiness === 'ready' ? 1 : 0,
+          },
+        };
+      }),
+  }), [filtered, colorForJob, colorMode, getReadiness]);
 
   // Keep filteredRef in sync so the click handler (bound once) can resolve
   // the clicked feature's id back to the full job object.
@@ -17046,6 +17137,14 @@ function MapPage({ jobs, onNav }) {
       cluster: true,
       clusterRadius: 50,        // pixels — features within this distance group
       clusterMaxZoom: 12,       // above zoom 12 clusters fully break apart
+      // Aggregate readiness flags per cluster so the bubble paint can decide
+      // its color from the majority state of contained pins. See the
+      // featureCollection memo above for the per-feature flag computation.
+      clusterProperties: {
+        overdue_count: ['+', ['get', '_is_overdue']],
+        risk_count:    ['+', ['get', '_is_risk']],
+        ready_count:   ['+', ['get', '_is_ready']],
+      },
     });
 
     // ─── Unclustered (individual job) layers ───
@@ -17085,7 +17184,18 @@ function MapPage({ jobs, onNav }) {
       paint: {
         // Step radius based on point_count: base 18px, 24px at 10+, 32px at 30+
         'circle-radius': ['step', ['get', 'point_count'], 18, 10, 24, 30, 32],
-        'circle-color': '#8A261D',
+        // Color reflects the worst readiness state in the cluster, so the user
+        // gets a fast read at low zoom. Order: any overdue → red, any risk →
+        // amber, all ready → green. If none of the readiness flags fire (e.g.
+        // colorMode is 'crew' or 'market'), fall through to neutral dark gray
+        // so the cluster doesn't claim a status semantic it doesn't have.
+        'circle-color': [
+          'case',
+          ['>', ['get', 'overdue_count'], 0], '#DC2626',  // red — match overdue pin color
+          ['>', ['get', 'risk_count'],    0], '#EAB308',  // amber — match production_risk
+          ['>', ['get', 'ready_count'],   0], '#16A34A',  // green — match ready
+          '#475569',                                        // slate — non-readiness modes
+        ],
         'circle-opacity': 0.85,
         'circle-stroke-color': pinBorder,
         'circle-stroke-width': 2,
