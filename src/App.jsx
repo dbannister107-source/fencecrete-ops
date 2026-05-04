@@ -25416,8 +25416,10 @@ function Sidebar({page,setPage,jobs,collapsed,setCollapsed,onNavClick,navGroups}
         // it bundled hundreds of closed jobs with the live workload. Now the
         // active backlog count leads (what people actually care about); total
         // is parenthetical. (P3 #19, 2026-05-05)
-        const ACTIVE_S=new Set(['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
-        const activeCount=jobs.filter(j=>ACTIVE_S.has(j.status)).length;
+        // Uses the same CLOSED_SET as the Dashboard's `active` definition so
+        // the two counts stay aligned (fully_complete is not "active" — work
+        // is done, just awaiting close-out).
+        const activeCount=jobs.filter(j=>!CLOSED_SET.has(j.status)).length;
         return<div style={{fontSize:11,color:'#625650',marginBottom:8}}><b style={{color:'#1A1A1A'}}>{activeCount.toLocaleString()}</b> active <span style={{color:'#9E9B96'}}>· {jobs.length.toLocaleString()} total</span></div>;
       })()}
       {auth&&<div ref={menuRef} style={{position:'relative',marginBottom:10}}>
