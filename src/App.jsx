@@ -245,7 +245,13 @@ const SL = { contract_review:'Contract Review', production_queue:'Production Que
 // status pill rendered via the inline `pill()` helper looks identical to one
 // rendered via <StatusBadge>.
 const SC = { contract_review:'#625650', production_queue:'#854F0B', in_production:'#185FA5', material_ready:'#0F6E56', active_install:'#065F46', fence_complete:'#085041', fully_complete:'#04342C', closed:'#625650', canceled:'#991B1B' };
-const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_production:'#E6F1FB', material_ready:'#E1F5EE', active_install:'#E1F5EE', fence_complete:'#E1F5EE', fully_complete:'#E1F5EE', closed:'#F4F4F2', canceled:'#FEF2F2' };
+// Background colors — each post-production stage gets a distinct shade so the
+// project-list status pills are visually distinguishable at a glance. Before
+// 2026-05-04, material_ready / active_install / fence_complete / fully_complete
+// all shared #E1F5EE which made them indistinguishable. Now they progress
+// from soft teal (production-side) through emerald (active install) to
+// rich green (fence complete) to deep forest (fully complete).
+const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_production:'#E6F1FB', material_ready:'#E1F5EE', active_install:'#C7EBD9', fence_complete:'#A7E6CD', fully_complete:'#7DD9B5', closed:'#F4F4F2', canceled:'#FEF2F2' };
 const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
 const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
 const CLOSED_SET=new Set(['fully_complete','closed','canceled','cancelled']);
@@ -799,6 +805,24 @@ const MONEY_FIELDS = new Set([
   'contract_rate_wrought_iron','contract_rate_removal','contract_rate_other',
 ]);
 
+// FIELD_HINTS — explanatory tooltip text for fields whose labels are
+// abbreviations or where the meaning isn't self-evident. Surfaces as a small
+// "ⓘ" indicator next to the field label in EditPanel; hovering reveals the
+// hint via title attribute. Built 2026-05-04 to address the live-review
+// finding that "NTP" and "Contract Month" labels were construction jargon
+// new users don't know.
+const FIELD_HINTS = {
+  ntp_issued_date:   'NTP = Notice to Proceed. The date the GC formally issued the NTP authorizing work to begin.',
+  ntp_received_date: 'NTP = Notice to Proceed. The date Fencecrete received the NTP from the GC. Often differs from NTP Issued by a few days.',
+  ntp_received_by:   'The Fencecrete person who received and processed the NTP from the GC.',
+  contract_month:    'The fiscal/billing period this contract belongs to. Drives month-based billing schedule reports. Often differs from Contract Date.',
+  start_month:       'The month the job started production (or active install if no production stage). Used for cohort reporting.',
+  complete_month:    'The month the job reached fully_complete status. Used for cohort reporting.',
+  active_entry_date: 'The date this job moved from contract_review into the active billing pipeline. Often a few weeks/months after the contract date.',
+  contract_age:      'Days since the contract was signed (today - contract_date). Updates daily.',
+  retainage_pct:     'Percentage of each invoice the customer holds back as retainage until project completion. Typical: 5-10%.',
+};
+
 function SkeletonKanban({cols=5,cards=3}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>{Array.from({length:cols}).map((_,i)=><div key={i}><Skeleton h={48} r={8} style={{marginBottom:8}}/>{Array.from({length:cards}).map((_,j)=><Skeleton key={j} h={110} r={10} style={{marginBottom:8}}/>)}</div>)}</div>;}
 function SkeletonKpis({n:nKpis=4}){return <div style={{display:'grid',gridTemplateColumns:`repeat(${nKpis},1fr)`,gap:12}}>{Array.from({length:nKpis}).map((_,i)=><div key={i} style={{...card}}><Skeleton h={28} w="60%" style={{marginBottom:8}}/><Skeleton h={12} w="40%"/></div>)}</div>;}
 
@@ -1128,7 +1152,35 @@ const PM_BILL_LF_GROUPS=[
 // or via the Lump Sum / Permit / Bond dropdown options). Flat columns remain
 // in jobs schema for backward compat; jobs.number_of_gates is auto-synced
 // by sync_job_aggregates_from_line_items so reports/QuickView still work.
-const SECS=[{key:'lineitems',label:'Line Items',fields:[]},{key:'contract',label:'Contract & Billing',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},{key:'totals',label:'Totals',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},{key:'requirements',label:'Project Requirements',fields:[]},{key:'details',label:'Details',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},{key:'parties',label:'Parties',fields:[]},{key:'documents',label:'Documents',fields:[]},{key:'dates',label:'Dates',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},{key:'notes',label:'Notes',fields:['notes']},{key:'co',label:'Change Orders',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},{key:'tasks',label:'Tasks',fields:[]},{key:'history',label:'History',fields:[]},{key:'pis',label:'Info Sheet',fields:[]}];
+// EditPanel section list. The `group` field powers the 2-level tab nav added
+// 2026-05-04 (Setup / Money / Workflow). Within each group, tab order matches
+// the natural flow of opening a new project: Setup goes through who/where/
+// when, Money handles the contract + line items + change orders, Workflow
+// covers ongoing work (docs, tasks, notes, history).
+//
+// Why 3 groups: 13 flat tabs across the top was the #1 EditPanel friction
+// point in the 2026-05-03 live-app review — too many to scan at a glance.
+// Grouping reduces top-level cognitive load to 3 buttons; within a group,
+// 4-5 second-level tabs is comfortable.
+const SECS=[
+  // ─── Setup (who / where / when) ───
+  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number']},
+  {key:'parties',label:'Parties',group:'Setup',fields:[]},
+  {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},
+  {key:'requirements',label:'Project Requirements',group:'Setup',fields:[]},
+  {key:'pis',label:'Info Sheet',group:'Setup',fields:[]},
+  // ─── Money (contract + billing) ───
+  {key:'contract',label:'Contract & Billing',group:'Money',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},
+  {key:'lineitems',label:'Line Items',group:'Money',fields:[]},
+  {key:'totals',label:'Totals',group:'Money',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},
+  {key:'co',label:'Change Orders',group:'Money',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},
+  // ─── Workflow (ongoing project work) ───
+  {key:'documents',label:'Documents',group:'Workflow',fields:[]},
+  {key:'tasks',label:'Tasks',group:'Workflow',fields:[]},
+  {key:'notes',label:'Notes',group:'Workflow',fields:['notes']},
+  {key:'history',label:'History',group:'Workflow',fields:[]},
+];
+const SEC_GROUPS=['Setup','Money','Workflow'];
 
 const ACT_C={status_change:'#1D4ED8',billing_update:'#065F46',note_update:'#B45309',field_update:'#625650',job_created:'#8A261D'};
 
@@ -2471,7 +2523,27 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             <span style={{fontSize:12,color:'#92400E',fontWeight:600}}>Read-only — contact Amiee (amiee@fencecrete.com) to make changes to this project</span>
           </div>
       )}
-      <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'10px 20px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{SECS.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>{s.label}{s.key==='documents'&&headerDocCount!=null&&headerDocCount>0&&<span style={{display:'inline-block',padding:'1px 6px',borderRadius:99,fontSize:9,fontWeight:800,background:tab===s.key?'#8A261D':'#625650',color:'#FFF',lineHeight:1.4}}>{headerDocCount}</span>}</button>)}</div>
+      {/* Two-level tab nav (added 2026-05-04 to retire the 13-tabs-in-one-row
+          friction surfaced in the live-app review). Top row: 3 group pills
+          (Setup / Money / Workflow). Second row: tabs filtered to the active
+          group. Active group is derived from the currently-selected tab so
+          deep-linking to a specific tab still highlights the right group. */}
+      {(()=>{
+        const activeSec=SECS.find(s=>s.key===tab);
+        const activeGroup=activeSec?activeSec.group:'Setup';
+        const tabsInGroup=SECS.filter(s=>s.group===activeGroup);
+        return<>
+          <div style={{display:'flex',gap:6,padding:'10px 20px 4px',background:'#F9F8F6',borderBottom:'1px solid #F4F4F2',flexShrink:0}}>
+            {SEC_GROUPS.map(g=><button key={g} onClick={()=>{
+              // Switching groups jumps to the FIRST tab of the new group so the
+              // user always lands on something coherent.
+              const first=SECS.find(s=>s.group===g);
+              if(first)setTab(first.key);
+            }} style={{padding:'6px 14px',borderRadius:6,border:'1px solid '+(activeGroup===g?'#1A1A1A':'#E5E3E0'),background:activeGroup===g?'#1A1A1A':'#FFF',color:activeGroup===g?'#FFF':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{g}</button>)}
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 20px 10px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{tabsInGroup.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>{s.label}{s.key==='documents'&&headerDocCount!=null&&headerDocCount>0&&<span style={{display:'inline-block',padding:'1px 6px',borderRadius:99,fontSize:9,fontWeight:800,background:tab===s.key?'#8A261D':'#625650',color:'#FFF',lineHeight:1.4}}>{headerDocCount}</span>}</button>)}</div>
+        </>;
+      })()}
       <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:(canEdit||canEditInstallDateOnly)?'auto':'none'}}>
         {salesOrigin&&(()=>{const so=salesOrigin;const days=so.created_at&&so.won_date?Math.floor((new Date(so.won_date).getTime()-new Date(so.created_at).getTime())/86400000):null;return <div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderLeft:'3px solid #185FA5',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -3226,7 +3298,10 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           if(MONEY_FIELDS.has(f)){
             const ed=fieldEditable(f);
             return<div key={f} style={{marginBottom:12}}>
-              <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
+              <label style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                {lbl}
+                {FIELD_HINTS[f]&&<span title={FIELD_HINTS[f]} style={{fontSize:11,color:'#9E9B96',cursor:'help'}}>ⓘ</span>}
+              </label>
               <MoneyInput value={form[f]} onChange={v=>set(f,v)} disabled={!ed} style={{...inputS,fontFamily:'Inter',fontWeight:600,...(ed?{}:{background:'#F9F8F6',color:'#625650'})}}/>
             </div>;
           }
@@ -3253,7 +3328,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             </div>;
           }
           return(
-            <div key={f} style={{marginBottom:12}}><label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
+            <div key={f} style={{marginBottom:12}}><label style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}{FIELD_HINTS[f]&&<span title={FIELD_HINTS[f]} style={{fontSize:11,color:'#9E9B96',cursor:'help'}}>ⓘ</span>}</label>
               {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap',...(fieldEditable(f)?{}:{pointerEvents:'none',opacity:0.6})}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical',...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'})}}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600,pointerEvents:'auto'}}>Open →</a>}</div>:<input type={f.endsWith('_date')||f.endsWith('_month')?'date':'text'} value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>}</>}
             </div>);})}
           {sec&&sec.computed&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
@@ -4279,25 +4354,43 @@ function Dashboard({jobs,onNav,refreshKey=0}){
         </div>
       </div>
     </div>
-    {/* Capacity KPIs — mold + batch plant */}
-    {(()=>{const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;const moldCol=moldPct>=70?'#B45309':'#15803D';const cyCol=cyPct>=70?'#B45309':'#15803D';return<div style={{display:'grid',gridTemplateColumns:pairCols,gap:16,marginBottom:16}}>
-      <div style={{...card,padding:14,borderLeft:`4px solid ${moldCol}`}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-          <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
-          <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:moldCol}}>{capSnap.panelsPlanned.toLocaleString()}/{capSnap.panelCapacity.toLocaleString()}</div>
+    {/* Capacity KPIs — mold + batch plant. Both widgets show 0/X on weekends and
+        before the daily plan is built; we soften the framing so "0/52.8" doesn't
+        read as broken on a Sunday. Color stays neutral when no production is
+        planned for today, switching to the green/amber capacity scale once a
+        plan exists. */}
+    {(()=>{
+      const moldPct=capSnap.panelCapacity>0?Math.round(capSnap.panelsPlanned/capSnap.panelCapacity*100):0;
+      const cyPct=capSnap.cyCap>0?Math.round(capSnap.cyPlanned/capSnap.cyCap*100):0;
+      const today=new Date();
+      const isWeekend=today.getDay()===0||today.getDay()===6;
+      const noPlan=capSnap.panelsPlanned===0&&capSnap.cyPlanned===0;
+      // Neutral gray when nothing is planned (typical pre-plan or weekend state).
+      // Otherwise use the existing 70%-amber, else-green threshold.
+      const moldCol=noPlan?'#9E9B96':(moldPct>=70?'#B45309':'#15803D');
+      const cyCol=noPlan?'#9E9B96':(cyPct>=70?'#B45309':'#15803D');
+      const subText=noPlan
+        ? (isWeekend?'No production scheduled — weekend':'No production planned for today yet')
+        : null;
+      return<div style={{display:'grid',gridTemplateColumns:pairCols,gap:16,marginBottom:16}}>
+        <div style={{...card,padding:14,borderLeft:`4px solid ${moldCol}`}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+            <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🔧 Mold Capacity</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:moldCol}}>{capSnap.panelsPlanned.toLocaleString()}/{capSnap.panelCapacity.toLocaleString()}</div>
+          </div>
+          <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(moldPct,100)}%`,height:'100%',background:moldCol}}/></div>
+          <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{subText||`${moldPct}% of panel capacity today (primary)`}</div>
         </div>
-        <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(moldPct,100)}%`,height:'100%',background:moldCol}}/></div>
-        <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{moldPct}% of panel capacity today (primary)</div>
-      </div>
-      <div style={{...card,padding:14,borderLeft:`4px solid ${cyCol}`}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-          <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🏭 Batch Plant</div>
-          <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:cyCol}}>{capSnap.cyPlanned.toFixed(1)}/{capSnap.cyCap} CYD</div>
+        <div style={{...card,padding:14,borderLeft:`4px solid ${cyCol}`}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+            <div style={{fontSize:11,color:'#625650',textTransform:'uppercase',fontWeight:700}}>🏭 Batch Plant</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:900,color:cyCol}}>{capSnap.cyPlanned.toFixed(1)}/{capSnap.cyCap} CYD</div>
+          </div>
+          <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:cyCol}}/></div>
+          <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{subText||`${cyPct}% — panels × cy × 1.4 / 52.8 (secondary)`}</div>
         </div>
-        <div style={{height:8,background:'#E5E3E0',borderRadius:4,overflow:'hidden',marginTop:8}}><div style={{width:`${Math.min(cyPct,100)}%`,height:'100%',background:cyCol}}/></div>
-        <div style={{fontSize:11,color:'#625650',marginTop:4,fontWeight:600}}>{cyPct}% — panels × cy × 1.4 / 52.8 (secondary)</div>
-      </div>
-    </div>;})()}
+      </div>;
+    })()}
     {/* Reconciliation chip — only renders when at least one job is in an
         inconsistent state. Click routes to Production Board where the yellow
         per-card banner makes the offenders easy to spot. */}
@@ -5125,7 +5218,28 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
         <div title="PM bill sheet submissions that AR has not yet marked Reviewed for this month." style={{...card,padding:'12px 16px',borderLeft:'4px solid #B45309'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#B45309'}}>{arTabCounts.pending}</div><div style={{fontSize:11,color:'#625650'}}>Pending Review</div></div>
         <div title="PM bill sheet submissions AR has marked Reviewed (the formal PM→AR workflow). Does NOT include direct invoice entries — see next tile." style={{...card,padding:'12px 16px',borderLeft:'4px solid #3B82F6'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#3B82F6'}}>{arTabCounts.reviewed}</div><div style={{fontSize:11,color:'#625650'}}>Bill Sheets Reviewed</div></div>
         <div title="Direct invoice entries logged via the per-job invoice editor for this month. Counted separately because they bypass the PM bill sheet workflow — they're AR's own logging activity." style={{...card,padding:'12px 16px',borderLeft:'4px solid #065F46'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#065F46'}}>{arInvoiceEntryCount}</div><div style={{fontSize:11,color:'#625650'}}>Direct Invoices Logged</div></div>
-        <div title="Active jobs in this month with no PM bill sheet submitted yet." style={{...card,padding:'12px 16px',borderLeft:'4px solid #EF4444'}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color:'#EF4444'}}>{arStats.missing}</div><div style={{fontSize:11,color:'#625650'}}>Missing Submissions</div></div>
+        {/* Missing Submissions — was always red regardless of date, which made
+            the dashboard alarmist early in the month before PMs had any reason
+            to have submitted yet. Now: amber (with "expected by 25th" framing)
+            until day 25, switching to red after. PMs typically submit between
+            the 20th and the 25th; on day 3 of a new month, "137 missing" is
+            normal, not a crisis. */}
+        {(()=>{
+          const today=new Date();
+          const dayOfMonth=today.getDate();
+          const PM_CUTOFF_DAY=25;
+          // Treat the alert as urgent only after the cutoff (or if we're viewing
+          // a past month, in which case missing is genuinely missing).
+          const billingDate=arMonth?new Date(arMonth+'-01'):today;
+          const isCurrentMonth=billingDate.getFullYear()===today.getFullYear()&&billingDate.getMonth()===today.getMonth();
+          const isPastDeadline=!isCurrentMonth||dayOfMonth>=PM_CUTOFF_DAY;
+          const color=isPastDeadline?'#EF4444':'#B45309';
+          const label=isPastDeadline?'Missing Submissions':`Not yet submitted · expected by ${PM_CUTOFF_DAY}th`;
+          return <div title={isPastDeadline?'Active jobs in this month with no PM bill sheet submitted. Past the typical PM cutoff — these are now overdue.':`Active jobs in this month with no PM bill sheet submitted yet. PMs typically submit between the 20th and ${PM_CUTOFF_DAY}th, so this number naturally drops as the month progresses.`} style={{...card,padding:'12px 16px',borderLeft:`4px solid ${color}`}}>
+            <div style={{fontFamily:'Inter',fontWeight:800,fontSize:20,color}}>{arStats.missing}</div>
+            <div style={{fontSize:11,color:'#625650'}}>{label}</div>
+          </div>;
+        })()}
       </div>
       {/* Sub-tabs — Pending / Reviewed / No Bill. Virginia's workflow is to
           drain Pending → zero each month, so it is the default on page load. */}
@@ -10075,7 +10189,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
     const m={};planLines.forEach(l=>{const canonical=canonicalStyle(l.style||'—');if(!m[canonical]){const children=MOLD_CHILDREN[canonical]||[];const ppm=panelsPerMoldForStyle(canonical);m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),panelsPerMold:ppm,confirmed:ppm!=null};}m[canonical].panels+=linePanels(l);});
     return Object.values(m).filter(x=>x.panels>0||x.capacity>0||!x.confirmed&&x.panels>0).sort((a,b)=>b.panels-a.panels);
   },[planLines,moldCapacityPanels,moldsForStyle,panelsPerMoldForStyle]);
-  const leadershipTable=useMemo(()=>physicalMolds.map(m=>{
+  // Leadership view tabulates panel-mold capacity per style. The 'All Styles'
+  // mold_inventory rows are NOT panel molds — they're shared cap/post/rail
+  // counts (cap_rail_standard, post_cap_line, post_cap_stop, etc.) used by
+  // the bottleneck-component computation for individual styles. Including
+  // them here would render them as "panel" rows with bogus capacity numbers
+  // because panelsPerMoldForStyle('All Styles') returns the default 12.
+  // Filter them out: the per-style row already surfaces their bottleneck
+  // contribution in the "Limited by" column.
+  const leadershipTable=useMemo(()=>physicalMolds.filter(m=>m.style_name!=='All Styles').map(m=>{
     const ppm=panelsPerMoldForStyle(m.style_name);
     const confirmed=ppm!=null;
     const capacity=confirmed?Math.floor(m.total_molds*ppm*MOLD_UTIL_RATE):0;
@@ -10510,7 +10632,14 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
             <div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:'#854F0B',textTransform:'uppercase'}}>Production Queue</div>
             <span style={{background:'#FAEEDA',color:'#854F0B',padding:'2px 8px',borderRadius:10,fontSize:11,fontWeight:700}}>{queueGroups.total}</span>
           </div>
-          <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>All jobs in production queue — sorted by est. install date</div>
+          {/* Sub-line shows the breakdown so the user immediately sees how many of the
+              total are actually plannable (ready) vs blocked on a production order. The
+              total count alone (e.g. "39") was alarmist when only 5 were actionable. */}
+          <div style={{fontSize:11,color:'#9E9B96',marginTop:2}}>
+            <b style={{color:'#15803D'}}>{queueGroups.ready.length} ready</b>
+            {queueGroups.needsCalc.length>0&&<> · <b style={{color:'#854F0B'}}>{queueGroups.needsCalc.length} need production order</b></>}
+            {' · sorted by est. install date'}
+          </div>
         </div>
         <div style={{display:'flex',gap:4,marginBottom:10}}>
           {[['all','All'],['urgent','Urgent'],['this_week','This Week']].map(([k,lbl])=><button key={k} onClick={()=>setQueueFilter(k)} style={{padding:'5px 10px',borderRadius:6,border:queueFilter===k?'2px solid #854F0B':'1px solid #E5E3E0',background:queueFilter===k?'#FAEEDA':'#FFF',color:queueFilter===k?'#854F0B':'#625650',fontSize:11,fontWeight:700,cursor:'pointer'}}>{lbl}</button>)}
@@ -10539,7 +10668,9 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                     {overdue&&<span style={{marginLeft:6}}>⚠ OVERDUE</span>}
                     {urgent&&!overdue&&<span style={{marginLeft:6}}>🟡 URGENT</span>}
                   </div>
-                  <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:'#854F0B',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
+                  {/* Button color matches the card's left border so the urgency signal
+                      reaches the click target. Overdue → red, urgent → amber, normal → green. */}
+                  <button onClick={()=>addJobToPlan(j)} style={{width:'100%',marginTop:6,padding:'5px 10px',background:overdue?'#DC2626':urgent?'#B45309':'#15803D',border:'none',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add to Plan →</button>
                 </div>;
               })}
             </div>
@@ -10718,9 +10849,23 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         <span style={{color:'#9E9B96'}}>{leadershipOpen?'▲':'▼'}</span>
       </button>
       {leadershipOpen&&<div style={{padding:16,borderTop:'1px solid #E5E3E0'}}>
-        <div style={{fontSize:11,color:'#625650',marginBottom:10}}>Physical mold sets — {totalMoldsOwned} total molds across {physicalMolds.length} sets</div>
+        <div style={{fontSize:11,color:'#625650',marginBottom:10}}>Physical panel mold sets — {totalMoldsOwned} total molds across {physicalMolds.length} sets. All capacity figures are <b>panels per day</b>, after the 88h/168h shift derate (Shift 1 + Shift 2 plant coverage).</div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{['Style','Molds','Panels/Mold','Capacity','In Use','Available','Limited by','Utilization'].map((h,i)=><th key={h} style={{textAlign:i===0?'left':(i===6||i===7)?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+          {/* Unit hints in headers per the 2026-05-04 review: the "Capacity" and
+              "In Use" / "Available" columns were unlabeled, leaving leaders to
+              guess whether 274 was panels, LF, hours, or cycles. They're all
+              panels/day (after the shift derate). Tooltips on hover show the
+              full math derivation. */}
+          <thead><tr style={{borderBottom:'1px solid #E5E3E0'}}>{[
+            {label:'Style', tip:null},
+            {label:'Molds', tip:'Number of physical 12-cavity gang molds for this style.'},
+            {label:'Panels / Mold', tip:'Cavities per mold (a 12-cavity gang mold pours 12 panels per cycle).'},
+            {label:'Capacity (panels/day)', tip:'Realized daily capacity = molds × cavities × shift derate (88h/168h ≈ 0.524). The realistic plant output for this style.'},
+            {label:'In Use (panels)', tip:'Sum of planned panels for this style across the active production plan.'},
+            {label:'Available', tip:'Capacity − In Use. Negative = planning to overrun the day.'},
+            {label:'Limited by', tip:'The component (panels / posts / rails / caps) shorter than the others — adding panel molds doesn\'t help if this is shorter. (count) shows the realized daily output for that component.'},
+            {label:'Utilization', tip:'In Use ÷ Capacity. Above 70% trends amber; below 70% green.'},
+          ].map((h,i)=><th key={h.label} title={h.tip||undefined} style={{textAlign:i===0?'left':(i===6||i===7)?'left':'right',padding:'6px 8px',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',cursor:h.tip?'help':'default'}}>{h.label}</th>)}</tr></thead>
           <tbody>
             {leadershipTable.map(r=>{
               if(!r.confirmed)return<tr key={r.style} style={{borderBottom:'1px solid #F4F4F2',background:'#FAFAF8'}}>
@@ -17679,6 +17824,26 @@ function MapPage({ jobs, onNav }) {
           tabIndex={0}
           style={{ width: '100%', height: '100%' }}
         />
+        {/* Loading skeleton — Mapbox tiles can take 3-5s to render on first paint;
+            without a placeholder the user sees a blank rectangle and assumes the
+            map is broken. Skeleton hides itself once mapReady fires (i.e., the
+            'load' event from Mapbox). Sits on top of the map container so a slow
+            tile fetch doesn't expose blank background. */}
+        {!mapReady && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 5,
+            background: 'linear-gradient(135deg, #F4F4F2 0%, #E5E3E0 50%, #F4F4F2 100%)',
+            backgroundSize: '200% 200%',
+            animation: 'shimmer 2s ease-in-out infinite',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexDirection: 'column', gap: 12, color: '#625650', fontSize: 13, fontWeight: 600,
+            pointerEvents: 'none',
+          }}>
+            <div style={{ fontSize: 32, opacity: 0.4 }}>🗺️</div>
+            <div>Loading Texas map…</div>
+            <style>{`@keyframes shimmer { 0%,100% { background-position: 0% 50% } 50% { background-position: 100% 50% } }`}</style>
+          </div>
+        )}
         {/* Legend overlay */}
         <div style={{
           position: 'absolute', bottom: 12, left: 12, zIndex: 10,
