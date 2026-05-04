@@ -13691,6 +13691,35 @@ function CrewLeaderAssignmentPage(){
 
   const assign=async(job,leaderId)=>{
     if(!canEdit)return;
+    // Special case: clearing the leader on an active_install job. The
+    // enforce_crew_leader_for_active_install trigger blocks NULL crew_leader_id
+    // when status='active_install', so a straight PATCH would 400. Offer to
+    // demote status atomically alongside the unassignment — same UPDATE means
+    // the trigger sees {status:'material_ready', crew_leader_id:null}, which
+    // it allows. Admins (David, Carlos, Alex, etc.) get this escape hatch when
+    // they need to swap leaders or pause a project; the gate continues to
+    // protect against PMs forgetting in normal flows.
+    if(!leaderId&&job.status==='active_install'&&job.crew_leader_id){
+      const proceed=window.confirm(
+        `Unassigning the crew leader on ${job.job_number} (${job.job_name}).\n\n`+
+        `This job is in Active Install — the system requires a crew leader at that stage. `+
+        `Continuing will move the status back to Material Ready in the same save.\n\n`+
+        `Proceed?`
+      );
+      if(!proceed){
+        // Force the dropdown to revert visually by re-emitting the existing leader.
+        setJobs(js=>js.map(j=>j.id===job.id?{...j}:j));
+        return;
+      }
+      setSaving(s=>({...s,[job.id]:true}));
+      try{
+        await sbPatch('jobs',job.id,{crew_leader_id:null,status:'material_ready'});
+        setJobs(js=>js.map(j=>j.id===job.id?{...j,crew_leader_id:null,status:'material_ready'}:j));
+        showToast(`${job.job_number} unassigned and demoted to Material Ready`);
+      }catch(e){showToast('Save failed: '+e.message,true);}
+      setSaving(s=>{const n={...s};delete n[job.id];return n;});
+      return;
+    }
     setSaving(s=>({...s,[job.id]:true}));
     try{
       await sbPatch('jobs',job.id,{crew_leader_id:leaderId||null});
