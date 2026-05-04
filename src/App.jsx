@@ -2517,7 +2517,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               ))}
             </div>}
           </div>}
-          {!isNew&&job.status!=='closed'&&!canEdit&&canChangeStatus&&<div style={{position:'relative'}}>
+          {/* "Update Status" button: previously gated `!canEdit && canChangeStatus`,
+              which meant full editors (Amiee, who has BOTH edit_projects and
+              edit_status) couldn't see it — and there's no other UI to change
+              `form.status` for editable users. Result: Amiee couldn't manually
+              advance contract_review → production_queue at all, even though
+              she has the permission. Fixed 2026-05-04 to show whenever the
+              user has edit_status (canChangeStatus). DB readiness gate still
+              enforces the workflow rules for users who try to skip ahead. */}
+          {!isNew&&job.status!=='closed'&&canChangeStatus&&<div style={{position:'relative'}}>
             <button onClick={()=>setShowStatusPicker(v=>!v)} disabled={reopening} style={{...btnS,color:'#1D4ED8',borderColor:'#1D4ED8',fontWeight:700}}>
               {reopening?'Saving...':'⚡ Update Status'}
             </button>
@@ -25574,7 +25582,15 @@ const ROLE_NAV_GROUPS = {
   sales_rep:      new Set(['HOME','SALES','CONTRACTS & PROJECTS','HELP']),
   pm:             new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FLEET & EQUIPMENT','HELP']),
   production:     new Set(['HOME','CONTRACTS & PROJECTS','PRODUCTION','FLEET & EQUIPMENT','HELP']),
-  billing:        new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','FINANCE','HELP']),
+  // 'billing' covers BOTH the AR / billing-review function (Virginia) AND the
+  // contracts function (Amiee). Both need Production Board for visibility into
+  // queued work, and ADMIN for SharePoint folder management. ADMIN sub-items
+  // are individually gated (canFolderAdmin requires admin OR billing role,
+  // crew leaders + system events require explicit perms), so granting the
+  // group only surfaces what each user is already permissioned for.
+  // Restored 2026-05-04 after Amiee reported losing access to Production
+  // Board + SharePoint Links following the role-based nav rollout.
+  billing:        new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FINANCE','ADMIN','HELP']),
   viewer:         new Set(['HOME','CONTRACTS & PROJECTS','HELP']),
 };
 const initialsOf = (name, email) => {
