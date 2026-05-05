@@ -38,6 +38,8 @@ import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
 import MarkPaidModal from './MarkPaidModal';
 import DrillDownModal from './DrillDownModal';
+import LumpSumDraft from './LumpSumDraft';
+import UnsupportedMethodNotice from './UnsupportedMethodNotice';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const NUM = (x) => Number(x) || 0;
@@ -85,6 +87,68 @@ function WarningsList({ warnings }) {
         {warnings.map((w, i) => <li key={i}>{w}</li>)}
       </ul>
     </Banner>
+  );
+}
+
+// 2026-05-05 (Phase G1): method-aware banner. One row showing which billing
+// flow is active for this contract + a brief plain-language description so
+// users understand what they're about to do. AIA gets a special note since
+// it bills as Progress until Phase G4 adds the G702/G703 PDF format.
+const METHOD_META = {
+  Progress:    { icon: '📊', name: 'Progress Billing',  desc: 'Bills incrementally per cycle based on PM bill sheet LF × stage weights. Retainage withheld each cycle.' },
+  'Lump Sum':  { icon: '💰', name: 'Lump Sum',          desc: 'Bills the full contract value in a single invoice. Retainage applies if set.' },
+  Milestone:   { icon: '🎯', name: 'Milestone Billing', desc: 'Bills predefined contract milestones — coming in Phase G2.' },
+  'T&M':       { icon: '⏱',  name: 'Time & Material',   desc: 'Bills actual labor + materials per cycle — coming in Phase G3.' },
+  AIA:         { icon: '📋', name: 'AIA',               desc: 'Functionally bills as Progress today; G702/G703 PDF format coming in Phase G4.' },
+};
+
+function BillingMethodBanner({ method, legacy, legacyValue }) {
+  const meta = METHOD_META[method] || METHOD_META.Progress;
+  return (
+    <div style={{
+      marginBottom: 14,
+      padding: '10px 14px',
+      background: COLOR.page,
+      border: `1px solid ${COLOR.border}`,
+      borderLeft: `4px solid ${COLOR.brand}`,
+      borderRadius: RADIUS.md,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      flexWrap: 'wrap',
+    }}>
+      <div style={{ fontSize: 22, flexShrink: 0 }}>{meta.icon}</div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{
+          fontSize: 10, fontWeight: 800, color: COLOR.text2,
+          textTransform: 'uppercase', letterSpacing: 0.4,
+        }}>
+          Billing Method
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: COLOR.text, marginTop: 2 }}>
+          {meta.name}
+          {legacy && (
+            <span title={`Legacy value "${legacyValue}" treated as Progress until cleaned up`}
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: RADIUS.pill,
+                    background: COLOR.warnBg,
+                    color: '#92400E',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.3,
+                  }}>
+              Legacy: {legacyValue}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: COLOR.text2, marginTop: 3, lineHeight: 1.5 }}>
+          {meta.desc}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -373,6 +437,16 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
           ? 'No billable activity in this draft'
           : null;
 
+  // 2026-05-05 (Phase G1): method-aware branching. The 5 canonical methods
+  // are Progress, Lump Sum, Milestone, T&M, AIA. Anything else (legacy
+  // values like 'COMPLETE', 'Procore', 'DUC', or NULL) falls through to
+  // Progress — the existing Acct Sheet flow IS the Progress flow.
+  const methodRaw = job?.billing_method || null;
+  const billingMethod = ['Progress','Lump Sum','Milestone','T&M','AIA'].includes(methodRaw)
+    ? methodRaw
+    : 'Progress';  // legacy / NULL → Progress (current behavior)
+  const methodIsLegacy = methodRaw && billingMethod === 'Progress' && methodRaw !== 'Progress';
+
   return (
     <div style={{ padding: '4px 0' }}>
       {/* Page title */}
@@ -383,106 +457,137 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         </div>
       </div>
 
+      {/* 2026-05-05 (Phase G1): method-aware banner. Tells the user which
+          billing flow this contract uses; AIA gets a special note since it
+          functionally bills as Progress until G4 adds the G702/G703 PDF. */}
+      <BillingMethodBanner method={billingMethod} legacy={methodIsLegacy} legacyValue={methodRaw} />
+
       {err && <Banner tone="danger" onClose={() => setErr(null)}>⚠ {err}</Banner>}
       {toast && <Banner tone="success" onClose={() => setToast(null)}>✓ {toast}</Banner>}
-      {result.warnings.length > 0 && <WarningsList warnings={result.warnings} />}
 
-      {/* 1. Contract Summary */}
+      {/* 1. Contract Summary — always visible regardless of method */}
       <ContractSummaryCard contract={result.contract} retainagePct={job?.retainage_pct} />
 
-      {/* 2. Current Bill Draft */}
-      <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-        <div style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: COLOR.text2,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          marginBottom: 12,
-        }}>
-          Current Bill Draft
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr 2fr',
-          gap: 12,
-          marginBottom: 14,
-        }}>
-          <SubmissionSelector
-            pmSubmissions={pmSubmissions}
-            billedSubmissionIds={billedSubmissionIds}
-            value={selectedSubmissionId}
-            onChange={setSelectedSubmissionId}
-            disabled={!canEdit}
-          />
-          <div>
-            <label style={{
-              display: 'block', fontSize: 10, color: COLOR.text2,
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4,
-            }}>Invoice Date</label>
-            <input
-              type="date"
-              value={invoiceDate}
-              disabled={!canEdit}
-              onChange={(e) => setInvoiceDate(e.target.value)}
-              style={{ ...inputS, width: '100%' }}
-            />
-          </div>
-          <div>
-            <label style={{
-              display: 'block', fontSize: 10, color: COLOR.text2,
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4,
-            }}>Notes (optional)</label>
-            <input
-              type="text"
-              value={appNotes}
-              disabled={!canEdit}
-              onChange={(e) => setAppNotes(e.target.value)}
-              placeholder="e.g. AIA G702 / customer PO ref"
-              style={{ ...inputS, width: '100%' }}
-            />
-          </div>
-        </div>
-
-        <DraftTable
-          draftLines={result.draft.lines}
-          draftTotals={result.draft.totals}
-          pricingLines={pricingLines}
-          cycleOverrides={cycleOverrides}
-          setCycleOverrides={setCycleOverrides}
-          canEdit={canEdit}
-        />
-
-        {/* Action row */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          gap: 12,
-          marginTop: 12,
-          flexWrap: 'wrap',
-        }}>
-          {fileBlockedReason && (
-            <span style={{ fontSize: 11, color: COLOR.text3, fontStyle: 'italic' }}>
-              {fileBlockedReason}
-            </span>
-          )}
-          <button
-            onClick={fileInvoice}
-            disabled={fileBlocked || filing}
-            title={fileBlockedReason || 'File this draft as an invoice'}
-            style={{
-              ...btnP,
-              padding: '10px 18px',
-              fontSize: 13,
-              opacity: fileBlocked || filing ? 0.5 : 1,
-              cursor: fileBlocked || filing ? 'not-allowed' : 'pointer',
+      {/* 2. Current Bill Draft — branches by method.
+            Progress / AIA / null → existing per-stage Acct Sheet flow
+            Lump Sum              → LumpSumDraft (one-click full bill)
+            Milestone / T&M       → UnsupportedMethodNotice (Phase G2/G3)
+            Engine warnings only render for Progress-style flows. */}
+      {(billingMethod === 'Progress' || billingMethod === 'AIA') && (
+        <>
+          {result.warnings.length > 0 && <WarningsList warnings={result.warnings} />}
+          <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: COLOR.text2,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              marginBottom: 12,
             }}>
-            {filing ? 'Filing…' : `📋 File Invoice (${$(result.draft.totals.current_amount)})`}
-          </button>
-        </div>
-      </div>
+              Current Bill Draft
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1fr 2fr',
+              gap: 12,
+              marginBottom: 14,
+            }}>
+              <SubmissionSelector
+                pmSubmissions={pmSubmissions}
+                billedSubmissionIds={billedSubmissionIds}
+                value={selectedSubmissionId}
+                onChange={setSelectedSubmissionId}
+                disabled={!canEdit}
+              />
+              <div>
+                <label style={{
+                  display: 'block', fontSize: 10, color: COLOR.text2,
+                  fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4,
+                }}>Invoice Date</label>
+                <input
+                  type="date"
+                  value={invoiceDate}
+                  disabled={!canEdit}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  style={{ ...inputS, width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{
+                  display: 'block', fontSize: 10, color: COLOR.text2,
+                  fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4,
+                }}>Notes (optional)</label>
+                <input
+                  type="text"
+                  value={appNotes}
+                  disabled={!canEdit}
+                  onChange={(e) => setAppNotes(e.target.value)}
+                  placeholder="e.g. AIA G702 / customer PO ref"
+                  style={{ ...inputS, width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <DraftTable
+              draftLines={result.draft.lines}
+              draftTotals={result.draft.totals}
+              pricingLines={pricingLines}
+              cycleOverrides={cycleOverrides}
+              setCycleOverrides={setCycleOverrides}
+              canEdit={canEdit}
+            />
+
+            {/* Action row */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 12,
+              marginTop: 12,
+              flexWrap: 'wrap',
+            }}>
+              {fileBlockedReason && (
+                <span style={{ fontSize: 11, color: COLOR.text3, fontStyle: 'italic' }}>
+                  {fileBlockedReason}
+                </span>
+              )}
+              <button
+                onClick={fileInvoice}
+                disabled={fileBlocked || filing}
+                title={fileBlockedReason || 'File this draft as an invoice'}
+                style={{
+                  ...btnP,
+                  padding: '10px 18px',
+                  fontSize: 13,
+                  opacity: fileBlocked || filing ? 0.5 : 1,
+                  cursor: fileBlocked || filing ? 'not-allowed' : 'pointer',
+                }}>
+                {filing ? 'Filing…' : `📋 File Invoice (${$(result.draft.totals.current_amount)})`}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {billingMethod === 'Lump Sum' && (
+        <LumpSumDraft
+          job={job}
+          contract={result.contract}
+          ledger={result.ledger}
+          canEdit={canEdit}
+          currentUserEmail={currentUserEmail}
+          onSuccess={async (msg) => {
+            await loadAll();
+            setToast(msg);
+          }}
+        />
+      )}
+
+      {(billingMethod === 'Milestone' || billingMethod === 'T&M') && (
+        <UnsupportedMethodNotice method={billingMethod} />
+      )}
 
       {/* 3. App Ledger + Retainage Release */}
       <AppLedger
