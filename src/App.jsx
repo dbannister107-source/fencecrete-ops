@@ -1388,7 +1388,7 @@ function LineItemsEditor({job,onChange,registerSave}){
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
