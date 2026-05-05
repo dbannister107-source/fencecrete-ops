@@ -10695,31 +10695,72 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead><tr>
-                {['Style','Planned','Available','% Utilized','Bottleneck'].map((h,i)=>(
-                  <th key={h} style={{textAlign:i<2?'left':i===4?'left':'right',padding:'8px 14px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                {/* Per-pool breakdown: instead of collapsing to a single "Bottleneck"
+                    cell, show each of the four mold pools (Panels / Posts / Rails /
+                    Caps) with its own utilization %. The bottleneck pool gets
+                    color-tinted; the rest stay neutral. Lets Max see the full
+                    constraint picture at a glance, not just the worst one. */}
+                {['Style','Day Total','Panels','Posts','Rails','Caps'].map((h,i)=>(
+                  <th key={h} style={{textAlign:i<2?'left':'center',padding:'8px 14px',background:'#F9F8F6',borderBottom:'1px solid #E5E3E0',fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {rows.map((r,i)=>{
                   const styleLabel=r.style?(r.height?`${r.style} ${r.height}'`:r.style):'(no style)';
+                  // Per-pool cell: shows "X/Y" + small bar with color tint matching
+                  // the pool's own status. Pool-status thresholds match the row-level
+                  // ones (>100% red, >=85% orange, >=50% blue, else green). The
+                  // worst pool also drives the row's overall status badge.
+                  const poolStatus=(pct)=>{
+                    if(pct===null||pct===undefined)return 'no_data';
+                    if(pct===Infinity||pct>100)return 'red';
+                    if(pct>=85)return 'orange';
+                    if(pct>=50)return 'blue';
+                    return 'green';
+                  };
+                  const poolCell=(comp)=>{
+                    if(!comp){
+                      return <td style={{padding:'8px 14px',textAlign:'center',color:'#9E9B96'}}>—</td>;
+                    }
+                    const need=comp.need||0;
+                    const avail=comp.avail||0;
+                    if(need===0&&avail===0){
+                      return <td style={{padding:'8px 14px',textAlign:'center',color:'#C8C4BD',fontStyle:'italic'}}>n/a</td>;
+                    }
+                    const ps=poolStatus(comp.pct);
+                    const isBottleneck=comp.label===r.worstComp;
+                    const barW=comp.pct===Infinity?100:Math.min(100,Math.max(0,n(comp.pct)));
+                    return <td style={{padding:'8px 14px',textAlign:'center',whiteSpace:'nowrap',background:isBottleneck?statusBg[ps]+'40':'transparent'}}>
+                      <div style={{fontFamily:'Inter',fontSize:11,fontWeight:isBottleneck?800:600,color:statusFg[ps],marginBottom:3}}>
+                        {need}/{avail||'—'} {comp.pct!==null&&<span style={{color:isBottleneck?statusFg[ps]:'#9E9B96',marginLeft:4}}>({fmtPct(comp.pct)})</span>}
+                      </div>
+                      {avail>0&&<div style={{height:4,background:'#F4F4F2',borderRadius:2,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${barW}%`,background:statusFg[ps],transition:'width .2s'}}/>
+                      </div>}
+                    </td>;
+                  };
+                  // Lookup each pool by label so we display in canonical order
+                  // regardless of how computeRow ordered them.
+                  const byLabel={};(r.components||[]).forEach(c=>{byLabel[c.label]=c;});
                   return <tr key={i} style={{borderBottom:'1px solid #F4F4F2'}}>
                     <td style={{padding:'8px 14px',fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap'}}>{styleLabel}</td>
-                    <td style={{padding:'8px 14px',fontFamily:'Inter',color:'#625650',whiteSpace:'nowrap'}}>{fmtCounts(r.planned)}</td>
-                    <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'Inter',color:r.cap?'#625650':'#9E9B96',fontStyle:r.cap?'normal':'italic',whiteSpace:'nowrap'}}>{r.cap?fmtAvail(r.cap):'No capacity data'}</td>
-                    <td style={{padding:'8px 14px',textAlign:'right'}}>
-                      {r.status==='no_data'?<span style={{color:'#9E9B96'}}>—</span>:(
-                        <span style={{display:'inline-block',padding:'2px 10px',borderRadius:4,fontSize:11,fontWeight:800,background:statusBg[r.status],color:statusFg[r.status]}}>{fmtPct(r.worstPct)}</span>
-                      )}
+                    <td style={{padding:'8px 14px',textAlign:'center',whiteSpace:'nowrap'}}>
+                      {r.status==='no_data'
+                        ?<span style={{color:'#9E9B96',fontSize:11,fontStyle:'italic'}}>no capacity data</span>
+                        :<span style={{display:'inline-block',padding:'2px 10px',borderRadius:4,fontSize:11,fontWeight:800,background:statusBg[r.status],color:statusFg[r.status]}}>{fmtPct(r.worstPct)}</span>}
                     </td>
-                    <td style={{padding:'8px 14px',color:r.worstComp?statusFg[r.status]:'#9E9B96',fontWeight:r.worstComp?700:400,fontStyle:r.worstComp?'normal':'italic'}}>{r.worstComp||'—'}</td>
+                    {poolCell(byLabel.panels)}
+                    {poolCell(byLabel.posts)}
+                    {poolCell(byLabel.rails)}
+                    {poolCell(byLabel.caps)}
                   </tr>;
                 })}
-                {rows.length===0&&<tr><td colSpan={5} style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>No production planned for this date.</td></tr>}
+                {rows.length===0&&<tr><td colSpan={6} style={{padding:20,textAlign:'center',color:'#9E9B96',fontSize:12,fontStyle:'italic'}}>No production planned for this date.</td></tr>}
               </tbody>
             </table>
           </div>
-          <div style={{padding:'8px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2'}}>
-            Read-only signal. Compares planned panels/posts/rails/caps against current mold inventory. Pn = panels, Po = posts, R = rails, C = caps. Does not block planning.
+          <div style={{padding:'8px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2',lineHeight:1.5}}>
+            Read-only signal. Each row shows planned/available for all 4 mold pools per style, with the bottleneck pool tinted. Bars: planned ÷ available, capped at 100% (over-capacity rows show ∞). Day Total = utilization % of the worst pool. Cure time is 24 h, so each mold pours once per calendar day — pool capacity is daily, not per-shift. Does not block planning.
           </div>
         </>)}
         </>}
