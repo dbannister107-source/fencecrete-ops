@@ -31,7 +31,7 @@ import ContractsWorkbenchPage from './features/contracts-workbench/ContractsWork
 // every applyAuthToken() call below.
 import {
   applySharedAuthToken,
-  sbGet, sbGetOne, sbCount, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc, sbFn,
+  sbGet, sbCount, sbPost, sbPatch, sbPatchWhere, sbDel, sbDelWhere, sbUpsert, sbRpc, sbFn,
   sbStorageUpload, sbStorageSign, sbStorageDelete,
   sbAuthSignIn, sbAuthSignOut, sbAuthRecover, sbAuthGetUser, sbAuthRefresh, sbAuthUpdatePassword,
 } from './shared/sb';
@@ -51,7 +51,6 @@ import {
 import {
   AUTO_LABELS as READINESS_AUTO_LABELS,
   MANUAL_ITEMS as READINESS_MANUAL_ITEMS,
-  MANUAL_LABELS as READINESS_MANUAL_LABELS,
 } from './shared/readiness';
 
 // Shared upload utilities (HEIC->JPEG conversion + paste-to-upload hook).
@@ -79,10 +78,7 @@ import {
 // + helpers below are pure data with no React state — pure data move.
 import {
   NAV_GROUPS,
-  MOBILE_NAV_DEFAULT,
-  MOBILE_NAV_BY_ROLE,
   mobileNavForRole,
-  ROLE_META,
   ROLE_NAV_GROUPS,
   initialsOf,
   roleColorFor,
@@ -221,31 +217,12 @@ const syncFenceAddons = (row) => {
   if (Number(row?.lf_single_wythe) > 0 || Number(row?.total_lf_masonry) > 0) next.add('C');
   return [...next];
 };
-// ORPHANED 2026-04-27. Was supposed to email violet@fencecrete.com on every
-// new project creation, but the target edge function (billing-alerts) ignores
-// the request body entirely and runs an aging report instead. So this function
-// never delivered to Violet — instead, every call triggered a redundant aging
-// report to AR/CFO/CEO. All three call sites (handleSave, handleDup, and the
-// new-project creation flow) were removed. The function definition is left in
-// place because it's harmless dead code, and if billing-alerts is ever fixed
-// to honor the 'new_project' type, the call sites can be re-added.
-const fireNewProjectEmail = (j) => {
-  if (!j) return;
-  try {
-    sbFn('billing-alerts', {
-      type: 'new_project',
-      jobNumber: j.job_number || '',
-      jobName: j.job_name || '',
-      market: j.market || '',
-      pm: j.pm || '',
-      salesRep: j.sales_rep || '',
-      contractValue: Number(j.contract_value) || 0,
-      status: j.status || '',
-      recipient: 'violet@fencecrete.com',
-      subject: `New Project Created — ${j.job_name || 'Untitled'} (${j.job_number || '—'})`
-    }).catch(e => console.error('[new_project email] failed:', e));
-  } catch (e) { console.error('[new_project email] threw:', e); }
-};
+// fireNewProjectEmail removed 2026-05-04 (was orphaned since 2026-04-27).
+// Was supposed to notify Violet on new-project creation but the billing-alerts
+// edge function ignored the request body and ran an aging report instead.
+// All call sites were already removed; the function itself was dead code.
+// To restore: see git history before commit `643f408` and fix billing-alerts
+// to honor the `type: 'new_project'` branch first.
 
 /* ═══ HELPERS ═══ */
 const $ = v => '$' + (Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
@@ -297,7 +274,6 @@ const getSharePointTooltip=(url)=>{
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne','Mike Dean'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'},{id:'Hugo Rodriguez',short:'Hugo',label:'Hugo Rodriguez'},{id:'Israel Santibanez',short:'Israel',label:'Israel Santibanez'}];
-const PMS=PM_LIST.map(p=>p.id);
 // Default crew-leader market for each PM, keyed by PM_LIST.id (full name).
 // Drives the PM Daily Report's Crew Leader dropdown when no job is selected
 // yet. Once a job is picked, the job's market wins. Doug serves DFW + Austin
@@ -363,9 +339,6 @@ let COLOR_CATALOG = _COLOR_FALLBACK.slice();
 // to their canonical color name ("Silversmoke"). Hydrated at app mount from
 // the `color_aliases` table joined to `colors`. Empty until that resolves.
 let COLOR_ALIAS_MAP = new Map();
-// Back-compat alias used by a handful of older callsites.
-const STANDARD_COLORS = _COLOR_FALLBACK.map(c => c.name);
-
 // 'PC/Gates' → 'PC'; null/empty → null. Matches the spec's compound-value rule.
 const stripFenceTypeSlash = (ft) => {
   if (!ft) return null;
@@ -479,7 +452,6 @@ const PLAN_PIECE_TYPES = [
   {group:'POST CAPS',key:'caps_stop',label:'Stop Caps'},
 ];
 const PLAN_PIECE_KEYS = PLAN_PIECE_TYPES.map(pt=>pt.key);
-const PLAN_PIECE_GROUPS = ['POSTS','PANELS','RAILS','POST CAPS'];
 // Sum helper: given a job/plan-line and a group, return total for that group from a per-piece object
 const sumGroup = (obj, group) => PLAN_PIECE_TYPES.filter(pt=>pt.group===group).reduce((s,pt)=>{const v=obj?.[pt.key];return s+(Number(v)||0);},0);
 
@@ -1130,12 +1102,10 @@ const DEF_VIS=['job_number','job_name','sharepoint_folder','status','pm','sales_
 // Monthly billing cycle — maps the 10 LF fields on jobs to the cycle table columns,
 // plus the grouped layout for the review modal. Used by PMBillingPage (Start Cycle),
 // BillingPage (Monthly Cycles tab + review modal), and Dashboard (status card).
-const CYCLE_LF_MAP=[['labor_post_only','lf_precast_post_only','Post Only'],['labor_post_panels','lf_precast_post_panels','Post & Panels'],['labor_complete','lf_precast_complete','Complete'],['sw_foundation','lf_sw_foundation','Foundation'],['sw_columns','lf_sw_columns','Columns'],['sw_panels','lf_sw_panels','Panels'],['sw_complete','lf_sw_complete','Complete'],['wi_gates','lf_wi_gates','Gates'],['wi_fencing','lf_wi_fencing','Fencing'],['wi_columns','lf_wi_columns','Posts']];
-const CYCLE_LF_GROUPS=[
-  {title:'Precast',keys:['lf_precast_post_only','lf_precast_post_panels','lf_precast_complete'],labels:['Post Only','Post & Panels','Complete']},
-  {title:'Single Wythe',keys:['lf_sw_foundation','lf_sw_columns','lf_sw_panels','lf_sw_complete'],labels:['Foundation','Columns','Panels','Complete']},
-  {title:'Wrought Iron',keys:['lf_wi_gates','lf_wi_fencing','lf_wi_columns'],labels:['Gates','Fencing','Posts']},
-];
+// CYCLE_LF_MAP + CYCLE_LF_GROUPS removed 2026-05-04 (orphaned). Were defined
+// for the Monthly Cycles billing tab but the consumer was rewritten to read
+// from PM_BILL_LF_GROUPS instead. Restore from git if monthly-cycles UI
+// is ever brought back.
 const cycleStatus=(c)=>c.invoice_sent?'invoiced':c.accounting_approved?'approved':c.accounting_approved_by?'review':'pending';
 const CYCLE_STATUS_META={pending:{label:'Pending',c:'#625650',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
 const curBillingMonth=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;};
@@ -1171,7 +1141,6 @@ const fmtPct1=(v)=>(Math.round(n(v)*1000)/10).toFixed(1)+'%';
 
 // PM Bill Sheet LF fields — written to pm_billing_entries by PMBillingPage. Surfaced
 // here as read-only context for the Billing page (table column group, modal, EditPanel).
-const PM_BILL_LF_TABLE=[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete'],['sw_foundation','SW Found.'],['sw_columns','SW Col.'],['sw_panels','SW Panels'],['sw_complete','SW Complete'],['wi_gates','WI Gates'],['wi_fencing','WI Fencing']];
 const PM_BILL_LF_GROUPS=[
   {title:'Precast',fields:[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete']]},
   {title:'Single Wythe',fields:[['sw_foundation','SW Foundation'],['sw_columns','SW Columns'],['sw_panels','SW Panels'],['sw_complete','SW Complete']]},
@@ -1250,7 +1219,6 @@ function useRealtime(setJobs) {
 }
 
 /* ═══ LINE ITEMS EDITOR ═══ */
-const LINE_FENCE_TYPES=['PC','SW','WI','Wood','Other'];
 const LINE_HEIGHT_OPTIONS=["4'","5'","6'","7'","8'","9'","10'","Ranch - 2 Rail","Ranch - 3 Rail","Ranch - 4 Rail"];
 function LineItemsEditor({job,onChange,registerSave}){
   useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
@@ -17364,9 +17332,9 @@ function ImportProjectsPage({jobs,onRefresh,onNav}){
 /* ═══ MAP PAGE ═══ */
 const MKT_COORDS={AUS:[30.2672,-97.7431],CS:[30.6280,-96.3344],DFW:[32.7767,-96.7970],HOU:[29.7604,-95.3698],SA:[29.4241,-98.4936]};
 const MKT_PIN={AUS:'#FB923C',CS:'#A78BFA',DFW:'#60A5FA',HOU:'#34D399',SA:'#F472B6',OOS:'#9CA3AF'};
-const MAP_LAYER_STATUSES = ['active_install','material_ready','contract_review','in_production'];
-const MAP_LAYER_COLOR = { active_install:'#DC2626', material_ready:'#EAB308', contract_review:'#6B7280', in_production:'#2563EB' };
-const MAP_LAYER_LABEL = { active_install:'Active Installs', material_ready:'Material Ready', contract_review:'Contract Review', in_production:'In Production' };
+// MAP_LAYER_STATUSES / MAP_LAYER_COLOR / MAP_LAYER_LABEL removed 2026-05-04
+// (orphaned). Were defined for the DOM-marker → GeoJSON layer migration; the
+// final implementation embeds these directly into the layer paint expressions.
 const productOfJob = (j) => {
   const s = String(j.style||'').toLowerCase();
   if (s.includes('gate') || n(j.gate_height) > 0) return 'Gate';
