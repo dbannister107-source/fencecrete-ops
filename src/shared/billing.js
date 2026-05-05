@@ -14,12 +14,14 @@
 //     that contracts still in review don't pollute "Never Billed" counts.
 //   - All money returns are dollars (numbers). Caller formats.
 
-// Statuses where the job has cleared contract review and is eligible to bill.
-// Includes fence_complete + fully_complete because retainage / final billing
-// can land after fence is up.
+// Statuses where the job is eligible for PM bill-sheet activity. Tightened
+// 2026-05-05 per David: pre-material-ready billing isn't a PM bill-sheet
+// activity (deposits / mobilization fees handled by AR directly). Bill
+// sheets become available the moment panels are poured + ready
+// (material_ready) and stay available through retainage / final invoice
+// (fully_complete). Mirror this in App.jsx ACTIVE_BILL_STATUSES — keep
+// the two lists identical.
 export const BILLING_ELIGIBLE_STATUSES = [
-  'production_queue',
-  'in_production',
   'material_ready',
   'active_install',
   'fence_complete',

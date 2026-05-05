@@ -5858,7 +5858,19 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
 }
 
 /* ═══ PM BILLING PAGE ═══ */
-const ACTIVE_BILL_STATUSES=['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
+// Job statuses where a PM bill sheet is eligible. Tightened 2026-05-05 per
+// David: pre-material-ready billing isn't a PM bill-sheet activity (any
+// deposits / mobilization fees handled directly by AR without a PM sheet).
+// Bill sheets become available the moment panels are poured + ready
+// (material_ready) and stay available through retainage / final invoice
+// (fully_complete). Also see BILLING_ELIGIBLE_STATUSES in src/shared/billing.js
+// — kept identical.
+//
+// Existing submissions on now-excluded statuses stay surfaced via the
+// `isActive || hasSubmission` rule in activeJobs, so the 50 April submissions
+// already in pm_bill_submissions on production_queue / in_production jobs
+// don't disappear from the UI.
+const ACTIVE_BILL_STATUSES=['material_ready','active_install','fence_complete','fully_complete'];
 // No Bill Required — structured reasons used by the PM Bill Sheet "No Bill"
 // modal and rendered back as labels on the AR review view.
 const NO_BILL_REASONS=[['waiting_customer','Waiting on customer'],['weather_delay','Weather delay'],['permit_delay','Permit delay'],['project_paused','Project paused'],['other','Other (describe below)']];
