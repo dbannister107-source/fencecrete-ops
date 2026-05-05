@@ -14710,7 +14710,7 @@ function CoPilotHome({onNav}){
       reports,crewLeaders,leads,
       validationStats,
     };
-  },[jobs,molds,moldCapacity,crewLeaders,invoices,installRates,reports,leads,validations,recentProposals]);
+  },[jobs,moldCapacity,crewLeaders,invoices,installRates,reports,leads,validations,recentProposals,readiness]);
 
   if(loading)return<div style={{padding:14,fontSize:13,color:'#9E9B96',textAlign:'center'}}>Loading insights…</div>;
   if(err)return<div style={{padding:14,fontSize:13,color:'#8A261D',background:'#FEE2E2',borderRadius:6}}>Co-Pilot offline: {err}</div>;
