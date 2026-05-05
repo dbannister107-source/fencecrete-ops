@@ -297,7 +297,7 @@ Every dynamic widget shipped tonight (Production Pulse, Plant Floor, AI schedule
 1. Open Production Planning → today's date → Production Pulse banner should appear (with zeros)
 2. Open Production Planning → any future date → 4-pool capacity strip should render
 3. Drop a job onto the plan → auto-fill should pre-populate counts
-4. Carlos logs an actual via PM Daily Report → mold_pours auto-creates → Plant Floor widget surfaces "X in cure"
+4. Carlos / Max logs an actual via **Daily Production Report** (sidebar PRODUCTION → Daily Production Report — feeds `production_actuals`, NOT the install-side PM Daily Report which feeds `pm_daily_reports`) → mold_pours trigger auto-creates rows → Plant Floor widget surfaces "X in cure"
 5. Click Generate AI Schedule → reasoning should cite color batching, CY pressure, install_at_risk jobs, double-schedule avoidance
 
 ### Recently shipped (2026-05-03)
