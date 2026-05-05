@@ -514,6 +514,11 @@ function MobileKanban({columns, renderCard, emptyMessage='No items'}) {
         </button>;
       })}
     </div>
+    {/* Active column totals — mirrors the LF + combined value line shown on
+        the desktop kanban column headers. Hidden when the column is empty
+        or the parent didn't supply totals (e.g. older non-Production-Board
+        callers like Pipeline that don't compute lf/tv). */}
+    {current.items.length>0 && (Number(current.lf)>0||Number(current.tv)>0) && <div style={{fontFamily:'Inter',fontWeight:600,fontSize:11,color:current.color||'#625650',opacity:0.85,padding:'2px 4px 10px',letterSpacing:'0.2px'}}>{Math.round(Number(current.lf)||0).toLocaleString()} LF · {$k(Number(current.tv)||0)}</div>}
     {/* Swipe area */}
     <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{minHeight:200,touchAction:'pan-y'}}>
       {current.items.length === 0
@@ -6823,7 +6828,16 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
   // KANBAN_STS imported from shared/status.js
-  const columns=useMemo(()=>{if(groupBy==='status')return KANBAN_STS.map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));
+  const columns=useMemo(()=>{if(groupBy==='status')return KANBAN_STS.map(s=>{
+    const sJobs=sortByStart(filtered.filter(j=>j.status===s));
+    // lf = total LF scope of all jobs in this status; tv = combined adj_contract_value.
+    // Shown on the column header so leadership can scan "how much pipeline / dollars are
+    // sitting in each phase" without expanding cards. Falls back to contract_value when
+    // adj is null (legacy / pre-trigger jobs).
+    const lf=sJobs.reduce((sum,j)=>sum+n(j.total_lf),0);
+    const tv=sJobs.reduce((sum,j)=>sum+n(j.adj_contract_value||j.contract_value),0);
+    return{key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sJobs,lf,tv};
+  });
     // For style + color groupBy, fall back to first line item when the
     // parent jobs.style/color is blank — otherwise masonry-only jobs and
     // multi-line-item jobs would all bucket as "Unspecified" when in
@@ -6844,7 +6858,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       }
       return j[groupBy]||'';
     };
-    const groups={};filtered.forEach(j=>{const v=resolveGroupKey(j);const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8A261D',bg:'#FDF4F4',jobs:sortByStart(g.jobs),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy,lineItemsByJob]);
+    const groups={};filtered.forEach(j=>{const v=resolveGroupKey(j);const k=v||'__u__';if(!groups[k])groups[k]={label:v||'Unspecified',jobs:[]};groups[k].jobs.push(j);});let cols=Object.entries(groups).map(([k,g])=>({key:k,label:g.label,color:'#8A261D',bg:'#FDF4F4',jobs:sortByStart(g.jobs),lf:g.jobs.reduce((s,j)=>s+n(j.total_lf),0),tv:g.jobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0)}));cols.sort((a,b)=>{if(a.key==='__u__')return 1;if(b.key==='__u__')return-1;return b.tv-a.tv;});return{cols:cols.slice(0,12),capped:cols.length>12};},[filtered,groupBy,lineItemsByJob]);
   const isS=groupBy==='status';const colArr=isS?columns:columns.cols;
   return(<div>
     {moveToast&&<Toast message={moveToast.msg} isError={!moveToast.ok} onDone={()=>setMoveToast(null)}/>}
@@ -6973,11 +6987,11 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       </div>;
     })():(isMobile
       ? <MobileKanban
-          columns={colArr.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.bg,items:col.jobs}))}
+          columns={colArr.map(col=>({key:col.key,label:col.label,color:col.color,bg:col.bg,items:col.jobs,lf:col.lf,tv:col.tv}))}
           emptyMessage="No jobs in this stage"
           renderCard={j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>}
         />
-      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>)}</div></div>;})}</div>)}
+      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',flexDirection:'column',gap:3}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div>{col.jobs.length>0&&<div style={{fontFamily:'Inter',fontWeight:600,fontSize:10.5,color:col.color,opacity:0.78,letterSpacing:'0.2px'}} title={`${Math.round(col.lf||0).toLocaleString()} LF · ${$(col.tv||0)} combined adj contract value`}>{Math.round(col.lf||0).toLocaleString()} LF · {$k(col.tv||0)}</div>}</div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>)}</div></div>;})}</div>)}
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
