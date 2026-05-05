@@ -1319,6 +1319,11 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
   const[confirmDel,setConfirmDel]=useState(null);
+  // 2026-05-05 (P1 #6): pricing-line FK support. The dropdown column on each
+  // line row reads from this pool; auto-link helper picks the unambiguous
+  // match by (category, height, style). Same scope filter as loadLines —
+  // CO scope sees CO pricing only, main contract sees main pricing only.
+  const[availablePricingLines,setAvailablePricingLines]=useState([]);
   /* Style and color options come from the canonical `styles` / `colors`
      lookup tables via the CatalogContext. Options are filtered by the line's
      fence_type; if the row carries a legacy value not in the canonical list
@@ -1341,6 +1346,51 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
     setLoading(false);
   },[job?.job_number,coId]);
   useEffect(()=>{loadLines();},[loadLines]);
+
+  // 2026-05-05 (P1 #6): fetch available pricing lines for this scope so the
+  // Pricing Link dropdown can populate. Same coId-aware filter as loadLines
+  // — CO scope sees CO pricing rows, main contract sees main pricing rows.
+  useEffect(()=>{
+    if(!job?.id){setAvailablePricingLines([]);return;}
+    const filter=coId
+      ?`co_id=eq.${coId}&order=line_number.asc&select=id,label,category,height,style,unit,price_per_unit`
+      :`job_id=eq.${job.id}&co_id=is.null&order=line_number.asc&select=id,label,category,height,style,unit,price_per_unit`;
+    sbGet('job_pricing_lines',filter)
+      .then(rows=>setAvailablePricingLines(Array.isArray(rows)?rows:[]))
+      .catch(()=>setAvailablePricingLines([]));
+  },[job?.id,coId]);
+
+  // 2026-05-05 (P1 #6): map from job_line_items.fence_type → job_pricing_lines.category.
+  // Lets autoLinkPricingLine and the dropdown filter restrict the candidate
+  // pool to pricing rows of the right category for the line's type.
+  const FENCE_TYPE_TO_PRICING_CATEGORY={
+    PC:'precast',
+    SW:'sw',
+    WI:'sw',
+    Gate:'wi_gate',
+    Permit:'permit',
+    'P&P Bond':'bond',
+    'Maint Bond':'bond',
+    Insurance:'bond',
+    'Lump Sum':'option',
+    Columns:'option',
+    'Gate Controls':'option',
+  };
+  const _normH=(h)=>String(h||'').replace(/['"]/g,'').trim().toLowerCase();
+  const _normS=(s)=>String(s||'').trim().toLowerCase();
+  // Returns the pricing_line_id of the unambiguous match (exactly 1 candidate)
+  // for a line, or null when there's no match / multiple matches.
+  const autoLinkPricingLine=(line,pool)=>{
+    const cat=FENCE_TYPE_TO_PRICING_CATEGORY[line?.fence_type];
+    if(!cat||!Array.isArray(pool))return null;
+    const lh=_normH(line.height);
+    const ls=_normS(line.style);
+    const matches=pool.filter(p=>p.category===cat
+      &&_normH(p.height)===lh
+      &&_normS(p.style)===ls);
+    return matches.length===1?matches[0].id:null;
+  };
+
   // Combined map for non-fence types — used by updateLine to set taxable +
   // category + clear non-applicable fields when the user switches type.
   const FLAT_COST_TYPES={...PER_PIECE_TYPES_MAP,...FIXED_DOLLAR_TYPES_MAP};
@@ -1372,6 +1422,14 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
       next.category=null; next.taxable=true; next.is_produced=true;
     }
     if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}
+    // 2026-05-05 (P1 #6): when fence_type / height / style change AND the
+    // line doesn't already have a manual pricing link, attempt auto-link
+    // to the unambiguous matching pricing row. Skip when user has already
+    // chosen a link explicitly (don't clobber explicit selections).
+    if(['fence_type','height','style'].includes(field)&&!next.pricing_line_id){
+      const auto=autoLinkPricingLine(next,availablePricingLines);
+      if(auto)next.pricing_line_id=auto;
+    }
     return next;
   }));setDirty(true);};
   const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',co_id:coId||null,line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
@@ -1489,7 +1547,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
         const l=lines[i];
         if(!l._touched)continue;
         const lineNum=i+1;
-        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
+        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false,pricing_line_id:l.pricing_line_id||null};
         if(l._new){await sbPost('job_line_items',body);}
         else{await sbPatch('job_line_items',l.id,body);}
       }
@@ -1616,6 +1674,28 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
               </div>
               <div style={{width:150,flexShrink:0}}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
+              </div>
+              {/* 2026-05-05 (P1 #6): Pricing Link column. Optional FK to
+                  job_pricing_lines — auto-suggests on (category, height,
+                  style) match; user can override or clear. 🔗 badge
+                  surfaces in the label when a link is set. Candidate pool
+                  is filtered by the line's fence_type → category mapping
+                  so users only see relevant pricing rows. */}
+              <div style={{width:200,flexShrink:0}}>
+                <label style={fieldLabel}>
+                  Pricing Link
+                  {l.pricing_line_id&&<span title="Linked to a pricing-book row" style={{marginLeft:6,fontSize:11,color:'#1D4ED8'}}>🔗</span>}
+                </label>
+                <select
+                  value={l.pricing_line_id||''}
+                  onChange={e=>updateLine(idx,'pricing_line_id',e.target.value||null)}
+                  style={{...inp,width:'100%'}}
+                  title={l.pricing_line_id?'Linked — change or clear here':'Pick a pricing-book row to link this line'}>
+                  <option value="">— None —</option>
+                  {availablePricingLines
+                    .filter(p=>!l.fence_type||FENCE_TYPE_TO_PRICING_CATEGORY[l.fence_type]===p.category)
+                    .map(p=><option key={p.id} value={p.id}>{p.label}{n(p.price_per_unit)>0?` ($${n(p.price_per_unit)}/${p.unit||'LF'})`:''}</option>)}
+                </select>
               </div>
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
