@@ -9917,9 +9917,18 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   // grouped plan lines are cheap. Refetched only when the page mounts.
   const[capacityLookup,setCapacityLookup]=useState([]);
   const[capacityStripCollapsed,setCapacityStripCollapsed]=useState(false);
+  // Per-job production progress (Sprint 4, 2026-05-04). Source: v_job_production_remaining
+  // — total / produced / remaining / planned / unplanned for each of the 4 mold pools.
+  // Used by the plan-line progress chip to show "X of Y produced" + "Z still in queue".
+  const[jobRemaining,setJobRemaining]=useState({});
   useEffect(()=>{
     sbGet('v_style_capacity_lookup','select=*').then(d=>{if(Array.isArray(d))setCapacityLookup(d);}).catch(e=>console.warn('[ProductionPlanning] capacity lookup fetch failed:',e));
-  },[]);
+    sbGet('v_job_production_remaining','select=*').then(d=>{
+      if(!Array.isArray(d))return;
+      const m={};d.forEach(r=>{if(r.job_id)m[r.job_id]=r;});
+      setJobRemaining(m);
+    }).catch(e=>console.warn('[ProductionPlanning] job remaining fetch failed:',e));
+  },[refreshKey]);
   // Generate 4-week production schedule using Claude AI
   const generateAISchedule = async () => {
     setAiGenerating(true);
@@ -11037,6 +11046,50 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                 </div>
                 <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>
               </div>
+              {/* ─── Production Progress chip (Sprint 4, 2026-05-04) ─────
+                  Reads v_job_production_remaining for this job. Each pool
+                  shows produced (dark) + planned (lighter) + unplanned
+                  (empty) as a stacked bar. Lets PMs / Carlos see at a glance
+                  how much of the job is done, how much is scheduled for the
+                  rest of the run, and how much hasn't been planned yet. */}
+              {(()=>{
+                const r=jobRemaining[l.job_id];
+                if(!r)return null;
+                if(r.panels_total+r.posts_total+r.rails_total+r.caps_total===0)return null;
+                const poolBar=(label,total,produced,planned)=>{
+                  if(total===0)return null;
+                  const unplanned=Math.max(0,total-produced-planned);
+                  const ppct=(produced/total)*100;
+                  const plpct=(planned/total)*100;
+                  const upct=(unplanned/total)*100;
+                  const pctDone=Math.round(ppct);
+                  return<div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
+                    <span style={{width:48,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.3}}>{label}</span>
+                    <div style={{flex:1,height:8,background:'#F4F4F2',borderRadius:2,overflow:'hidden',display:'flex'}} title={`${produced} produced · ${planned} scheduled · ${unplanned} unscheduled · ${total} total`}>
+                      <div style={{width:`${ppct}%`,background:'#065F46',height:'100%'}}/>
+                      <div style={{width:`${plpct}%`,background:'#185FA5',height:'100%',opacity:0.55}}/>
+                      <div style={{width:`${upct}%`,background:'transparent',height:'100%'}}/>
+                    </div>
+                    <span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A',whiteSpace:'nowrap',width:62,textAlign:'right'}}>{produced}/{total}</span>
+                    <span style={{fontFamily:'Inter',color:pctDone>=100?'#065F46':pctDone>=50?'#1D4ED8':'#9E9B96',fontWeight:700,whiteSpace:'nowrap',width:36,textAlign:'right'}}>{pctDone}%</span>
+                  </div>;
+                };
+                return<div style={{marginTop:6,padding:'8px 10px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:6}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <span style={{fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>Production Progress</span>
+                    <span style={{fontSize:9,color:'#9E9B96',display:'flex',gap:8}}>
+                      <span><span style={{display:'inline-block',width:8,height:8,background:'#065F46',marginRight:3,verticalAlign:'middle'}}/>produced</span>
+                      <span><span style={{display:'inline-block',width:8,height:8,background:'#185FA5',opacity:0.55,marginRight:3,verticalAlign:'middle'}}/>scheduled</span>
+                    </span>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                    {poolBar('panels',r.panels_total,r.panels_produced,r.panels_planned)}
+                    {poolBar('posts',r.posts_total,r.posts_produced,r.posts_planned)}
+                    {poolBar('rails',r.rails_total,r.rails_produced,r.rails_planned)}
+                    {poolBar('caps',r.caps_total,r.caps_produced,r.caps_planned)}
+                  </div>
+                </div>;
+              })()}
               {l.quantities_stale&&<div style={{marginTop:6,padding:'8px 10px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:6,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                 <div style={{fontSize:11,color:'#B45309',fontWeight:700}}>⚠️ Material calculation was updated{l.material_calc_date?' on '+new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''} — plan quantities may be outdated</div>
                 <button onClick={()=>updatePlanLineToLatest(idx)} style={{...btnP,background:'#B45309',padding:'4px 10px',fontSize:10}}>Update to Latest →</button>
