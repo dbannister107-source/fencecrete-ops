@@ -26,6 +26,9 @@
 --   10. retainage-release App resets jobs.retainage_held to 0
 --   11. v_acct_sheet_summary returns 0 rows for jobs with no pricing
 --   12. v_acct_sheet_summary pct_complete reflects filed App lines
+--   13. invoice_payments: partial payment keeps status='filed'
+--   14. invoice_payments: full payment flips status to 'paid' + sets paid_at
+--   15. invoice_payments: deleting a payment reverts paid → filed
 
 BEGIN;
 
@@ -317,6 +320,54 @@ BEGIN
   END IF;
 
   INSERT INTO _test_results (test) VALUES ('12: v_acct_sheet_summary pct_complete reflects filed App lines');
+END;
+$$;
+
+-- Tests 13–15: invoice_payments trigger (partial → filed; full → paid + paid_at;
+-- delete → reverts). Single DO block exercises all three transitions on the
+-- same App so the test reads as one continuous lifecycle.
+DO $$
+DECLARE
+  v_job_id uuid; v_app_id uuid;
+  v_status text; v_paid numeric; v_paid_at timestamptz;
+BEGIN
+  SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
+  UPDATE jobs SET retainage_pct=10 WHERE id=v_job_id;
+  INSERT INTO invoice_applications (
+    job_id, current_amount, current_retainage, net_due, retainage_to_date,
+    status, filed_by
+  ) VALUES (
+    v_job_id, 1000, 100, 900, 100, 'filed', 'test-suite'
+  ) RETURNING id INTO v_app_id;
+
+  -- Test 13: partial payment ($400 < $900 net_due) keeps status='filed'
+  INSERT INTO invoice_payments (invoice_application_id, amount, method)
+       VALUES (v_app_id, 400, 'check');
+  SELECT status, paid_amount, paid_at INTO v_status, v_paid, v_paid_at
+    FROM invoice_applications WHERE id=v_app_id;
+  IF v_status<>'filed' THEN RAISE EXCEPTION 'TEST 13: partial flipped status to %', v_status; END IF;
+  IF v_paid<>400 THEN RAISE EXCEPTION 'TEST 13: paid_amount expected 400, got %', v_paid; END IF;
+  IF v_paid_at IS NOT NULL THEN RAISE EXCEPTION 'TEST 13: paid_at should be NULL on partial'; END IF;
+  INSERT INTO _test_results (test) VALUES ('13: partial payment keeps status=filed; paid_amount accumulates');
+
+  -- Test 14: second payment closes net_due → status flips to 'paid' + paid_at set
+  INSERT INTO invoice_payments (invoice_application_id, amount, method)
+       VALUES (v_app_id, 500, 'wire');
+  SELECT status, paid_amount, paid_at INTO v_status, v_paid, v_paid_at
+    FROM invoice_applications WHERE id=v_app_id;
+  IF v_status<>'paid' THEN RAISE EXCEPTION 'TEST 14: expected paid, got %', v_status; END IF;
+  IF v_paid<>900 THEN RAISE EXCEPTION 'TEST 14: paid_amount expected 900, got %', v_paid; END IF;
+  IF v_paid_at IS NULL THEN RAISE EXCEPTION 'TEST 14: paid_at should be set when paid'; END IF;
+  INSERT INTO _test_results (test) VALUES ('14: full payment flips status=paid + sets paid_at');
+
+  -- Test 15: deleting the second payment reverts status to 'filed'
+  DELETE FROM invoice_payments WHERE invoice_application_id=v_app_id AND amount=500;
+  SELECT status, paid_amount, paid_at INTO v_status, v_paid, v_paid_at
+    FROM invoice_applications WHERE id=v_app_id;
+  IF v_status<>'filed' THEN RAISE EXCEPTION 'TEST 15: expected filed after delete, got %', v_status; END IF;
+  IF v_paid<>400 THEN RAISE EXCEPTION 'TEST 15: paid_amount expected 400, got %', v_paid; END IF;
+  IF v_paid_at IS NOT NULL THEN RAISE EXCEPTION 'TEST 15: paid_at should clear on revert'; END IF;
+  INSERT INTO _test_results (test) VALUES ('15: deleting payment reverts paid → filed; clears paid_at');
 END;
 $$;
 

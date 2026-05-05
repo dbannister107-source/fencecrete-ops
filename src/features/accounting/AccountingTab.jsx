@@ -36,6 +36,7 @@ import { computeAcctSheet } from '../../shared/billing/acctSheet';
 import ContractSummaryCard from './ContractSummaryCard';
 import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
+import MarkPaidModal from './MarkPaidModal';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const NUM = (x) => Number(x) || 0;
@@ -150,6 +151,8 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
   const [appNotes, setAppNotes] = useState('');
   const [filing, setFiling] = useState(false);
   const [releasing, setReleasing] = useState(false);
+  // Mark Paid modal — when set, MarkPaidModal renders for that App.
+  const [markPaidApp, setMarkPaidApp] = useState(null);
   const [err, setErr] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -484,8 +487,26 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         retainageHeld={liveRetainageHeld}
         releasing={releasing}
         onReleaseRetainage={releaseRetainage}
+        onMarkPaid={(app) => setMarkPaidApp(app)}
         canEdit={canEdit}
       />
+
+      {/* Mark Paid modal — only mounts when an App row is selected via the
+          AppLedger's "Mark Paid" button. On success the trg_apply_payment_to_application
+          trigger flips status='paid' (or keeps 'filed' for partial), and we
+          refresh the whole tab so summary tiles + ledger update. */}
+      {markPaidApp && (
+        <MarkPaidModal
+          app={markPaidApp}
+          currentUserEmail={currentUserEmail}
+          onClose={() => setMarkPaidApp(null)}
+          onSuccess={async (msg) => {
+            setMarkPaidApp(null);
+            await loadAll();
+            setToast(msg);
+          }}
+        />
+      )}
     </div>
   );
 }

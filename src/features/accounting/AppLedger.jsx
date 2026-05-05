@@ -61,6 +61,7 @@ export default function AppLedger({
   retainageHeld = 0,
   releasing = false,
   onReleaseRetainage,
+  onMarkPaid,        // (app) => void — opens MarkPaidModal in parent
   canEdit = false,
 }) {
   const showReleaseBtn = canEdit && Number(retainageHeld) > 0;
@@ -126,7 +127,7 @@ export default function AppLedger({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: COLOR.page, borderBottom: `1px solid ${COLOR.border}` }}>
-                {['App #', 'Invoice #', 'Date', 'Period', 'Amount', 'Retainage', 'Net Due', 'Status'].map((h, i) => (
+                {['App #', 'Invoice #', 'Date', 'Period', 'Amount', 'Retainage', 'Net Due', 'Status', ''].map((h, i) => (
                   <th key={i} style={{
                     padding: '8px 10px',
                     textAlign: i >= 4 && i <= 6 ? 'right' : 'left',
@@ -141,8 +142,14 @@ export default function AppLedger({
               </tr>
             </thead>
             <tbody>
-              {ledger.map(a => (
-                <tr key={a.id} style={{ borderBottom: `1px solid ${COLOR.border}` }}>
+              {ledger.map(a => {
+                const isPaid = a.status === 'paid';
+                const canMarkPaid = canEdit && a.status === 'filed' && !a.is_legacy_import && typeof onMarkPaid === 'function';
+                return (
+                <tr key={a.id} style={{
+                  borderBottom: `1px solid ${COLOR.border}`,
+                  background: isPaid ? '#F0FDF4' : 'transparent',
+                }}>
                   <td style={{ padding: '8px 10px', fontFamily: FONT.data, fontWeight: 700 }}>
                     #{a.app_number}
                     {a.is_retainage_release && <Pill text="Retainage Release" tone="warn" />}
@@ -164,9 +171,49 @@ export default function AppLedger({
                   </td>
                   <td style={{ padding: '8px 10px' }}>
                     <StatusPill status={a.status} />
+                    {/* "Paid on [date]" inline indicator below the pill when status=paid */}
+                    {isPaid && a.paid_at && (
+                      <div style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: COLOR.success,
+                        marginTop: 4,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        ✓ Paid {fD(a.paid_at)}
+                        {Number(a.paid_amount) > 0 && Math.abs(Number(a.paid_amount) - Number(a.net_due)) > 0.01 && (
+                          <div style={{ fontSize: 9, color: COLOR.text3, fontWeight: 600 }}>
+                            {$(a.paid_amount)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                    {canMarkPaid && (
+                      <button
+                        onClick={() => onMarkPaid(a)}
+                        title="Record customer payment for this invoice"
+                        style={{
+                          padding: '4px 10px',
+                          background: COLOR.success,
+                          color: COLOR.white,
+                          border: 'none',
+                          borderRadius: RADIUS.md,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.3,
+                        }}>
+                        ✓ Mark Paid
+                      </button>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
