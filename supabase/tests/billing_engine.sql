@@ -24,6 +24,8 @@
 --   8.  synthetic apps (source_invoice_entry_id set) skip the post-back
 --   9.  jobs.retainage_held mirrors latest filed App
 --   10. retainage-release App resets jobs.retainage_held to 0
+--   11. v_acct_sheet_summary returns 0 rows for jobs with no pricing
+--   12. v_acct_sheet_summary pct_complete reflects filed App lines
 
 BEGIN;
 
@@ -264,6 +266,57 @@ BEGIN
   IF v_held <> 0 THEN RAISE EXCEPTION 'TEST 10 POST: expected 0 after release, got %', v_held; END IF;
 
   INSERT INTO _test_results (test) VALUES ('10: retainage-release App resets jobs.retainage_held to 0');
+END;
+$$;
+
+-- Test 11: v_acct_sheet_summary returns 0 rows for jobs with no pricing
+DO $$
+DECLARE v_job_id uuid; v_count int;
+BEGIN
+  SELECT id INTO v_job_id FROM jobs
+   WHERE NOT EXISTS (SELECT 1 FROM job_pricing_lines WHERE job_id = jobs.id) LIMIT 1;
+  IF v_job_id IS NULL THEN
+    INSERT INTO _test_results (test, status) VALUES ('11: v_acct_sheet_summary empty (skipped — every job has pricing)', 'SKIP');
+    RETURN;
+  END IF;
+  SELECT count(*) INTO v_count FROM v_acct_sheet_summary WHERE job_id = v_job_id;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'TEST 11: expected 0 rows, got %', v_count; END IF;
+  INSERT INTO _test_results (test) VALUES ('11: v_acct_sheet_summary returns 0 for jobs with no pricing');
+END;
+$$;
+
+-- Test 12: v_acct_sheet_summary pct_complete reflects filed App lines
+DO $$
+DECLARE v_job_id uuid; v_pl_id uuid; v_app_id uuid; v_pct numeric; v_billed numeric;
+BEGIN
+  SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
+
+  INSERT INTO job_pricing_lines (job_id, line_number, category, label, qty, unit, price_per_unit, labor_per_unit, tax_basis_per_unit)
+       VALUES (v_job_id, 9200, 'precast', 'TEST 12', 100, 'LF', 95, 72, 23)
+    RETURNING id INTO v_pl_id;
+  INSERT INTO invoice_applications (job_id) VALUES (v_job_id) RETURNING id INTO v_app_id;
+  INSERT INTO invoice_application_lines (
+    invoice_application_id, job_pricing_line_id, stage_key,
+    cumulative_qty, prior_qty, current_qty, rate_per_unit,
+    current_labor_amount, current_tax_basis_amount, current_tax_amount, current_total
+  ) VALUES (
+    v_app_id, v_pl_id, 'posts_only', 100, 0, 100, 61.75,
+    4680.00, 1495.00, 123.34, 6298.34
+  );
+  UPDATE invoice_applications SET status='filed', filed_by='test-suite', invoice_date=CURRENT_DATE WHERE id=v_app_id;
+
+  SELECT pct_complete, billed_to_date INTO v_pct, v_billed
+    FROM v_acct_sheet_summary WHERE pricing_line_id = v_pl_id;
+
+  -- Expected: billed_to_date=6298.34; contract_value=9500; pct = 66.3%
+  IF v_billed <> 6298.34 THEN
+    RAISE EXCEPTION 'TEST 12 (billed_to_date): expected 6298.34, got %', v_billed;
+  END IF;
+  IF v_pct < 66 OR v_pct > 67 THEN
+    RAISE EXCEPTION 'TEST 12 (pct_complete): expected ~66.3, got %', v_pct;
+  END IF;
+
+  INSERT INTO _test_results (test) VALUES ('12: v_acct_sheet_summary pct_complete reflects filed App lines');
 END;
 $$;
 
