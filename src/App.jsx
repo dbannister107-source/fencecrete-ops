@@ -9941,6 +9941,23 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   // realtime subscription yet (1-2 min staleness is fine for a planning
   // overview, and refresh happens on every save anyway).
   const[todayActuals,setTodayActuals]=useState([]);
+  // Real-time mold occupancy. Source: v_mold_availability — rolls up active
+  // pours from mold_pours (auto-populated by trigger when production_actuals
+  // gets logged). Until Carlos starts logging via Daily Report, this returns
+  // 0 rows. Sprint 3 (2026-05-04). Polled every 60s while the page is open
+  // so the "free in 3h 24m" countdowns stay live.
+  const[moldAvailability,setMoldAvailability]=useState([]);
+  useEffect(()=>{
+    let cancelled=false;
+    const fetchAvailability=()=>{
+      sbGet('v_mold_availability','select=*&order=earliest_ready_at.asc.nullslast')
+        .then(d=>{if(!cancelled&&Array.isArray(d))setMoldAvailability(d);})
+        .catch(e=>console.warn('[ProductionPlanning] mold availability fetch failed:',e));
+    };
+    fetchAvailability();
+    const id=setInterval(fetchAvailability,60000);
+    return()=>{cancelled=true;clearInterval(id);};
+  },[refreshKey]);
   useEffect(()=>{
     sbGet('v_style_capacity_lookup','select=*').then(d=>{if(Array.isArray(d))setCapacityLookup(d);}).catch(e=>console.warn('[ProductionPlanning] capacity lookup fetch failed:',e));
     sbGet('v_job_production_remaining','select=*').then(d=>{
@@ -10841,6 +10858,77 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           </div>
         </div>
         {actualTotals.entries===0&&<div style={{padding:'8px 12px',marginTop:8,background:'#FEF3C7',borderTop:'1px solid #FDE68A',fontSize:11,color:'#92400E'}}>ℹ️ No production logged yet today. Pulse will populate as actuals are entered via the Daily Report tab.</div>}
+      </div>;
+    })()}
+
+    {/* PLANT FLOOR — real-time mold occupancy.
+        Reads v_mold_availability which rolls up active mold_pours rows
+        (ready_at > now). The trigger on production_actuals creates pour
+        rows automatically when actuals get logged, so this widget
+        populates as soon as Carlos starts logging via Daily Report.
+        Hidden when there are zero active pours to keep the page tight
+        in pre-rollout state — surfaces the moment data starts flowing. */}
+    {moldAvailability.length>0&&(()=>{
+      const fmtCountdown=(readyAt)=>{
+        if(!readyAt)return null;
+        const diffMs=new Date(readyAt).getTime()-Date.now();
+        if(diffMs<=0)return 'now';
+        const mins=Math.round(diffMs/60000);
+        if(mins<60)return `${mins}m`;
+        const h=Math.floor(mins/60);
+        const m=mins%60;
+        return `${h}h ${m}m`;
+      };
+      const fmtTime=(readyAt)=>{
+        if(!readyAt)return '';
+        try{return new Date(readyAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'});}
+        catch(e){return '';}
+      };
+      // Sort: panels-in-cure first (most active), then by earliest_ready_at
+      const sorted=[...moldAvailability].sort((a,b)=>{
+        const aTotal=n(a.panels_in_cure)+n(a.posts_in_cure)+n(a.rails_in_cure)+n(a.caps_in_cure);
+        const bTotal=n(b.panels_in_cure)+n(b.posts_in_cure)+n(b.rails_in_cure)+n(b.caps_in_cure);
+        if(aTotal!==bTotal)return bTotal-aTotal;
+        const aT=a.earliest_ready_at?new Date(a.earliest_ready_at).getTime():Infinity;
+        const bT=b.earliest_ready_at?new Date(b.earliest_ready_at).getTime():Infinity;
+        return aT-bT;
+      });
+      return<div style={{...card,marginBottom:16,padding:0,overflow:'hidden',borderTop:'3px solid #065F46'}}>
+        <div style={{padding:'10px 16px',background:'#065F46',color:'#FFF',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontFamily:'Inter',fontWeight:800,fontSize:13,letterSpacing:0.5}}>
+          <span>🏭 PLANT FLOOR — IN CURE RIGHT NOW</span>
+          <span style={{fontSize:10,fontWeight:700,opacity:0.85}}>{sorted.length} style{sorted.length===1?'':'s'} active · refreshes every 60s</span>
+        </div>
+        <div style={{padding:'8px 12px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'minmax(160px,1.5fr) repeat(4, minmax(70px,1fr)) minmax(120px,1.2fr)',gap:8,padding:'4px 8px',fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.4,borderBottom:'1px solid #E5E3E0',marginBottom:4}}>
+            <div>Style</div>
+            <div style={{textAlign:'right'}}>Panels</div>
+            <div style={{textAlign:'right'}}>Posts</div>
+            <div style={{textAlign:'right'}}>Rails</div>
+            <div style={{textAlign:'right'}}>Caps</div>
+            <div>First Ready</div>
+          </div>
+          {sorted.map(r=>{
+            const total=n(r.panels_in_cure)+n(r.posts_in_cure)+n(r.rails_in_cure)+n(r.caps_in_cure);
+            if(total===0)return null;
+            const cell=(v)=>v>0?<span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{v}</span>:<span style={{color:'#C8C4BD'}}>—</span>;
+            return<div key={r.style} style={{display:'grid',gridTemplateColumns:'minmax(160px,1.5fr) repeat(4, minmax(70px,1fr)) minmax(120px,1.2fr)',gap:8,padding:'6px 8px',fontSize:12,borderBottom:'1px solid #F4F4F2',alignItems:'center'}}>
+              <div style={{fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.style}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.panels_in_cure))}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.posts_in_cure))}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.rails_in_cure))}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.caps_in_cure))}</div>
+              <div style={{fontSize:11,color:'#625650'}}>
+                {r.earliest_ready_at?<>
+                  <span style={{fontFamily:'Inter',fontWeight:700,color:'#065F46'}}>in {fmtCountdown(r.earliest_ready_at)}</span>
+                  <span style={{color:'#9E9B96',marginLeft:6}}>{fmtTime(r.earliest_ready_at)}</span>
+                </>:<span style={{color:'#9E9B96'}}>—</span>}
+              </div>
+            </div>;
+          })}
+        </div>
+        <div style={{padding:'6px 14px',fontSize:10,color:'#9E9B96',background:'#FAFAFA',borderTop:'1px solid #F4F4F2'}}>
+          Sourced from mold_pours: each piece-type batch logged via Daily Report creates a pour row that's "in cure" for 24 h. Counts here = pieces still curing. "First Ready" = earliest moment any pour for this style comes back online.
+        </div>
       </div>;
     })()}
 
