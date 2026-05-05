@@ -123,6 +123,7 @@ import {
 // stays next to the Map page setup — different visual treatment.
 import {
   MKTS, MARKET_FULL, MC, MB, MS, MKT_CODE,
+  MKT_LONG_TO_SHORT, SHORT_TO_LONG, SUB_MARKETS,
   getSharePointTooltip,
 } from './shared/markets';
 
@@ -14134,10 +14135,7 @@ function CrewLeaderAssignmentPage(){
   },[]);
   useEffect(()=>{fetchData();},[fetchData]);
 
-  // Mapping market short→long for filtering crew_leaders
-  const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
-  const SHORT_TO_LONG={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station'};
-  const SUB_MARKETS=new Set(['DFW','AUS','CS']);
+  // MKT_LONG_TO_SHORT / SHORT_TO_LONG / SUB_MARKETS imported from shared/markets.js
 
   const filtered=useMemo(()=>{
     let r=jobs;
@@ -14424,14 +14422,12 @@ function CoPilotHome({onNav}){
   const[recentProposals,setRecentProposals]=useState([]);
   const[invoices,setInvoices]=useState([]);
   const[installRates,setInstallRates]=useState([]);
-  const[molds,setMolds]=useState([]);
   const[moldCapacity,setMoldCapacity]=useState([]);  // v_mold_capacity rows
   const[readiness,setReadiness]=useState([]);
 
   useEffect(()=>{
     Promise.all([
       sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,left_to_bill,ytd_invoiced,est_start_date,est_complete_date,install_duration_days,install_rate_override,crew_leader_id,pm,contract_date'),
-      sbGet('mold_inventory','select=*'),
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=job_id,invoice_amount,invoice_date&order=invoice_date.desc&limit=2000'),
       sbGet('install_rates','select=*&order=category.asc'),
@@ -14443,9 +14439,8 @@ function CoPilotHome({onNav}){
       // v_mold_capacity = pre-computed bottleneck math: gang molds (12 panels/cycle) + posts/rails/caps,
       // returns bottleneck_component + bottlenecked_lf_per_day per style. Source of truth for plant load.
       sbGet('v_mold_capacity','select=style_name,style_family,mold_inventory_alias,direct_molds,effective_pool_molds,shares_pool,panels_per_mold,panel_lf,theoretical_lf_per_day,bottlenecked_panels_per_day,bottlenecked_lf_per_day,bottleneck_component,posts_total,rails_total,caps_total,data_quality'),
-    ]).then(([j,m,cl,inv,ir,r,ld,pv,ls30,rdy,mc])=>{
+    ]).then(([j,cl,inv,ir,r,ld,pv,ls30,rdy,mc])=>{
       setJobs(Array.isArray(j)?j:[]);
-      setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
       setInvoices(Array.isArray(inv)?inv:[]);
       setInstallRates(Array.isArray(ir)?ir:[]);
@@ -14508,10 +14503,7 @@ function CoPilotHome({onNav}){
       };
     }).sort((a,b)=>b.backlog_lf-a.backlog_lf);
 
-    // Crew load by market
-    const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
-    const SHORT_TO_LONG={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station'};
-    const SUB_MARKETS=new Set(['DFW','AUS','CS']);
+    // Crew load by market — uses MKT_LONG_TO_SHORT / SHORT_TO_LONG / SUB_MARKETS from shared/markets.js
     const crewByMkt={};
     activeInstallJobs.forEach(j=>{
       const mkt=j.market||'unknown';
@@ -15420,12 +15412,11 @@ function DemandPlanningPage(){
   // ── CREW LOAD ──
   const crewLoadByMarket=useMemo(()=>{
     // jobs.market uses short codes: HOU/SA/AUS/DFW/CS. crew_leaders.market uses long names.
-    const MKT_LONG_TO_SHORT={'San Antonio':'SA','Houston':'HOU','Austin':'AUS','Dallas-Fort Worth':'DFW','College Station':'CS'};
-    const SHORT_TO_LABEL={SA:'San Antonio',HOU:'Houston',AUS:'Austin',DFW:'Dallas-Fort Worth',CS:'College Station',OOS:'Out of State'};
+    // MKT_LONG_TO_SHORT (long→short) and MARKET_FULL (short→long) imported from shared/markets.js.
     const out={};
     activeInstallJobs.forEach(j=>{
       const mkt=j.market||'(unknown)';
-      if(!out[mkt])out[mkt]={market:mkt,label:SHORT_TO_LABEL[mkt]||mkt,active_lf:0,active_jobs:0,leaders:0,total_install_days:0,uses_subs:false};
+      if(!out[mkt])out[mkt]={market:mkt,label:MARKET_FULL[mkt]||mkt,active_lf:0,active_jobs:0,leaders:0,total_install_days:0,uses_subs:false};
       out[mkt].active_lf+=Number(j.total_lf)||0;
       out[mkt].active_jobs+=1;
       out[mkt].total_install_days+=Number(j.install_duration_days)||0;

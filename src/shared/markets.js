@@ -59,6 +59,31 @@ export const MS = {
   OOS: 'OOS',
 };
 
+// Long → short. The reverse of MARKET_FULL — used when joining tables that
+// store the long-form market name (notably crew_leaders.market) against
+// jobs.market which uses short codes. Derived from MARKET_FULL so the two
+// stay in lockstep automatically.
+//
+// Includes 'Out-of-State' → 'OOS' for completeness. Earlier inline copies
+// of this dict in App.jsx omitted OOS, which silently dropped any OOS
+// crew leader from market rollups. Today there are no such leaders, but
+// if one is ever added they'll now be counted (correct behavior).
+export const MKT_LONG_TO_SHORT = Object.fromEntries(
+  Object.entries(MARKET_FULL).map(([short, long]) => [long, short]),
+);
+
+// Short → long. Alias of MARKET_FULL exported under the legacy name used
+// at App.jsx call sites (saves us from renaming ~5 references). Same data,
+// same shape — pick whichever name reads better at the call site.
+export const SHORT_TO_LONG = MARKET_FULL;
+
+// Markets where Fencecrete uses subcontractor crews instead of in-house
+// crew leaders. DFW + AUS + CS all default to the San Antonio crew pool
+// when subs aren't available; PMs are warned via banner. Used in:
+//   - CrewLeaderAssignmentPage (drives the "subs+SA pool" badge)
+//   - CoPilotHome plant-load (uses_subs flag on crewLoadByMarket rows)
+export const SUB_MARKETS = new Set(['DFW', 'AUS', 'CS']);
+
 // Single-character market code used in job_number generation:
 // "26S001" = 2026, San Antonio, sequence 001. CS uses 2 chars because no
 // single letter was available without colliding with other markets.
