@@ -249,6 +249,57 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - Refactor retry-on-missing-column pattern (~1 hr) — 6 eslint-disabled fetches in production_plan_lines + production_actuals. Last bits of the H constant.
 - Identity-by-email FK conversion for the remaining ~27 columns (workflow backlog #3, low priority — convert as features need them).
 
+### Production scheduling overhaul (2026-05-04 late evening — 11 commits)
+
+After the live-review work wrapped, David asked to deepen the production scheduling system end-to-end. Eleven focused commits across DB / edge function / UI built up a coherent foundation. Listed in dependency order (each builds on the last):
+
+| Commit | Layer | What it does |
+|---|---|---|
+| `887a19c` | UI | Capacity Pressure strip → 4 mold pools side-by-side (panels/posts/rails/caps) instead of collapsing to single Bottleneck column. Each pool's utilization shown with color-coded bar; binding pool gets tinted background. |
+| `df1e7b0` | Edge fn | AI scheduler v14 (Sprint 1) — color batching priority, concrete CY ceiling (52.8 CY/day, panels × cy_per_panel × 1.4), install deadline hard cap (production must complete ≥1 day before install). React caller fetches plant_config + cy_per_panel to populate context. |
+| `1377af4` | UI | Auto-fill on plan-line drop. When Max drops a job, planned counts pre-fill to MIN(remaining, free_capacity). Sub-pieces scale proportionally inside each pool. Toast on cap. |
+| `a08451f` | DB + UI | New `v_job_production_remaining` view = single source of truth for "how many pieces left to make" per job per pool (computes fresh from production_actuals). 4-bar progress chip on each plan line: dark green = produced, lighter blue = scheduled, empty = unplanned. |
+| `d928505` | Edge fn | AI scheduler reads the view → prompt now passes `panels_to_schedule` / `posts_to_schedule` / etc. instead of raw material totals. CONSTRAINT 6 added: "NEVER schedule more pieces than to_schedule". Also `panels_already_planned` field tells the AI what's on existing plan_lines so it doesn't double-schedule. |
+| `8e883d1` | UI | Same 4-bar progress chip on Production Board kanban cards. ProductionPage fetches view; ProdCard accepts `jobProgress` prop. Visible on production_queue / in_production / material_ready cards in non-compact mode. |
+| `1015a0a` | Bug fix | Plan-line shift selector finally persists. UI was sending `shift_assignment` (non-existent column) instead of `shift` (the actual integer column) — saves succeeded silently with no shift recorded. Fixed both buildPlanLine (load) and savePlan (write) in both ProductionPlanningPage and DailyReportPage. |
+| `a800bb2` | UI | Production Pulse banner — only when planDate === today. 5 cells (panels/posts/rails/caps/concrete) with planned vs actual + on-pace projection. CT-aware shift timing: knows whether Shift 1 (8a-4p) or Shift 2 (7p-2a) is active and projects based on elapsed shift fraction. Refreshes via existing refreshKey. |
+| `e6c7f1b` | DB | New `mold_pours` table + auto-trigger on production_actuals + `v_mold_availability` view. Each pour logged via Daily Report creates a mold_pours row with `ready_at = poured_at + 24h`. The view rolls active pours back up by style + pour_type. Idempotent (DELETE-and-re-INSERT on UPDATE). 6-assertion test file `supabase/tests/mold_pours_trigger.sql`. |
+| `51127c3` | UI | Plant Floor widget on Production Planning. Reads v_mold_availability, sorted by total active pours then earliest_ready_at. Each row shows panels/posts/rails/caps in cure + "in 18h 14m" countdown to first ready. Polls every 60s. Hidden when 0 active pours. |
+| `2339e34` | UI | Plant Floor cells refined: shows "X / Y" (in_cure / total_pool) with "X free" when no cure activity. Joins v_mold_availability against capacityLookup using planLookupNameFor for canonical→legacy style alias resolution. |
+
+**Plus production-scheduler edge function v15 deployed** (Sprint 4 changes — was at v14 with only Sprint 1).
+
+**State of the data layer going into 2026-05-05:**
+
+- New table: `mold_pours` (0 rows — populates the moment Carlos starts logging actuals)
+- New views: `v_job_production_remaining`, `v_mold_availability`
+- New triggers: `trg_mold_pours_from_actual_ai` + `trg_mold_pours_from_actual_au`
+- New edge function deploy: production-scheduler v15
+- New test file: `mold_pours_trigger.sql` (6 assertions, all PASS dry-run)
+
+**Critical operational dependency:**
+
+Every dynamic widget shipped tonight (Production Pulse, Plant Floor, AI scheduler accuracy, progress chips) depends on `production_actuals` rows starting to flow. As of EOD 2026-05-04, that table has **0 rows**. Until Carlos / Max log at least one real actual via Daily Report, all the new widgets sit in their "no data yet" state.
+
+**One real pour logged → everything lights up.** The data layer + UI + AI prompt are wired and ready; the bottleneck is human-in-the-loop start.
+
+**Remaining production-overhaul roadmap (deferred to next session):**
+
+| Item | Effort | Notes |
+|---|---|---|
+| Tablet-friendly Plant Floor PAGE (separate route) | ~3 hr | Carlos walks the floor with a tablet; needs a clean full-screen layout vs the compact widget |
+| Per-shift time-budget widget | ~2 hr | Need pour_time_minutes config from Carlos first; with that, can show "Shift 1: 12 pours × 25 min + 50 min changeovers = 350/480 min budgeted" |
+| AI scheduler continuous mode | ~6 hr | Re-suggests when actuals diverge from plan. Architectural change to scheduler call pattern. |
+| AI scheduler reads v_mold_availability | ~30 min | Day-1 awareness of in-cure molds. Marginal value for multi-day horizons. |
+| Stale plan-line auto-recompute | ~1 hr | `quantities_stale` flag exists; auto-update when material_calc_date changes |
+
+**For tomorrow morning's testing:**
+1. Open Production Planning → today's date → Production Pulse banner should appear (with zeros)
+2. Open Production Planning → any future date → 4-pool capacity strip should render
+3. Drop a job onto the plan → auto-fill should pre-populate counts
+4. Carlos logs an actual via PM Daily Report → mold_pours auto-creates → Plant Floor widget surfaces "X in cure"
+5. Click Generate AI Schedule → reasoning should cite color batching, CY pressure, install_at_risk jobs, double-schedule avoidance
+
 ### Recently shipped (2026-05-03)
 
 **Session summary (2026-05-03, FINAL — full day plus evening):** 28 commits to `main`, 5 DB migrations, 4 edge function deploys, 1 GitHub Actions workflow added. **9 tech-debt + workflow backlog items retired**, 1 long-standing data bug fixed, 1 deploy chain fixed mid-session. Major surfaces shipped or completed: full Demand Planning + Production Planning + AI Scheduler integration with `v_mold_capacity`; full PIS-extract feature (single per-project pull + bulk pull on 133 eligible projects with quality filter + audit log); CI wired for DB tests and verified green; Power Automate retired from inventory (was already disabled — docs caught up to reality); **App.jsx fetch migration Phase 2 fully complete, 113 → 0 no-restricted-syntax warnings (100% retired)**; permissions moved from hardcoded email Sets to `user_profiles.permissions` JSONB; xlsx → exceljs (closed only production high-severity vulnerability); first DB test wrote precedent for `supabase/tests/*.sql`. All builds green; CI green on every commit.
@@ -498,4 +549,4 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 4, 2026 — FINAL end-of-day. 12 commits across the full-day session (`492b5ef`..`7137b6b`), 2 DB migrations, 0 edge function deploys. **Every one of the 20 live-review findings closed** (P0/P1/P2/P3) plus Tier 1 mobile improvements for PM workflows (role-driven bottom nav, camera-first photo capture on Documents, PM Bill Sheet mobile card view) plus a TDZ crash fix on Material Calculator caught during the QA sweep. Notable systems-level adds: 2-level EditPanel tab grouping (Setup / Money / Workflow); `MoneyInput` component with currency formatting; `MOBILE_NAV_BY_ROLE` + `ROLE_NAV_GROUPS` role-aware nav; sidebar icon dict completed (28 → 41 entries — every nav item now has an icon); sidebar count split into `active · total` aligned with Dashboard's canonical `CLOSED_SET` definition. Two new DB triggers + backfills (crew_leader_id forcing-function gate; PRODUCT ↔ PRIMARY_TYPE auto-sync). New shared module: `src/shared/billing.js` as the single source of truth for billing metrics. **State going into 2026-05-05:** live-review backlog fully closed; David's review notes retired. Tomorrow is operational (Carlos backfills crew leaders via the bulk UI, David runs the bulk PIS pull on Customer Master) — no engineering pressure unless real users surface new issues. Next-up engineering chips when needed: tech-debt #11 (latent ESLint warnings ~134 mechanical cleanup); retire-on-missing-column pattern (~1 hr — last 6 eslint-disabled fetches); identity-by-email FK conversion for the remaining ~27 columns. All builds green, all CI green on every commit.*
+*Last updated: May 4, 2026 — TRULY FINAL end-of-day after extended late-evening production-scheduling overhaul. **38+ commits across the full day** including the 11-commit late-evening production sprint (`887a19c`..`2339e34`), bringing the session total well past the original "FINAL" mark. 4 DB migrations, 1 edge function deploy (production-scheduler v14 → v15 → ready for use), 1 new table (`mold_pours`), 2 new views (`v_job_production_remaining`, `v_mold_availability`), 3 new triggers, 2 new test files (`mold_pours_trigger.sql` adds 6 assertions to the CI suite). **Every one of the 20 live-review findings closed** (P0/P1/P2/P3) plus Tier 1 mobile improvements for PM workflows (role-driven bottom nav, camera-first photo capture on Documents, PM Bill Sheet mobile card view) plus a TDZ crash fix on Material Calculator caught during the QA sweep. Notable systems-level adds: 2-level EditPanel tab grouping (Setup / Money / Workflow); `MoneyInput` component with currency formatting; `MOBILE_NAV_BY_ROLE` + `ROLE_NAV_GROUPS` role-aware nav; sidebar icon dict completed (28 → 41 entries — every nav item now has an icon); sidebar count split into `active · total` aligned with Dashboard's canonical `CLOSED_SET` definition. Two new DB triggers + backfills (crew_leader_id forcing-function gate; PRODUCT ↔ PRIMARY_TYPE auto-sync). New shared module: `src/shared/billing.js` as the single source of truth for billing metrics. **State going into 2026-05-05:** live-review backlog fully closed; David's review notes retired. Tomorrow is operational (Carlos backfills crew leaders via the bulk UI, David runs the bulk PIS pull on Customer Master) — no engineering pressure unless real users surface new issues. Next-up engineering chips when needed: tech-debt #11 (latent ESLint warnings ~134 mechanical cleanup); retire-on-missing-column pattern (~1 hr — last 6 eslint-disabled fetches); identity-by-email FK conversion for the remaining ~27 columns. All builds green, all CI green on every commit.*
