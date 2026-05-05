@@ -1312,6 +1312,10 @@ const FIXED_DOLLAR_TYPES_MAP={
 };
 function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
+  // 2026-05-05 (mobile pass): useViewport drives Row 1 + Row 2 stacking on
+  // narrow screens. Below 768px, each line card's fields stack vertically
+  // at full width instead of cramming 6 fixed-width fields into a wrapped flex.
+  const v=useViewport();
   const[lines,setLines]=useState([]);
   const[loading,setLoading]=useState(true);
   const[dirty,setDirty]=useState(false);
@@ -1598,6 +1602,19 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   },[dirty,registerSave]);
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
+  // Mobile-aware cell wrapper: full-width stacked cells on phones,
+  // fixed-width flex cells on tablet/desktop. Used inside Row 1 + Row 2
+  // of each line card.
+  const cellStyle=(w)=>v.mobile?{width:'100%',flexShrink:0}:{width:w,flexShrink:0};
+  // Row container: column flex on mobile, wrap-flex on desktop.
+  const rowStyle=v.mobile
+    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
+    :{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12};
+  // Row 2 (Style/Color/Produced) — same column-on-mobile treatment, but the
+  // desktop pattern aligns to flex-end so the Produced checkbox sits flush.
+  const row2Style=v.mobile
+    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
+    :{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
   // Lump Sum kept as the stored fence_type value; UI label is "Misc. Lump
   // Sum" per David 2026-05-05. No data migration needed — display layer only.
@@ -1652,13 +1669,13 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
           </div>
           <div style={{padding:20}}>
             {/* Row 1: Type, [Height for fence], [LF/Number of Pieces — depends on type], Rate/Price, Line Value */}
-            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
-              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Type</label>
+            <div style={rowStyle}>
+              <div style={cellStyle(120)}><label style={fieldLabel}>Type</label>
                 <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
                   {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
                 </select>
               </div>
-              {!isNonFence&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
+              {!isNonFence&&<div style={cellStyle(140)}><label style={fieldLabel}>Height</label>
                 <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
                   <option value="">—</option>
                   {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
@@ -1666,13 +1683,13 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
                 </select>
               </div>}
               {/* LF / Number of Pieces — fence shows "LF"; per-piece shows "Number of Pieces"; fixed-dollar hides this field entirely (lf is forced to 1). */}
-              {!isFixedDollar&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>{isPerPiece?'Number of Pieces':'LF'}</label>
+              {!isFixedDollar&&<div style={cellStyle(140)}><label style={fieldLabel}>{isPerPiece?'Number of Pieces':'LF'}</label>
                 <input type="number" min="0" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder={isPerPiece?'1':'0'} style={{...inp,width:'100%'}}/>
               </div>}
-              <div style={{width:130,flexShrink:0}}><label style={fieldLabel}>{isFixedDollar?'Price ($)':isPerPiece?'Price / Piece ($)':'Rate ($/LF)'}</label>
+              <div style={cellStyle(130)}><label style={fieldLabel}>{isFixedDollar?'Price ($)':isPerPiece?'Price / Piece ($)':'Rate ($/LF)'}</label>
                 <input type="number" min="0" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
               </div>
-              <div style={{width:150,flexShrink:0}}><label style={fieldLabel}>Line Value</label>
+              <div style={cellStyle(150)}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
               </div>
               {/* 2026-05-05 (P1 #6): Pricing Link column. Optional FK to
@@ -1681,7 +1698,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
                   surfaces in the label when a link is set. Candidate pool
                   is filtered by the line's fence_type → category mapping
                   so users only see relevant pricing rows. */}
-              <div style={{width:200,flexShrink:0}}>
+              <div style={cellStyle(200)}>
                 <label style={fieldLabel}>
                   Pricing Link
                   {l.pricing_line_id&&<span title="Linked to a pricing-book row" style={{marginLeft:6,fontSize:11,color:'#1D4ED8'}}>🔗</span>}
@@ -1699,7 +1716,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
               </div>
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
-            {!isNonFence&&<div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
+            {!isNonFence&&<div style={row2Style}>
               <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
                 <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)}
                   style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
@@ -2887,15 +2904,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         const activeGroup=activeSec?activeSec.group:'Setup';
         const tabsInGroup=SECS.filter(s=>s.group===activeGroup);
         return<>
-          <div style={{display:'flex',gap:6,padding:'10px 20px 4px',background:'#F9F8F6',borderBottom:'1px solid #F4F4F2',flexShrink:0}}>
+          {/* 2026-05-05 (mobile pass): both strips switch from wrap-flex to
+              nowrap + horizontal scroll on narrow screens so users see a
+              clean single-line scrollable strip instead of a wrapped pile.
+              WebkitOverflowScrolling: touch enables momentum scroll on iOS. */}
+          <div style={{display:'flex',gap:6,padding:'10px 20px 4px',background:'#F9F8F6',borderBottom:'1px solid #F4F4F2',flexShrink:0,flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
             {SEC_GROUPS.map(g=><button key={g} onClick={()=>{
               // Switching groups jumps to the FIRST tab of the new group so the
               // user always lands on something coherent.
               const first=SECS.find(s=>s.group===g);
               if(first)setTab(first.key);
-            }} style={{padding:'6px 14px',borderRadius:6,border:'1px solid '+(activeGroup===g?'#1A1A1A':'#E5E3E0'),background:activeGroup===g?'#1A1A1A':'#FFF',color:activeGroup===g?'#FFF':'#625650',fontSize:12,fontWeight:700,cursor:'pointer'}}>{g}</button>)}
+            }} style={{padding:'6px 14px',borderRadius:6,border:'1px solid '+(activeGroup===g?'#1A1A1A':'#E5E3E0'),background:activeGroup===g?'#1A1A1A':'#FFF',color:activeGroup===g?'#FFF':'#625650',fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{g}</button>)}
           </div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 20px 10px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{tabsInGroup.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>{s.label}{s.key==='documents'&&headerDocCount!=null&&headerDocCount>0&&<span style={{display:'inline-block',padding:'1px 6px',borderRadius:99,fontSize:9,fontWeight:800,background:tab===s.key?'#8A261D':'#625650',color:'#FFF',lineHeight:1.4}}>{headerDocCount}</span>}</button>)}</div>
+          <div style={{display:'flex',flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch',gap:4,padding:'8px 20px 10px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>{tabsInGroup.map(s=><button key={s.key} onClick={()=>setTab(s.key)} style={{padding:'4px 10px',borderRadius:6,border:tab===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:tab===s.key?'#FDF4F4':'transparent',color:tab===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,whiteSpace:'nowrap',flexShrink:0}}>{s.label}{s.key==='documents'&&headerDocCount!=null&&headerDocCount>0&&<span style={{display:'inline-block',padding:'1px 6px',borderRadius:99,fontSize:9,fontWeight:800,background:tab===s.key?'#8A261D':'#625650',color:'#FFF',lineHeight:1.4}}>{headerDocCount}</span>}</button>)}</div>
         </>;
       })()}
       <div style={{flex:1,overflow:'auto',padding:24,pointerEvents:(canEdit||canEditInstallDateOnly)?'auto':'none'}}>

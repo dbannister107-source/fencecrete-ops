@@ -96,7 +96,11 @@ export default function ContractSummaryCard({ contract, retainagePct }) {
       }}>
         Contract Summary
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+      {/* 2026-05-05 (mobile pass): auto-fit grid replaces the fixed 5-column
+          layout. Tiles auto-stack to 1-3 columns on phones / tablets and
+          fan out to 5 across on wide screens. Was L1 in the post-Phase-D
+          mobile audit (5-tile grid squished to ~70px wide on iPhone). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
         <Tile label="Contract"       value={$(contract.contract_value)}  accent="text" />
         <Tile label="Billed To Date" value={$(contract.billed_to_date)}  accent="text" />
         <Tile label="Pending"        value={$(contract.pending_amount)}  accent="info"

@@ -25,6 +25,20 @@ import { sbGet } from '../../shared/sb';
 import { COLOR, RADIUS, btnP, btnS, FONT } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
 
+// 2026-05-05 (mobile pass): inline mobile detection. Mirrors the shared
+// useViewport / useIsMobile pattern at the 768px breakpoint without
+// taking on a cross-feature import.
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fn = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, [bp]);
+  return m;
+}
+
 // ─── Stage display order (used to sort line breakdown rows) ──────────
 // stage_keys are plain text in the DB; alphabetical sort would reorder
 // 'posts_only' / 'posts_panels' / 'complete' wrong. Use the canonical
@@ -424,6 +438,7 @@ export default function DrillDownModal({
   onClose,
   onAction,
 }) {
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState(null);
   const [data, setData]       = useState(null);
@@ -502,16 +517,25 @@ export default function DrillDownModal({
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0,
       background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000, padding: 20,
+      display: 'flex',
+      alignItems: isMobile ? 'stretch' : 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      // 2026-05-05 (mobile pass): drop backdrop padding to 0 on phones so
+      // the modal claims the full viewport. Desktop keeps the 20px gutter.
+      padding: isMobile ? 0 : 20,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: COLOR.white,
-        borderRadius: RADIUS.xl,
-        width: '100%', maxWidth: 1100,
-        maxHeight: 'calc(100vh - 40px)',
+        // Full-screen on mobile (no rounded corners, claims full viewport);
+        // centered card on desktop.
+        borderRadius: isMobile ? 0 : RADIUS.xl,
+        width: '100%',
+        maxWidth: isMobile ? 'none' : 1100,
+        height: isMobile ? '100%' : 'auto',
+        maxHeight: isMobile ? '100vh' : 'calc(100vh - 40px)',
         display: 'flex', flexDirection: 'column',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.3)',
         overflow: 'hidden',
       }}>
         {/* Header */}

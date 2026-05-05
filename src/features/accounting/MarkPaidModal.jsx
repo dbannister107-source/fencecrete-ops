@@ -9,12 +9,26 @@
 // paid in full" case). User can override for partial payments — status
 // will stay 'filed' until SUM(payments) >= net_due.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { sbPost } from '../../shared/sb';
 import { COLOR, RADIUS, btnP, btnS, inputS, FONT } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// 2026-05-05 (mobile pass): inline mobile detection. The shared useViewport
+// hook lives in App.jsx; mirroring its 768px breakpoint here keeps the modal
+// self-contained without an import dance. Same logic as useIsMobile.
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fn = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, [bp]);
+  return m;
+}
 
 const PAYMENT_METHODS = [
   { v: 'check',  l: 'Check' },
@@ -26,6 +40,7 @@ const PAYMENT_METHODS = [
 ];
 
 export default function MarkPaidModal({ app, currentUserEmail, onSuccess, onClose }) {
+  const isMobile = useIsMobile();
   const netDue = Number(app.net_due) || 0;
   const alreadyPaid = Number(app.paid_amount) || 0;
   const remaining = Math.max(0, netDue - alreadyPaid);
@@ -70,14 +85,22 @@ export default function MarkPaidModal({ app, currentUserEmail, onSuccess, onClos
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      display: 'flex',
+      alignItems: isMobile ? 'stretch' : 'center',
+      justifyContent: 'center',
       zIndex: 1000,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: COLOR.white,
-        borderRadius: RADIUS.xl,
-        padding: 24,
-        width: '92%', maxWidth: 480,
+        // 2026-05-05 (mobile pass): full-screen modal on phones for better
+        // legibility + touch ergonomics. Desktop keeps the centered card.
+        borderRadius: isMobile ? 0 : RADIUS.xl,
+        padding: isMobile ? '20px 16px' : 24,
+        width: isMobile ? '100%' : '92%',
+        maxWidth: isMobile ? 'none' : 480,
+        height: isMobile ? '100%' : 'auto',
+        maxHeight: isMobile ? '100vh' : '90vh',
+        overflowY: 'auto',
         boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
       }}>
         <div style={{ marginBottom: 16 }}>
@@ -143,9 +166,18 @@ export default function MarkPaidModal({ app, currentUserEmail, onSuccess, onClos
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} disabled={saving} style={btnS}>Cancel</button>
+          <button onClick={onClose} disabled={saving} style={{
+            ...btnS,
+            ...(isMobile ? { minHeight: 44, padding: '12px 18px', fontSize: 14 } : null),
+          }}>Cancel</button>
           <button onClick={submit} disabled={saving || amt <= 0}
-                  style={{ ...btnP, opacity: saving || amt <= 0 ? 0.5 : 1, background: willClose ? COLOR.success : COLOR.brand }}>
+                  style={{
+                    ...btnP,
+                    opacity: saving || amt <= 0 ? 0.5 : 1,
+                    background: willClose ? COLOR.success : COLOR.brand,
+                    // 2026-05-05 (mobile pass): meet iOS HIG 44px touch target
+                    ...(isMobile ? { minHeight: 44, padding: '12px 18px', fontSize: 14 } : null),
+                  }}>
             {saving ? 'Recording…' : willClose ? '✓ Mark Paid' : 'Record Partial Payment'}
           </button>
         </div>
