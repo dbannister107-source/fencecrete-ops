@@ -7151,6 +7151,9 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   const[agingStatus,setAgingStatus]=useState(null);
   const[expandedPm,setExpandedPm]=useState(null);
   const[styleMkt,setStyleMkt]=useState(null);
+  // Monthly $/LF Rate Trend filters
+  const[rateMkt,setRateMkt]=useState(null);
+  const[rateMonths,setRateMonths]=useState(24);
   // Production data (molds + plant config + per-style CY) — fetched once for the production reports
   const[moldInventory,setMoldInventory]=useState([]);
   const[plantCfg,setPlantCfg]=useState({});
@@ -7191,7 +7194,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
     {id:'rep_scorecard',title:'Sales Rep Activity Scorecard',desc:'Performance by rep — proposals, wins, win rate, forecast',icon:'🎯'},
     {id:'prospect_attribution',title:'Prospect Conversion Attribution',desc:'Pipeline value traced back to Prospecting — proves ROI of proactive outreach',icon:'🔭'},
   ];
-  const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
+  const reports=[{id:'ltb_rep',title:'Left to Bill by Sales Rep',desc:'Balance per rep'},{id:'aging',title:'Billing Aging',desc:'Unbilled projects by age'},{id:'lf_week',title:'LF by Week',desc:'LF scheduled by week'},{id:'pipeline',title:'Pipeline by Market',desc:'Values by status & market'},{id:'revenue',title:'Revenue vs Pipeline',desc:'Billed vs remaining'},{id:'prod_sched',title:'Production Schedule',desc:'Queued & in-production'},{id:'change_orders',title:'Change Orders Summary',desc:'All change order activity'},{id:'rep_matrix',title:'Rep × Market Matrix',desc:'Cross-tab by rep and market'},{id:'sales_product',title:'Sales by Product',desc:'Revenue and LF breakdown by product type — Precast, Masonry/SW, Wrought Iron, Gates'},{id:'rate_trend',title:'Monthly $/LF Rate Trend',desc:'LF-weighted rate trend for Precast and Masonry over time. Filterable by market. Answers "are we holding price?" at a glance.'},{id:'outstanding',title:'Outstanding Collections',desc:'Complete jobs not yet collected'}];
   const productionReports=[
     {id:'mold_capacity_bottlenecks',title:'Mold Capacity & Bottlenecks',desc:'Bottleneck-aware capacity intelligence: factors in posts, rails, and caps (not just panels). Surfaces which styles are component-constrained and ranks pipeline pressure by family.',icon:'🏭'},
     {id:'prod_backlog',title:'Production Backlog by Style',desc:'LF, panels, CYD, and estimated production days for all queued and in-production jobs grouped by style.'},
@@ -7299,6 +7302,134 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
               <td style={{...tdS,color:isOv?'#1A1A1A':rateColor(r.wiR,overallWI),fontWeight:600}}>{r.wiR>0?'$'+r.wiR.toFixed(2):'—'}</td>
               <td style={{...tdS,color:isOv?'#1A1A1A':rateColor(r.gtR,overallGt),fontWeight:600}}>{r.gtR>0?'$'+r.gtR.toFixed(2):'—'}</td>
             </tr>;})}</tbody></table></div>
+        </div>
+      </div>;
+    }
+    if(activeRpt==='rate_trend'){
+      // Monthly $/LF Rate Trend — answers "are we holding price?" by computing
+      // LF-weighted average rate per month for Precast and Masonry (SW), then
+      // charting the trend across the selected horizon. Job count overlay
+      // exposes thin months so a single outlier deal isn't read as a trend.
+      //
+      // Math is LF-weighted (SUM(lf*rate)/SUM(lf)), not simple-avg, so a single
+      // huge job at $90/LF doesn't get equal weight with a tiny job at $200/LF.
+      // That's the rate the customer base is actually paying in aggregate.
+      const horizonStart=new Date();horizonStart.setMonth(horizonStart.getMonth()-rateMonths);
+      const filtered=jobs.filter(j=>{
+        if(!j.contract_date)return false;
+        if(new Date(j.contract_date)<horizonStart)return false;
+        if(rateMkt&&j.market!==rateMkt)return false;
+        return true;
+      });
+      // Bucket by YYYY-MM
+      const buckets={};
+      // Pre-fill all months in horizon so the chart shows zero-data months as gaps, not skipped
+      for(let i=0;i<rateMonths;i++){
+        const d=new Date();d.setMonth(d.getMonth()-i);
+        const key=d.toISOString().slice(0,7);
+        buckets[key]={month:key,pc_lf:0,pc_rev:0,pc_jobs:0,sw_lf:0,sw_rev:0,sw_jobs:0};
+      }
+      filtered.forEach(j=>{
+        const key=String(j.contract_date).slice(0,7);
+        if(!buckets[key])buckets[key]={month:key,pc_lf:0,pc_rev:0,pc_jobs:0,sw_lf:0,sw_rev:0,sw_jobs:0};
+        const pcLf=n(j.lf_precast),pcRate=n(j.contract_rate_precast);
+        if(pcLf>0&&pcRate>0){buckets[key].pc_lf+=pcLf;buckets[key].pc_rev+=pcLf*pcRate;buckets[key].pc_jobs+=1;}
+        const swLf=n(j.lf_single_wythe),swRate=n(j.contract_rate_single_wythe);
+        if(swLf>0&&swRate>0){buckets[key].sw_lf+=swLf;buckets[key].sw_rev+=swLf*swRate;buckets[key].sw_jobs+=1;}
+      });
+      const data=Object.values(buckets).sort((a,b)=>a.month.localeCompare(b.month)).map(b=>({
+        month:b.month,
+        // Format month as "Mar '26" for chart x-axis. ISO 'YYYY-MM' interpreted UTC; force to noon-local.
+        label:(()=>{const d=new Date(b.month+'-15T12:00:00');return d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});})(),
+        pc_rate:b.pc_lf>0?Math.round((b.pc_rev/b.pc_lf)*100)/100:null,
+        sw_rate:b.sw_lf>0?Math.round((b.sw_rev/b.sw_lf)*100)/100:null,
+        pc_jobs:b.pc_jobs,
+        sw_jobs:b.sw_jobs,
+        pc_lf:b.pc_lf,
+        sw_lf:b.sw_lf,
+      }));
+      const totalPcJobs=data.reduce((s,r)=>s+r.pc_jobs,0);
+      const totalSwJobs=data.reduce((s,r)=>s+r.sw_jobs,0);
+      const overallPcRate=(()=>{const lf=data.reduce((s,r)=>s+r.pc_lf,0);const rev=data.reduce((s,r)=>s+(r.pc_rate?r.pc_rate*r.pc_lf:0),0);return lf>0?rev/lf:0;})();
+      const overallSwRate=(()=>{const lf=data.reduce((s,r)=>s+r.sw_lf,0);const rev=data.reduce((s,r)=>s+(r.sw_rate?r.sw_rate*r.sw_lf:0),0);return lf>0?rev/lf:0;})();
+      const exportRateCSV=()=>{
+        const rows=[['Month','PC Jobs','PC LF','PC Weighted $/LF','SW Jobs','SW LF','SW Weighted $/LF']];
+        data.forEach(r=>rows.push([r.month,r.pc_jobs,r.pc_lf,r.pc_rate||'',r.sw_jobs,r.sw_lf,r.sw_rate||'']));
+        const csv=rows.map(r=>r.join(',')).join('\n');
+        const b=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`rate-trend-${rateMonths}mo${rateMkt?'-'+rateMkt:''}.csv`;a.click();
+      };
+      return<div>
+        {/* Filter chips */}
+        <div style={{display:'flex',gap:8,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Market:</span>
+          <button onClick={()=>setRateMkt(null)} style={fpill(!rateMkt)}>All</button>
+          {MKTS.map(m=><button key={m} onClick={()=>setRateMkt(m)} style={fpill(rateMkt===m)}>{MS[m]}</button>)}
+          <span style={{color:'#E5E3E0',marginLeft:4}}>|</span>
+          <span style={{fontSize:11,color:'#9E9B96',fontWeight:600,textTransform:'uppercase'}}>Period:</span>
+          {[12,24,36].map(mo=><button key={mo} onClick={()=>setRateMonths(mo)} style={fpill(rateMonths===mo)}>{mo} mo</button>)}
+          <button onClick={exportRateCSV} style={{...btnS,marginLeft:'auto',fontSize:12}} title="Download monthly rate data as CSV">⬇ Export CSV</button>
+        </div>
+        {/* Headline cards */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:16,marginBottom:20}}>
+          <div style={{...card,borderTop:'3px solid #8A261D'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Precast — {rateMonths}-mo weighted avg</div>
+            <div style={{fontSize:26,fontWeight:800,color:'#8A261D',marginBottom:4}}>{overallPcRate>0?'$'+overallPcRate.toFixed(2)+'/LF':'—'}</div>
+            <div style={{fontSize:12,color:'#625650'}}>{totalPcJobs} job{totalPcJobs===1?'':'s'} contracted{rateMkt?` in ${MS[rateMkt]||rateMkt}`:''}</div>
+          </div>
+          <div style={{...card,borderTop:'3px solid #1D4ED8'}}>
+            <div style={{fontSize:11,color:'#625650',fontWeight:600,textTransform:'uppercase',marginBottom:8}}>Masonry / SW — {rateMonths}-mo weighted avg</div>
+            <div style={{fontSize:26,fontWeight:800,color:'#1D4ED8',marginBottom:4}}>{overallSwRate>0?'$'+overallSwRate.toFixed(2)+'/LF':'—'}</div>
+            <div style={{fontSize:12,color:'#625650'}}>{totalSwJobs} job{totalSwJobs===1?'':'s'} contracted{rateMkt?` in ${MS[rateMkt]||rateMkt}`:''}</div>
+          </div>
+        </div>
+        {/* Trend chart */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Monthly LF-Weighted $/LF</div>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E3E0"/>
+              <XAxis dataKey="label" tick={{fill:'#625650',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:'#625650',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>'$'+v}/>
+              <Tooltip
+                contentStyle={{background:'#fff',border:'1px solid #E5E3E0',borderRadius:8}}
+                formatter={(v,name,p)=>{
+                  if(v==null)return['—',name];
+                  const r=p&&p.payload?p.payload:{};
+                  const jobs=name==='Precast'?r.pc_jobs:r.sw_jobs;
+                  return['$'+Number(v).toFixed(2)+'/LF',`${name} (${jobs} job${jobs===1?'':'s'})`];
+                }}
+              />
+              <Legend/>
+              <Line type="monotone" dataKey="pc_rate" stroke="#8A261D" strokeWidth={2.5} dot={{r:3,fill:'#8A261D'}} name="Precast" connectNulls={false}/>
+              <Line type="monotone" dataKey="sw_rate" stroke="#1D4ED8" strokeWidth={2.5} dot={{r:3,fill:'#1D4ED8'}} name="Masonry" connectNulls={false}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Data table */}
+        <div>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>Monthly Detail</div>
+          <div style={{overflow:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead><tr style={{borderBottom:'2px solid #E5E3E0'}}>{['Month','PC Jobs','PC LF','PC $/LF','SW Jobs','SW LF','SW $/LF'].map(h=><th key={h} style={{textAlign:'left',padding:8,color:'#625650',fontWeight:600,fontSize:11,textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
+              <tbody>{[...data].reverse().map(r=>{
+                // Light highlight: rate >5% above or below the overall weighted-avg signals movement
+                const pcDelta=r.pc_rate&&overallPcRate?(r.pc_rate-overallPcRate)/overallPcRate:0;
+                const swDelta=r.sw_rate&&overallSwRate?(r.sw_rate-overallSwRate)/overallSwRate:0;
+                const colorFor=(d)=>Math.abs(d)<0.05?'#1A1A1A':d>0?'#065F46':'#991B1B';
+                return<tr key={r.month} style={{borderBottom:'1px solid #F4F4F2'}}>
+                  <td style={{padding:'6px 8px',fontWeight:600}}>{r.label}</td>
+                  <td style={{padding:'6px 8px'}}>{r.pc_jobs||'—'}</td>
+                  <td style={{padding:'6px 8px'}}>{r.pc_lf?r.pc_lf.toLocaleString():'—'}</td>
+                  <td style={{padding:'6px 8px',fontWeight:700,fontFamily:'Inter',color:r.pc_rate?colorFor(pcDelta):'#9E9B96'}}>{r.pc_rate?'$'+r.pc_rate.toFixed(2):'—'}</td>
+                  <td style={{padding:'6px 8px'}}>{r.sw_jobs||'—'}</td>
+                  <td style={{padding:'6px 8px'}}>{r.sw_lf?r.sw_lf.toLocaleString():'—'}</td>
+                  <td style={{padding:'6px 8px',fontWeight:700,fontFamily:'Inter',color:r.sw_rate?colorFor(swDelta):'#9E9B96'}}>{r.sw_rate?'$'+r.sw_rate.toFixed(2):'—'}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <div style={{fontSize:11,color:'#9E9B96',marginTop:8,fontStyle:'italic'}}>Color: green = above {rateMonths}-mo avg, red = below. Threshold ±5%. Data uses jobs.contract_date as the month anchor; only jobs with both LF and rate populated for the product are counted.</div>
         </div>
       </div>;
     }
