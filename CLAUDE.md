@@ -202,6 +202,43 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - BillingPage badge: parallel-fetches `invoice_applications` keyed by `pm_bill_submission_id` for the current AR review month; renders amber `📋 Acct Sheet App #N` pill on submissions already filed via the new tab. Visual heads-up only — does NOT block the AR Approve action (cutover is operational, two paths coexist).
 - Permission: same `canEdit` as the rest of EditPanel — Amiee + AR roles. No tighter gate today.
 
+**Post-ship bug sweep + fixes** (`6eb8843`)
+
+After Phase D landed, did a thorough final review of the entire Accounting System. Found 3 HIGH severity bugs that would have surfaced within Virginia's first few billing cycles. Fixed all 3 in one cleanup commit:
+
+- **H1 (engine) — Negative `current_qty` when prior_qty > 0 and no input.** In `computeDraftCells`, `NUM(undefined)` returned 0 → `current_qty = 0 − prior_qty = NEGATIVE`. Filing would have posted credit invoices any time a gate / option / permit / bond was billed in cycle 1 and Virginia didn't re-toggle the checkbox in cycle 2. Same failure mode for fence stages where the PM forgot to update a stage column. Fix: cumulative defaults to prior when missing — semantic is "no input = no change since last cycle." Regression test added (`GATE_BILLED_NO_OVERRIDE` fixture, 5 new assertions in `verify.mjs`). Verifier now 53/53 PASS (was 48).
+- **H2 (UI) — Pricing rows missing labor/tax_basis split silently locked stages forever.** When `labor_per_unit` or `tax_basis_per_unit` was null on a pricing row, the cell rendered with `current_qty=N, current_total=$0`. The File flow's filter on `current_qty !== 0` let those rows through. They posted with `cumulative_qty=N, current_total=0`. Next cycle, `prior_qty=N` → engine treated stage as fully billed. Stage permanently un-billable — silent revenue loss. Fix: tightened filter to require BOTH non-zero `current_qty` AND non-zero `current_total`.
+- **H3 (engine + UI) — 138 jobs with synthetic backfill history had over-billing risk.** Synthetic apps from the Phase A backfill have header amounts but zero `invoice_application_lines`. The calc engine reads `prior_qty` from app_lines, so for these 138 jobs `prior_qty=0` across every cell. Filing a normal cycle on one of these jobs could re-bill scope already covered by historical invoices. Two-part fix: (a) `validateAcctSheet` now accepts `priorApps` + `contract`, emits a heads-up advisory when `source_invoice_entry_id` apps exist on this job ("$X billed via legacy imports — per-stage tracking starts at 0; ensure your PM bill sheet reflects only NEW work this cycle"); (b) `AccountingTab` hard-blocks File when `pending + billed > contract × 1.001` with a clear button-disabled reason text.
+- **M4 (UI) — `_taxBasisManual` flag was true on every loaded pricing row.** In `JobPricingEditor`'s `loadLines`, the flag was set true whenever `tax_basis_per_unit` was present (= every saved row). That silently disabled the auto-recompute path when the user edited height — changing 6 to 8 on a saved row no longer updated tax_basis from HEIGHT_BASIS. Fix: always start with `_taxBasisManual=false` on load.
+- **L4 bonus** — warnings list now distinguishes "no pricing rows" from "no PM submission" (different remediation paths).
+
+**Final relational integrity review**
+
+After the fixes, did a full relational integrity audit across all 11 billing-relevant tables (`jobs`, `job_line_items`, `job_pricing_lines`, `stage_weights`, `job_stage_weights`, `pm_bill_submissions`, `invoice_applications`, `invoice_application_lines`, `invoice_entries`, `change_orders`, `companies`). Ran 17 orphan-and-drift checks against the live DB.
+
+**Results:**
+- ✅ Every new FK has the correct delete rule. CASCADE for owned data (header→lines, job→pricing); NO ACTION for shared references that should block destructive operations (`pm_bill_submission_id`, `source_invoice_entry_id`).
+- ✅ Every FK column has a supporting index — no full-table scans on parent operations.
+- ✅ All 7 new trigger functions have hardened `search_path = public, pg_temp`.
+- ✅ Zero orphans across every check: no detached job_line_items, no dangling co_id, no pm_bill_submissions with NULL job_id, no invoice_application_lines with mismatched job, no app_number duplicates, no invoice_number duplicates.
+- ✅ Zero stage_weight override sums outside [0.99, 1.01] (validation trigger working).
+- ✅ Zero stuck draft `invoice_applications` from failed File flows.
+- ✅ Zero `jobs.retainage_held` drift from latest filed App's `retainage_to_date`.
+- ✅ The data flow chain (Project Setup → Line Items → Pricing → PM Bill Sheet → Draft → Filed) has triggers maintaining every derived field; no manual sync points anywhere.
+
+**Two non-zero counts found, both pre-existing data hygiene (not Phase A–D):**
+- 1 `jobs.ytd_invoiced` drift — Emberly 25H046's $14k phantom (already documented in CLAUDE.md known data hygiene; needs Jalen review).
+- 25 approved COs with no sub-line items (predates the CO sub-line workflow that shipped mid-April).
+
+**Two design notes (legitimate Phase E follow-ups, not blocking):**
+- **S1: CO delete rule split.** `job_line_items.co_id` is `SET NULL` (legacy), `job_pricing_lines.co_id` is `CASCADE` (Phase A). If a CO with sub-data is deleted, line_items survive (silently inflating main contract scope) but pricing rows vanish. Zero current data affected. Phase E ALTER to align both at `SET NULL` is one line.
+- **C1: Two parallel paths to `invoice_entries`.** Legacy AR Approve and new Accounting File both write to the canonical money ledger. Cleanly converge for *different* submissions; double-write only if Virginia approves the same submission via both paths. Mitigation in place: amber `📋 Acct Sheet App #N` pill on BillingPage rows + warning text on Accounting tab submission selector. Hard-block in BillingPage Approve handler when `pm_bill_submission_id` is already linked to an `invoice_applications` row is a Phase E ~30-minute add.
+
+**Phase E gap (already documented as M3):**
+- 8 active jobs have CO line items but no CO sub-pricing rows. Workaround: Virginia uses the legacy AR review path for these 8 jobs until Phase E mounts a `JobPricingEditor` inside each CO card on the Change Orders tab (~3 hours).
+
+**Final readiness score: 9 / 10.** ✅ The Accounting System is a solid relational billing engine. The half-point reduction is for S1, C1, and the 8-job CO gap — all legitimate Phase E follow-ups. Virginia can start using the new tab tomorrow on jobs without active CO billing.
+
 **State going into next session:**
 - Live URL has the full Accounting tab. `job_pricing_lines` is 0 rows in production — Pricing books populate the first time someone opens the tab and clicks Save (no background backfill needed; no-op until Virginia + Amiee touch jobs).
 - Synthetic apps for the 164 historical `invoice_entries` rows are already in place — every active job's ledger looks complete from day one.
@@ -602,7 +639,29 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 5, 2026 — Accounting System / Billing Engine end-to-end. **4 phased commits (`fed9944` → `6bfbf9d` → `6f87b72` → `ceab60d`) replacing Virginia's manual Excel "Acct Sheet" with a native OPS feature.** New schema (5 tables + 1 view, 7 triggers, synthetic backfill of 164 historical invoice_entries → invoice_applications). Pure-JS calc engine (`src/shared/billing/acctSheet.js`) — 8 functions, 48 assertions verifying Excel cell-for-cell math. New EditPanel sub-tabs in Money group: "Pricing" (per-job pricing book editor with HEIGHT_BASIS auto-fill) + "Accounting" (contract summary + current bill draft + App ledger + File Invoice + Release Retainage). 4 new files in `src/features/accounting/` (~860 lines). Drift cleanup: `MoneyInput` extracted to `src/shared/ui.js`; `HEIGHT_BASIS` / `STYLE_BASIS` / `TAX_RATE` extracted to `src/shared/billing/heightBasis.js` (replaces 3 inline copies in App.jsx). Cutover is operational, not engineering — Virginia switches when ready; visual amber badge on BillingPage prevents double-billing during transition. All builds green; 12/12 DB tests PASS; 48/48 JS engine assertions PASS. Live URL has the full feature; `job_pricing_lines` populates per-job as Virginia + Amiee touch them. Phase E candidates parked: orphan-draft cleanup UI, per-App stage drill-down modal, "Mark Final" action, Acct Sheet PDF export. Earlier in same day (2026-05-05): Project Setup form rebuild (8 commits before the Accounting work) — Pricing-book pre-cleanup that retired free-text Sales Tax / Retainage / Billing Date fields, folded Project Requirements into Details tab, added Customer Master Lookup typeahead.*
+*Last updated: May 5, 2026 — **Accounting System / Billing Engine shipped end-to-end + post-ship bug sweep + relational integrity audit.** **8 commits today** (`89dfc6f` → `6eb8843`): 2 setup-form pre-cleanup commits, 4 phased build commits (Phases A–D), 1 docs commit, 1 bug-fix commit. **Replaces Virginia's manual Excel "Acct Sheet"** with a native OPS feature — full pricing book → draft invoice → filed invoice flow now lives in the EditPanel Money group.
+
+**Schema:** 5 new tables (`job_pricing_lines`, `stage_weights`, `job_stage_weights`, `invoice_applications`, `invoice_application_lines`) + 2 views (`v_effective_stage_weights`, `v_acct_sheet_summary`) + 7 triggers (extended_total maintenance, weight-sum validation, app_number auto-increment, invoice_number auto-generation, header total computation, post-on-file with synthetic-skip, retainage_held maintenance). Synthetic backfill of 164 historical `invoice_entries` → 164 `invoice_applications` rows ($21.9M cumulative, 138 jobs) preserves provenance via `source_invoice_entry_id`.
+
+**Engine:** Pure-JS `src/shared/billing/acctSheet.js` (~280 lines, 8 functions). **53/53 assertions PASS** in `verify.mjs` — Excel cell-for-cell math verified across Cycle 1, Cycle 2, tax-exempt, gate-billed-no-override regression, and apportionment unit tests.
+
+**UI:** 4 new files in `src/features/accounting/` (~860 lines) — `AccountingTab.jsx` (orchestrator + File + Release Retainage), `ContractSummaryCard.jsx` (5 money tiles + progress bar), `DraftTable.jsx` (per-line × per-stage editable; multi-stage read-only via PM apportionment, single-stage editable via checkbox/qty), `AppLedger.jsx` (reverse-chron with status pills + Release Retainage button). New "Pricing" + "Accounting" sub-tabs added to the EditPanel Money group. BillingPage gets an amber `📋 Acct Sheet App #N` heads-up pill on submissions already filed via the new tab.
+
+**Drift cleanup along the way:** `MoneyInput` extracted to `src/shared/ui.js`; `HEIGHT_BASIS` / `STYLE_BASIS` / `TAX_RATE` extracted to `src/shared/billing/heightBasis.js` (retired 3 inline copies in App.jsx). Plus the morning's setup-form rebuild that retired free-text Sales Tax / Retainage / Billing Date inputs, folded Project Requirements into Details tab, and added Customer Master Lookup typeahead.
+
+**Post-ship bug sweep found 3 HIGH severity bugs — all fixed in `6eb8843`:**
+- H1: engine produced negative current_qty when prior_qty > 0 and no input → fixed (cumulative defaults to prior; "no input = no change").
+- H2: pricing rows missing labor/tax_basis split silently locked stages forever → fixed (filter zero-total cells from posting).
+- H3: 138 synthetic-history jobs at over-billing risk → fixed (engine emits advisory + UI hard-blocks File when pending+billed > contract).
+- Plus M4 (auto-recompute on height edit) and L4 (better empty-state warning).
+
+**Relational integrity audit (live DB):** ✅ Every new FK has correct delete rule; ✅ every FK column has a supporting index; ✅ all 7 trigger functions have hardened search_path; ✅ zero orphans across 17 checks (job_id↔job_number drift, mismatched-job cross-references, app_number duplicates, invoice_number duplicates, stuck draft Apps, retainage_held drift, etc.); ✅ stage_weight override validation working (zero violations); ✅ data flow chain (Project Setup → Line Items → Pricing → PM Bill Sheet → Draft → Filed) has triggers maintaining every derived field. Two non-zero counts found, both pre-existing data hygiene (Emberly 25H046 $14k phantom + 25 approved COs without sub-lines) — not introduced by this build.
+
+**Tests:** 53/53 JS engine assertions PASS; 12/12 DB integration tests PASS; production build clean.
+
+**Cutover is operational, not engineering.** Virginia switches when ready; legacy AR review path on BillingPage continues to work in parallel. The amber badge prevents double-billing during transition. **Final readiness score: 9/10.**
+
+**Phase E candidates (parked, not blocking):** Mount JobPricingEditor inside each CO card on Change Orders tab (~3 hours, addresses 8 active jobs with CO line items but no CO pricing rows); Hard-block AR Approve when submission already linked to invoice_applications (~30 minutes); Align `job_pricing_lines.co_id` delete rule with `job_line_items.co_id` (one-line ALTER); Orphan draft App cleanup UI; Per-App stage drill-down modal; "Mark Final" action writing `jobs.final_invoice_amount`; Acct Sheet PDF export.*
 
 ---
 
