@@ -1227,7 +1227,27 @@ function useRealtime(setJobs) {
 
 /* ═══ LINE ITEMS EDITOR ═══ */
 const LINE_HEIGHT_OPTIONS=["4'","5'","6'","7'","8'","9'","10'","Ranch - 2 Rail","Ranch - 3 Rail","Ranch - 4 Rail"];
-function LineItemsEditor({job,onChange,registerSave}){
+// Type behavior groups (David spec, 2026-05-05):
+//   - Fence: PC / SW / WI / Wood / Other → full form (height, LF, rate, style, color, description)
+//   - Per-piece: Gate / Gate Controls / Columns → number-of-pieces × price + description
+//   - Fixed-dollar: Lump Sum (now labeled "Misc. Lump Sum") / Permit / P&P Bond / Maint Bond / Insurance → price + description only
+// FLAT_COST_TYPES (used by updateLine snap-default logic) is the union of
+// per-piece and fixed-dollar — both clear style/color/height/is_produced when
+// selected; the difference is whether lf is editable (per-piece keeps user
+// LF as quantity) or forced to 1 (fixed-dollar = single dollar amount).
+const PER_PIECE_TYPES_MAP={
+  'Gate':         {category:'gate',          taxable:true},
+  'Gate Controls':{category:'gate_controls', taxable:true},
+  'Columns':      {category:'columns',       taxable:true},
+};
+const FIXED_DOLLAR_TYPES_MAP={
+  'Lump Sum':     {category:'lump_sum',  taxable:true},
+  'Permit':       {category:'permit',    taxable:false},
+  'P&P Bond':     {category:'pp_bond',   taxable:false},
+  'Maint Bond':   {category:'maint_bond',taxable:false},
+  'Insurance':    {category:'insurance', taxable:false},
+};
+function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
   const[lines,setLines]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -1243,24 +1263,47 @@ function LineItemsEditor({job,onChange,registerSave}){
   const loadLines=useCallback(async()=>{
     if(!job?.job_number){setLines([]);setLoading(false);return;}
     setLoading(true);
-    try{const d=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&order=line_number.asc`);setLines((d||[]).map(l=>({...l,_existing:true})));}
+    try{
+      // Scope: when coId is set we're editing a Change Order's sub-lines and
+      // pull only rows with that co_id. When coId is null/absent we're on the
+      // main contract — exclude any sub-line rows that belong to a CO so they
+      // don't leak into the main contract editor.
+      const filter=coId
+        ? `co_id=eq.${coId}&order=line_number.asc`
+        : `job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&order=line_number.asc`;
+      const d=await sbGet('job_line_items',filter);
+      setLines((d||[]).map(l=>({...l,_existing:true})));
+    }
     catch(e){setErr('Load failed: '+e.message);}
     setLoading(false);
-  },[job?.job_number]);
+  },[job?.job_number,coId]);
   useEffect(()=>{loadLines();},[loadLines]);
-  const FLAT_COST_TYPES={'Gate':{category:'gate',taxable:true},'Lump Sum':{category:'lump_sum',taxable:true},'Columns':{category:'columns',taxable:true},'Permit':{category:'permit',taxable:false},'P&P Bond':{category:'pp_bond',taxable:false},'Maint Bond':{category:'maint_bond',taxable:false}};
+  // Combined map for non-fence types — used by updateLine to set taxable +
+  // category + clear non-applicable fields when the user switches type.
+  const FLAT_COST_TYPES={...PER_PIECE_TYPES_MAP,...FIXED_DOLLAR_TYPES_MAP};
   const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};
-    // If user switches Type to a flat-cost type (Permit/Bond), snap to flat-cost
-    // defaults: lf=1 (so contract_rate is the total), no style/color/height,
-    // not produced, taxable=false, and set the matching category for A3.
+    // If user switches Type to a non-fence type, snap defaults: clear
+    // style/color/height/is_produced; set taxable + category for A3. The
+    // difference between per-piece (Gate / Columns / Gate Controls) and
+    // fixed-dollar (Permit / Bonds / Insurance / Misc Lump Sum) is whether
+    // lf is editable as a quantity (per-piece keeps the current lf unless
+    // it's 0, then defaults to 1) or forced to 1 (fixed-dollar = single
+    // dollar amount).
     if(field==='fence_type'&&FLAT_COST_TYPES[val]){
-      next.lf=1; next.height=''; next.style=''; next.color='';
+      next.height=''; next.style=''; next.color='';
       next.is_produced=false;
       next.taxable=FLAT_COST_TYPES[val].taxable;
       next.category=FLAT_COST_TYPES[val].category;
-      const r=n(next.contract_rate); next.line_value=Math.round(1*r*100)/100;
+      if(FIXED_DOLLAR_TYPES_MAP[val]){
+        next.lf=1;
+      }else if(PER_PIECE_TYPES_MAP[val]){
+        // Keep existing lf if user already had one; otherwise default to 1
+        // so they don't see "0 pieces × $X = $0" by default.
+        if(!n(next.lf))next.lf=1;
+      }
+      const lf2=n(next.lf),r2=n(next.contract_rate); next.line_value=Math.round(lf2*r2*100)/100;
     }
-    // If user switches AWAY from a flat-cost type, clear category and taxable
+    // If user switches AWAY from a non-fence type, clear category and taxable
     // so the next pick (PC/SW/WI/etc) gets correct defaults.
     else if(field==='fence_type'&&FLAT_COST_TYPES[l.fence_type]){
       next.category=null; next.taxable=true; next.is_produced=true;
@@ -1268,7 +1311,7 @@ function LineItemsEditor({job,onChange,registerSave}){
     if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}
     return next;
   }));setDirty(true);};
-  const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
+  const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',co_id:coId||null,line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
   /* Recompute job header rollups from the ACTUAL surviving line_items rows
      in the database. Used by both removeLine and saveAll so the two code
      paths can never disagree. Fetches fresh, sums by fence_type, writes the
@@ -1280,7 +1323,12 @@ function LineItemsEditor({job,onChange,registerSave}){
      LF after all PC lines were deleted). Cleaned up 6 active jobs in
      migration fix_active_jobs_stale_rollup_2026_04_27. */
   const recomputeJobFromLines=async()=>{
-    const fresh=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&order=line_number.asc`);
+    // Job header rollups (total_lf / lf_precast / etc) reflect ONLY the main
+    // contract — CO sub-lines (rows with co_id set) flow into the CO's own
+    // amount via trg_recalc_co_amount_from_sublines, not into the job header.
+    // Filter co_id IS NULL so the CO amounts don't double-count into the
+    // job's LF totals.
+    const fresh=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&order=line_number.asc`);
     const all=fresh||[];
     const pcLines=all.filter(x=>x.fence_type==='PC');
     const gateLines=all.filter(x=>(x.description||'').toUpperCase().startsWith('GATE:'));
@@ -1347,13 +1395,21 @@ function LineItemsEditor({job,onChange,registerSave}){
       // Compute the surviving lines in their new order, then renumber + recompute rollup.
       const survivors=lines.filter((_,i)=>i!==idx);
       await compactLineNumbers(survivors);
-      const fresh=await recomputeJobFromLines();
-      setLines((fresh?.lines||[]).map(x=>({...x,_existing:true})));
-      setConfirmDel(null);setToast('Line removed — totals updated');
-      // Push recomputed totals up to parent EditPanel form state so the
-      // Totals tab + handleSave use the fresh values, not the stale ones
-      // loaded when the panel opened. See bug history at line 1145.
-      if(onChange)onChange(fresh?.summary||null);
+      // CO mode: skip job-header recompute (sub-lines roll up to the CO
+      // amount via DB trigger, not to job header). Just reload our scope.
+      if(coId){
+        await loadLines();
+        setConfirmDel(null);setToast('Line removed — change order updated');
+        if(onCoLinesChanged)onCoLinesChanged();
+      }else{
+        const fresh=await recomputeJobFromLines();
+        setLines((fresh?.lines||[]).map(x=>({...x,_existing:true})));
+        setConfirmDel(null);setToast('Line removed — totals updated');
+        // Push recomputed totals up to parent EditPanel form state so the
+        // Totals tab + handleSave use the fresh values, not the stale ones
+        // loaded when the panel opened. See bug history at line 1145.
+        if(onChange)onChange(fresh?.summary||null);
+      }
     }
     catch(e){setErr('Delete failed: '+e.message);}
   };
@@ -1370,25 +1426,38 @@ function LineItemsEditor({job,onChange,registerSave}){
         const l=lines[i];
         if(!l._touched)continue;
         const lineNum=i+1;
-        const body={job_id:job.id,job_number:job.job_number,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
+        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
         if(l._new){await sbPost('job_line_items',body);}
         else{await sbPatch('job_line_items',l.id,body);}
       }
       // Also compact any untouched lines whose stored line_number is wrong
       // (e.g. legacy rows from imports where line_number wasn't 1..N).
       await compactLineNumbers(lines);
-      const fresh=await recomputeJobFromLines();
-      setLines((fresh?.lines||[]).map(l=>({...l,_existing:true})));
-      setDirty(false);
-      setToast('Line items saved — summary fields updated');
-      // CRITICAL: pass the recomputed summary up to the parent EditPanel
-      // so its `form` state has the fresh totals. Without this, handleSave
-      // will subsequently PATCH the stale `form.total_lf*` values back over
-      // the DB, undoing the aggregator's work. Caused the Emberly Sec 8-11
-      // (25H046) bug Amiee reported on 2026-04-28: SW LF updated to 8210
-      // in line items, but Totals tab still showed 1,236 (the pre-update
-      // value) and handleSave was overwriting the correct DB rollup.
-      if(onChange)onChange(fresh?.summary||null);
+      // CO mode: skip the job-header recompute. CO sub-lines flow to
+      // change_orders.amount via trg_recalc_co_amount_from_sublines; they
+      // never roll up to job header LF totals. Just reload our scoped lines.
+      if(coId){
+        await loadLines();
+        setDirty(false);
+        setToast('Change order line items saved');
+        // Notify parent so the CO card's read-only print view refreshes
+        // its `coLines[c.id]` snapshot. Without this, the print view stays
+        // stale after the user edits sub-lines via the editor.
+        if(onCoLinesChanged)onCoLinesChanged();
+      }else{
+        const fresh=await recomputeJobFromLines();
+        setLines((fresh?.lines||[]).map(l=>({...l,_existing:true})));
+        setDirty(false);
+        setToast('Line items saved — summary fields updated');
+        // CRITICAL: pass the recomputed summary up to the parent EditPanel
+        // so its `form` state has the fresh totals. Without this, handleSave
+        // will subsequently PATCH the stale `form.total_lf*` values back over
+        // the DB, undoing the aggregator's work. Caused the Emberly Sec 8-11
+        // (25H046) bug Amiee reported on 2026-04-28: SW LF updated to 8210
+        // in line items, but Totals tab still showed 1,236 (the pre-update
+        // value) and handleSave was overwriting the correct DB rollup.
+        if(onChange)onChange(fresh?.summary||null);
+      }
     }catch(e){setErr('Save failed: '+e.message);}
     setSaving(false);
   };
@@ -1409,7 +1478,9 @@ function LineItemsEditor({job,onChange,registerSave}){
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
+  // Lump Sum kept as the stored fence_type value; UI label is "Misc. Lump
+  // Sum" per David 2026-05-05. No data migration needed — display layer only.
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -1424,12 +1495,29 @@ function LineItemsEditor({job,onChange,registerSave}){
       <button onClick={saveAll} disabled={saving} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309',opacity:saving?0.5:1,whiteSpace:'nowrap'}}>{saving?'Saving…':'Save Lines Now'}</button>
     </div>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-      <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Fence Line Items ({lines.length})</div>
+      <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>{coId?`Change Order Line Items (${lines.length})`:`Fence Line Items (${lines.length})`}</div>
       <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:'6px 14px',fontSize:12,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
     </div>
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
       {lines.map((l,idx)=>{
         const isPC=l.fence_type==='PC';
+        const isPerPiece=!!PER_PIECE_TYPES_MAP[l.fence_type];
+        const isFixedDollar=!!FIXED_DOLLAR_TYPES_MAP[l.fence_type];
+        const isNonFence=isPerPiece||isFixedDollar;
+        // Type-specific placeholder copy for the Description field. David
+        // (2026-05-05) specified that Insurance and Misc. Lump Sum show only
+        // Price + Description; Gate Controls (and the rest of the per-piece
+        // family) show Number of Pieces + Price + Description.
+        const descPlaceholder=
+          l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':
+          l.fence_type==='Gate Controls'?'e.g. Keypad + sliding motor':
+          l.fence_type==='Columns'?'e.g. 8x8 columns at corners':
+          l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':
+          l.fence_type==='Permit'?'e.g. City of Sugar Land permit':
+          l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':
+          l.fence_type==='Maint Bond'?'e.g. 2-year maintenance bond':
+          l.fence_type==='Insurance'?'e.g. Builders Risk':
+          'Optional notes for this line';
         return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.05)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F4F4F2',padding:'14px 20px',borderBottom:'1px solid #E5E3E0'}}>
             <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{idx+1}</span>
@@ -1442,35 +1530,33 @@ function LineItemsEditor({job,onChange,registerSave}){
               : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
           </div>
           <div style={{padding:20}}>
-            {(() => {
-              const isFlat = !!FLAT_COST_TYPES[l.fence_type];
-              return <>
-            {/* Row 1: Type, Height, LF, Rate, Line Value (Height/LF hidden for flat-cost) */}
+            {/* Row 1: Type, [Height for fence], [LF/Number of Pieces — depends on type], Rate/Price, Line Value */}
             <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
               <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>Type</label>
                 <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
                   {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
                 </select>
               </div>
-              {!isFlat&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
+              {!isNonFence&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>Height</label>
                 <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
                   <option value="">—</option>
                   {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
                   {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
                 </select>
               </div>}
-              {!isFlat&&<div style={{width:110,flexShrink:0}}><label style={fieldLabel}>LF</label>
-                <input type="number" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder="0" style={{...inp,width:'100%'}}/>
+              {/* LF / Number of Pieces — fence shows "LF"; per-piece shows "Number of Pieces"; fixed-dollar hides this field entirely (lf is forced to 1). */}
+              {!isFixedDollar&&<div style={{width:140,flexShrink:0}}><label style={fieldLabel}>{isPerPiece?'Number of Pieces':'LF'}</label>
+                <input type="number" min="0" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder={isPerPiece?'1':'0'} style={{...inp,width:'100%'}}/>
               </div>}
-              <div style={{width:120,flexShrink:0}}><label style={fieldLabel}>{isFlat?'Amount ($)':'Rate ($/LF)'}</label>
-                <input type="number" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
+              <div style={{width:130,flexShrink:0}}><label style={fieldLabel}>{isFixedDollar?'Price ($)':isPerPiece?'Price / Piece ($)':'Rate ($/LF)'}</label>
+                <input type="number" min="0" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
               </div>
               <div style={{width:150,flexShrink:0}}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
               </div>
             </div>
-            {/* Row 2: Style, Color, Produced (entirely hidden for flat-cost) */}
-            {!isFlat&&<div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
+            {/* Row 2: Style, Color, Produced — only on fence types */}
+            {!isNonFence&&<div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12}}>
               <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
                 <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)}
                   style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
@@ -1492,13 +1578,11 @@ function LineItemsEditor({job,onChange,registerSave}){
                 </label>
               </div>}
             </div>}
-            {/* Row 3: Description (always visible) */}
+            {/* Row 3: Description — always visible across every type */}
             <div>
               <label style={fieldLabel}>Description</label>
-              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={isFlat?(l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':l.fence_type==='Columns'?'e.g. 12 columns @ $850 each':l.fence_type==='Permit'?'e.g. City of Sugar Land permit':l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':'e.g. 2-year maintenance bond'):'Optional notes for this line'} style={{...inp,width:'100%'}}/>
+              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={descPlaceholder} style={{...inp,width:'100%'}}/>
             </div>
-            </>;
-            })()}
           </div>
         </div>;
       })}
@@ -1511,9 +1595,10 @@ function LineItemsEditor({job,onChange,registerSave}){
         when there's nothing dirty (matches the top button's behavior). */}
     {lines.length>0&&<button onClick={saveAll} disabled={!dirty||saving} style={{width:'100%',padding:'14px',marginTop:10,border:'none',background:dirty&&!saving?'#8A261D':'#9E9B96',color:'#FFF',borderRadius:10,fontSize:14,fontWeight:800,cursor:(!dirty||saving)?'not-allowed':'pointer',opacity:(!dirty||saving)?0.7:1,letterSpacing:0.3}}>{saving?'Saving…':dirty?'💾 Save Lines':'Save Lines (no unsaved changes)'}</button>}
     {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
-      <span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>
-      <span style={{marginLeft:'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Total LF: {totals.total.toLocaleString()}</span>
-      <span style={{fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8A261D'}}>Total Value: {$(totals.value)}</span>
+      {/* PC LF (produced) is a main-contract concept — hide on CO sub-line scope */}
+      {!coId&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>}
+      <span style={{marginLeft:coId?'0':'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>{coId?'CO Total Pieces:':'Total LF:'} {totals.total.toLocaleString()}</span>
+      <span style={{marginLeft:coId?'auto':'0',fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8A261D'}}>{coId?'CO Total Value:':'Total Value:'} {$(totals.value)}</span>
     </div>}
     {dirty&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontStyle:'italic'}}>⚠ Unsaved changes — click "Save Lines" to commit</div>}
   </div>;
@@ -2280,6 +2365,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
+  // editingCoId — when set, the matching CO card expands its inline
+  // LineItemsEditor (scoped by co_id) so the user can edit the CO's
+  // sub-lines using the same component as the main contract. Toggle via
+  // the "📝 Edit Line Items" button on each CO card. New COs auto-open
+  // their editor immediately (set in createNewCO below).
+  const[editingCoId,setEditingCoId]=useState(null);
   const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{description:'',amount:''}]});
   // Map of CO id → array of its sub-line items (loaded from job_line_items where co_id matches).
   // Sub-lines are flat-cost items (lf=1, contract_rate=Amount), category derived from the CO context.
@@ -2304,6 +2395,39 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     }
   };
   useEffect(()=>{reloadCOs();},[job?.id]);
+  // Create a new Change Order in one click. Auto-numbers as the next
+  // CO-XXX in the per-job sequence (CO-001, CO-002, ...). Inserts a
+  // Pending row with amount=0; sub-lines are added via the inline
+  // LineItemsEditor that auto-opens on the new CO card. The DB trigger
+  // recompiles change_orders.amount from sub-lines as they're saved.
+  const createNewCO=async()=>{
+    if(!job?.id){setCOToast({msg:'Save the project first',kind:'error'});return;}
+    // Find the highest existing CO-XXX number for this job and add 1.
+    let maxNum=0;
+    (coList||[]).forEach(c=>{
+      const m=String(c.co_number||'').match(/CO-(\d+)/i);
+      if(m){const v=parseInt(m[1],10);if(v>maxNum)maxNum=v;}
+    });
+    const nextNum=`CO-${String(maxNum+1).padStart(3,'0')}`;
+    try{
+      const inserted=await sbPost('change_orders',{
+        job_id:job.id,
+        job_number:job.job_number||null,
+        co_number:nextNum,
+        amount:0,
+        status:'Pending',
+        date_submitted:new Date().toISOString().split('T')[0],
+      },{throwOnError:true,returnRepresentation:true});
+      const newCo=Array.isArray(inserted)?inserted[0]:inserted;
+      await reloadCOs();
+      if(newCo&&newCo.id)setEditingCoId(newCo.id);
+      setShowCOForm(false); // Hide the legacy long-form create UI if it was open
+      setCOToast({msg:`${nextNum} created — add line items below`,kind:'success'});
+    }catch(e){
+      console.error('[createNewCO]',e);
+      setCOToast({msg:'Could not create CO: '+(e.message||e),kind:'error'});
+    }
+  };
   useEffect(()=>{
     if(isNew||!job?.job_number){setSalesOrigin(null);return;}
     sbGet('leads',`job_number=eq.${encodeURIComponent(job.job_number)}&limit=1`).then(d=>setSalesOrigin((d&&d[0])||null)).catch(()=>setSalesOrigin(null));
@@ -3144,10 +3268,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               const revised=orig+cumThis;
               return<div key={c.id} style={{border:'1px solid #1A1A1A',borderRadius:8,overflow:'hidden',background:'#FFF'}}>
                 {/* CO Form Header — matches the screenshot top bar */}
-                <div style={{padding:'10px 14px',background:'#1A1A1A',color:'#FFF',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,letterSpacing:0.5}}>Change Order (CO) to Contract # {job.job_number||'—'}</div>
-                  <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <div style={{padding:'10px 14px',background:'#1A1A1A',color:'#FFF',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
+                  <div style={{fontFamily:'Syne',fontSize:14,fontWeight:900,letterSpacing:0.5}}>{c.co_number||`Change Order ${idx+1}`} — Contract # {job.job_number||'—'}</div>
+                  <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:4,background:isApproved?'#10B981':isRejected?'#DC2626':'#B45309',color:'#FFF',textTransform:'uppercase',letterSpacing:0.5}}>{c.status}</span>
+                    {/* Edit toggle — opens the inline LineItemsEditor scoped to this CO. */}
+                    <button onClick={()=>setEditingCoId(editingCoId===c.id?null:c.id)} style={{background:editingCoId===c.id?'#FFF':'transparent',border:'1px solid #FFF',borderRadius:5,padding:'4px 10px',color:editingCoId===c.id?'#1A1A1A':'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>{editingCoId===c.id?'🔒 Done Editing':'📝 Edit Line Items'}</button>
                     {isPending&&<>
                       <button onClick={()=>approveCO(c)} style={{background:'#10B981',border:'none',borderRadius:5,padding:'4px 10px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>✓ Approve</button>
                       <button onClick={()=>rejectCO(c)} style={{background:'#DC2626',border:'none',borderRadius:5,padding:'4px 10px',color:'#FFF',fontSize:10,fontWeight:700,cursor:'pointer'}}>✗ Reject</button>
@@ -3216,6 +3342,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                     </tfoot>
                   </table>
 
+                  {/* Inline LineItemsEditor — same component the main contract
+                      uses, scoped to this CO via co_id. Saves auto-trigger
+                      change_orders.amount recompute (DB trigger), then
+                      onCoLinesChanged refreshes the read-only table above. */}
+                  {editingCoId===c.id&&<div style={{margin:'8px 0 14px',padding:'10px 12px',background:'#FFFBEB',border:'2px solid #F59E0B',borderRadius:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'#92400E',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>✎ Editing line items for {c.co_number||`CO ${idx+1}`}</div>
+                    <LineItemsEditor
+                      job={job}
+                      coId={c.id}
+                      onCoLinesChanged={reloadCOs}
+                    />
+                  </div>}
+
                   {/* Contract Summary — auto-computed */}
                   <div style={{border:'1px solid #1A1A1A',padding:12,marginBottom:12}}>
                     <div style={{fontFamily:'Syne',fontWeight:900,fontSize:11,letterSpacing:0.5,marginBottom:8,textTransform:'uppercase'}}>Contract Summary:</div>
@@ -3247,11 +3386,15 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             })}
           </div>
 
-          {/* Add New CO — collapsed by default, expands to full form */}
-          {!showCOForm?<button onClick={()=>setShowCOForm(true)} style={{width:'100%',padding:'12px',border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ New Change Order</button>
-          :<div style={{border:'2px dashed #8A261D',borderRadius:10,padding:14,background:'#FDF4F4'}}>
+          {/* + New Change Order — single click creates a Pending CO with the
+              next CO-XXX number, then auto-opens its inline LineItemsEditor.
+              The legacy long-form create UI (showCOForm) is kept below for
+              backwards compat in case Amiee needs the old flow, but the
+              primary path is the button above. */}
+          <button onClick={createNewCO} style={{width:'100%',padding:'12px',border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',marginBottom:showCOForm?14:0}}>+ New Change Order</button>
+          {showCOForm&&<div style={{border:'2px dashed #8A261D',borderRadius:10,padding:14,background:'#FDF4F4'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>+ New Change Order</div>
+              <div style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5}}>Legacy CO entry form</div>
               <button onClick={()=>setShowCOForm(false)} style={{background:'transparent',border:'1px solid #E5E3E0',borderRadius:6,padding:'4px 10px',color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer'}}>Cancel</button>
             </div>
 
