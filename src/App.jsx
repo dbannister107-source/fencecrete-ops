@@ -17686,11 +17686,17 @@ function MapPage({ jobs, onNav }) {
       out.byMarketDays[mk] = (out.byMarketDays[mk] || 0) + n(j.est_install_days);
       const pm = j.pm || '—';
       out.byPm[pm] = (out.byPm[pm] || 0) + 1;
-      const cw = j.crew_id ? (crewById[j.crew_id]?.name || '?') : 'Unassigned';
+      // BY CREW rollup — group by crew_leader_id (the canonical crew assignment).
+      // Was reading j.crew_id which is a dead column — 0 jobs in the system have
+      // it set, so the rollup always rendered "Unassigned: <total>" regardless of
+      // who was assigned. Switched 2026-05-04 to crew_leader_id which IS populated
+      // and matches what the Crew Lead filter above already groups on. Resolves
+      // the 'filtered to Nohee Estrada → 3 jobs · BY CREW Unassigned: 3' confusion.
+      const cw = j.crew_leader_id ? (crewLeaderById[j.crew_leader_id]?.name || '?') : 'Unassigned';
       out.byCrew[cw] = (out.byCrew[cw] || 0) + 1;
     });
     return out;
-  }, [filtered, getReadiness, horizon, crewById]);
+  }, [filtered, getReadiness, horizon, crewLeaderById]);
 
   // Geographic clusters within the filtered set. Only computed when toggled
   // on (it's O(n²) so we don't run it constantly).
@@ -18736,7 +18742,7 @@ function MapPage({ jobs, onNav }) {
               </div>)}
             </div>
             <div style={{ borderTop: '1px solid #E5E3E0', paddingTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By Crew</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#625650', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>By Crew Lead</div>
               {Object.entries(counts.byCrew).sort((a,b) => b[1] - a[1]).map(([k,v]) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
                 <span style={{ color: k === 'Unassigned' ? '#9E9B96' : '#1A1A1A' }}>{k}</span>
                 <span style={{ fontFamily: 'Inter', fontWeight: 700 }}>{v}</span>
