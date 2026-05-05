@@ -2280,7 +2280,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
   const handleDup=async()=>{const{id,created_at,updated_at,job_number,...rest}=form;rest.ytd_invoiced=0;rest.pct_billed=0;rest.left_to_bill=n(rest.adj_contract_value||rest.contract_value);rest.status='contract_review';rest.last_billed=null;rest.notes='';rest.contract_date=null;rest.est_start_date=null;try{rest.job_number=await getNextJobNumber(rest.market);}catch(e){rest.job_number='';}rest.fence_addons=syncFenceAddons(rest);const saved=await sbPost('jobs',rest);if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',`Duplicated from ${job.job_number}`);}onSaved('Project duplicated');};
   const[coList,setCOList]=useState([]);const[showCOForm,setShowCOForm]=useState(false);
-  const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{bu:'',obj:'',subs:'',description:'',amount:''}]});
+  const[coForm,setCOForm]=useState({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{description:'',amount:''}]});
   // Map of CO id → array of its sub-line items (loaded from job_line_items where co_id matches).
   // Sub-lines are flat-cost items (lf=1, contract_rate=Amount), category derived from the CO context.
   const[coLines,setCOLines]=useState({});
@@ -2348,7 +2348,10 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           lf:1, contract_rate:n(l.amount),
           category:'change_order', taxable:true, is_produced:false,
           co_id:newCO.id,
-          bu:l.bu||null, obj:l.obj||null, subs:l.subs||null,
+          // bu / obj / subs columns retired from UI 2026-05-05 (David). DB
+          // columns kept (job_line_items.bu/obj/subs) so historical CO PDFs
+          // still render correctly. New CO sub-lines persist these as null.
+          bu:null, obj:null, subs:null,
           description:l.description||null,
         }));
         try{
@@ -2358,7 +2361,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       // Non-blocking email alert
       sbFn('billing-alerts', {type:'co_submitted',jobName:job.job_name,jobNumber:job.job_number,coNumber:autoNum,amount:computedAmount,description:coForm.description||'',submittedBy:job.pm||'PM',recipients:['david@fencecrete.com','alex@fencecrete.com'],subject:`New Change Order Submitted — ${job.job_name} CO#${autoNum}`}).catch(e=>console.error('CO email alert failed:',e));
       setShowCOForm(false);
-      setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{bu:'',obj:'',subs:'',description:'',amount:''}]});
+      setCOForm({co_number:'',date_submitted:'',date_approved:'',amount:'',description:'',status:'Pending',approved_by:'',notes:'',pdfFile:null,lines:[{description:'',amount:''}]});
       await reloadCOs();
       setCOToast({msg:`CO #${autoNum} submitted (${$(computedAmount)}) — notification sent`,kind:'success'});
     }catch(e){console.error('CO error:',e);setCOToast({msg:'CO save failed: '+e.message,kind:'error'});}
@@ -3179,13 +3182,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                     </div>
                   </div>
 
-                  {/* CO line items table — matches BU/Obj/Subs/Description/Subl/Amount layout */}
+                  {/* CO line items table — Description/Subl/Amount.
+                      BU/Obj/Subs columns retired 2026-05-05 (David). */}
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,marginBottom:10,border:'1px solid #1A1A1A'}}>
                     <thead>
                       <tr style={{background:'#F4F4F2'}}>
-                        <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'left',width:50}}>BU</th>
-                        <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'left',width:50}}>Obj</th>
-                        <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'left',width:50}}>Subs</th>
                         <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'left'}}>Description</th>
                         <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',width:100}}>Subl</th>
                         <th style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',width:110}}>Amount</th>
@@ -3197,17 +3198,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                             show the CO's description + total as a single row so
                             the form looks complete. New COs entered via this UI
                             will have explicit sub-lines. */}
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',color:'#9E9B96',fontSize:10,fontStyle:'italic'}}>—</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{c.description||'(no description)'}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter'}}>{$(c.amount)}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(c.amount)}</td>
                       </tr>
                       :lines.map(li=><tr key={li.id}>
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.bu||''}</td>
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.obj||''}</td>
-                        <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.subs||''}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px'}}>{li.description||'—'}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter'}}>{$(li.contract_rate)}</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'4px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(li.line_value)}</td>
@@ -3215,7 +3210,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                     </tbody>
                     <tfoot>
                       <tr style={{background:'#F9F8F6'}}>
-                        <td colSpan="5" style={{border:'1px solid #1A1A1A',padding:'5px 8px',fontWeight:800}}>Change Order Total</td>
+                        <td colSpan="2" style={{border:'1px solid #1A1A1A',padding:'5px 8px',fontWeight:800}}>Change Order Total</td>
                         <td style={{border:'1px solid #1A1A1A',padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:900,fontSize:13}}>{$(c.amount)}</td>
                       </tr>
                     </tfoot>
@@ -3265,15 +3260,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <div><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>Date</label><input type="date" value={coForm.date_submitted} onChange={e=>setCOForm(f=>({...f,date_submitted:e.target.value}))} style={{...inputS,fontSize:12}}/></div>
             </div>
 
-            {/* CO sub-line editor — table with BU/Obj/Subs/Description/Amount */}
+            {/* CO sub-line editor — Description / Amount.
+                BU/Obj/Subs columns retired 2026-05-05 (David). */}
             <div style={{marginBottom:10,padding:10,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8}}>
               <div style={{fontSize:10,color:'#625650',marginBottom:6,fontWeight:700,textTransform:'uppercase'}}>Line Items</div>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,marginBottom:8}}>
                 <thead>
                   <tr style={{background:'#F4F4F2',fontSize:9,textTransform:'uppercase'}}>
-                    <th style={{padding:'4px 6px',textAlign:'left',width:50}}>BU</th>
-                    <th style={{padding:'4px 6px',textAlign:'left',width:50}}>Obj</th>
-                    <th style={{padding:'4px 6px',textAlign:'left',width:50}}>Subs</th>
                     <th style={{padding:'4px 6px',textAlign:'left'}}>Description</th>
                     <th style={{padding:'4px 6px',textAlign:'right',width:120}}>Amount</th>
                     <th style={{width:30}}></th>
@@ -3281,21 +3274,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 </thead>
                 <tbody>
                   {(coForm.lines||[]).map((l,li)=><tr key={li}>
-                    <td style={{padding:2}}><input value={l.bu} onChange={e=>setCOForm(f=>({...f,lines:f.lines.map((x,i)=>i===li?{...x,bu:e.target.value}:x)}))} style={{...inputS,fontSize:11,padding:'4px 6px',width:'100%'}}/></td>
-                    <td style={{padding:2}}><input value={l.obj} onChange={e=>setCOForm(f=>({...f,lines:f.lines.map((x,i)=>i===li?{...x,obj:e.target.value}:x)}))} style={{...inputS,fontSize:11,padding:'4px 6px',width:'100%'}}/></td>
-                    <td style={{padding:2}}><input value={l.subs} onChange={e=>setCOForm(f=>({...f,lines:f.lines.map((x,i)=>i===li?{...x,subs:e.target.value}:x)}))} style={{...inputS,fontSize:11,padding:'4px 6px',width:'100%'}}/></td>
                     <td style={{padding:2}}><input value={l.description} onChange={e=>setCOForm(f=>({...f,lines:f.lines.map((x,i)=>i===li?{...x,description:e.target.value}:x)}))} placeholder="e.g. P&P Bonds" style={{...inputS,fontSize:11,padding:'4px 6px',width:'100%'}}/></td>
                     <td style={{padding:2}}><input type="number" value={l.amount} onChange={e=>setCOForm(f=>({...f,lines:f.lines.map((x,i)=>i===li?{...x,amount:e.target.value}:x)}))} placeholder="0.00" style={{...inputS,fontSize:11,padding:'4px 6px',width:'100%',textAlign:'right',fontFamily:'Inter',fontWeight:700}}/></td>
                     <td style={{padding:2,textAlign:'center'}}>{(coForm.lines||[]).length>1&&<button onClick={()=>setCOForm(f=>({...f,lines:f.lines.filter((_,i)=>i!==li)}))} style={{background:'transparent',border:'none',color:'#DC2626',cursor:'pointer',fontSize:14,fontWeight:800,padding:'0 4px'}} title="Remove line">×</button>}</td>
                   </tr>)}
                   <tr style={{background:'#F9F8F6'}}>
-                    <td colSpan="4" style={{padding:'5px 8px',fontSize:11,fontWeight:800,textAlign:'right'}}>Change Order Total:</td>
+                    <td style={{padding:'5px 8px',fontSize:11,fontWeight:800,textAlign:'right'}}>Change Order Total:</td>
                     <td style={{padding:'5px 8px',textAlign:'right',fontFamily:'Inter',fontWeight:900,fontSize:13}}>{$((coForm.lines||[]).reduce((s,l)=>s+n(l.amount),0))}</td>
                     <td></td>
                   </tr>
                 </tbody>
               </table>
-              <button onClick={()=>setCOForm(f=>({...f,lines:[...(f.lines||[]),{bu:'',obj:'',subs:'',description:'',amount:''}]}))} style={{padding:'4px 10px',border:'1px dashed #8A261D',background:'#FFF',color:'#8A261D',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
+              <button onClick={()=>setCOForm(f=>({...f,lines:[...(f.lines||[]),{description:'',amount:''}]}))} style={{padding:'4px 10px',border:'1px dashed #8A261D',background:'#FFF',color:'#8A261D',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
             </div>
 
             <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase'}}>CO Description / Scope</label><textarea value={coForm.description} onChange={e=>setCOForm(f=>({...f,description:e.target.value}))} rows={2} placeholder="Describe the scope of this change order..." style={{...inputS,fontSize:12,resize:'vertical'}}/></div>
