@@ -1484,6 +1484,11 @@ function LineItemsEditor({job,onChange,registerSave}){
       {lines.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:12,border:'1px dashed #E5E3E0',borderRadius:10,background:'#F9F8F6'}}>No line items — click "+ Add Line" to create one</div>}
     </div>
     <button onClick={addLine} style={{width:'100%',padding:'10px',marginTop:10,border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
+    {/* Bottom Save Lines button — mirrors the top-of-panel one. Visible
+        directly under the last line item so PMs adding lines bottom-up
+        don't have to scroll back to the top header to save. Disabled
+        when there's nothing dirty (matches the top button's behavior). */}
+    {lines.length>0&&<button onClick={saveAll} disabled={!dirty||saving} style={{width:'100%',padding:'14px',marginTop:10,border:'none',background:dirty&&!saving?'#8A261D':'#9E9B96',color:'#FFF',borderRadius:10,fontSize:14,fontWeight:800,cursor:(!dirty||saving)?'not-allowed':'pointer',opacity:(!dirty||saving)?0.7:1,letterSpacing:0.3}}>{saving?'Saving…':dirty?'💾 Save Lines':'Save Lines (no unsaved changes)'}</button>}
     {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
       <span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>
       <span style={{marginLeft:'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Total LF: {totals.total.toLocaleString()}</span>
