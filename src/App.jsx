@@ -10910,13 +10910,27 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           {sorted.map(r=>{
             const total=n(r.panels_in_cure)+n(r.posts_in_cure)+n(r.rails_in_cure)+n(r.caps_in_cure);
             if(total===0)return null;
-            const cell=(v)=>v>0?<span style={{fontFamily:'Inter',fontWeight:700,color:'#1A1A1A'}}>{v}</span>:<span style={{color:'#C8C4BD'}}>—</span>;
-            return<div key={r.style} style={{display:'grid',gridTemplateColumns:'minmax(160px,1.5fr) repeat(4, minmax(70px,1fr)) minmax(120px,1.2fr)',gap:8,padding:'6px 8px',fontSize:12,borderBottom:'1px solid #F4F4F2',alignItems:'center'}}>
+            // Look up the style's pool sizes from capacityLookup so we can
+            // show "in cure / total" for each pool. Resolves canonical →
+            // legacy style name the same way the auto-fill helpers do, and
+            // picks the height-agnostic row when the style spans heights.
+            const lookupName=planLookupNameFor(r.style)||r.style;
+            const capRow=(capacityLookup||[]).find(c=>c.style_name===lookupName)||null;
+            const cell=(inCure,pool)=>{
+              const free=Math.max(0,n(pool)-n(inCure));
+              if(n(inCure)===0&&n(pool)===0)return <span style={{color:'#C8C4BD'}}>—</span>;
+              if(n(inCure)===0)return <span style={{color:'#065F46',fontWeight:700,fontFamily:'Inter'}} title={`${free} free of ${pool} total`}>{free} free</span>;
+              return <span title={`${inCure} in cure · ${free} free · ${pool} total`}>
+                <span style={{fontFamily:'Inter',fontWeight:700,color:'#B45309'}}>{inCure}</span>
+                <span style={{color:'#9E9B96',fontSize:10}}> / {pool}</span>
+              </span>;
+            };
+            return<div key={r.style} style={{display:'grid',gridTemplateColumns:'minmax(160px,1.5fr) repeat(4, minmax(80px,1fr)) minmax(120px,1.2fr)',gap:8,padding:'6px 8px',fontSize:12,borderBottom:'1px solid #F4F4F2',alignItems:'center'}}>
               <div style={{fontWeight:600,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.style}</div>
-              <div style={{textAlign:'right'}}>{cell(n(r.panels_in_cure))}</div>
-              <div style={{textAlign:'right'}}>{cell(n(r.posts_in_cure))}</div>
-              <div style={{textAlign:'right'}}>{cell(n(r.rails_in_cure))}</div>
-              <div style={{textAlign:'right'}}>{cell(n(r.caps_in_cure))}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.panels_in_cure),capRow?n(capRow.panels_owned):0)}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.posts_in_cure),capRow?n(capRow.posts_total_at_height):0)}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.rails_in_cure),capRow?n(capRow.rails_total):0)}</div>
+              <div style={{textAlign:'right'}}>{cell(n(r.caps_in_cure),capRow?n(capRow.caps_total):0)}</div>
               <div style={{fontSize:11,color:'#625650'}}>
                 {r.earliest_ready_at?<>
                   <span style={{fontFamily:'Inter',fontWeight:700,color:'#065F46'}}>in {fmtCountdown(r.earliest_ready_at)}</span>
