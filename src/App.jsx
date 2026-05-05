@@ -3013,14 +3013,39 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       {a.description&&<div style={{fontSize:11,color:'#625650',marginTop:3,fontStyle:'italic'}}>{a.description}</div>}
                     </div>
                     <div style={{display:'flex',gap:6,flexShrink:0}}>
+                      {/* View — opens the signed URL inline in a new tab. Browser
+                          handles the preview (PDF viewer, image viewer, etc.). */}
                       <button
                         onClick={async()=>{
                           try{const url=await getSignedUrl(a);window.open(url,'_blank');}
                           catch(e){setAttachmentsToast({kind:'error',msg:`Could not open file: ${e.message}`});}
                         }}
-                        title={isImage?'View image':'Download file'}
+                        title="View in browser"
                         style={{padding:'5px 10px',borderRadius:6,border:'1px solid #E5E3E0',background:'#FFF',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}
-                      >{isImage?'View':'Download'}</button>
+                      >👁 View</button>
+                      {/* Download — forces a file save to disk. We append
+                          `?download=<filename>` to the Supabase Storage signed
+                          URL; that flips the response Content-Disposition from
+                          inline to attachment so the browser saves rather than
+                          previews. The <a download> attribute is a belt-and-
+                          suspenders hint for older browsers. */}
+                      <button
+                        onClick={async()=>{
+                          try{
+                            const url=await getSignedUrl(a);
+                            const filename=a.filename||'download';
+                            const dlUrl=url+(url.includes('?')?'&':'?')+'download='+encodeURIComponent(filename);
+                            const link=document.createElement('a');
+                            link.href=dlUrl;
+                            link.download=filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            link.remove();
+                          }catch(e){setAttachmentsToast({kind:'error',msg:`Could not download file: ${e.message}`});}
+                        }}
+                        title="Download to your device"
+                        style={{padding:'5px 10px',borderRadius:6,border:'1px solid #E5E3E0',background:'#FFF',color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                      >⬇ Download</button>
                       {canEdit&&<button
                         onClick={()=>setAttachmentToDelete(a)}
                         title="Delete document"
