@@ -4735,7 +4735,23 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   const[pmF,setPmF]=useState(new Set());
   const[primaryTypeF,setPrimaryTypeF]=useState(new Set());
   const[addonsF,setAddonsF]=useState(new Set());
-  const clearAllFilters=()=>{setStatusF(new Set());setMktF(new Set());setPmF(new Set());setPrimaryTypeF(new Set());setAddonsF(new Set());};
+  // Special-filter slot — drop-in for breadcrumb-style filters that come
+  // from elsewhere in the app (e.g. CoPilotHome insight click, future Reports
+  // drill-ins). Schema: {type, filter, label}. The filter useMemo applies it
+  // by `filter` slug; the banner renders the `label` with a Clear (×) button.
+  // Hydrated once from localStorage on mount; the breadcrumb is consumed
+  // (cleared) so a refresh of the projects page doesn't keep re-applying it.
+  const[specialFilter,setSpecialFilter]=useState(null);
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem('fc_projects_filter');
+      if(!raw)return;
+      const parsed=JSON.parse(raw);
+      if(parsed&&parsed.filter){setSpecialFilter(parsed);}
+      localStorage.removeItem('fc_projects_filter');
+    }catch(e){/* ignore — bad JSON or no localStorage */}
+  },[]);
+  const clearAllFilters=()=>{setStatusF(new Set());setMktF(new Set());setPmF(new Set());setPrimaryTypeF(new Set());setAddonsF(new Set());setSpecialFilter(null);};
   // Fetch line items so add-on badges auto-derive from actual line data (Gate, Removal, Lump Sum, SW, WI)
   const[plLineItems,setPlLineItems]=useState([]);
   useEffect(()=>{sbGet('job_line_items','select=job_number,fence_type,description&limit=5000').then(d=>setPlLineItems(d||[])).catch(()=>{});},[refreshKey]);
@@ -4844,8 +4860,16 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
       if(addonsF.has('has_any'))f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.length>0);
       else f=f.filter(j=>Array.isArray(j.fence_addons)&&j.fence_addons.some(a=>addonsF.has(a)));
     }
+    // Special-filter slot — applied last. Currently supports
+    // `missing_billing_trigger` from the CoPilotHome insight click; new
+    // filter types can be added as additional cases without touching the
+    // call site or the banner rendering.
+    if(specialFilter&&specialFilter.filter==='missing_billing_trigger'){
+      const BILLING_GATE_STATUSES=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
+      f=f.filter(j=>BILLING_GATE_STATUSES.has(j.status)&&n(j.contract_value)>0&&!j.billing_trigger&&!j.billing_date);
+    }
     return[...f].sort((a,b)=>{let av=a[sortCol],bv=b[sortCol];if(typeof av==='string')return sortDir==='asc'?(av||'').localeCompare(bv||''):(bv||'').localeCompare(av||'');return sortDir==='asc'?n(av)-n(bv):n(bv)-n(av);});
-  },[augmentedJobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,sortCol,sortDir]);
+  },[augmentedJobs,search,statusF,mktF,pmF,primaryTypeF,addonsF,specialFilter,sortCol,sortDir]);
   const exportCSV=rows=>{const cols=visCols.map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);const h=cols.map(c=>c.label).join(',');const r=rows.map(j=>cols.map(c=>{let v=j[c.key];if(Array.isArray(v))v=v.join('; ');return typeof v==='string'&&v.includes(',')?`"${v}"`:(v??'');}).join(','));const b=new Blob([h+'\n'+r.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fencecrete-projects.csv';a.click();};
   const saveInline=async()=>{if(!inlE)return;
     // Defense in depth (Apr 20 2026): reject inline edits on columns this user
@@ -4883,6 +4907,18 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
   useEffect(()=>{if(!showCols)return;const h=e=>{if(colRef.current&&!colRef.current.contains(e.target))setShowCols(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[showCols]);
   return(<div>
     {toast&&<Toast message={typeof toast==='string'?toast:toast.message} isError={typeof toast==='object'&&toast.isError} onDone={()=>setToast(null)}/>}
+    {/* Special-filter banner — surfaces breadcrumb-style filters that came
+        from elsewhere (CoPilotHome insight click, etc). Renders the filter
+        label + "Showing N of M" + a Clear (×) button. Hidden when no
+        special filter is active. */}
+    {specialFilter&&<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',marginBottom:8,background:'#FEF3C7',border:'1px solid #F59E0B',borderLeft:'4px solid #B45309',borderRadius:8}}>
+      <span style={{fontSize:18}}>🔍</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#92400E'}}>Filtered: {specialFilter.label}</div>
+        <div style={{fontSize:11,color:'#625650'}}>Showing {filtered.length} job{filtered.length===1?'':'s'} matching this filter. Other Project filters (market, PM, status) still apply on top.</div>
+      </div>
+      <button onClick={()=>setSpecialFilter(null)} style={{background:'#FFF',border:'1px solid #B45309',color:'#92400E',borderRadius:6,padding:'4px 12px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>× Clear filter</button>
+    </div>}
     <div style={{position:'sticky',top:0,zIndex:10,background:'#F4F4F2',paddingBottom:8,marginBottom:8}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
         <div style={{display:'flex',alignItems:'baseline',gap:16}}>
@@ -15051,7 +15087,7 @@ function CoPilotHome({onNav}){
 
   // Render the same Co-Pilot panel used in Demand Planning, but with a "Open Demand Planning" link
   return<div style={{marginBottom:24}}>
-    <DemandPlannerCopilot tab="dashboard" data={data}/>
+    <DemandPlannerCopilot tab="dashboard" data={data} onNav={onNav}/>
     <div style={{textAlign:'right',marginTop:8}}>
       <button onClick={()=>onNav&&onNav('demand_planning')} style={{...btnS,fontSize:11,padding:'4px 10px'}}>Open Demand Planning →</button>
     </div>
@@ -15064,7 +15100,7 @@ function CoPilotHome({onNav}){
 //   2. Bottleneck recommendations — specific actions with quantified impact
 //   3. Coverage gaps — missing data that's blocking better recommendations
 // Designed so the rules become the prompt when we wire LLM v1.
-function DemandPlannerCopilot({tab,data,defaultExpanded=false}){
+function DemandPlannerCopilot({tab,data,defaultExpanded=false,onNav}){
   // defaultExpanded controls the initial open/closed state. Default is
   // false everywhere — the panel summary chips ("6 critical · 5 warning ·
   // 2 insight · 3 gap") on the collapsed header already convey "is there
@@ -15271,7 +15307,8 @@ function DemandPlannerCopilot({tab,data,defaultExpanded=false}){
         icon:'🧾',
         title:`${missingBillingTrigger.length} active billable job${missingBillingTrigger.length===1?'':'s'} missing billing trigger ($${Math.round(totalAtRisk/1000).toLocaleString()}k contract value)`,
         body:`${sample}${missingBillingTrigger.length>5?` +${missingBillingTrigger.length-5} more`:''}. Without billing_trigger / billing_day_of_month, PMs see "Bill Date: —" on their bill sheets and AR can't prioritize. Backfill from the contracts (open each job → Money tab → Contract & Billing → set Trigger + Day of Month).`,
-        action:'Amiee: backfill billing_trigger on these jobs from contract docs',
+        action:'Open the list in Projects → backfill billing_trigger for each',
+        link:{type:'projects_filter',filter:'missing_billing_trigger',label:`Missing Billing Trigger (${missingBillingTrigger.length})`},
       });
     }
 
@@ -15386,7 +15423,15 @@ function DemandPlannerCopilot({tab,data,defaultExpanded=false}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',marginBottom:3}}>{ins.title}</div>
             <div style={{fontSize:12,color:'#625650',lineHeight:1.5,marginBottom:6}}>{ins.body}</div>
-            <div style={{fontSize:11,color:sevColor[ins.severity],fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>→ {ins.action}</div>
+            {/* When the insight carries a `link`, render the action as a
+                button that drops a localStorage breadcrumb the destination
+                page reads on mount (existing pattern, mirrors fc_pipeline_highlight
+                / fc_matcalc_prejob). Without onNav available the click
+                becomes a no-op and the action stays as plain text. */}
+            {ins.link&&onNav?<button onClick={()=>{
+              try{localStorage.setItem('fc_projects_filter',JSON.stringify(ins.link));}catch(e){}
+              if(ins.link.type==='projects_filter')onNav('projects');
+            }} style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,color:sevColor[ins.severity],fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,background:sevBg[ins.severity],border:`1px solid ${sevColor[ins.severity]}40`,borderRadius:6,padding:'4px 10px',cursor:'pointer'}}>→ {ins.action}</button>:<div style={{fontSize:11,color:sevColor[ins.severity],fontWeight:700,textTransform:'uppercase',letterSpacing:0.5}}>→ {ins.action}</div>}
           </div>
         </div>)}
       </div>}
