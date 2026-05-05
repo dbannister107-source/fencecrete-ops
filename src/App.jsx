@@ -5084,7 +5084,33 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const[arCOs,setArCOs]=useState([]);
   const fetchInvEntries=useCallback(async(jobId,force=false)=>{if(!jobId)return;if(!force&&invCacheRef.current.has(jobId)){setInvEntries(invCacheRef.current.get(jobId));return;}setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);const arr=d||[];invCacheRef.current.set(jobId,arr);setInvEntries(arr);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
   const fetchArCOs=useCallback(async(jobId)=>{if(!jobId)return;try{const d=await sbGet('change_orders',`job_id=eq.${jobId}&order=created_at.asc`);setArCOs(d||[]);}catch(e){setArCOs([]);}},[]);
-  const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
+  const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();
+// Virginia (AR) feedback 2026-05-05: invoice entry alone leaves the row in
+// "pending" — she has to remember a second click on "Mark Submission
+// Complete." Auto-complete the submission if this invoice is the FIRST
+// non-Opening-Balance entry on a not-yet-reviewed submission. AR can still
+// add additional invoice rows later (the Add Invoice action remains);
+// they'll just no longer flip the review flag a second time.
+const sub=arDetail&&arDetail.sub;
+if(sub&&sub.id&&!sub.ar_reviewed&&sub.job_id===jobId){
+  const priorReal=(invEntries||[]).filter(e=>!(e.notes||'').includes('Opening Balance')).length;
+  if(priorReal===0){
+    try{
+      await sbPatch('pm_bill_submissions',sub.id,{
+        ar_reviewed:true,
+        ar_reviewed_at:new Date().toISOString(),
+        ar_reviewed_by:arForm.ar_reviewed_by||'AR',
+        invoiced_amount:amt,
+        invoice_number:arForm.invoice_number||null,
+        invoice_date:arForm.invoice_date||null,
+        ytd_applied:true,
+      });
+      fetchArSubs();
+      setArDetail(prev=>prev?{...prev,sub:{...prev.sub,ar_reviewed:true,ar_reviewed_at:new Date().toISOString()}}:prev);
+    }catch(e){console.warn('[addInvEntry] auto-mark-reviewed failed; row stays pending:',e);}
+  }
+}
+setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
   const deleteInvEntry=async(entryId,jobId)=>{try{await sbDel('invoice_entries',entryId);invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
@@ -5981,7 +6007,24 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       return isActive||hasSubmission;
     });
     if(selPM)j2=j2.filter(j=>j.pm===selPM);
-    return j2.sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||''));
+    // Virginia (AR) feedback 2026-05-05: PMs need to know which bill sheets
+    // are due earlier in the cycle, not just see them in alphabetical order.
+    // Sort by effective due-day-of-month ASC, falling back to alpha for ties.
+    // billing_trigger='day_of_month' → billing_day_of_month (1..31)
+    // billing_trigger='eom'           → 31 (end of month)
+    // billing_trigger='custom' or null → 99 (sorts to end; unknown / DUC etc.)
+    // Submitted rows still sort by due day so the order matches the missing
+    // ones — keeps the visual mental model consistent.
+    const dueDay=(j)=>{
+      if(j.billing_trigger==='day_of_month')return Math.min(31,Math.max(1,n(j.billing_day_of_month)||99));
+      if(j.billing_trigger==='eom')return 31;
+      return 99;
+    };
+    return j2.sort((a,b)=>{
+      const da=dueDay(a),db=dueDay(b);
+      if(da!==db)return da-db;
+      return (a.job_name||'').localeCompare(b.job_name||'');
+    });
   },[jobs,selPM,selMonth,subs]);
   const fetchSubs=useCallback(async()=>{if(!selPM)return;const d=await sbGet('pm_bill_submissions',`billing_month=eq.${selMonth}&pm=eq.${selPM}&order=created_at.desc`);setSubs(d||[]);},[selMonth,selPM]);
   useEffect(()=>{fetchSubs();},[fetchSubs,refreshKey]);
@@ -6058,6 +6101,19 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   // which is both more correct and avoids the race condition entirely.
   const submitEntry=async(job)=>{
     const form=getForm(job.id);
+    // Virginia (AR) feedback 2026-05-05: PMs were typing LF info into the
+    // free-text Notes field instead of filling the structured LF columns,
+    // so AR has to manually re-type values into the cycle. If the PM has
+    // notes but every LF/labor field is 0 or empty, surface a warning
+    // before submit. Soft gate — they can still proceed if it's a genuine
+    // edge case (lump sum, single-line repair) where there's truly no
+    // structured number to record.
+    const hasNotes=(form.notes||'').trim().length>3;
+    const hasAnyLf=LF_FIELDS.some(f=>n(form[f])>0);
+    if(hasNotes&&!hasAnyLf){
+      const ok=window.confirm('⚠ This bill sheet has notes but none of the LF / labor fields have a value.\n\nAR will have to manually transcribe your notes into the structured fields. Please put the breakdown in the LF / labor sections instead — the Notes field is for unusual situations only.\n\nClick OK to submit anyway (only do this if there is genuinely no structured number to record), or Cancel to go fill in the LF/labor fields.');
+      if(!ok)return;
+    }
     setSaving(job.id);
     try{
       const payload=buildPayload(job,form);
@@ -6144,6 +6200,35 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   };
 
   const missingJobs=activeJobs.filter(j=>!subByJob[j.id]);
+  // Virginia (AR) feedback 2026-05-05: PMs need a heads-up when their bill
+  // sheets are due earlier in the cycle (5th of month vs 25th). Compute due-
+  // urgency per missing job for the current cycle. Returns one of:
+  //   'overdue'  — today is past the due day
+  //   'today'    — due today
+  //   'due_soon' — due within next 7 days
+  //   null       — not urgent OR not a current-month cycle OR no bill date
+  const dueUrgencyFor=(j)=>{
+    if(!isCurrentMonth)return null;
+    const sub=subByJob[j.id];
+    if(sub&&!sub.no_bill_required)return null; // already submitted (any state) — not actionable
+    const today=new Date();
+    const [yy,mm]=selMonth.split('-').map(Number);
+    const lastDayOfMonth=new Date(yy,mm,0).getDate();
+    let dueDay=null;
+    if(j.billing_trigger==='day_of_month')dueDay=Math.min(31,Math.max(1,n(j.billing_day_of_month)||0));
+    else if(j.billing_trigger==='eom')dueDay=lastDayOfMonth;
+    else return null;
+    if(!dueDay)return null;
+    const sameMonth=today.getFullYear()===yy&&(today.getMonth()+1)===mm;
+    if(!sameMonth)return null;
+    const todayDay=today.getDate();
+    if(todayDay>dueDay)return 'overdue';
+    if(todayDay===dueDay)return 'today';
+    if(dueDay-todayDay<=7)return 'due_soon';
+    return null;
+  };
+  const dueOverdueJobs=missingJobs.filter(j=>{const u=dueUrgencyFor(j);return u==='overdue'||u==='today';});
+  const dueSoonJobs=missingJobs.filter(j=>dueUrgencyFor(j)==='due_soon');
   const toggleSelect=(jobId)=>setSelected(prev=>{const s=new Set(prev);if(s.has(jobId))s.delete(jobId);else s.add(jobId);return s;});
   const toggleSelectAll=()=>{if(selected.size===missingJobs.length)setSelected(new Set());else setSelected(new Set(missingJobs.map(j=>j.id)));};
   const batchSubmitNoActivity=async()=>{setBatchSubmitting(true);const toSubmit=missingJobs.filter(j=>selected.has(j.id));const emptyF={notes:'No activity this month',...Object.fromEntries(LF_FIELDS.map(f=>[f,'0']))};let success=0;const newRecs=[];for(const job of toSubmit){try{const payload=buildPayload(job,emptyF);const saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });newRecs.push((Array.isArray(saved)?saved[0]:saved)||payload);success++;}catch(e){console.error('Batch submit failed for',job.job_number,e);}}setSubs(prev=>[...newRecs,...prev.filter(s=>!newRecs.some(n2=>n2.id===s.id))]);setSelected(new Set());setShowBatchConfirm(false);setBatchSubmitting(false);setToast(`Submitted ${success} jobs with no activity`);};
@@ -6401,6 +6486,22 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       </div>
       <div style={{height:8,background:'#E5E3E0',borderRadius:8,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:pctColor,borderRadius:8,transition:'width .4s ease'}}/></div>
     </div>
+    {/* Due-now / due-soon callout — surfaces missing bill sheets whose
+        billing date is today/past or in the next 7 days. Hidden when nothing
+        is urgent. Per Virginia (AR) 2026-05-05: PMs need to know which sheets
+        are coming due, not just see them in alphabetical order. */}
+    {(dueOverdueJobs.length>0||dueSoonJobs.length>0)&&isCurrentMonth&&<div style={{...card,marginBottom:10,padding:'10px 14px',display:'flex',flexDirection:'column',gap:6,borderLeft:`4px solid ${dueOverdueJobs.length>0?'#DC2626':'#B45309'}`}}>
+      {dueOverdueJobs.length>0&&<div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#991B1B',fontWeight:700}}>
+        <span style={{fontSize:16}}>🚨</span>
+        <span>{dueOverdueJobs.length} bill sheet{dueOverdueJobs.length===1?'':'s'} OVERDUE / due today:</span>
+        <span style={{color:'#625650',fontWeight:600,fontSize:11}}>{dueOverdueJobs.slice(0,5).map(j=>j.job_number||j.job_name?.slice(0,18)).filter(Boolean).join(', ')}{dueOverdueJobs.length>5?` +${dueOverdueJobs.length-5} more`:''}</span>
+      </div>}
+      {dueSoonJobs.length>0&&<div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#92400E',fontWeight:700}}>
+        <span style={{fontSize:16}}>⏰</span>
+        <span>{dueSoonJobs.length} due in the next 7 days:</span>
+        <span style={{color:'#625650',fontWeight:600,fontSize:11}}>{dueSoonJobs.slice(0,5).map(j=>j.job_number||j.job_name?.slice(0,18)).filter(Boolean).join(', ')}{dueSoonJobs.length>5?` +${dueSoonJobs.length-5} more`:''}</span>
+      </div>}
+    </div>}
     {/* Search + filter tabs */}
     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
       <div style={{position:'relative',flex:'0 0 auto'}}>
@@ -6434,7 +6535,7 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
             <span style={{fontSize:v?.ipad?20:v?.mobile?18:16,color:iconColor,fontWeight:700,width:v?.ipad?24:v?.mobile?22:18,textAlign:'center',flexShrink:0}}>{icon}</span>
             <span style={{fontSize:v?.ipad?13:v?.mobile?12:11,color:'#9E9B96',fontFamily:'Inter',fontWeight:600,width:v?.ipad?72:v?.mobile?68:60,flexShrink:0}}>{j.job_number||'—'}</span>
             <span style={{fontSize:v?.ipad?16:v?.mobile?14:13,fontWeight:600,color:'#1A1A1A',flex:v?.mobile?'1 1 100%':'1 1 200px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.job_name}</span>
-            <span title="Bill Date" style={{fontSize:11,fontWeight:700,color:(j.billing_trigger||j.billing_date)?'#1D4ED8':'#9E9B96',background:(j.billing_trigger||j.billing_date)?'#DBEAFE':'#F4F4F2',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {formatBillingDate(j,selMonth)}</span>
+            {(()=>{const u=dueUrgencyFor(j);const hasBd=j.billing_trigger||j.billing_date;const palette=u==='overdue'||u==='today'?{c:'#991B1B',bg:'#FEE2E2',label:u==='today'?' (DUE TODAY)':' (OVERDUE)'}:u==='due_soon'?{c:'#92400E',bg:'#FEF3C7',label:' (due soon)'}:hasBd?{c:'#1D4ED8',bg:'#DBEAFE',label:''}:{c:'#9E9B96',bg:'#F4F4F2',label:''};return<span title={u==='overdue'?'This bill sheet is past its billing date for this cycle':u==='today'?'This bill sheet is due today':u==='due_soon'?'This bill sheet is due within the next 7 days':'Bill Date'} style={{fontSize:11,fontWeight:700,color:palette.c,background:palette.bg,padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0}}>Bill Date: {formatBillingDate(j,selMonth)}{palette.label}</span>;})()}
             {(j.third_party_billing===true||j.ocip_ccip===true)&&<span title="3rd Party Billing enabled" style={{fontSize:11,fontWeight:800,color:'#B45309',background:'#FFEDD5',border:'1px solid #FDBA74',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>3rd Party</span>}
             {j.ocip_ccip===true&&<span title="OCIP/CCIP required" style={{fontSize:11,fontWeight:800,color:'#854F0B',background:'#FAEEDA',border:'1px solid #C4B5FD',padding:'2px 8px',borderRadius:4,whiteSpace:'nowrap',flexShrink:0,textTransform:'uppercase',letterSpacing:0.3}}>OCIP/CCIP</span>}
             <span style={{fontSize:11,color:'#625650',display:'flex',gap:6,flexWrap:v?.mobile?'wrap':'nowrap',flexBasis:v?.mobile?'100%':'auto',rowGap:v?.mobile?4:0}}>
@@ -14668,7 +14769,7 @@ function CoPilotHome({onNav}){
 
   useEffect(()=>{
     Promise.all([
-      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,left_to_bill,ytd_invoiced,est_start_date,est_complete_date,install_duration_days,install_rate_override,crew_leader_id,pm,contract_date'),
+      sbGet('jobs','select=id,job_number,job_name,status,market,style,total_lf,adj_contract_value,contract_value,left_to_bill,ytd_invoiced,est_start_date,est_complete_date,install_duration_days,install_rate_override,crew_leader_id,pm,contract_date,billing_trigger,billing_date,billing_method'),
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=job_id,invoice_amount,invoice_date&order=invoice_date.desc&limit=2000'),
       sbGet('install_rates','select=*&order=category.asc'),
@@ -15154,6 +15255,24 @@ function DemandPlannerCopilot({tab,data,defaultExpanded=false}){
 
     if(noCrewLeaderJobs>0){
       out.push({severity:'gap',icon:'👷',title:`${noCrewLeaderJobs} of ${activeInstallJobs.length} active install jobs missing crew_leader_id`,body:`Leader Gantt is empty until this is backfilled. Use the Crew Assignment page to bulk-assign in 2 minutes.`,action:'Carlos: open Crew Assignment page → assign remaining jobs'});
+    }
+
+    // Active billable jobs missing billing_trigger / billing_date — flagged
+    // by Virginia (AR) 2026-05-05. Without a billing_trigger PMs don't know
+    // when their bill sheets are due and AR can't sort/prioritize. Surface
+    // here so Amiee can backfill from the original contracts.
+    const BILLING_GATE_STATUSES=new Set(['production_queue','in_production','material_ready','active_install','fence_complete','fully_complete']);
+    const missingBillingTrigger=openJobs.filter(j=>BILLING_GATE_STATUSES.has(j.status)&&n(j.contract_value)>0&&!j.billing_trigger&&!j.billing_date);
+    if(missingBillingTrigger.length>0){
+      const totalAtRisk=missingBillingTrigger.reduce((s,j)=>s+n(j.contract_value),0);
+      const sample=missingBillingTrigger.slice(0,5).map(j=>j.job_number).join(', ');
+      out.push({
+        severity:'warning',
+        icon:'🧾',
+        title:`${missingBillingTrigger.length} active billable job${missingBillingTrigger.length===1?'':'s'} missing billing trigger ($${Math.round(totalAtRisk/1000).toLocaleString()}k contract value)`,
+        body:`${sample}${missingBillingTrigger.length>5?` +${missingBillingTrigger.length-5} more`:''}. Without billing_trigger / billing_day_of_month, PMs see "Bill Date: —" on their bill sheets and AR can't prioritize. Backfill from the contracts (open each job → Money tab → Contract & Billing → set Trigger + Day of Month).`,
+        action:'Amiee: backfill billing_trigger on these jobs from contract docs',
+      });
     }
 
     return out;
