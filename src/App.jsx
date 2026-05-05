@@ -117,6 +117,15 @@ import {
   downloadCSV,
 } from './shared/fmt';
 
+// Market data: codes (MKTS), full names (MARKET_FULL), palette (MC/MB/MS),
+// job-number prefix codes (MKT_CODE), and the SharePoint URL parser.
+// Phase 2b extraction (2026-05-04). MKT_PIN (map-specific pastel pins)
+// stays next to the Map page setup — different visual treatment.
+import {
+  MKTS, MARKET_FULL, MC, MB, MS, MKT_CODE,
+  getSharePointTooltip,
+} from './shared/markets';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -240,23 +249,8 @@ const syncFenceAddons = (row) => {
 
 // STS / SL / SS / SC / SB_ / SR / CLOSED_SET moved to src/shared/status.js
 // (Phase 1 commit 2 of 3 of the App.jsx-decomposition rolling extraction).
-const MKTS = ['SA','HOU','AUS','DFW','CS','OOS'];
-const MARKET_FULL = { SA:'San Antonio', HOU:'Houston', AUS:'Austin', DFW:'Dallas-Fort Worth', CS:'College Station', OOS:'Out-of-State' };
-const MC = { SA:'#8A261D', HOU:'#0F6E56', AUS:'#854F0B', DFW:'#185FA5', CS:'#7C3AED', OOS:'#6B7280' };
-const MB = { SA:'#FDF4F4', HOU:'#E1F5EE', AUS:'#FAEEDA', DFW:'#E6F1FB', CS:'#EDE9FE', OOS:'#F3F4F6' };
-const MS = { SA:'SA', HOU:'HOU', AUS:'AUS', DFW:'DFW', CS:'CS', OOS:'OOS' };
-const MKT_CODE={ SA:'S', HOU:'H', AUS:'A', DFW:'D', CS:'CS', OOS:'O' };
-// Parses a SharePoint Active Jobs URL into a "Market / Folder" label for
-// the Open button tooltip. Falls back to a generic label if the URL doesn't
-// match the expected /Active%20Jobs/<market>/<folder> shape.
-const getSharePointTooltip=(url)=>{
-  if(!url)return'Open in SharePoint';
-  try{
-    const m=url.match(/Active%20Jobs\/([^/]+)\/(.+?)(?:\?|$)/);
-    if(!m)return'Open in SharePoint';
-    return`Open: ${decodeURIComponent(m[1])} / ${decodeURIComponent(m[2])}`;
-  }catch{return'Open in SharePoint';}
-};
+// MKTS / MARKET_FULL / MC / MB / MS / MKT_CODE / getSharePointTooltip moved
+// to src/shared/markets.js (Phase 2b extraction, 2026-05-04).
 const getNextJobNumber=async(market)=>{const yr=new Date().getFullYear().toString().slice(-2);const code=MKT_CODE[market];if(!code)return'';const prefix=yr+code;const d=await sbGet('jobs',`job_number=like.${prefix}*&select=job_number&order=job_number.desc&limit=1`);if(d&&d[0]&&d[0].job_number){const seq=parseInt(d[0].job_number.slice(-3))||0;return prefix+String(seq+1).padStart(3,'0');}return prefix+'001';};
 const REPS = ['Matt','Laura','Yuda','Nathan','Ryne','Mike Dean'];
 const PM_LIST=[{id:'Doug Monroe',short:'Doug',label:'Doug Monroe'},{id:'Ray Garcia',short:'Ray',label:'Ray Garcia'},{id:'Manuel Salazar',short:'Manuel',label:'Manuel Salazar'},{id:'Rafael Anaya Jr.',short:'Jr',label:'Rafael Anaya Jr.'},{id:'Hugo Rodriguez',short:'Hugo',label:'Hugo Rodriguez'},{id:'Israel Santibanez',short:'Israel',label:'Israel Santibanez'}];
