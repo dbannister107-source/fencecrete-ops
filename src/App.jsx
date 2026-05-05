@@ -1178,12 +1178,15 @@ const SECS=[
   // 2026-05-05: Removed `documents_needed` + `file_location` per David —
   // both fields kept in DB schema and VALID_JOB_COLS for round-trip but
   // no longer rendered in the form.
-  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','address','city','state','zip','cust_number','notes']},
+  // 2026-05-05 (later): Project Requirements folded into Details tab per David
+  // — the AIA/Bonds/Cert Payroll/OCIP/3rd-Party checkboxes are short and live
+  // alongside other Setup metadata. The dedicated 'requirements' tab is gone;
+  // tab key still mapped to 'details' if anything still navigates there.
+  {key:'details',label:'Details & Requirements',group:'Setup',fields:['sales_rep','pm','job_type','address','city','state','zip','cust_number','notes']},
   {key:'parties',label:'Parties',group:'Setup',fields:[]},
   // 2026-05-05: Removed `contract_month` + `active_entry_date` per David —
   // both kept in DB but not rendered.
   {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','complete_date']},
-  {key:'requirements',label:'Project Requirements',group:'Setup',fields:[]},
   {key:'pis',label:'Info Sheet',group:'Setup',fields:[]},
   // ─── Money (contract + billing) ───
   {key:'contract',label:'Contract & Billing',group:'Money',fields:['sales_tax','contract_value','ytd_invoiced','last_billed','billing_method','billing_date','retainage_pct','final_invoice_amount'],computed:['pct_billed','left_to_bill']},
@@ -2972,18 +2975,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 </div>}
               </div>;})}
           </div>}
-        </div>:tab==='requirements'?<div>
-          <div style={{fontSize:11,color:'#625650',marginBottom:12,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            {[{label:'AIA (G702/703)',field:'aia_billing'},{label:'Bonds',field:'bonds'},{label:'Certified Payroll',field:'certified_payroll'},{label:'OCIP/CCIP',field:'ocip_ccip'},{label:'3rd Party Billing',field:'third_party_billing'}].map(cb=><label key={cb.field} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13,color:'#1A1A1A'}}>
-              <input type="checkbox" checked={!!form[cb.field]} onChange={async e=>{const val=e.target.checked;set(cb.field,val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{[cb.field]:val});logAct(job,'field_update',cb.field,String(!val),String(val));}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
-              {cb.label}
-            </label>)}
-          </div>
-          <div style={{marginTop:20}}>
-            <div style={{fontSize:11,color:'#625650',marginBottom:4,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Project Manager</div>
-            <select value={form.pm||''} onChange={async e=>{const val=e.target.value;set('pm',val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{pm:val});logAct(job,'field_update','pm',form.pm,val);}}} style={inputS}><option value="">— Select —</option>{PM_LIST.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-          </div>
         </div>:tab==='parties'?<div style={{padding:'4px 0'}}>
           {/* Parties Tab — internal edit surface for project_info_sheets rows.
               Same database row that the PIS portal writes. Either path can
@@ -3700,6 +3691,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             <div key={f} style={{marginBottom:12}}><label style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}{FIELD_HINTS[f]&&<span title={FIELD_HINTS[f]} style={{fontSize:11,color:'#9E9B96',cursor:'help'}}>ⓘ</span>}</label>
               {f==='fence_addons'?<div style={{display:'flex',gap:6,flexWrap:'wrap',...(fieldEditable(f)?{}:{pointerEvents:'none',opacity:0.6})}}>{['Gates','Columns','Wrought Iron'].map(opt=>{const cur=Array.isArray(form.fence_addons)?form.fence_addons:[];const on=cur.includes(opt);return<label key={opt} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:on?'#FDF4F4':'#F9F8F6',borderRadius:6,border:on?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:12,color:on?'#8A261D':'#625650',fontWeight:on?700:400}}><input type="checkbox" checked={on} onChange={()=>{const next=on?cur.filter(x=>x!==opt):[...cur,opt];set('fence_addons',next);}} style={{width:14,height:14,accentColor:'#8A261D'}}/>{opt}</label>;})}</div>:f==='notes'?<textarea value={form[f]||''} onChange={e=>set(f,e.target.value)} rows={6} style={{...inputS,resize:'vertical',...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>:dd?<select value={form[f]||''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650',cursor:'default'})}}><option value="">— Select —</option>{dd.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>:<>{f==='file_location'?<div style={{display:'flex',gap:8,alignItems:'center'}}><input value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,flex:1,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>{form[f]&&(form[f].startsWith('http')||form[f].includes('sharepoint'))&&<a href={form[f]} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#0078D4',whiteSpace:'nowrap',fontWeight:600,pointerEvents:'auto'}}>Open →</a>}</div>:<input type={f.endsWith('_date')||f.endsWith('_month')?'date':'text'} value={form[f]??''} onChange={e=>set(f,e.target.value)} style={{...inputS,...(fieldEditable(f)?{}:{pointerEvents:'none',background:'#F9F8F6',color:'#625650'})}}/>}</>}
             </div>);})}
+          {/* 2026-05-05 (later) per David: Project Requirements folded into the
+              Details tab. Was its own top-level tab; small enough to live next
+              to the Details fields and avoid an extra tab. PM selector that
+              used to be on this tab is dropped — `pm` is already a Details
+              field above. */}
+          {tab==='details'&&<div style={{marginTop:8,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
+            <div style={{fontSize:11,color:'#625650',marginBottom:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              {[{label:'AIA (G702/703)',field:'aia_billing'},{label:'Bonds',field:'bonds'},{label:'Certified Payroll',field:'certified_payroll'},{label:'OCIP/CCIP',field:'ocip_ccip'},{label:'3rd Party Billing',field:'third_party_billing'}].map(cb=><label key={cb.field} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#FFF',borderRadius:8,border:'1px solid #E5E3E0',cursor:canEdit?'pointer':'default',fontSize:13,color:'#1A1A1A'}}>
+                <input type="checkbox" disabled={!canEdit} checked={!!form[cb.field]} onChange={async e=>{const val=e.target.checked;set(cb.field,val);if(!isNew&&job?.id){await sbPatch('jobs',job.id,{[cb.field]:val});logAct(job,'field_update',cb.field,String(!val),String(val));}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+                {cb.label}
+              </label>)}
+            </div>
+          </div>}
           {sec&&sec.computed&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
             <div style={{fontSize:10,color:'#9E9B96',marginBottom:8,fontWeight:600,textTransform:'uppercase'}}>Auto-calculated</div>
             {sec.computed.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const val=f==='pct_billed'?`${adjCV>0?Math.round(n(form.ytd_invoiced)/adjCV*1000)/10:0}%`:f==='left_to_bill'?$(adjCV-n(form.ytd_invoiced)):(form[f]??'—');return(
@@ -3923,8 +3928,10 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 }
 
 /* ═══ NEW PROJECT FORM ═══ */
-const NP_SECS=['info','fence','contract','requirements','schedule','review'];
-const NP_LABELS={info:'Job Info',fence:'Fence & Dimensions',contract:'Contract & Billing',requirements:'Requirements',schedule:'Schedule',review:'Review & Submit'};
+// 2026-05-05 (later) per David: Requirements folded into Details (info) tab
+// to match the EditPanel reorganization. NP_SECS shrinks 6 → 5 sections.
+const NP_SECS=['info','fence','contract','schedule','review'];
+const NP_LABELS={info:'Details & Requirements',fence:'Fence & Dimensions',contract:'Contract & Billing',schedule:'Schedule',review:'Review & Submit'};
 const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt==='SA')return'Ray Garcia';if(mkt==='HOU'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
 const LINE_TYPES=['Precast','Single Wythe','Wrought Iron','Wood','Gate','Gate Controls','Removal','Lump Sum / Other'];
 const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:''});
@@ -4234,6 +4241,18 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div>{fLbl('City')}<input value={f.city} onChange={e=>set('city',e.target.value)} style={inputS}/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div>{fLbl('State')}<input value={f.state} onChange={e=>set('state',e.target.value)} style={inputS}/></div><div>{fLbl('ZIP')}<input value={f.zip} onChange={e=>set('zip',e.target.value)} style={inputS}/></div></div>
         <div style={{gridColumn:'1/-1'}}>{fLbl('Notes')}<textarea value={f.notes} onChange={e=>set('notes',e.target.value)} rows={3} style={{...inputS,resize:'vertical'}}/></div>
+        {/* 2026-05-05 (later) per David: Requirements folded into the Details
+            tab. Same 7 checkboxes that were on the standalone Requirements
+            tab — keeping the two "Included on…" flags so there's no regression
+            in operational visibility. */}
+        <div style={{gridColumn:'1/-1',marginTop:8,padding:14,background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0'}}>
+          <div style={{fontSize:11,color:'#625650',marginBottom:10,fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>Project Requirements</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {[['AIA (G702/703)','aia_billing'],['Bonds','bonds'],['Certified Payroll','certified_payroll'],['OCIP/CCIP','ocip_ccip'],['3rd Party Billing','third_party_billing'],['Included on Billing Schedule','included_on_billing_schedule'],['Included on LF Schedule','included_on_lf_schedule']].map(([l,k])=><label key={k} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#FFF',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13}}>
+              <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:16,height:16,accentColor:'#8A261D'}}/>{l}
+            </label>)}
+          </div>
+        </div>
       </div>}
       {sec==='fence'&&<div>
         <div style={{marginBottom:14,fontSize:12,color:'#625650'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
@@ -4375,17 +4394,8 @@ function NewProjectForm({jobs,onClose,onSaved}){
           {[['Net Contract Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Change Orders','$0'],['Adj Contract Value',$(acv)],['Total LF',totalLF.toLocaleString()],['Retainage',n(f.retainage_pct)+'%']].map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #333',fontSize:l==='Adj Contract Value'?16:13}}><span style={{color:l==='Adj Contract Value'?'#10B981':'#9E9B96',fontWeight:l==='Adj Contract Value'?700:400}}>{l}</span><span style={{fontFamily:'Inter',fontWeight:l==='Adj Contract Value'?900:700,color:l==='Adj Contract Value'?'#10B981':'#fff'}}>{v}</span></div>)}
         </div>
       </div>}
-      {sec==='requirements'&&<div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
-          {[['AIA (G702/703)','aia_billing'],['Bonds','bonds'],['Certified Payroll','certified_payroll'],['OCIP/CCIP','ocip_ccip'],['3rd Party Billing','third_party_billing'],['Included on Billing Schedule','included_on_billing_schedule'],['Included on LF Schedule','included_on_lf_schedule']].map(([l,k])=><label key={k} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:'pointer',fontSize:13}}>
-            <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:18,height:18,accentColor:'#8A261D'}}/>{l}
-          </label>)}
-        </div>
-        {/* 2026-05-05 per David: Documents Needed + File Location retired
-            from the create form. Both columns remain valid in the DB; just
-            no longer collected at create time. SharePoint folder linkage
-            handled separately on the Documents tab post-create. */}
-      </div>}
+      {/* 2026-05-05 (later): standalone Requirements section retired — checkboxes
+          live on the Details & Requirements tab (info section) above. */}
       {sec==='schedule'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>{fLbl('Install Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
         {/* 2026-05-05 per David: Active Entry Date retired from the create form.
