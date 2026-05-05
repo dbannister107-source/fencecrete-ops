@@ -107,6 +107,16 @@ import {
 // extraction). 40-entry SVG dict that powers the sidebar nav icons.
 import { Icon } from './shared/icons';
 
+// Formatting helpers: money ($, $k), Number coerce (n), date (fD,
+// formatDateOnly), percent (fmtPct), relative time (relT), CSV download.
+// Phase 2 extraction (2026-05-04). The most-used helpers in the file —
+// `n` alone has 751 call sites.
+import {
+  $, $k, n,
+  fD, formatDateOnly, fmtPct, relT,
+  downloadCSV,
+} from './shared/fmt';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -225,32 +235,8 @@ const syncFenceAddons = (row) => {
 // to honor the `type: 'new_project'` branch first.
 
 /* ═══ HELPERS ═══ */
-const $ = v => '$' + (Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
-const $k = v => { const x=Number(v)||0; return x>=1e6?'$'+(x/1e6).toFixed(1)+'M':x>=1e3?'$'+(x/1e3).toFixed(0)+'K':'$'+x; };
-const n = v => Number(v)||0;
-const downloadCSV = (filename, rows) => {
-  if(!rows||rows.length===0)return;
-  const cols=Object.keys(rows[0]);
-  const esc=(v)=>{if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
-  const csv=[cols.join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-};
-// Bare 'YYYY-MM-DD' (Postgres DATE column) is interpreted as midnight UTC by JS,
-// which renders one day earlier in negative-UTC-offset timezones (e.g. Central).
-// Force noon-local for date-only strings; pass anything else (Date, ISO with time,
-// timestamptz) through unchanged. Use this for any DATE column display.
-const formatDateOnly = (d, opts={month:'short',day:'numeric',year:'2-digit'}) => {
-  if(d==null||d==='')return'—';
-  const s=typeof d==='string'?d:'';
-  const dt=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T12:00:00'):new Date(d);
-  return isNaN(dt)?'—':dt.toLocaleDateString('en-US',opts);
-};
-const fD = d => formatDateOnly(d);
-const fmtPct = v => (!v && v !== 0) ? '—' : `${(parseFloat(v) * 100).toFixed(1)}%`;
-const relT = d => { if(!d) return '—'; const ms=Date.now()-new Date(d).getTime(), m=ms/60000; if(m<60) return `${Math.floor(m)}m ago`; const h=m/60; if(h<24) return `${Math.floor(h)}h ago`; const dy=h/24; if(dy<2) return 'Yesterday'; if(dy<7) return `${Math.floor(dy)}d ago`; return fD(d); };
+// $ / $k / n / fD / formatDateOnly / fmtPct / relT / downloadCSV moved to
+// src/shared/fmt.js (Phase 2 extraction, 2026-05-04).
 
 // STS / SL / SS / SC / SB_ / SR / CLOSED_SET moved to src/shared/status.js
 // (Phase 1 commit 2 of 3 of the App.jsx-decomposition rolling extraction).
