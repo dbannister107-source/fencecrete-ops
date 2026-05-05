@@ -88,6 +88,24 @@ import {
   roleColorFor,
 } from './shared/nav';
 
+// Status configuration. Extracted from App.jsx 2026-05-04 (Phase 1 commit
+// 2 of 3 of the App.jsx-decomposition rolling extraction). Every
+// status-aware surface (kanban, status pill, EditPanel dropdown, age
+// badges) reads from this single source of truth.
+import {
+  STS,
+  SS,
+  SL,
+  SC,
+  SB_,
+  SR,
+  CLOSED_SET,
+  NEXT_STATUS,
+  KANBAN_STS,
+  STAGE_THRESHOLDS,
+  STAGE_DATE_KEY,
+} from './shared/status';
+
 // Mapbox token loaded from build-time env var. Set REACT_APP_MAPBOX_TOKEN
 // in Vercel project env. Mapbox public tokens (pk.*) are safe to ship to
 // the client; they're scoped to allowed URLs, not secret. We just keep
@@ -252,24 +270,8 @@ const fD = d => formatDateOnly(d);
 const fmtPct = v => (!v && v !== 0) ? '—' : `${(parseFloat(v) * 100).toFixed(1)}%`;
 const relT = d => { if(!d) return '—'; const ms=Date.now()-new Date(d).getTime(), m=ms/60000; if(m<60) return `${Math.floor(m)}m ago`; const h=m/60; if(h<24) return `${Math.floor(h)}h ago`; const dy=h/24; if(dy<2) return 'Yesterday'; if(dy<7) return `${Math.floor(dy)}d ago`; return fD(d); };
 
-const STS = ['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete','closed','canceled'];
-const SL = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
-// Status palette (Phase 2: matches design-system brand spec).
-// SC = text/accent color, SB_ = fill color, SR = ring/border color.
-// These map 1:1 with StatusBadge in src/components/ui/status-badge.jsx so a
-// status pill rendered via the inline `pill()` helper looks identical to one
-// rendered via <StatusBadge>.
-const SC = { contract_review:'#625650', production_queue:'#854F0B', in_production:'#185FA5', material_ready:'#0F6E56', active_install:'#065F46', fence_complete:'#085041', fully_complete:'#04342C', closed:'#625650', canceled:'#991B1B' };
-// Background colors — each post-production stage gets a distinct shade so the
-// project-list status pills are visually distinguishable at a glance. Before
-// 2026-05-04, material_ready / active_install / fence_complete / fully_complete
-// all shared #E1F5EE which made them indistinguishable. Now they progress
-// from soft teal (production-side) through emerald (active install) to
-// rich green (fence complete) to deep forest (fully complete).
-const SB_ = { contract_review:'#F4F4F2', production_queue:'#FAEEDA', in_production:'#E6F1FB', material_ready:'#E1F5EE', active_install:'#C7EBD9', fence_complete:'#A7E6CD', fully_complete:'#7DD9B5', closed:'#F4F4F2', canceled:'#FEF2F2' };
-const SR = { contract_review:'#9CA3AF', production_queue:'#D97706', in_production:'#854F0B', material_ready:'#2563EB', active_install:'#059669', fence_complete:'#0D9488', fully_complete:'#10B981', closed:'#9CA3AF', canceled:'#DC2626' };
-const SS = { contract_review:'Contract Review', production_queue:'Production Queue', in_production:'In Production', material_ready:'Material Ready', active_install:'Active Install', fence_complete:'Fence Complete', fully_complete:'Fully Complete', closed:'Closed', canceled:'Canceled' };
-const CLOSED_SET=new Set(['fully_complete','closed','canceled','cancelled']);
+// STS / SL / SS / SC / SB_ / SR / CLOSED_SET moved to src/shared/status.js
+// (Phase 1 commit 2 of 3 of the App.jsx-decomposition rolling extraction).
 const MKTS = ['SA','HOU','AUS','DFW','CS','OOS'];
 const MARKET_FULL = { SA:'San Antonio', HOU:'Houston', AUS:'Austin', DFW:'Dallas-Fort Worth', CS:'College Station', OOS:'Out-of-State' };
 const MC = { SA:'#8A261D', HOU:'#0F6E56', AUS:'#854F0B', DFW:'#185FA5', CS:'#7C3AED', OOS:'#6B7280' };
@@ -429,7 +431,7 @@ const CANONICAL_TO_MATERIAL_CALC = {
   'Customer Choice': null,
 };
 const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:STYLE_CATALOG.map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), style_single_wythe:STYLE_CATALOG.filter(s=>s.applies_to_sw).map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), color:COLOR_CATALOG.map(c=>({v:c.name,l:c.name})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
-const NEXT_STATUS = { contract_review:'production_queue', production_queue:'in_production', in_production:'material_ready', material_ready:'active_install', active_install:'fence_complete', fence_complete:'fully_complete', fully_complete:'closed' };
+// NEXT_STATUS moved to src/shared/status.js
 
 // ═══ MOLD SHARING ═══
 // Some styles share the same physical mold sets. When calculating mold utilization,
@@ -6713,8 +6715,7 @@ function InstallDateEditor({j,locked,onSaved}){
     style={{display:'inline-flex',alignItems:'center',gap:3,cursor:locked?'default':'pointer',...pillStyle}}
   >{isPast?'🚩':'📅'} {fD(displayDate)}{hasDriftFromPlan&&<span style={{marginLeft:2,fontSize:8,opacity:0.7}}>·plan {fD(j.est_start_date)}</span>}</span>;
 }
-const STAGE_THRESHOLDS={contract_review:[30,60],production_queue:[21,45],in_production:[30,60],material_ready:[14,30],active_install:[30,60],fence_complete:[7,14],fully_complete:[7,14]};
-const STAGE_DATE_KEY={material_ready:'inventory_ready_date',active_install:'active_install_date',fence_complete:'fence_complete_date',fully_complete:'fully_complete_date',in_production:'production_start_date'};
+// STAGE_THRESHOLDS + STAGE_DATE_KEY moved to src/shared/status.js
 function ProdCard({j,move,locked,compact,billSub,onViewBill,onQuickView,onPrintOrder,onCalcMaterials,onAddToPlan,inPlanDate,progressInfo,jobProgress,lineItems,onJobUpdated,styleFilter,colorFilter}){const ns=NEXT_STATUS[j.status];const stageDate=j[STAGE_DATE_KEY[j.status]]||j.est_start_date;const daysIn=stageDate?Math.max(0,Math.round((Date.now()-new Date(stageDate).getTime())/86400000)):null;const thresh=STAGE_THRESHOLDS[j.status];const ageSev=daysIn!=null&&thresh?(daysIn>=thresh[1]?'critical':daysIn>=thresh[0]?'warn':null):null;const totalPieces=(n(j.material_posts_line)+n(j.material_posts_corner)+n(j.material_posts_stop))||(n(j.material_panels_regular)+n(j.material_panels_half));
 // Green border + pill only show in Contract Review — the signal is only
 // meaningful to Max while Amiee's handoff is in play. The DB flag persists
@@ -6867,7 +6868,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
     return f;},[jobs,mktF,statusF,search,addonsF,staleOnly,isStale,styleF,colorF,lineItemsByJob]);
   const pipeLF=filtered.filter(j=>['production_queue','in_production','material_ready','active_install','fence_complete'].includes(j.status)).reduce((s,j)=>s+lfPC(j),0);
   const sortByStart=(arr)=>[...arr].sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999'));
-  const KANBAN_STS=['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete'];
+  // KANBAN_STS imported from shared/status.js
   const columns=useMemo(()=>{if(groupBy==='status')return KANBAN_STS.map(s=>({key:s,label:SL[s],color:SC[s],bg:SB_[s],jobs:sortByStart(filtered.filter(j=>j.status===s))}));
     // For style + color groupBy, fall back to first line item when the
     // parent jobs.style/color is blank — otherwise masonry-only jobs and
