@@ -7,12 +7,16 @@
 //   2. STYLE OBJECTS (card, btnP, btnS, btnG, btnB, inputS, stat,
 //      statLabel, statValue) -- the canonical inline-style shapes that
 //      had organically settled in newer feature files.
+//   3. SHARED COMPONENTS (MoneyInput) -- small UI primitives that earn
+//      their place in shared/ once a second feature wants to reuse them.
 //
 // The style objects use the "feature default" sizing (8px/14px padding,
 // fontSize 12, fontWeight 700) -- matches the newer design direction.
 // Files using older / variant sizes (App.jsx module scope, SystemEvents,
 // SharePointLinks, MyPlate, etc.) keep their local definitions for now;
 // migrating them is a separate visual-design decision.
+
+import React, { useState } from 'react';
 
 // ─── Color tokens ───
 // Brand palette per CLAUDE.md (Pantone 7620C / 7531C primaries).
@@ -174,3 +178,64 @@ export const statValue = {
   fontFamily: FONT.data,
   marginTop: 4,
 };
+
+// ─── Shared components ───
+//
+// MoneyInput — currency-formatted display ($51,250) that switches to
+// raw editing on click/focus. The stored value stays a numeric string;
+// the formatted view is presentational only.
+//
+// Originally lived as `function MoneyInput(...)` near the top of
+// App.jsx. Extracted on 2026-05-05 as part of the Acct Sheet build
+// (Phase B) — the JobPricingEditor needs it too, and a shared copy
+// stops App.jsx and the new feature from drifting.
+//
+// Props:
+//   value     numeric string or number; '' / null render as a muted dash
+//   onChange  called with the cleaned text (digits, '.', leading '-')
+//   disabled  read-only mode
+//   style     merged onto both edit and display states so callers can
+//             match their surrounding form's input shape
+export function MoneyInput({ value, onChange, disabled, style }) {
+  const [editing, setEditing] = useState(false);
+  const num = Number(value);
+  const isEmpty = value === '' || value == null;
+  if (editing && !disabled) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={value ?? ''}
+        onChange={(e) => {
+          const cleaned = e.target.value.replace(/[^0-9.\-]/g, '');
+          onChange(cleaned);
+        }}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.target.blur();
+          }
+        }}
+        style={style}
+      />
+    );
+  }
+  const formatted = isEmpty || isNaN(num)
+    ? ''
+    : '$' + num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return (
+    <div
+      onClick={() => !disabled && setEditing(true)}
+      title={disabled ? 'Read-only' : 'Click to edit'}
+      style={{
+        ...style,
+        cursor: disabled ? 'default' : 'text',
+        display: 'flex',
+        alignItems: 'center',
+        userSelect: 'text',
+      }}
+    >
+      {formatted || <span style={{ color: COLOR.text3, fontStyle: 'italic' }}>—</span>}
+    </div>
+  );
+}
