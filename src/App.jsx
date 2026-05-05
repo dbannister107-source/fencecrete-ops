@@ -16672,7 +16672,13 @@ function PMDailyReportPage({jobs}){
       </div>}
       <PMReportSection {...secProps('job')} title="Job Info">
         <div style={{marginBottom:12}}><label style={lblStyle}>Select Job <span style={{color:'#8A261D'}}>*</span></label>
-          <select value={selJobId} onChange={e=>selectJob(e.target.value)} style={{...mSel,...(jobError?{borderColor:'#8A261D',background:'#FDF4F4'}:{})}}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
+          {/* Job dropdown is locked while editing an existing report. selectJob()
+              auto-overwrites crew_leader_id, crew name, and fence_style from the
+              new job — silent overwrites on edit are a real "altered information"
+              vector. To re-attribute a report to a different job, cancel the edit
+              and file a new report. */}
+          <select value={selJobId} onChange={e=>selectJob(e.target.value)} disabled={!!editingReport} title={editingReport?'Job is locked while editing. Cancel edit to start a new report for a different job.':''} style={{...mSel,...(jobError?{borderColor:'#8A261D',background:'#FDF4F4'}:{}),...(editingReport?{background:'#F4F4F2',color:'#625650',cursor:'not-allowed'}:{})}}><option value="">— Select a job —</option>{pmJobs.map(j=><option key={j.id} value={j.id}>{j.job_number} — {j.job_name}</option>)}</select>
+          {editingReport&&<div style={{fontSize:11,color:'#92400E',marginTop:4,fontStyle:'italic'}}>🔒 Job locked while editing</div>}
           {jobError&&<div style={{color:'#8A261D',fontSize:12,marginTop:6,fontWeight:600}}>Please select a job before submitting</div>}
         </div>
         {jobTotals&&<div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:14,marginBottom:16,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10}}>
@@ -16683,7 +16689,7 @@ function PMDailyReportPage({jobs}){
         </div>}
         {selJobId&&(()=>{const sj=jobs.find(j=>j.id===selJobId);return sj?<div style={{display:'flex',gap:12,marginBottom:12,fontSize:12,color:'#625650',flexWrap:'wrap'}}><span>Market: <span style={pill(MC[sj.market]||'#625650',MB[sj.market]||'#F4F4F2')}>{MS[sj.market]||sj.market||'—'}</span></span><span>Fence Type: <strong>{sj.fence_type||'—'}</strong></span></div>:null;})()}
         <div style={{display:'flex',gap:8,alignItems:'flex-end',marginBottom:12}}>
-          <div style={{flex:1,maxWidth:240}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
+          <div style={{flex:1,maxWidth:240}}><label style={lblStyle}>Report Date</label><input type="date" value={form.report_date} max={todayISO} onChange={e=>set('report_date',e.target.value)} style={mInp}/></div>
           <button onClick={()=>set('report_date',yesterdayISO)} style={{...btnS,minHeight:44,fontSize:13,whiteSpace:'nowrap'}}>Yesterday</button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
@@ -16691,12 +16697,12 @@ function PMDailyReportPage({jobs}){
           <div><label style={lblStyle}>Repair Location (optional)</label><input value={form.repair_location} onChange={e=>set('repair_location',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Job Type</label><select value={form.job_type} onChange={e=>set('job_type',e.target.value)} style={mSel}>{['Commercial','Residential','Repair - Damage to Fencecrete Fence','Rework - Repair to Non-Fencecrete Fence','Municipal / MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Crew Leader</label><CrewLeaderSelect value={form.crew_leader_id} onChange={(id,name)=>{setForm(p=>({...p,crew_leader_id:id||'',crew:name||''}));}} jobMarket={(()=>{const j=jobs.find(j=>j.id===selJobId);return j?j.market:(PM_HOME_MARKET[selPM]||'');})()} pmName={selPM} hasJob={!!selJobId} style={mInp}/></div>
-          <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Employees on Job</label><input type="number" min="0" inputMode="decimal" value={form.num_employees} onChange={e=>set('num_employees',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Daily Target</label><input value={form.daily_target} onChange={e=>set('daily_target',e.target.value)} placeholder="LF of Panels/Foundation, # Posts/Columns, or Other" style={mInp}/></div>
           <div><label style={lblStyle}>Fence Style</label><select value={form.fence_style} onChange={e=>set('fence_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Fence Height (ft)</label><input type="number" value={form.fence_height} onChange={e=>set('fence_height',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Fence Height (ft)</label><input type="number" min="0" inputMode="decimal" value={form.fence_height} onChange={e=>set('fence_height',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Gate Style</label><select value={form.gate_style} onChange={e=>set('gate_style',e.target.value)} style={mSel}>{['Precast','Wrought Iron','Single Wythe'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
+          <div><label style={lblStyle}>Gate Height (ft)</label><input type="number" min="0" inputMode="decimal" value={form.gate_height} onChange={e=>set('gate_height',e.target.value)} style={mInp}/></div>
           <div><label style={lblStyle}>Precast Style at Time of Visit</label><select value={form.precast_style_onsite||''} onChange={e=>set('precast_style_onsite',e.target.value)} style={{...mSel,...(form.precast_style_onsite&&!isCanonicalStyle(form.precast_style_onsite)?{fontStyle:'italic'}:{})}}><option value="">— Select Style —</option>{styleOptionsFor(form.precast_style_onsite,'PC').map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}</select></div>
         </div>
         <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
@@ -16711,25 +16717,25 @@ function PMDailyReportPage({jobs}){
       <PMReportSection {...secProps('production')} title="Production Output">
         <div style={secStyle}>Linear feet</div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>LF of Panels Installed</label><input type="number" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF Precast</label><input type="number" value={form.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF Single Wythe</label><input type="number" value={form.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>LF Wrought Iron</label><input type="number" value={form.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
-          <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Installed</label><input type="number" min="0" inputMode="decimal" value={form.lf_panels_installed} onChange={e=>set('lf_panels_installed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Built up to Shoulder</label><input type="number" min="0" inputMode="decimal" value={form.lf_panels_shoulder} onChange={e=>set('lf_panels_shoulder',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Capped / Completed</label><input type="number" min="0" inputMode="decimal" value={form.lf_panels_completed} onChange={e=>set('lf_panels_completed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF of Panels Washed</label><input type="number" min="0" inputMode="decimal" value={form.lf_panels_washed} onChange={e=>set('lf_panels_washed',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Precast</label><input type="number" min="0" inputMode="decimal" value={form.lf_precast} onChange={e=>set('lf_precast',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Single Wythe</label><input type="number" min="0" inputMode="decimal" value={form.lf_single_wythe} onChange={e=>set('lf_single_wythe',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Wrought Iron</label><input type="number" min="0" inputMode="decimal" value={form.lf_wrought_iron} onChange={e=>set('lf_wrought_iron',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>Drill Piercing LF Completed</label><input type="number" min="0" inputMode="decimal" value={form.drill_piercing_lf} onChange={e=>set('drill_piercing_lf',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
         </div>
         <div style={{...secStyle,color:'#1D4ED8',background:'#DBEAFE'}}>Counts</div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Holes Dug</label><input type="number" min="0" inputMode="decimal" value={form.num_holes_dug} onChange={e=>set('num_holes_dug',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Posts Placed</label><input type="number" min="0" inputMode="decimal" value={form.num_posts_placed} onChange={e=>set('num_posts_placed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Gates Installed</label><input type="number" min="0" inputMode="decimal" value={form.num_gates_installed} onChange={e=>set('num_gates_installed',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Cut Sections</label><input type="number" min="0" inputMode="decimal" value={form.num_cut_sections} onChange={e=>set('num_cut_sections',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Sections Leveled</label><input type="number" min="0" inputMode="decimal" value={form.num_sections_leveled} onChange={e=>set('num_sections_leveled',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns Laid Out</label><input type="number" min="0" inputMode="decimal" value={form.num_columns_laid_out} onChange={e=>set('num_columns_laid_out',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns 3/4 Built</label><input type="number" min="0" inputMode="decimal" value={form.num_columns_34_built} onChange={e=>set('num_columns_34_built',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Columns Capped / Solid Filled</label><input type="number" min="0" inputMode="decimal" value={form.num_columns_capped} onChange={e=>set('num_columns_capped',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
         </div>
       </PMReportSection>
       <PMReportSection {...secProps('conditions')} title="Conditions & Delays">
@@ -16743,7 +16749,7 @@ function PMDailyReportPage({jobs}){
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
           <div><label style={lblStyle}>Delay Reason</label><select value={form.delay_reason} onChange={e=>set('delay_reason',e.target.value)} style={mSel}>{['None','Weather','General Contractor','Equipment Repair/Failure','Material Defect','Material Shortage','Utilities','Ongoing Issue'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
           <div><label style={lblStyle}>Delay Time</label><select value={form.delay_time} onChange={e=>set('delay_time',e.target.value)} style={mSel}>{['None','Less than 1 Hour','1 Hour','2 Hours','3 Hours','4 Hours','5 Hours','6 Hours','7 Hours','8 Hours','Greater than 8 Hours'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-          <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
+          <div><label style={lblStyle}>LF Impacted by Ongoing Delays</label><input type="number" min="0" inputMode="decimal" value={form.lf_impacted_delays} onChange={e=>set('lf_impacted_delays',e.target.value)} style={mInp}/>{unitHint('Linear feet (LF)')}</div>
         </div>
         <div style={{marginTop:12}}><label style={lblStyle}>Delay Notes</label><textarea value={form.delay_notes} onChange={e=>set('delay_notes',e.target.value)} rows={3} placeholder="Describe GC delays, weather type, equipment failure, etc." style={mTxt}/></div>
         <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed #E5E3E0'}}>
@@ -16762,8 +16768,8 @@ function PMDailyReportPage({jobs}){
         <div style={{marginTop:12}}><label style={lblStyle}>Weather Notes</label><textarea value={form.weather_notes} onChange={e=>set('weather_notes',e.target.value)} rows={2} placeholder="Describe conditions affecting work" style={{...mInp,resize:'vertical'}}/></div>
         <div style={{...secStyle,color:'#991B1B',background:'#FEE2E2'}}>Defects</div>
         <div style={{display:'grid',gridTemplateColumns:gridR,gap:12}}>
-          <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
-          <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Defective Panels</label><input type="number" min="0" inputMode="decimal" value={form.num_defective_panels} onChange={e=>set('num_defective_panels',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
+          <div><label style={lblStyle}>Number of Defective Posts</label><input type="number" min="0" inputMode="decimal" value={form.num_defective_posts} onChange={e=>set('num_defective_posts',e.target.value)} style={mInp}/>{unitHint('Count')}</div>
           <div><label style={lblStyle}>Other Defective Materials</label><input value={form.other_defective_materials} onChange={e=>set('other_defective_materials',e.target.value)} style={mInp}/></div>
         </div>
       </PMReportSection>
