@@ -71,20 +71,43 @@ Deno.serve(async (req: Request) => {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    const slimJobs = (jobs || []).map((j: any) => ({
-      n: j.job_number,
-      name: j.job_name?.slice(0, 40),
-      lf: j.lf,
-      style: j.style?.slice(0, 30),
-      color: j.color?.slice(0, 15),
-      ht: j.height,
-      install: j.install_date,
-      posts: (j.posts_line || 0) + (j.posts_corner || 0) + (j.posts_stop || 0),
-      panels: (j.panels_regular || 0) + (j.panels_half || 0),
-      caps: (j.caps_line || 0) + (j.caps_stop || 0),
-      status: j.status,
-      produced_lf: j.produced_lf || 0,
-    }));
+    const slimJobs = (jobs || []).map((j: any) => {
+      // Sprint 4 — prefer the v_job_production_remaining numbers (X_unplanned)
+      // when present, since they represent what's ACTUALLY left to schedule
+      // (total − produced − already-on-future-plan). Fall back to material
+      // totals if the view didn't return data for this job.
+      const panels_total = (j.panels_regular || 0) + (j.panels_half || 0);
+      const posts_total  = (j.posts_line || 0) + (j.posts_corner || 0) + (j.posts_stop || 0);
+      const caps_total   = (j.caps_line || 0) + (j.caps_stop || 0);
+      return {
+        n: j.job_number,
+        name: j.job_name?.slice(0, 40),
+        lf: j.lf,
+        style: j.style?.slice(0, 30),
+        color: j.color?.slice(0, 15),
+        ht: j.height,
+        install: j.install_date,
+        // total / produced / planned / to_schedule (the AI's actual job)
+        posts:           posts_total,
+        panels:          panels_total,
+        caps:            caps_total,
+        produced_panels: j.produced_panels ?? null,
+        produced_posts:  j.produced_posts  ?? null,
+        // 'to_schedule' = panels_unplanned from the view = what's left for
+        // the AI to fit into the horizon. Schedule THIS, not panels_total.
+        panels_to_schedule: j.panels_unplanned ?? panels_total,
+        posts_to_schedule:  j.posts_unplanned  ?? posts_total,
+        rails_to_schedule:  j.rails_unplanned  ?? null,
+        caps_to_schedule:   j.caps_unplanned   ?? caps_total,
+        // 'already_planned' = X_planned from the view = on future plan_lines
+        // already. AI shouldn't double-schedule these. Surfaces in reasoning
+        // if a job has more planned than the AI deems necessary.
+        panels_already_planned: j.panels_planned ?? 0,
+        posts_already_planned:  j.posts_planned  ?? 0,
+        status: j.status,
+        produced_lf: j.produced_lf || 0,
+      };
+    });
 
     // Compact representation of per-style limits — only styles in the job list,
     // with the fields the AI needs to reason about constraints.
@@ -148,6 +171,16 @@ strictly less than (install_date - ${transportBuffer}). If a job CANNOT fit befo
 deadline given mold and CY constraints, schedule what fits and add this exact note on every
 entry for that job: "install_at_risk: cannot complete by deadline". Do NOT silently push
 production past the install date — surface the conflict for human resolution.
+
+CONSTRAINT 6 — DON'T DOUBLE-SCHEDULE (hard cap, Sprint 4):
+Each job has 'panels_to_schedule', 'posts_to_schedule', 'rails_to_schedule', 'caps_to_schedule'
+fields. These are what's ACTUALLY left to schedule:
+  to_schedule = total_required − already_produced − already_on_future_plan_lines
+NEVER schedule more pieces than to_schedule. The 'panels_already_planned' field tells you what's
+already on the existing plan and should NOT be re-scheduled. If to_schedule = 0 for all pools,
+the job is fully covered — exclude from the new schedule entirely.
+If a job's status is 'in_production' or 'material_ready', it likely has produced_panels > 0;
+schedule only the remaining pieces, not the original total.
 
 CONSTRAINT 5 — INSTALL CREW CAPACITY (soft cap, advisory):
 Install crews can install ${installCrewLfPerDay || 50} LF/day per crew (1 lead + 3 helpers = 4 people).

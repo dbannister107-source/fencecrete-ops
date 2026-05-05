@@ -9955,11 +9955,24 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       
       // Collect jobs eligible for scheduling
       // Only precast jobs in production queue, in_production, or material_ready
+      // Source of truth for remaining counts is v_job_production_remaining
+      // (computes fresh from production_actuals + future plan_lines instead
+      // of reading the stale jobs.produced_* cache fields). Sprint 4 upgrade.
+      let remainingByJobId = {};
+      try {
+        const remRows = await sbGet('v_job_production_remaining', 'select=*');
+        (remRows || []).forEach(r => { if (r.job_id) remainingByJobId[r.job_id] = r; });
+      } catch (e) {
+        console.warn('[generateAISchedule] v_job_production_remaining fetch failed; AI will fall back to material totals', e);
+      }
+
       const eligibleStatuses = new Set(['production_queue','in_production','material_ready','active_install']);
-      const eligibleJobs = jobs.filter(j => 
-        eligibleStatuses.has(j.status) && 
+      const eligibleJobs = jobs.filter(j =>
+        eligibleStatuses.has(j.status) &&
         (n(j.lf_precast) > 0 || n(j.material_calc_lf) > 0)
-      ).map(j => ({
+      ).map(j => {
+        const rem = remainingByJobId[j.id] || null;
+        return {
         id: j.id,
         job_number: j.job_number,
         job_name: j.job_name,
@@ -9981,7 +9994,25 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         produced_lf: n(j.produced_lf) || 0,
         produced_panels: n(j.produced_panels) || 0,
         produced_posts: n(j.produced_posts) || 0,
-      }));
+        // Sprint 4 — REMAINING + PLANNED breakdown from v_job_production_remaining.
+        // The AI scheduler should NOT schedule anything that's already produced
+        // OR already on a future plan line. These tell it what's actually left
+        // to schedule. If the view is unavailable, fields are null and the AI
+        // degrades to its previous behavior (compute from material totals).
+        panels_remaining:  rem ? rem.panels_remaining  : null,
+        panels_planned:    rem ? rem.panels_planned    : null,
+        panels_unplanned:  rem ? rem.panels_unplanned  : null,
+        posts_remaining:   rem ? rem.posts_remaining   : null,
+        posts_planned:     rem ? rem.posts_planned     : null,
+        posts_unplanned:   rem ? rem.posts_unplanned   : null,
+        rails_remaining:   rem ? rem.rails_remaining   : null,
+        rails_planned:     rem ? rem.rails_planned     : null,
+        rails_unplanned:   rem ? rem.rails_unplanned   : null,
+        caps_remaining:    rem ? rem.caps_remaining    : null,
+        caps_planned:      rem ? rem.caps_planned      : null,
+        caps_unplanned:    rem ? rem.caps_unplanned    : null,
+        };
+      });
 
       // The system prompt + per-style/per-pool capacity reasoning lives in the edge function
       // (supabase/functions/production-scheduler/index.ts) since that's where ANTHROPIC_API_KEY
