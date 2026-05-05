@@ -10024,6 +10024,26 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         if (Array.isArray(cls)) leaderCount = cls.length;
       } catch (e) { /* fall back to baseline */ }
 
+      // Sprint 1 (2026-05-04) — fold concrete CY ceiling + cy_per_panel into the
+      // scheduler context so it can enforce the daily plant cap (52.8 CY).
+      let dailyCyCapacity = 52.8;
+      try {
+        const cfgRows = await sbGet('plant_config', 'select=key,value');
+        const cy = (cfgRows || []).find(r => r.key === 'daily_cy_capacity');
+        if (cy && Number(cy.value) > 0) dailyCyCapacity = Number(cy.value);
+      } catch (e) {
+        console.warn('[generateAISchedule] plant_config CY fetch failed; using 52.8 default', e);
+      }
+      try {
+        const cyRows = await sbGet('material_calc_styles', 'is_active=eq.true&select=style_name,cy_per_panel');
+        const cyMap = {};
+        (cyRows || []).forEach(r => { if (r.style_name) cyMap[r.style_name] = Number(r.cy_per_panel) || 0; });
+        // Augment styleCapacity entries with cy_per_panel where we know it.
+        styleCapacity = styleCapacity.map(s => ({ ...s, cy_per_panel: cyMap[s.style] || 0 }));
+      } catch (e) {
+        console.warn('[generateAISchedule] cy_per_panel fetch failed; AI will use 0.42 default', e);
+      }
+
       // Call production-scheduler edge function (holds API key securely)
       const parsed = await sbFn('production-scheduler', {
         jobs: eligibleJobs,
@@ -10033,6 +10053,12 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         poolCapacity,
         installCrewLfPerDay: 50,  // per David: 4-person crew installs 50 LF/day (precast)
         leaderCount,
+        // Sprint 1 additions — see edge function for full constraint logic
+        dailyCyCapacity,                // plant_config.daily_cy_capacity (52.8 CY/day default)
+        accessoryOverhead: 1.4,         // covers posts/rails/caps concrete around panels
+        colorChangeoverMin: 25,         // minutes lost per color change inside a shift
+        shiftMinutes: { shift1: 480, shift2: 420 },  // Mon-Sat 8a-4p / Mon-Fri 7p-2a
+        transportBufferDays: 1,         // production must finish at least 1 day before install
       });
       
       if (parsed.error) throw new Error(parsed.error + (parsed.details ? ': ' + parsed.details : ''));

@@ -48,10 +48,16 @@ Deno.serve(async (req: Request) => {
       jobs,
       weekStart,
       horizonEnd,
-      styleCapacity,            // [{style, mold_pool_family, bottleneck_lf_per_day, bottleneck_component, panel_lf, panels_per_mold}, ...]
+      styleCapacity,            // [{style, mold_pool_family, bottleneck_lf_per_day, bottleneck_component, panel_lf, panels_per_mold, cy_per_panel}, ...]
       poolCapacity,             // [{mold_pool_family, pool_capacity_lf_per_day}, ...]
       installCrewLfPerDay,      // 50 (default)
       leaderCount,              // 26 (default)
+      // Sprint 1 additions (2026-05-04):
+      dailyCyCapacity,          // 52.8 — plant_config.daily_cy_capacity
+      accessoryOverhead,        // 1.4 — covers posts/rails/caps concrete around panels
+      colorChangeoverMin,       // 25 — minutes lost per color change inside a shift
+      shiftMinutes,             // {shift1: 480, shift2: 420}
+      transportBufferDays,      // 1 — production must finish at least N days before install
     } = body;
 
     const businessDays: string[] = [];
@@ -90,6 +96,7 @@ Deno.serve(async (req: Request) => {
           bottleneck: s.bottleneck_component,
           panel_lf: s.panel_lf,
           panels_per_mold: s.panels_per_mold,
+          cy_per_panel: s.cy_per_panel,  // Sprint 1: needed for concrete CY ceiling math
         }))
       : [];
 
@@ -102,68 +109,102 @@ Deno.serve(async (req: Request) => {
 
     const crewWeeklyLF = (Number(leaderCount) || 26) * (Number(installCrewLfPerDay) || 50) * 5;
 
+    const cyCap = Number(dailyCyCapacity) || 52.8;
+    const accOH = Number(accessoryOverhead) || 1.4;
+    const ccMin = Number(colorChangeoverMin) || 25;
+    const sh1Min = Number(shiftMinutes?.shift1) || 480;
+    const sh2Min = Number(shiftMinutes?.shift2) || 420;
+    const transportBuffer = Number(transportBufferDays) || 1;
+
     const systemPrompt = `You are a production scheduling AI for Fencecrete America, a precast concrete fence manufacturer.
 
 PLANT OPERATING REALITY:
-- Plant runs 2 shifts: Shift 1 Mon-Sat 8a-4p + Shift 2 Mon-Fri 6p-2a (88h/wk vs 168h theoretical, derate ≈ 0.524).
+- Plant runs 2 shifts: Shift 1 Mon-Sat 8a-4p (${sh1Min} min) + Shift 2 Mon-Fri 7p-2a (${sh2Min} min).
 - Every panel mold is a 12-cavity gang mold: 1 cycle pours 12 panels.
+- Cure time = 24 hours, so each mold pours once per calendar day. Pool capacity is daily, NOT per-shift.
 - Panel LF and cycle time vary per style; capacity per style is provided in style_capacity (already factors in cure_time, gang molds, and bottleneck component).
 
-PER-STYLE DAILY LIMITS (do not exceed):
-The style_capacity input tells you each style's bottlenecked_lf_per_day. This is the
-realistic daily plant output AFTER the binding constraint (panels, posts, rails, OR caps —
-whichever is shortest for that style). NEVER schedule more LF for a style on a single day
-than its bottleneck_lf_per_day.
+CONSTRAINT 1 — PER-STYLE DAILY MOLD LIMITS (hard cap):
+Each style's bottlenecked_lf_per_day in style_capacity is the realistic daily plant output
+AFTER the binding mold constraint (panels, posts, rails, OR caps — whichever is shortest
+for that style). NEVER schedule more LF for a style on a single day than its bottleneck_lf_per_day.
 
-MOLD POOL SHARING (additional constraint):
+CONSTRAINT 2 — MOLD POOL SHARING (hard cap):
 Some style families share one panel-mold pool. If multiple styles in the same mold_pool_family
 run on the same day, their COMBINED LF cannot exceed the pool's pool_capacity_lf_per_day.
-Example: Wood + Boxed Wood + Vertical Wood share a 26-mold pool. You can run any one of them
-at full pool capacity, OR split between them — but the total can't exceed the pool's daily LF.
+Example: Wood + Boxed Wood + Vertical Wood share a 26-mold pool.
 
-INSTALL-VS-PRODUCTION RACE CHECK:
+CONSTRAINT 3 — CONCRETE BATCH PLANT CY CAP (hard cap, NEW):
+The batch plant has a daily limit of ${cyCap} cubic yards. The total CY consumed per day
+is computed as: sum across all jobs that day of (panels × cy_per_panel × ${accOH}).
+The ${accOH} multiplier covers the concrete that flows around the panels for posts, rails,
+and caps. NEVER schedule a day whose total CY exceeds ${cyCap}.
+If style_capacity has no cy_per_panel for a style, use 0.42 as a default and flag in notes.
+
+CONSTRAINT 4 — INSTALL DEADLINE (hard cap, NEW):
+For each job with an install_date, ALL production for that job (posts AND panels AND caps)
+MUST complete at least ${transportBuffer} day(s) before install_date. Production date must be
+strictly less than (install_date - ${transportBuffer}). If a job CANNOT fit before its install
+deadline given mold and CY constraints, schedule what fits and add this exact note on every
+entry for that job: "install_at_risk: cannot complete by deadline". Do NOT silently push
+production past the install date — surface the conflict for human resolution.
+
+CONSTRAINT 5 — INSTALL CREW CAPACITY (soft cap, advisory):
 Install crews can install ${installCrewLfPerDay || 50} LF/day per crew (1 lead + 3 helpers = 4 people).
 Total install capacity = ${leaderCount || 26} leaders × ${installCrewLfPerDay || 50} LF/day × 5 days = ${crewWeeklyLF} LF/week.
-If a job's panels finish but install can't keep up, flag it in notes: "panels ready ahead of install — Houston install backlog".
+If a job's panels finish but install can't keep up, flag it: "panels ready ahead of install".
 
 PRIORITY (in order):
-1. INSTALL DATE: jobs with earliest install dates get scheduled first.
-2. POSTS-FIRST: Posts can be produced before panels. If a job's install date is close,
-   schedule posts on an earlier day, panels later. Posts ≈ 20% of LF, panels ≈ 80% by default
-   (use actual job posts/panels counts when present).
-3. SIZE: among jobs with similar install dates, schedule larger LF jobs first.
-4. STYLE+COLOR BATCHING: batch same style/color back-to-back to reduce mold changeover (~25 min
-   per change). May delay panels (NOT posts) by up to 3 days for batching.
+1. INSTALL DEADLINE: jobs with earliest install_dates get scheduled first. Honor the
+   install-deadline hard cap above.
+2. COLOR BATCHING (PROMOTED): when assigning jobs to a day, group same-color jobs together.
+   Each color change inside a shift costs ${ccMin} minutes of pour time, so 4 colors in one
+   shift = ${ccMin * 3} min lost ≈ ${Math.round(ccMin * 3 / 480 * 100)}% of Shift 1 capacity.
+   PREFER 1-2 colors per day. Acceptable to delay panel-only work (NOT posts) by up to 3
+   days to keep colors batched.
+3. POSTS-FIRST: Posts can be produced before panels. Schedule posts on the earliest available
+   day for jobs whose install is close, panels on later days. Posts ≈ 20% of LF, panels ≈ 80%
+   by default (use actual job posts/panels counts when present).
+4. SIZE: among jobs with similar install dates, schedule larger LF jobs first.
 
 RULES:
 - ONLY schedule on these exact business days: ${businessDays.join(', ')}
 - NEVER schedule on weekends — no Saturdays or Sundays
-- Per-style daily limit from style_capacity[].lf_per_day MUST NOT be exceeded
-- Pool limit from pool_capacity[].pool_lf_per_day MUST NOT be exceeded across styles in same pool
+- Per-style daily LF limit MUST NOT be exceeded
+- Pool LF limit MUST NOT be exceeded across styles in same pool
+- Daily total CY MUST NOT exceed ${cyCap} — re-check this for every day in your output
+- Install deadline (production complete < install_date - ${transportBuffer}) MUST be respected
+  or every entry for that job flagged with "install_at_risk"
 - Split large jobs across multiple days when needed
 - production_type: "posts" | "panels" | "caps" | "full"
 - If a style has no entry in style_capacity, treat as 200 LF/day default and add a note.
 
 OUTPUT (minified JSON only, no markdown):
 {
-  "reasoning": "2-4 sentence summary citing key constraints encountered",
+  "reasoning": "2-4 sentence summary. MUST cite the constraints that drove key decisions: which jobs were install_at_risk, how colors were batched, which days hit CY cap, which days hit pool cap.",
   "schedule": [
     {"n":"JOB_NUM","name":"NAME","date":"YYYY-MM-DD","type":"posts|panels|full",
-     "lf":NUMBER,"style":"STYLE","color":"COLOR","install":"YYYY-MM-DD",
-     "seq":1,"notes":"optional — flag any constraints hit"}
+     "lf":NUMBER,"panels":NUMBER,"posts":NUMBER,"caps":NUMBER,
+     "style":"STYLE","color":"COLOR","install":"YYYY-MM-DD",
+     "seq":1,"notes":"optional — flag install_at_risk, color changes, CY pressure, etc."}
   ]
 }`;
 
     const userPrompt = `Today: ${new Date().toISOString().split('T')[0]}.
 Schedule ONLY these ${businessDays.length} business days: ${businessDays.join(', ')}.
 
-style_capacity (per-style daily limits — DO NOT EXCEED):
+PLANT CONSTRAINTS:
+- Daily concrete CY cap: ${cyCap} (multiply panels × cy_per_panel × ${accOH} = day's CY usage)
+- Color changeover cost: ${ccMin} min per change (group same-color jobs to maximize pour time)
+- Install deadline buffer: production must complete ≥ ${transportBuffer} day(s) before install_date
+
+style_capacity (per-style daily limits — DO NOT EXCEED; cy_per_panel feeds CY math):
 ${JSON.stringify(slimStyleCapacity)}
 
 pool_capacity (per-pool combined daily limits when multiple styles share):
 ${JSON.stringify(slimPoolCapacity)}
 
-Jobs to schedule:
+Jobs to schedule (note 'color' field — use to group changeovers):
 ${JSON.stringify(slimJobs)}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
