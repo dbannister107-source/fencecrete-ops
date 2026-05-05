@@ -1175,9 +1175,14 @@ const SECS=[
   // Note: 'notes' field is appended to Details so a single-textarea section
   // doesn't waste a top-level tab. Was its own tab pre-2026-05-05; consolidated
   // as part of P1 #4 (12-tabs-too-many follow-up).
-  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','documents_needed','file_location','address','city','state','zip','cust_number','notes']},
+  // 2026-05-05: Removed `documents_needed` + `file_location` per David —
+  // both fields kept in DB schema and VALID_JOB_COLS for round-trip but
+  // no longer rendered in the form.
+  {key:'details',label:'Details',group:'Setup',fields:['sales_rep','pm','job_type','address','city','state','zip','cust_number','notes']},
   {key:'parties',label:'Parties',group:'Setup',fields:[]},
-  {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','contract_month','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','active_entry_date','complete_date']},
+  // 2026-05-05: Removed `contract_month` + `active_entry_date` per David —
+  // both kept in DB but not rendered.
+  {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','complete_date']},
   {key:'requirements',label:'Project Requirements',group:'Setup',fields:[]},
   {key:'pis',label:'Info Sheet',group:'Setup',fields:[]},
   // ─── Money (contract + billing) ───
@@ -1223,6 +1228,56 @@ function useRealtime(setJobs) {
     return () => { if (hb) clearInterval(hb); if (ws) ws.close(); };
   }, [setJobs]);
   return live;
+}
+
+/* ═══ CUSTOMER MASTER LOOKUP ═══
+   Typeahead search over `companies` (Customer Master) — when Amiee picks
+   a match, fires onSelect with the full row so the parent form can autofill
+   customer_name / address / city / state / zip / company_id (FK).
+   The companion `customer_name` text input stays editable as a fallback
+   for residential / one-off customers not in the master. */
+function CustomerLookup({onSelect, placeholder='Search Customer Master…', disabled}){
+  const[query,setQuery]=useState('');
+  const[results,setResults]=useState([]);
+  const[loading,setLoading]=useState(false);
+  const[open,setOpen]=useState(false);
+  const debounceRef=useRef(null);
+  useEffect(()=>{
+    if(!query||query.length<2){setResults([]);return;}
+    if(debounceRef.current)clearTimeout(debounceRef.current);
+    debounceRef.current=setTimeout(async()=>{
+      setLoading(true);
+      try{
+        const d=await sbGet('companies',`name=ilike.*${encodeURIComponent(query)}*&select=id,name,address,city,state,zip&order=name.asc&limit=10`);
+        setResults(Array.isArray(d)?d:[]);
+      }catch(e){console.error('[CustomerLookup]',e);setResults([]);}
+      setLoading(false);
+    },250);
+    return()=>{if(debounceRef.current)clearTimeout(debounceRef.current);};
+  },[query]);
+  const choose=(c)=>{
+    if(onSelect)onSelect(c);
+    setQuery('');setResults([]);setOpen(false);
+  };
+  return <div style={{position:'relative'}}>
+    <input
+      value={query}
+      onChange={e=>{setQuery(e.target.value);setOpen(true);}}
+      onFocus={()=>setOpen(true)}
+      onBlur={()=>setTimeout(()=>setOpen(false),200)}
+      placeholder={placeholder}
+      disabled={disabled}
+      style={{...inputS,width:'100%',background:disabled?'#F4F4F2':'#FFF'}}
+    />
+    {open&&query.length>=2&&<div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:2,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,boxShadow:'0 4px 12px rgba(0,0,0,0.08)',zIndex:50,maxHeight:280,overflowY:'auto'}}>
+      {loading?<div style={{padding:'10px 12px',fontSize:12,color:'#9E9B96',fontStyle:'italic'}}>Searching…</div>
+      :results.length===0?<div style={{padding:'10px 12px',fontSize:12,color:'#9E9B96',fontStyle:'italic'}}>No matches in Customer Master. The customer may need to be added there first, or use the free-text Customer Name field below.</div>
+      :results.map(c=><div key={c.id} onMouseDown={()=>choose(c)} style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid #F4F4F2',fontSize:13}} onMouseEnter={e=>e.currentTarget.style.background='#FDF4F4'} onMouseLeave={e=>e.currentTarget.style.background='#FFF'}>
+        <div style={{fontWeight:700,color:'#1A1A1A'}}>{c.name}</div>
+        {(c.address||c.city||c.state)&&<div style={{fontSize:11,color:'#625650',marginTop:2}}>{[c.address,c.city,c.state,c.zip].filter(Boolean).join(', ')}</div>}
+      </div>)}
+    </div>}
+  </div>;
 }
 
 /* ═══ LINE ITEMS EDITOR ═══ */
@@ -1480,7 +1535,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
   // Lump Sum kept as the stored fence_type value; UI label is "Misc. Lump
   // Sum" per David 2026-05-05. No data migration needed — display layer only.
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other Fence'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -1860,6 +1915,38 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   // Ref held by LineItemsEditor — lets us trigger its saveAll() from the
   // parent's handleSave so clicking top "Save" also commits line item edits.
   const lineItemsSaveRef=useRef(null);
+
+  // Bonding derivation (2026-05-05): replaces the legacy partiesDraft.bonding_required
+  // checkbox. Per David, a job is "bonded" iff it has a P&P Bond or Maint Bond
+  // line item. Light fetch (fence_type only) so we can derive isBonded inside
+  // the Parties tab without round-tripping through LineItemsEditor's state.
+  const[panelBondLines,setPanelBondLines]=useState([]);
+  const fetchPanelBondLines=useCallback(async()=>{
+    if(!job?.job_number){setPanelBondLines([]);return;}
+    const rows=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&select=fence_type`);
+    setPanelBondLines(Array.isArray(rows)?rows:[]);
+  },[job?.job_number]);
+  useEffect(()=>{fetchPanelBondLines();},[fetchPanelBondLines]);
+
+  // Sales tax single source of truth (2026-05-05 per David's E2 decision):
+  // bottom-of-Contract&Billing-tab calc is canonical. Top-of-tab `sales_tax`
+  // field reads from this; handleSave stamps `sales_tax_amount` from this.
+  // Formula must match the bottom Sales Tax breakdown's pcTax + wiTax line —
+  // mirror that one and only one place. tax_exempt forces 0 (matches the
+  // breakdown's "$0.00" treatment).
+  const computedSalesTax=useMemo(()=>{
+    const TAX_RATE=0.0825;
+    const HEIGHT_BASIS={'4':23.00,'5':24.75,'6':26.00,'7':27.50,'8':29.25,'9':30.50,'10':31.75};
+    const STYLE_BASIS={'Ranch - 2 Rail':13.50,'Ranch - 3 Rail':15.75,'Ranch - 4 Rail':16.50};
+    const styleKey=(form.style||'').trim();
+    const heightKey=String(form.height_precast||'').replace(/['"]/g,'').trim();
+    const pcBasis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
+    const pcLF=n(form.lf_precast||form.total_lf_precast);
+    const pcTax=pcLF*pcBasis*TAX_RATE;
+    const wiContract=n(form.lf_wrought_iron)*n(form.contract_rate_wrought_iron);
+    const wiTax=wiContract*0.33*TAX_RATE;
+    return form.tax_exempt?0:Math.round((pcTax+wiTax)*100)/100;
+  },[form.style,form.height_precast,form.lf_precast,form.total_lf_precast,form.lf_wrought_iron,form.contract_rate_wrought_iron,form.tax_exempt]);
 
   // Contract Readiness — auto-checks computed from existing fields, manual
   // items stored in contract_readiness_items table. Refetched whenever the
@@ -2347,7 +2434,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     }catch(e){setSaveErr('Reopen failed: '+e.message);}
     setReopening(false);
   };
-  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const saved=await sbPost('jobs',rest,{throwOnError:true});if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','ntp_issued_date','ntp_received_date','ntp_received_by','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);/* contract_age is computed live from contract_date in the Dates tab — never PATCH it from form state, since stale values can drift wildly (Amiee's LOCI - Section 3 showed -46049 from a prior corruption that was being re-saved on every edit). */delete rest.contract_age;await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with what the read-only top-of-Contract&Billing display shows. trg_recalc_adj_contract reads sales_tax_amount, so this also keeps adj_contract_value correct. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;const saved=await sbPost('jobs',rest,{throwOnError:true});if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','ntp_issued_date','ntp_received_date','ntp_received_by','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);/* contract_age is computed live from contract_date in the Dates tab — never PATCH it from form state, since stale values can drift wildly (Amiee's LOCI - Section 3 showed -46049 from a prior corruption that was being re-saved on every edit). */delete rest.contract_age;/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with the read-only top-of-Contract&Billing display. trg_recalc_adj_contract reads sales_tax_amount and recomputes adj_contract_value. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
   const handleSaveInstallDateOnly=async()=>{
     /* Narrow save path for sales reps and PMs who can edit Install Date but
        nothing else. Patches est_start_date only -- no other column is sent to
@@ -2957,16 +3044,14 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 
           {partiesToast&&<div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:partiesToast.kind==='success'?'#D1FAE5':'#FEE2E2',color:partiesToast.kind==='success'?'#065F46':'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{partiesToast.msg}</span><button onClick={()=>setPartiesToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
 
-          {/* Tax + Bonding flags — drive whether Agent/Surety section shows */}
-          <div style={{display:'flex',gap:12,marginBottom:14,flexWrap:'wrap'}}>
-            <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:canEdit?'pointer':'default',fontSize:13,color:'#1A1A1A'}}>
-              <input type="checkbox" disabled={!canEdit} checked={partiesDraft.bonding_required===true||partiesDraft.bonding_required==='true'} onChange={e=>setPartiesDraft(d=>({...d,bonding_required:e.target.checked}))} style={{width:16,height:16,accentColor:'#8A261D'}}/>
-              Bonding Required <span style={{fontSize:10,color:'#9E9B96',marginLeft:4}}>(unlocks Agent + Surety)</span>
-            </label>
-            <label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F9F8F6',borderRadius:8,border:'1px solid #E5E3E0',cursor:canEdit?'pointer':'default',fontSize:13,color:'#1A1A1A'}}>
-              <input type="checkbox" disabled={!canEdit} checked={partiesDraft.taxable===true||partiesDraft.taxable==='true'} onChange={e=>setPartiesDraft(d=>({...d,taxable:e.target.checked}))} style={{width:16,height:16,accentColor:'#8A261D'}}/>
-              Taxable
-            </label>
+          {/* Bonding is derived from line items (2026-05-05): the Agent + Surety
+              cards auto-show when any line item is a P&P Bond or Maint Bond.
+              Old "Bonding Required" + "Taxable" checkboxes retired — the line
+              items are the source of truth. partiesDraft.bonding_required and
+              partiesDraft.taxable still exist in the DB row for audit trail
+              but are no longer read or written from the form. */}
+          <div style={{padding:'8px 12px',marginBottom:14,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,fontSize:11,color:'#625650',lineHeight:1.5}}>
+            ℹ︎ Bonding details (Agent + Surety) auto-appear when a <b>P&amp;P Bond</b> or <b>Maint Bond</b> line item is added on the Line Items tab.
           </div>
 
           {/* Party blocks. Each is a card with company/contact/phone/email and a
@@ -2979,7 +3064,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               {key:'owner',label:'Owner',hint:'The party that owns the property where the fence is being installed.',color:'#0F6E56',bg:'#E1F5EE',companyField:'owner_company',contactField:'owner_contact',phoneField:'owner_phone',emailField:'owner_email',addrField:'owner_address',cityField:'owner_city',stateField:'owner_state',zipField:'owner_zip'},
               {key:'billing',label:'Billing Contact',hint:'Where invoices are sent. May differ from the GC and Owner.',color:'#185FA5',bg:'#E6F1FB',companyField:null,contactField:'billing_contact',phoneField:'billing_phone',emailField:'billing_email',addrField:'billing_address',cityField:'billing_city',stateField:'billing_state',zipField:'billing_zip'},
             ];
-            const isBonded=partiesDraft.bonding_required===true||partiesDraft.bonding_required==='true';
+            // 2026-05-05: bonding now derived from line items (P&P Bond OR Maint Bond)
+            // instead of the retired partiesDraft.bonding_required checkbox.
+            const isBonded=panelBondLines.some(l=>l.fence_type==='P&P Bond'||l.fence_type==='Maint Bond');
             if(isBonded){
               partyBlocks.push({key:'agent',label:'Bonding Agent',hint:'The agent who handles the bond paperwork.',color:'#854F0B',bg:'#FAEEDA',companyField:null,contactField:'agent_name',phoneField:'agent_phone',emailField:'agent_email',addrField:'agent_address',cityField:'agent_city',stateField:'agent_state',zipField:'agent_zip'});
               partyBlocks.push({key:'surety',label:'Surety Company',hint:'The insurance company issuing the bond.',color:'#7C3AED',bg:'#EDE9FE',companyField:'surety_name',contactField:'surety_contact',phoneField:'surety_phone',emailField:'surety_email',addrField:'surety_address',cityField:'surety_city',stateField:'surety_state',zipField:'surety_zip'});
@@ -3464,6 +3551,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           {tab==='totals'&&<div style={{marginBottom:14,padding:'10px 14px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:12,color:'#1D4ED8',lineHeight:1.5}}>
             <strong>LF totals are computed from Line Items.</strong> To change the Precast / Masonry / Wrought Iron / Total LF, go to the <b>Line Items</b> tab and save. These fields auto-sync.
           </div>}
+          {/* 2026-05-05: Customer Master Lookup (Details tab only). Picking a
+              master record autofills customer_name + address + city/state/zip
+              and links company_id (the FK). Free-text fields below stay
+              editable for residential / one-off customers. */}
+          {tab==='details'&&!isNew&&<div style={{marginBottom:14,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>Customer Master Lookup</div>
+            <CustomerLookup disabled={!canEdit} onSelect={c=>{
+              setForm(p=>({...p,company_id:c.id||null,customer_name:c.name||p.customer_name,address:c.address||p.address,city:c.city||p.city,state:c.state||p.state,zip:c.zip||p.zip}));
+            }} placeholder="Search Customer Master to autofill name + address…"/>
+            {form.company_id&&<div style={{fontSize:11,color:'#065F46',marginTop:6,fontWeight:600}}>✓ Linked to Customer Master ({form.customer_name||'—'})</div>}
+            {!form.company_id&&<div style={{fontSize:10,color:'#9E9B96',marginTop:6}}>Picking a record autofills <b>Customer Name</b>, <b>Address</b>, <b>City/State/ZIP</b> and links <b>company_id</b>. The text fields below remain editable.</div>}
+          </div>}
           {sec&&sec.fields.map(f=>{const cd=ALL_COLS.find(c=>c.key===f);const lbl=cd?cd.label:f.replace(/_/g,' ');const dd=DD[f];
           // Fields that are derived from line items should not be edited directly;
           // editing the Line Items tab and saving re-syncs these automatically.
@@ -3515,6 +3614,22 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{form.product||'—'}</div>
             </div>;
           }
+          // Sales Tax (top-of-tab summary): live read-only display reading from
+          // computedSalesTax (the EditPanel-scope useMemo that mirrors the
+          // bottom-of-tab Sales Tax breakdown). 2026-05-05 per David — the
+          // editable free-text input invited drift between what the top showed
+          // and what the bottom calc produced. The breakdown below is now the
+          // source of truth; this field mirrors it; handleSave stamps the same
+          // value to sales_tax_amount on PATCH.
+          if(f==='sales_tax'){
+            return<div key={f} style={{marginBottom:12}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                {lbl}
+                <span title="Computed live from the Sales Tax breakdown below (pcTax + wiTax). Read-only at the top of the tab; edit by changing the inputs the breakdown reads (line items, height, style, tax_exempt)." style={{padding:'1px 7px',borderRadius:10,background:'#EFF6FF',color:'#1D4ED8',border:'1px solid #BFDBFE',fontSize:9,fontWeight:700,letterSpacing:0.3}}>Auto</span>
+              </label>
+              <div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{computedSalesTax>0?$(computedSalesTax):form.tax_exempt?'$0 (tax exempt)':'—'}</div>
+            </div>;
+          }
           // Money fields render via MoneyInput (currency-formatted display +
           // raw editing on focus). Retainage_pct is intentionally NOT in
           // MONEY_FIELDS — it's a percentage, not a dollar amount.
@@ -3528,25 +3643,56 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               <MoneyInput value={form[f]} onChange={v=>set(f,v)} disabled={!ed} style={{...inputS,fontFamily:'Inter',fontWeight:600,...(ed?{}:{background:'#F9F8F6',color:'#625650'})}}/>
             </div>;
           }
-          // Billing Date: structured trigger + day-of-month / EOM / custom text.
-          // Writes both the structured fields (billing_trigger, billing_day_of_month)
-          // AND syncs billing_date text for legacy renderers and back-compat.
+          // Billing Date: pure numeric day-of-month input (1-31). 2026-05-05 per
+          // David — the trigger select + EOM / custom paths were over-engineered
+          // (every active contract bills on a fixed day). The form writes:
+          //   - billing_day_of_month = N
+          //   - billing_trigger = 'day_of_month' (so existing renderers / sort
+          //     keys / "missing trigger" insights stay correct)
+          //   - billing_date = ord(N) for legacy text consumers
+          // EOM / custom remain valid in the DB (formatBillingDate handles them);
+          // legacy non-numeric values are surfaced inline as a small note so the
+          // user can see what's there before overwriting.
           if(f==='billing_date'){
             const ed=fieldEditable(f);
             const ord=(d)=>`${d}${d===1||d===21||d===31?'st':d===2||d===22?'nd':d===3||d===23?'rd':'th'}`;
+            const legacyNonNumeric=form.billing_trigger&&form.billing_trigger!=='day_of_month';
             return<div key={f} style={{marginBottom:12}}>
               <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>{lbl}</label>
-              <div style={{display:'flex',gap:6,...(ed?{}:{pointerEvents:'none',opacity:0.6})}}>
-                <select value={form.billing_trigger||''} onChange={e=>{const v=e.target.value||null;set('billing_trigger',v);if(v==='eom'){set('billing_day_of_month',null);set('billing_date','EOM');}else if(v==='day_of_month'){if(form.billing_day_of_month){set('billing_date',ord(form.billing_day_of_month));}}else if(v==='custom'){/* keep existing billing_date as starting custom text */}else{set('billing_day_of_month',null);set('billing_date','');}}} style={{...inputS,flex:'0 0 130px'}}>
-                  <option value="">—</option>
-                  <option value="day_of_month">Day of month</option>
-                  <option value="eom">End of month</option>
-                  <option value="custom">Custom</option>
-                </select>
-                {form.billing_trigger==='day_of_month'&&<input type="number" min="1" max="31" value={form.billing_day_of_month||''} onChange={e=>{const v=e.target.value;if(v===''){set('billing_day_of_month',null);set('billing_date','');return;}const day=parseInt(v,10);if(!isNaN(day)&&day>=1&&day<=31){set('billing_day_of_month',day);set('billing_date',ord(day));}}} placeholder="20" style={{...inputS,flex:1}}/>}
-                {form.billing_trigger==='custom'&&<input value={form.billing_date||''} onChange={e=>set('billing_date',e.target.value)} placeholder="e.g. DUC" style={{...inputS,flex:1}}/>}
-                {form.billing_trigger==='eom'&&<div style={{flex:1,display:'flex',alignItems:'center',padding:'0 10px',background:'#F4F4F2',borderRadius:6,fontSize:12,color:'#625650'}}>Last day of each month</div>}
-                {!form.billing_trigger&&form.billing_date&&<div style={{flex:1,display:'flex',alignItems:'center',padding:'0 10px',background:'#FEF3C7',borderRadius:6,fontSize:11,color:'#854F0B',fontStyle:'italic'}}>Legacy: "{form.billing_date}"</div>}
+              <div style={{display:'flex',gap:6,alignItems:'center',...(ed?{}:{pointerEvents:'none',opacity:0.6})}}>
+                <input type="number" min="1" max="31" value={form.billing_day_of_month||''} onChange={e=>{const v=e.target.value;if(v===''){set('billing_day_of_month',null);set('billing_trigger',null);set('billing_date','');return;}const day=parseInt(v,10);if(!isNaN(day)&&day>=1&&day<=31){set('billing_day_of_month',day);set('billing_trigger','day_of_month');set('billing_date',ord(day));}}} placeholder="Day of month (1–31)" style={{...inputS,flex:1}}/>
+                {form.billing_day_of_month&&<span style={{fontSize:11,color:'#625650',whiteSpace:'nowrap'}}>{ord(form.billing_day_of_month)} of each month</span>}
+              </div>
+              {legacyNonNumeric&&<div style={{marginTop:6,padding:'4px 10px',background:'#FEF3C7',borderRadius:6,fontSize:11,color:'#854F0B',fontStyle:'italic'}}>Currently set to {form.billing_trigger==='eom'?'End of Month':`Custom: "${form.billing_date||''}"`} — entering a number above will overwrite it.</div>}
+            </div>;
+          }
+          // Retainage: Yes/No toggle + conditional percent dropdown (0/5/10/15).
+          // 2026-05-05 per David — the free-text % input invited bad data ("5%"
+          // strings, decimals, NaN) and most jobs are either 0 or one of three
+          // standard values. No = writes 0 to retainage_pct. Yes opens a small
+          // dropdown; default is 10 (the most common). Writes to the same
+          // existing column, so all downstream readers (final-invoice flow,
+          // retainage-held calc, exports) work unchanged.
+          if(f==='retainage_pct'){
+            const ed=fieldEditable(f);
+            const cur=n(form.retainage_pct);
+            const has=cur>0;
+            return<div key={f} style={{marginBottom:12}}>
+              <label style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                {lbl}
+                {FIELD_HINTS[f]&&<span title={FIELD_HINTS[f]} style={{fontSize:11,color:'#9E9B96',cursor:'help'}}>ⓘ</span>}
+              </label>
+              <div style={{display:'flex',gap:8,alignItems:'center',...(ed?{}:{pointerEvents:'none',opacity:0.6})}}>
+                <label style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:has?'#FDF4F4':'#F9F8F6',borderRadius:8,border:has?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:13,color:has?'#8A261D':'#1A1A1A',fontWeight:has?700:400}}>
+                  <input type="checkbox" checked={has} onChange={e=>{if(e.target.checked){set('retainage_pct',10);}else{set('retainage_pct',0);}}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+                  Retainage withheld
+                </label>
+                {has&&<select value={cur} onChange={e=>set('retainage_pct',parseInt(e.target.value,10))} style={{...inputS,flex:'0 0 120px'}}>
+                  <option value={0}>0%</option>
+                  <option value={5}>5%</option>
+                  <option value={10}>10%</option>
+                  <option value={15}>15%</option>
+                </select>}
               </div>
             </div>;
           }
@@ -3807,7 +3953,12 @@ function NewProjectForm({jobs,onClose,onSaved}){
     const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);
   };
   const skipLeadMatch=()=>{const msg=leadMatch.message;setLeadMatch(null);onSaved(msg);};
-  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,documents_needed:'',file_location:'',included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',active_entry_date:todayISO,drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
+  // 2026-05-05: Removed `documents_needed`, `file_location`, `active_entry_date`
+  // from initial state — fields retired from the Setup form per David. They
+  // remain valid columns in the DB; just no longer collected at create time.
+  // Added `company_id` so the Customer Master lookup can populate the FK in
+  // the same flow that fills customer_name/address/city/state/zip.
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',company_id:null,cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
@@ -3859,7 +4010,31 @@ function NewProjectForm({jobs,onClose,onSaved}){
   const fLbl=(l,req)=>(<label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>{l}{req&&<span style={{color:'#991B1B'}}> *</span>}</label>);
   // Auto-calc from line items
   const ncv=f.lineItems.reduce((s,li)=>s+lineSubtotal(li),0);
-  const stax=n(f.sales_tax);const cv=ncv+stax;const acv=cv;
+  // Sales tax single source of truth (2026-05-05 per David's E2): computed
+  // from line items + style + height + tax_exempt — mirrors the EditPanel
+  // computedSalesTax memo and the bottom-of-Contract-tab Sales Tax breakdown.
+  // Stamped onto the body in submit normalization so the DB matches what the
+  // form displayed at the moment of save.
+  const computedSalesTax=useMemo(()=>{
+    const TAX_RATE=0.0825;
+    const HEIGHT_BASIS={'4':23.00,'5':24.75,'6':26.00,'7':27.50,'8':29.25,'9':30.50,'10':31.75};
+    const STYLE_BASIS={'Ranch - 2 Rail':13.50,'Ranch - 3 Rail':15.75,'Ranch - 4 Rail':16.50};
+    let pcLF=0,pcHeight=null,pcStyle=null,wiContract=0;
+    f.lineItems.forEach(li=>{
+      if(li.line_type==='Precast'){
+        pcLF+=n(li.lf);
+        if(!pcHeight&&li.height)pcHeight=String(li.height).replace(/['"]/g,'').trim();
+        if(!pcStyle&&li.style)pcStyle=String(li.style).trim();
+      }else if(li.line_type==='Wrought Iron'){
+        wiContract+=n(li.lf)*n(li.rate);
+      }
+    });
+    const pcBasis=STYLE_BASIS[pcStyle]??HEIGHT_BASIS[pcHeight]??0;
+    const pcTax=pcLF*pcBasis*TAX_RATE;
+    const wiTax=wiContract*0.33*TAX_RATE;
+    return f.tax_exempt?0:Math.round((pcTax+wiTax)*100)/100;
+  },[f.lineItems,f.tax_exempt]);
+  const stax=computedSalesTax;const cv=ncv+stax;const acv=cv;
   const totalLF=f.lineItems.reduce((s,li)=>{
     if(['Precast','Single Wythe','Wrought Iron','Wood','Removal'].includes(li.line_type))return s+n(li.lf);
     if(li.line_type==='Lump Sum / Other')return s+n(li.lf);
@@ -3916,8 +4091,11 @@ function NewProjectForm({jobs,onClose,onSaved}){
     setSaving(true);
     setSaveErr(null);
     try{
-      // Build the job row body
-      const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
+      // Build the job row body. 2026-05-05: stamp BOTH sales_tax and
+      // sales_tax_amount from computedSalesTax (= stax) so the trigger
+      // trg_recalc_adj_contract sees the right value at insert time. The form
+      // no longer collects sales_tax as a free-text input; it's auto-derived.
+      const body={...f,...lineAgg,fence_type:derivedFenceType,net_contract_value:ncv,contract_value:cv,adj_contract_value:acv,sales_tax:stax,sales_tax_amount:stax,retainage_pct:n(f.retainage_pct),total_lf:totalLF,ytd_invoiced:0,pct_billed:0,left_to_bill:acv,change_orders:0};
       // Drainage: if the checkbox is off or the fence is no longer drainage-
       // eligible, force the other 3 columns to canonical "off" values
       // regardless of what was typed before unchecking.
@@ -3927,10 +4105,12 @@ function NewProjectForm({jobs,onClose,onSaved}){
       body.drainage_bottom_count=drainageOn?(n(f.drainage_bottom_count)||0):0;
       body.drainage_top_count=drainageOn?(n(f.drainage_top_count)||0):0;
       delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
-      // Sanitize empty-string date fields — PostgREST rejects '' for date columns
-      ['contract_date','est_start_date','active_entry_date','billing_date','complete_date','last_billed'].forEach(k=>{if(body[k]==='')body[k]=null;});
-      // Coerce optional text-ish fields that were empty strings to null (safer than empty strings for nullable columns)
-      ['job_number','address','city','zip','notes','file_location','documents_needed','gate_description','lump_sum_description','pm','sales_rep'].forEach(k=>{if(body[k]==='')body[k]=null;});
+      // Sanitize empty-string date fields — PostgREST rejects '' for date columns.
+      // (active_entry_date no longer collected at create time; left out of this list.)
+      ['contract_date','est_start_date','billing_date','complete_date','last_billed'].forEach(k=>{if(body[k]==='')body[k]=null;});
+      // Coerce optional text-ish fields that were empty strings to null (safer than empty strings for nullable columns).
+      // (file_location + documents_needed no longer collected at create time; left out of this list.)
+      ['job_number','address','city','zip','notes','gate_description','lump_sum_description','pm','sales_rep'].forEach(k=>{if(body[k]==='')body[k]=null;});
       body.fence_addons=syncFenceAddons(body);
       // Filter out line items that have no meaningful data — user may add an empty row and not fill it
       const filled=f.lineItems.filter(li=>{
@@ -4038,8 +4218,13 @@ function NewProjectForm({jobs,onClose,onSaved}){
           {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#625650',marginTop:2}}>Residential entry — type any job code</div>}
         </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
-        <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/></div>
-        <div>{fLbl('Cust #')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS}/></div>
+        <div style={{gridColumn:'1/-1'}}>
+          {fLbl('Customer Master Lookup')}
+          <CustomerLookup onSelect={c=>{setF(p=>({...p,company_id:c.id||null,customer_name:c.name||p.customer_name,address:c.address||p.address,city:c.city||p.city,state:c.state||p.state,zip:c.zip||p.zip}));}} placeholder="Search Customer Master to autofill name + address…"/>
+          <div style={{fontSize:10,color:'#9E9B96',marginTop:3}}>Pick a master record to autofill <b>Customer Name</b>, <b>Address</b>, <b>City/State/ZIP</b>, and link <b>company_id</b>. Otherwise type the name below for residential / one-off customers.</div>
+        </div>
+        <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/>{f.company_id&&<div style={{fontSize:10,color:'#065F46',marginTop:3,fontWeight:600}}>✓ Linked to Customer Master</div>}</div>
+        <div>{fLbl('Cust # (per-job PO)')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS} placeholder="Optional"/></div>
         <div>{fLbl('Status')}<select value={f.status} onChange={e=>set('status',e.target.value)} style={inputS}>{STS.map(v=><option key={v} value={v}>{SL[v]}</option>)}</select></div>
         <div>{fLbl('Market',true)}<select value={f.market} onChange={e=>set('market',e.target.value)} style={inputS}><option value="">— Select —</option>{MKTS.map(m=><option key={m} value={m}>{m} — {MARKET_FULL[m]}</option>)}</select></div>
         <div>{fLbl('Job Type')}<select value={f.job_type} onChange={e=>set('job_type',e.target.value)} style={inputS}>{['Commercial','Residential','Government','Municipal/MUD'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -4155,21 +4340,35 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div style={{display:'grid',gridTemplateColumns:grd,gap:12,marginBottom:20}}>
           <div>{fLbl('Contract Date')}<input type="date" value={f.contract_date} onChange={e=>set('contract_date',e.target.value)} style={inputS}/></div>
           <div>{fLbl('Billing Method')}<select value={f.billing_method} onChange={e=>set('billing_method',e.target.value)} style={inputS}>{['Progress','Lump Sum','Milestone','AIA','T&M'].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+          {/* 2026-05-05 per David: pure numeric Billing Date input (1–31).
+              Writes billing_day_of_month + billing_trigger='day_of_month' +
+              billing_date=ord(N) so legacy renderers stay correct. */}
           <div>{fLbl('Billing Date')}
-            <div style={{display:'flex',gap:6}}>
-              <select value={f.billing_trigger||''} onChange={e=>{const v=e.target.value||null;set('billing_trigger',v);if(v==='eom'){set('billing_day_of_month',null);set('billing_date','EOM');}else if(v!=='custom'&&v!=='day_of_month'){set('billing_day_of_month',null);set('billing_date','');}}} style={{...inputS,flex:'0 0 130px'}}>
-                <option value="">—</option>
-                <option value="day_of_month">Day of month</option>
-                <option value="eom">End of month</option>
-                <option value="custom">Custom</option>
-              </select>
-              {f.billing_trigger==='day_of_month'&&<input type="number" min="1" max="31" value={f.billing_day_of_month||''} onChange={e=>{const v=e.target.value;if(v===''){set('billing_day_of_month',null);set('billing_date','');return;}const day=parseInt(v,10);if(!isNaN(day)&&day>=1&&day<=31){set('billing_day_of_month',day);set('billing_date',`${day}${day===1?'st':day===2?'nd':day===3?'rd':day===21?'st':day===22?'nd':day===23?'rd':day===31?'st':'th'}`);}}} placeholder="20" style={{...inputS,flex:1}}/>}
-              {f.billing_trigger==='custom'&&<input value={f.billing_date||''} onChange={e=>set('billing_date',e.target.value)} placeholder="e.g. DUC" style={{...inputS,flex:1}}/>}
-              {f.billing_trigger==='eom'&&<div style={{flex:1,display:'flex',alignItems:'center',padding:'0 10px',background:'#F4F4F2',borderRadius:6,fontSize:12,color:'#625650'}}>Last day of each month</div>}
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <input type="number" min="1" max="31" value={f.billing_day_of_month||''} onChange={e=>{const v=e.target.value;if(v===''){set('billing_day_of_month',null);set('billing_trigger',null);set('billing_date','');return;}const day=parseInt(v,10);if(!isNaN(day)&&day>=1&&day<=31){const ord=`${day}${day===1||day===21||day===31?'st':day===2||day===22?'nd':day===3||day===23?'rd':'th'}`;set('billing_day_of_month',day);set('billing_trigger','day_of_month');set('billing_date',ord);}}} placeholder="Day of month (1–31)" style={{...inputS,flex:1}}/>
+              {f.billing_day_of_month&&<span style={{fontSize:11,color:'#625650',whiteSpace:'nowrap'}}>of each month</span>}
             </div>
           </div>
-          <div>{fLbl('Sales Tax ($)')}<input type="number" value={f.sales_tax} onChange={e=>set('sales_tax',e.target.value)} placeholder="0" style={inputS}/></div>
-          <div>{fLbl('Retainage %')}<input type="number" value={f.retainage_pct} onChange={e=>set('retainage_pct',e.target.value)} placeholder="0" style={inputS}/></div>
+          {/* 2026-05-05 per David: Sales Tax is now computed live from line items
+              (style + height + LF + tax_exempt). The free-text input invited
+              drift; this is read-only and mirrors the bottom-of-tab summary. */}
+          <div>{fLbl('Sales Tax ($) — Auto')}<div style={{...inputS,background:'#F4F4F2',color:'#1A1A1A',fontFamily:'Inter',fontWeight:700,cursor:'not-allowed'}}>{stax>0?$(stax):f.tax_exempt?'$0 (tax exempt)':'—'}</div></div>
+          {/* 2026-05-05 per David: Retainage as Yes/No + dropdown (0/5/10/15).
+              Default Yes = 10% (most common). No = 0. */}
+          <div>{fLbl('Retainage')}
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <label style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:n(f.retainage_pct)>0?'#FDF4F4':'#F9F8F6',borderRadius:8,border:n(f.retainage_pct)>0?'1px solid #8A261D':'1px solid #E5E3E0',cursor:'pointer',fontSize:13,color:n(f.retainage_pct)>0?'#8A261D':'#1A1A1A',fontWeight:n(f.retainage_pct)>0?700:400}}>
+                <input type="checkbox" checked={n(f.retainage_pct)>0} onChange={e=>set('retainage_pct',e.target.checked?10:0)} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+                Withheld
+              </label>
+              {n(f.retainage_pct)>0&&<select value={n(f.retainage_pct)} onChange={e=>set('retainage_pct',parseInt(e.target.value,10))} style={{...inputS,flex:'0 0 110px'}}>
+                <option value={0}>0%</option>
+                <option value={5}>5%</option>
+                <option value={10}>10%</option>
+                <option value={15}>15%</option>
+              </select>}
+            </div>
+          </div>
         </div>
         <div style={{background:'#1A1A1A',borderRadius:12,padding:20,color:'#fff'}}>
           <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,color:'#9E9B96',marginBottom:12}}>Auto-Calculated Contract Summary</div>
@@ -4182,14 +4381,16 @@ function NewProjectForm({jobs,onClose,onSaved}){
             <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:18,height:18,accentColor:'#8A261D'}}/>{l}
           </label>)}
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          <div>{fLbl('Documents Needed')}<input value={f.documents_needed} onChange={e=>set('documents_needed',e.target.value)} style={inputS}/></div>
-          <div>{fLbl('File Location')}<input value={f.file_location} onChange={e=>set('file_location',e.target.value)} style={inputS}/></div>
-        </div>
+        {/* 2026-05-05 per David: Documents Needed + File Location retired
+            from the create form. Both columns remain valid in the DB; just
+            no longer collected at create time. SharePoint folder linkage
+            handled separately on the Documents tab post-create. */}
       </div>}
       {sec==='schedule'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>{fLbl('Install Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
-        <div>{fLbl('Active Entry Date')}<input type="date" value={f.active_entry_date} onChange={e=>set('active_entry_date',e.target.value)} style={inputS}/></div>
+        {/* 2026-05-05 per David: Active Entry Date retired from the create form.
+            Column remains valid in the DB; populated by status-change automation
+            when a job moves out of contract_review. */}
         <div>{fLbl('Contract Age')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}}>{f.contract_date?Math.round((Date.now()-new Date(f.contract_date).getTime())/86400000)+' days':'—'}</div></div>
         <div>{fLbl('Est. Complete Date')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Auto-computed from Install Date + Install Duration. Recomputes when LF, style, install date, or duration override changes.">{f.est_complete_date?fD(f.est_complete_date):<span style={{color:'#9E9B96'}}>need install date + LF</span>}</div></div>
         <div>{fLbl('Install Duration (days)')}<div style={{...inputS,background:'#F9F8F6',color:'#625650'}} title="Computed from total LF ÷ style-specific install rate. Override below if you have better insight.">{f.install_duration_days||<span style={{color:'#9E9B96'}}>—</span>}{(()=>{
