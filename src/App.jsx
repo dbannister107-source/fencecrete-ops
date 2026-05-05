@@ -389,6 +389,27 @@ const CANONICAL_TO_MATERIAL_CALC = {
   'Wrought Iron': null,
   'Customer Choice': null,
 };
+// Height-aware variant of CANONICAL_TO_MATERIAL_CALC. Most canonical styles
+// map 1:1 to a material_calc_styles row, but "Vertical Wood" splits into
+// two physical implementations that share a name but differ in layout:
+//   - 6' variant: simple bottom rail + vertical panels + top rail
+//   - 8' variant: vertical-stack (bottom panels + top panels + 3 rails)
+// Pick by fence height. Anything else falls through to the dict.
+//
+// Bug reported by Max 2026-05-05: "Vertical Wood" at 6ft was resolving to
+// the 8' row, applying its bottom_panels=2 / top_panels=5 / col_spacing=5.25
+// config. For a 6,900 LF job the calculator produced ~2,630 bottom + ~6,575
+// top panels (gibberish for a 6ft fence). Should be regular panels with
+// bottom + top rails — the 6' row's actual config.
+const resolveMaterialCalcLegacy = (canonical, height) => {
+  if (!canonical) return undefined;
+  if (canonical === 'Vertical Wood') {
+    return Number(height) > 0 && Number(height) <= 6
+      ? "Vertical Wood 6'"
+      : "Vertical Wood 8'";
+  }
+  return CANONICAL_TO_MATERIAL_CALC[canonical];
+};
 const DD = { status:STS.map(s=>({v:s,l:SL[s]})), market:MKTS.map(m=>({v:m,l:m})), fence_type:['PC','SW','PC/Gates','PC/Columns','PC/SW','PC/WI','SW/Columns','SW/Gate','SW/WI','WI','WI/Gate','Wood','PC/SW/Columns','SW/Columns/Gates','Slab','LABOR'].map(v=>({v,l:v})), style:STYLE_CATALOG.map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), style_single_wythe:STYLE_CATALOG.filter(s=>s.applies_to_sw).map(s=>({v:s.name,l:STYLE_LABEL(s.name)})), color:COLOR_CATALOG.map(c=>({v:c.name,l:c.name})), billing_method:['Progress','Lump Sum','Milestone','T&M','AIA'].map(v=>({v,l:v})), job_type:['Commercial','Residential','Government','Industrial','Private','Public'].map(v=>({v,l:v})), sales_rep:REPS.map(v=>({v,l:v})), pm:PM_LIST.map(p=>({v:p.id,l:p.label})), primary_fence_type:['Precast','Masonry','Wrought Iron'].map(v=>({v,l:v})) };
 // NEXT_STATUS moved to src/shared/status.js
 
@@ -9039,11 +9060,13 @@ function MaterialCalcPage({jobs,preJob,onNav}){
   //   3. null → caller uses plant_config defaults and renders a "no data" notice
   const calcCfg=useMemo(()=>{
     if(!selStyle)return null;
-    const legacy=CANONICAL_TO_MATERIAL_CALC[selStyle];
+    // Height-aware resolution — "Vertical Wood" picks 6' or 8' row by fence
+    // height. All other canonicals fall through to the dict 1:1.
+    const legacy=resolveMaterialCalcLegacy(selStyle, height);
     if(legacy)return calcStyles.find(s=>s.style_name===legacy)||null;
     if(legacy===null)return null;
     return calcStyles.find(s=>s.style_name===selStyle)||null;
-  },[calcStyles,selStyle]);
+  },[calcStyles,selStyle,height]);
   useEffect(()=>{
     if(!selStyle){setCapacity(null);return;}
     const lookupName=(calcCfg&&calcCfg.style_name)||selStyle;
@@ -10527,15 +10550,16 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   // If capped, sub-piece counts within the pool scale proportionally and we
   // toast the user with which pools were trimmed so they know to split the
   // remainder across days.
-  const planLookupNameFor=useCallback((s)=>{
+  const planLookupNameFor=useCallback((s,h)=>{
     if(!s)return null;
-    const legacy=CANONICAL_TO_MATERIAL_CALC[s];
+    // Height-aware: "Vertical Wood" → 6' or 8' depending on h. Others 1:1.
+    const legacy=resolveMaterialCalcLegacy(s,h);
     if(legacy)return legacy;
     if(legacy===null)return null;
     return s;
   },[]);
   const planFindCapRow=useCallback((styleName,heightVal)=>{
-    const lookupName=planLookupNameFor(styleName);
+    const lookupName=planLookupNameFor(styleName,heightVal);
     if(!lookupName)return null;
     const h=n(heightVal);
     const candidates=(capacityLookup||[]).filter(r=>r.style_name===lookupName);
@@ -10546,11 +10570,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   },[capacityLookup,planLookupNameFor]);
   // Per-pool usage across existing plan lines that share this (style, height).
   const planUsageForPool=useCallback((lineList,style,height)=>{
-    const lookupName=planLookupNameFor(style);
+    const lookupName=planLookupNameFor(style,height);
     const h=n(height);
     let panels=0,posts=0,rails=0,caps=0;
     (lineList||[]).forEach(l=>{
-      if(planLookupNameFor(l.style||'')!==lookupName)return;
+      if(planLookupNameFor(l.style||'',l.height)!==lookupName)return;
       const lH=n(l.height);
       if(h&&lH&&h!==lH)return;
       panels+=sumGroup(l.planned,'PANELS');
@@ -11168,15 +11192,16 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       });
       // Resolve canonical → legacy style name for the v_style_capacity_lookup
       // join. The view is keyed on the legacy material_calc_styles.style_name.
-      const lookupNameFor=(s)=>{
+      const lookupNameFor=(s,h)=>{
         if(!s)return null;
-        const legacy=CANONICAL_TO_MATERIAL_CALC[s];
+        // Height-aware: "Vertical Wood" → 6' or 8' depending on h. Others 1:1.
+        const legacy=resolveMaterialCalcLegacy(s,h);
         if(legacy)return legacy;
         if(legacy===null)return null;
         return s;
       };
       const findCapRow=(styleName,heightVal)=>{
-        const lookupName=lookupNameFor(styleName);
+        const lookupName=lookupNameFor(styleName,heightVal);
         if(!lookupName)return null;
         const h=n(heightVal);
         const candidates=capacityLookup.filter(r=>r.style_name===lookupName);
