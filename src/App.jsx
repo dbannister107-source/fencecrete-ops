@@ -10255,7 +10255,118 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   const updatePlanLine=(idx,field,val)=>setPlanLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
   const removePlanLine=(idx)=>setPlanLines(prev=>prev.filter((_,i)=>i!==idx));
   const movePlanLine=(idx,dir)=>setPlanLines(prev=>{const n2=[...prev];const t=idx+dir;if(t<0||t>=n2.length)return n2;[n2[idx],n2[t]]=[n2[t],n2[idx]];return n2;});
-  const addJobToPlan=(j)=>{setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);};
+
+  // ─── Auto-fill capacity helpers (Sprint 2, 2026-05-04) ──────────────────
+  // When a job is dropped onto a plan, pre-fill the per-piece counts to fit
+  // today's available capacity instead of always defaulting to the full
+  // material order. Cap = MIN(remaining_on_job, free_capacity_in_pool_today).
+  // If capped, sub-piece counts within the pool scale proportionally and we
+  // toast the user with which pools were trimmed so they know to split the
+  // remainder across days.
+  const planLookupNameFor=useCallback((s)=>{
+    if(!s)return null;
+    const legacy=CANONICAL_TO_MATERIAL_CALC[s];
+    if(legacy)return legacy;
+    if(legacy===null)return null;
+    return s;
+  },[]);
+  const planFindCapRow=useCallback((styleName,heightVal)=>{
+    const lookupName=planLookupNameFor(styleName);
+    if(!lookupName)return null;
+    const h=n(heightVal);
+    const candidates=(capacityLookup||[]).filter(r=>r.style_name===lookupName);
+    if(candidates.length===0)return null;
+    const exact=h>0?candidates.find(r=>n(r.height_ft)===h):null;
+    const generic=candidates.find(r=>r.height_ft===null);
+    return exact||generic||null;
+  },[capacityLookup,planLookupNameFor]);
+  // Per-pool usage across existing plan lines that share this (style, height).
+  const planUsageForPool=useCallback((lineList,style,height)=>{
+    const lookupName=planLookupNameFor(style);
+    const h=n(height);
+    let panels=0,posts=0,rails=0,caps=0;
+    (lineList||[]).forEach(l=>{
+      if(planLookupNameFor(l.style||'')!==lookupName)return;
+      const lH=n(l.height);
+      if(h&&lH&&h!==lH)return;
+      panels+=sumGroup(l.planned,'PANELS');
+      posts +=sumGroup(l.planned,'POSTS');
+      rails +=sumGroup(l.planned,'RAILS');
+      caps  +=sumGroup(l.planned,'POST CAPS');
+    });
+    return{panels,posts,rails,caps};
+  },[planLookupNameFor]);
+  // Returns {panels, posts, rails, caps} each {remaining, free, max}, or null
+  // if no capacity row exists for this style. max = MIN(remaining, free).
+  const planComputeAutoCap=useCallback((job,lineList)=>{
+    const cap=planFindCapRow(job?.style,job?.height_precast);
+    if(!cap)return null;
+    const usage=planUsageForPool(lineList,job?.style,job?.height_precast);
+    const matPanels=n(job?.material_panels_regular)+n(job?.material_panels_half)+n(job?.material_panels_top)+n(job?.material_panels_bottom);
+    const matPosts =n(job?.material_posts_line)+n(job?.material_posts_corner)+n(job?.material_posts_stop);
+    const matRails =n(job?.material_rails_regular)+n(job?.material_rails_top)+n(job?.material_rails_bottom)+n(job?.material_rails_center);
+    const matCaps  =n(job?.material_caps_line)+n(job?.material_caps_stop);
+    const remPanels=Math.max(0,matPanels-n(job?.produced_panels));
+    const remPosts =Math.max(0,matPosts -n(job?.produced_posts));
+    const remRails =Math.max(0,matRails -n(job?.produced_rails));
+    const remCaps  =Math.max(0,matCaps  -n(job?.produced_caps));
+    const freePanels=Math.max(0,n(cap.panels_owned)         -usage.panels);
+    const freePosts =Math.max(0,n(cap.posts_total_at_height)-usage.posts);
+    const freeRails =Math.max(0,n(cap.rails_total)          -usage.rails);
+    const freeCaps  =Math.max(0,n(cap.caps_total)           -usage.caps);
+    return{
+      panels:{remaining:remPanels,free:freePanels,max:Math.min(remPanels,freePanels)},
+      posts: {remaining:remPosts, free:freePosts, max:Math.min(remPosts, freePosts)},
+      rails: {remaining:remRails, free:freeRails, max:Math.min(remRails, freeRails)},
+      caps:  {remaining:remCaps,  free:freeCaps,  max:Math.min(remCaps,  freeCaps)},
+    };
+  },[planFindCapRow,planUsageForPool]);
+  // Scale each pool's sub-pieces down proportionally to fit auto-cap. Returns
+  // {line, capped (boolean), flags (per-pool boolean)} for toast formatting.
+  const planApplyAutoCap=useCallback((line,autoCap)=>{
+    if(!autoCap)return{capped:false,line,flags:{}};
+    const POOL_KEYS={
+      panels:PLAN_PIECE_TYPES.filter(pt=>pt.group==='PANELS').map(pt=>pt.key),
+      posts: PLAN_PIECE_TYPES.filter(pt=>pt.group==='POSTS').map(pt=>pt.key),
+      rails: PLAN_PIECE_TYPES.filter(pt=>pt.group==='RAILS').map(pt=>pt.key),
+      caps:  PLAN_PIECE_TYPES.filter(pt=>pt.group==='POST CAPS').map(pt=>pt.key),
+    };
+    const planned={...line.planned};
+    const flags={panels:false,posts:false,rails:false,caps:false};
+    Object.keys(POOL_KEYS).forEach(pool=>{
+      const subKeys=POOL_KEYS[pool];
+      const total=subKeys.reduce((s,k)=>s+n(planned[k]),0);
+      const max=autoCap[pool].max;
+      if(total>max&&total>0){
+        flags[pool]=true;
+        const ratio=max/total;
+        subKeys.forEach(k=>{
+          const v=n(planned[k]);
+          planned[k]=String(Math.round(v*ratio));
+        });
+      }
+    });
+    return{capped:Object.values(flags).some(Boolean),line:{...line,planned},flags};
+  },[]);
+
+  const addJobToPlan=(j)=>{
+    if(planLines.some(l=>l.job_id===j.id))return;
+    let line=buildPlanLine(j,null);
+    const autoCap=planComputeAutoCap(j,planLines);
+    if(autoCap){
+      const{capped,line:cappedLine,flags}=planApplyAutoCap(line,autoCap);
+      line=cappedLine;
+      if(capped){
+        const cappedPools=Object.keys(flags).filter(k=>flags[k]);
+        const labels={panels:'panels',posts:'posts',rails:'rails',caps:'caps'};
+        setToast({
+          msg:`${j.job_number} auto-filled to fit today's capacity. Capped: ${cappedPools.map(p=>labels[p]).join(', ')}. Click "📅 Split across days" on the line to schedule the remainder.`,
+          ok:true,
+        });
+      }
+    }
+    setPlanLines(prev=>[...prev,line]);
+  };
   const addJobFromCarryForward=(cf)=>{
     const j=jobs.find(x=>x.id===cf.job_id);if(!j)return;
     if(planLines.some(l=>l.job_id===cf.job_id))return;
