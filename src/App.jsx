@@ -9338,16 +9338,18 @@ function MaterialCalcPage({jobs,preJob,onNav}){
 
     const hasVertPanels=cfg.panel_multiplier===0&&(n(cfg.bottom_panels)>0||n(cfg.top_panels)>0);
     if(isCMU){
-      // Max's spec (2026-05-05): panels are 16in tall, so the count of WHOLE
-      // panels per section is floor(h_in / 16). The 0.5-panel remainder (when
-      // h_in isn't a multiple of 16) is covered by a single half-panel per
-      // section. Old formula used ceil() + a 0.75 multiplier in the DB row to
-      // compensate; both have been retired now that panel_multiplier=1 on
-      // both CMU rows. For h=6: 4 whole + 1 half per section. For h=8: 6
-      // whole + 1 half (the half is over-allocated by Max's "1 per section
-      // always" rule — PM override handles the field-trim case).
-      regularPanels=sectCeil*Math.floor((h*12)/16)*cfg.panel_multiplier;
-      halfPanels=sectCeil;
+      // Max's spec (2026-05-05, refined 12:02 PM): panels are 16in tall, so
+      // the count of WHOLE panels per section is floor(h_in / 16). A half
+      // panel covers the 0.5-panel remainder when h_in isn't an exact
+      // multiple of 16. Only emit halfPanels when there's a remainder —
+      // h=6 (72") → 4 whole + 1 half per section; h=8 (96") → 6 whole + 0
+      // half (96/16 = 6 exactly, no field-cut needed). Old formula used
+      // ceil() + a 0.75 multiplier in the DB row to compensate; both have
+      // been retired now that panel_multiplier=1 on both CMU rows.
+      const h_in=h*12;
+      regularPanels=sectCeil*Math.floor(h_in/16)*cfg.panel_multiplier;
+      const hasRemainder=(h_in%16)!==0;
+      halfPanels=hasRemainder?sectCeil:0;
       specialLabel='CMU';
     }else if(isZPanel){
       topPanels=sectCeil;bottomPanels=sectCeil;
