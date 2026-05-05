@@ -2566,7 +2566,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           // the stale form values loaded when the panel was first opened.
           // See bug history in LineItemsEditor.saveAll comments.
           if(summary&&typeof summary==='object'){setForm(p=>({...p,...summary}));}
-        }} registerSave={(fn)=>{lineItemsSaveRef.current=fn;}}/>):tab==='tasks'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add tasks.</div>:<TaskTile scope={{job_id:job?.id}} title="Tasks for this Project"/>):tab==='history'?<ActivityHistory jobId={job?.id}/>:tab==='pis'?<div style={{padding:'4px 0'}}>
+        }} registerSave={(fn)=>{lineItemsSaveRef.current=fn;}}/>):tab==='tasks'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add tasks.</div>:<TaskTile scope={{job_id:job?.id}} title="Tasks for this Project"/>):tab==='history'?<><ActivityHistory jobId={job?.id}/>{job?.id&&<JobDiagnostic jobId={job.id}/>}</>:tab==='pis'?<div style={{padding:'4px 0'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
             <div><div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Information Sheet</div><div style={{fontSize:11,color:'#625650',marginTop:2}}>Pursuant to Section 53.159 of the Texas Property Code</div></div>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -4018,7 +4018,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         })()}</div></div>
         <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
-      {/* JobDiagnostic intentionally omitted here — NewProjectForm creates a job; there is no jobs.id to diagnose until after first save. EditPanel renders the diagnostic on its own schedule tab. */}
+      {/* JobDiagnostic intentionally omitted here — NewProjectForm creates a job; there is no jobs.id to diagnose until after first save. EditPanel renders the diagnostic on its History tab. */}
       {sec==='review'&&<div>
         {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
         {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
