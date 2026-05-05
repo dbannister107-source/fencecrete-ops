@@ -78,6 +78,13 @@ import { HEIGHT_BASIS, STYLE_BASIS, TAX_RATE } from './shared/billing/heightBasi
 // in the EditPanel Money group, between Contract & Billing and Line Items.
 import JobPricingEditor from './features/accounting/JobPricingEditor';
 
+// Acct Sheet / Billing Engine Phase D — user-facing Accounting tab.
+// Replaces Virginia's manual Excel "Acct Sheet" with a native OPS
+// surface: contract summary + current bill draft + App ledger + File
+// Invoice + Release Retainage. Mounted on the "Accounting" tab in
+// the EditPanel Money group (after Change Orders).
+import AccountingTab from './features/accounting/AccountingTab';
+
 // Permission helpers -- read user_profiles.permissions JSONB column.
 // Replaces the hardcoded EDIT_EMAILS / STATUS_EDIT_EMAILS / etc. Sets that
 // previously sat at the top of this file. Adding/removing a permission for
@@ -1187,6 +1194,11 @@ const SECS=[
   {key:'lineitems',label:'Line Items',group:'Money',fields:[]},
   {key:'totals',label:'Totals',group:'Money',fields:['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','average_height_installed','product','fence_type','primary_fence_type','fence_addons']},
   {key:'co',label:'Change Orders',group:'Money',fields:['change_orders','contract_value_recalculation','contract_value_recalc_diff']},
+  // 2026-05-05 — Acct Sheet / Billing Engine Phase D. Sits at the end of
+  // the Money group: this is the BILLING action surface that consumes
+  // everything from Contract & Billing / Pricing / Line Items / COs.
+  // Component lives in src/features/accounting/ per the App.jsx hard cap.
+  {key:'accounting',label:'Accounting',group:'Money',fields:[]},
   // ─── Workflow (ongoing project work) ───
   {key:'documents',label:'Documents',group:'Workflow',fields:[]},
   {key:'tasks',label:'Tasks',group:'Workflow',fields:[]},
@@ -2804,7 +2816,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
           </div>
         </div>;})()}
-        {tab==='pricing'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to set up pricing.</div>:<JobPricingEditor job={job} coId={null} canEdit={canEdit} registerSave={(fn)=>{pricingSaveRef.current=fn;}}/>):tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={(summary)=>{
+        {tab==='accounting'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to bill.</div>:<AccountingTab job={job} canEdit={canEdit} currentUserEmail={currentUserEmail}/>):tab==='pricing'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to set up pricing.</div>:<JobPricingEditor job={job} coId={null} canEdit={canEdit} registerSave={(fn)=>{pricingSaveRef.current=fn;}}/>):tab==='lineitems'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add line items.</div>:<LineItemsEditor job={job} onChange={(summary)=>{
           // Merge recomputed totals from the line items aggregator into
           // EditPanel form state. Without this, handleSave's subsequent
           // PATCH would overwrite the freshly-aggregated DB rollup with
@@ -5490,7 +5502,23 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   const arIsCurrent=arMonth===curBillingMonth();
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
   const fetchArInvCounts=useCallback(async()=>{try{const d=await sbGet('invoice_entries',`billing_month=eq.${arMonth}&select=job_id,invoice_amount`);const m={};(d||[]).forEach(e=>{if(!m[e.job_id])m[e.job_id]={count:0,total:0};m[e.job_id].count++;m[e.job_id].total+=n(e.invoice_amount);});setArInvByJob(m);}catch(err){setArInvByJob({});}},[arMonth]);
+  // 2026-05-05 — Acct Sheet Phase D. Fetch invoice_applications keyed by
+  // pm_bill_submission_id so we can render an "Already billed via Acct
+  // Sheet (App #N)" badge on submissions that have already been processed
+  // through the new Accounting tab. Visual heads-up only — does NOT block
+  // the AR Approve action (cutover is operational, two paths coexist).
+  const[arBilledBySub,setArBilledBySub]=useState({});
+  const fetchArBilledBySub=useCallback(async()=>{
+    try{
+      const ids=arSubs.map(s=>s.id);
+      if(ids.length===0){setArBilledBySub({});return;}
+      const d=await sbGet('invoice_applications',`pm_bill_submission_id=in.(${ids.join(',')})&select=id,app_number,invoice_number,pm_bill_submission_id,status`);
+      const m={};(d||[]).forEach(a=>{if(a.pm_bill_submission_id)m[a.pm_bill_submission_id]=a;});
+      setArBilledBySub(m);
+    }catch(e){setArBilledBySub({});}
+  },[arSubs]);
   useEffect(()=>{if(billingTab==='submissions'){fetchArSubs();fetchArInvCounts();}},[fetchArSubs,fetchArInvCounts,billingTab]);
+  useEffect(()=>{if(billingTab==='submissions'&&arSubs.length>0)fetchArBilledBySub();},[fetchArBilledBySub,arSubs,billingTab]);
   const arActiveJobs=useMemo(()=>jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status)),[jobs]);
   const arSubByJob=useMemo(()=>{const m={};arSubs.forEach(s=>{m[s.job_id]=s;});return m;},[arSubs]);
   const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
@@ -5802,7 +5830,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.style||sub.style||'—'}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.color||sub.color||'—'}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{j.height_precast||sub.height||'—'}</td>
-              <td style={{padding:'8px 10px'}}>{isNoBill?<span title={sub.no_bill_notes||''} style={{...pill('#625650','#E5E3E0'),fontStyle:'italic'}}>🚫 No bill required{reasonLabel?` (${reasonLabel})`:''}</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}</td>
+              <td style={{padding:'8px 10px'}}>{isNoBill?<span title={sub.no_bill_notes||''} style={{...pill('#625650','#E5E3E0'),fontStyle:'italic'}}>🚫 No bill required{reasonLabel?` (${reasonLabel})`:''}</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>● Reviewed</span>:<span style={pill('#065F46','#D1FAE5')}>✓ Submitted</span>}{arBilledBySub[sub.id]&&<div style={{marginTop:4}}><span title={`Already filed as App #${arBilledBySub[sub.id].app_number}${arBilledBySub[sub.id].invoice_number?' ('+arBilledBySub[sub.id].invoice_number+')':''}. Approving here too will create a duplicate invoice_entries row.`} style={{...pill('#B45309','#FEF3C7'),fontSize:9}}>📋 Acct Sheet App #{arBilledBySub[sub.id].app_number}</span></div>}</td>
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
               <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
