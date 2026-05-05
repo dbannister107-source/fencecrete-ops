@@ -10231,7 +10231,12 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       material,material_totals:gt,
       planned,
       planned_lf:existing?.planned_lf!=null?String(existing.planned_lf):(lfPC(job)?String(lfPC(job)):''),
-      shift_assignment:existing?.shift_assignment||'both',
+      // Shift assignment — DB column is `shift` (integer 1/2 or null = 'both').
+      // UI uses string '1'/'2'/'both' for the toggle. Sprint 2 (2026-05-04) wired
+      // load + save: previously the dropdown was purely client-side and never
+      // persisted because the body sent `shift_assignment` (didn't exist in DB)
+      // instead of `shift`.
+      shift_assignment:existing?.shift==null?'both':String(existing.shift),
       partial_run_reason:existing?.partial_run_reason||'',notes:existing?.notes||'',
       material_calc_date_at_plan:existing?existing.material_calc_date_at_plan||null:currentCalcDate,
       quantities_stale:staleFromDB||staleFromCompare,
@@ -10548,9 +10553,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
           const calcAtPlan=l.material_calc_date_at_plan||jobForLine?.material_calc_date||l.material_calc_date||null;
           const pieceCols={};PLAN_PIECE_KEYS.forEach(k=>{pieceCols['planned_'+k]=n(l.planned?.[k])||0;});
           const aggCols={planned_posts:linePosts(l),planned_panels:linePanels(l),planned_rails:lineRails(l),planned_caps:lineCaps(l)};
-          return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};
+          // Shift mapping: UI 'both' → null, '1' → 1, '2' → 2. DB column is `shift` (integer, nullable).
+          const shiftVal=l.shift_assignment==='1'?1:l.shift_assignment==='2'?2:null;
+          return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false,shift:shiftVal};
         });
-        const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift_assignment'];
+        const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift'];
         // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column loop reads response.text() to detect schema drift; sbPost would obscure the body inspection. See comment a few lines below.
         let res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         let attempts=0;let currentRows=lineRows;
@@ -11678,9 +11685,11 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
           const calcAtPlan=l.material_calc_date_at_plan||jobForLine?.material_calc_date||l.material_calc_date||null;
           const pieceCols={};PLAN_PIECE_KEYS.forEach(k=>{pieceCols['planned_'+k]=n(l.planned?.[k])||0;});
           const aggCols={planned_posts:linePosts(l),planned_panels:linePanels(l),planned_rails:lineRails(l),planned_caps:lineCaps(l)};
-          return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false};
+          // Shift mapping: UI 'both' → null, '1' → 1, '2' → 2. DB column is `shift` (integer, nullable).
+          const shiftVal=l.shift_assignment==='1'?1:l.shift_assignment==='2'?2:null;
+          return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false,shift:shiftVal};
         });
-        const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift_assignment'];
+        const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift'];
         // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column loop reads response.text() to detect schema drift; sbPost would obscure the body inspection. See comment a few lines below.
         let res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
         let attempts=0;let currentRows=lineRows;
