@@ -14722,8 +14722,13 @@ function CoPilotHome({onNav}){
 //   2. Bottleneck recommendations — specific actions with quantified impact
 //   3. Coverage gaps — missing data that's blocking better recommendations
 // Designed so the rules become the prompt when we wire LLM v1.
-function DemandPlannerCopilot({tab,data}){
-  const[expanded,setExpanded]=useState(true);
+function DemandPlannerCopilot({tab,data,defaultExpanded=true}){
+  // defaultExpanded controls the initial open/closed state. Defaults to true
+  // for the CoPilotHome dashboard surface (where surfacing insights without
+  // a click is the whole point). DemandPlanningPage passes false so the
+  // panel opens collapsed — the page already shows the structured backlog
+  // tables above; the AI panel is supplementary, not primary.
+  const[expanded,setExpanded]=useState(defaultExpanded);
   const[qaOpen,setQaOpen]=useState(false);
   const[messages,setMessages]=useState([]);  // [{role:'user'|'assistant',content:string}]
   const[input,setInput]=useState('');
@@ -16046,6 +16051,7 @@ function DemandPlanningPage(){
     {/* ─── DEMAND PLANNER CO-PILOT (agentic) ─── */}
     <DemandPlannerCopilot
       tab={tab}
+      defaultExpanded={false}
       data={{
         openJobs,
         productionJobs,
