@@ -18,6 +18,7 @@ import {
   HEB_MADERA_RUN, CYCLE_1_EXPECTED,
   CYCLE_2_PM, CYCLE_2_PRIOR_APP_LINES, CYCLE_2_PRIOR_APPS, CYCLE_2_EXPECTED,
   TAX_EXEMPT_JOB, TAX_EXEMPT_EXPECTED,
+  GATE_BILLED_NO_OVERRIDE, GATE_BILLED_NO_OVERRIDE_EXPECTED,
 } from './acctSheetFixtures.js';
 
 let failed = 0;
@@ -105,6 +106,15 @@ assert('TE posts_only current_total',              c3po.current_total,          
 assert('TE totals current_amount',                 r3.draft.totals.current_amount,    TAX_EXEMPT_EXPECTED.totals.current_amount);
 assert('TE totals current_retainage',              r3.draft.totals.current_retainage, TAX_EXEMPT_EXPECTED.totals.current_retainage);
 assert('TE totals net_due',                        r3.draft.totals.net_due,           TAX_EXEMPT_EXPECTED.totals.net_due);
+
+console.log('\n─── H1 regression: gate billed Cycle 1, no override Cycle 2 ───');
+const r4 = computeAcctSheet(GATE_BILLED_NO_OVERRIDE);
+const c4 = r4.draft.lines.find((l) => l.stage_key === 'complete');
+assert('H1 cumulative defaults to prior',         c4.cumulative_qty,             GATE_BILLED_NO_OVERRIDE_EXPECTED.cumulative_qty);
+assert('H1 prior_qty preserved',                  c4.prior_qty,                  GATE_BILLED_NO_OVERRIDE_EXPECTED.prior_qty);
+assert('H1 current_qty is ZERO (not negative)',   c4.current_qty,                GATE_BILLED_NO_OVERRIDE_EXPECTED.current_qty);
+assert('H1 current_total is ZERO (no credit)',    c4.current_total,              GATE_BILLED_NO_OVERRIDE_EXPECTED.current_total);
+assert('H1 totals current_amount is ZERO',        r4.draft.totals.current_amount, GATE_BILLED_NO_OVERRIDE_EXPECTED.totals_current_amount);
 
 console.log('\n─── apportionPmSubmission unit tests ───');
 // Two precast lines, equal qty → should split 50/50

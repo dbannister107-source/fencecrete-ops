@@ -38,6 +38,7 @@ import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const NUM = (x) => Number(x) || 0;
 
 // ─── Banner sub-components (small, kept inline) ─────────────────────
 function Banner({ children, tone = 'danger', onClose }) {
@@ -256,9 +257,14 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
       const app = Array.isArray(created) ? created[0] : created;
       if (!app?.id) throw new Error('No app row returned from insert');
 
-      // 2. Insert lines (filter to non-zero current_qty)
+      // 2. Insert lines (filter to non-zero current_qty AND non-zero total).
+      //    H2 fix (2026-05-05): without the total !== 0 guard, cells with
+      //    missing labor/tax_basis splits would post with cumulative_qty=N
+      //    but total=0, then permanently lock that stage out of future
+      //    billing. Skipping zero-total cells means the stage stays
+      //    available to bill once the pricing row gets fixed.
       const lines = result.draft.lines
-        .filter(c => Number(c.current_qty) !== 0)
+        .filter(c => Number(c.current_qty) !== 0 && Number(c.current_total) !== 0)
         .map(c => ({
           invoice_application_id:   app.id,
           job_pricing_line_id:      c.pricing_line_id,
@@ -340,14 +346,26 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
 
   // Gate the File Invoice button.
   const overBilling = result.draft.lines.some(c => c.warning === 'over_billing');
-  const fileBlocked = !canEdit || overBilling || result.draft.totals.current_amount <= 0;
+  // H3 fix (2026-05-05): also block when pending + billed exceeds contract.
+  // The engine surfaces this as a warning too, but we block the button so
+  // Virginia can't accidentally over-bill a job (especially the 138 jobs
+  // with synthetic legacy-import history where per-stage prior tracking
+  // restarts at 0). She can still proceed by lowering the cycle qty or
+  // manually adjusting cycleOverrides until the math closes.
+  const wouldOverBillContract =
+    NUM(result.contract.contract_value) > 0 &&
+    (NUM(result.contract.billed_to_date) + NUM(result.draft.totals.current_amount)) >
+      NUM(result.contract.contract_value) * 1.001;
+  const fileBlocked = !canEdit || overBilling || wouldOverBillContract || result.draft.totals.current_amount <= 0;
   const fileBlockedReason = !canEdit
     ? 'Read-only'
     : overBilling
       ? 'Resolve over-billing warnings first'
-      : result.draft.totals.current_amount <= 0
-        ? 'No billable activity in this draft'
-        : null;
+      : wouldOverBillContract
+        ? 'Pending + Billed exceeds contract value — verify draft first'
+        : result.draft.totals.current_amount <= 0
+          ? 'No billable activity in this draft'
+          : null;
 
   return (
     <div style={{ padding: '4px 0' }}>

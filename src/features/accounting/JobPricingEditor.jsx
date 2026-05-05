@@ -182,7 +182,14 @@ export default function JobPricingEditor({ job, coId = null, canEdit, onChange, 
         : `job_id=eq.${job.id}&co_id=is.null&order=line_number.asc`;
       const existing = await sbGet('job_pricing_lines', filter);
       if (Array.isArray(existing) && existing.length > 0) {
-        setLines(existing.map(l => ({ ...l, _existing: true, _taxBasisManual: l.tax_basis_per_unit != null })));
+        // M4 fix (2026-05-05): always start with _taxBasisManual=false on load.
+        // Previously set true whenever tax_basis_per_unit was present (which is
+        // every saved row), which silently disabled the auto-recompute path
+        // when the user changed height. Now: editing height re-derives
+        // tax_basis from HEIGHT_BASIS until the user types into the cell —
+        // matches the create-time UX. If a user has a custom tax_basis they
+        // want to preserve, they can re-type it after the height change.
+        setLines(existing.map(l => ({ ...l, _existing: true, _taxBasisManual: false })));
         setSeeding(false);
         setDirty(false);
       } else {

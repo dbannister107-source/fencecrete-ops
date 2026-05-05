@@ -151,9 +151,18 @@ export function computeDraftCells({
       .sort((a, b) => NUM(a.display_order) - NUM(b.display_order));
 
     stages.forEach((s) => {
-      const cumulative_qty = NUM(cumulativeQtys?.[line.id]?.[s.stage_key]);
       const k = `${line.id}|${s.stage_key}`;
       const prior_qty = NUM(priorCumByCell[k]);
+      // 2026-05-05 (H1 fix): default cumulative to prior when no input is
+      // provided for this cell. Without this, an already-billed cell with no
+      // override and no PM apportionment would compute current_qty = 0 - prior
+      // = NEGATIVE, causing the File flow to post a credit invoice. The
+      // semantic is "no input = no change since last cycle"; the user must
+      // explicitly set cumulative=0 (or a partial value) to bill less than
+      // already billed (which the engine surfaces via the decreasing-cumulative
+      // path — see validateAcctSheet).
+      const cumRaw = cumulativeQtys?.[line.id]?.[s.stage_key];
+      const cumulative_qty = cumRaw == null ? prior_qty : NUM(cumRaw);
       const current_qty = ROUND_2(cumulative_qty - prior_qty);
 
       const weight = NUM(s.weight);
@@ -290,13 +299,20 @@ export function validateAcctSheet({
   draftLines = [],
   pmSubmission = null,
   cycleOverrides = {},
+  priorApps = [],
+  contract = null,
 } = {}) {
   const warnings = [];
 
-  // No data input at all → empty draft. Surface so the user knows why.
-  const hasOverrides = cycleOverrides && Object.keys(cycleOverrides).length > 0;
-  if (!pmSubmission && !hasOverrides) {
-    warnings.push('No PM bill submission selected and no manual cycle overrides — draft is empty.');
+  // L4 fix: distinguish "no pricing rows" from "no input"
+  if (!pricingLines || pricingLines.length === 0) {
+    warnings.push('No pricing rows yet — set them up on the Pricing tab first.');
+  } else {
+    // No data input at all → empty draft. Surface so the user knows why.
+    const hasOverrides = cycleOverrides && Object.keys(cycleOverrides).length > 0;
+    if (!pmSubmission && !hasOverrides) {
+      warnings.push('No PM bill submission selected and no manual cycle overrides — draft is empty.');
+    }
   }
 
   // Per-cell over-billing warnings (collected from computeDraftCells).
@@ -313,6 +329,34 @@ export function validateAcctSheet({
       warnings.push(`Pricing row "${line.label}" is missing labor / tax_basis split — fix in the Pricing tab before billing.`);
     }
   });
+
+  // 2026-05-05 (H3 fix): synthetic-history advisory.
+  // Jobs with legacy-imported invoice_applications have NO per-stage
+  // breakdown (the backfill only created header totals). Per-stage prior
+  // tracking starts from 0 in the engine, which means PM bill sheet
+  // values will be treated as "all new work" — risk of over-billing
+  // scope already covered by historical invoices.
+  const syntheticTotal = (priorApps || [])
+    .filter((a) => a.source_invoice_entry_id && (a.status === 'filed' || a.status === 'paid'))
+    .reduce((s, a) => s + NUM(a.current_amount), 0);
+  if (syntheticTotal > 0) {
+    warnings.push(
+      `Heads up — this job has $${Math.round(syntheticTotal).toLocaleString()} billed via legacy imports (pre-cutover invoices, header-only). Per-stage tracking starts at 0 for those amounts; ensure your PM bill sheet reflects only NEW work this cycle, otherwise you may double-bill.`
+    );
+  }
+
+  // 2026-05-05 (H3 fix): contract-level over-billing guard.
+  // Pending + Billed > Contract is almost always a mistake. Surface as a
+  // hard warning; AccountingTab gates File on this same condition.
+  if (contract && NUM(contract.contract_value) > 0) {
+    const total = NUM(contract.billed_to_date) + NUM(contract.pending_amount);
+    if (total > NUM(contract.contract_value) * 1.001) {
+      const over = ROUND_2(total - NUM(contract.contract_value));
+      warnings.push(
+        `Pending + Billed To Date exceeds contract value by $${over.toLocaleString()}. Verify the draft before filing.`
+      );
+    }
+  }
 
   return warnings;
 }
@@ -363,19 +407,24 @@ export function computeAcctSheet({
   const pct_complete = contract_value > 0
     ? Math.round(((billed_to_date + pending_amount) / contract_value) * 1000) / 10
     : 0;
+  const contract = {
+    contract_value,
+    billed_to_date,
+    pending_amount,
+    retainage_held,
+    balance_to_bill,
+    pct_complete,
+  };
 
-  const warnings = validateAcctSheet({ pricingLines, draftLines, pmSubmission, cycleOverrides });
+  // 2026-05-05 (H3): pass priorApps + contract so validateAcctSheet can
+  // emit the synthetic-history advisory and the over-billing guard.
+  const warnings = validateAcctSheet({
+    pricingLines, draftLines, pmSubmission, cycleOverrides, priorApps, contract,
+  });
 
   return {
     draft: { lines: draftLines, totals: draftTotals },
-    contract: {
-      contract_value,
-      billed_to_date,
-      pending_amount,
-      retainage_held,
-      balance_to_bill,
-      pct_complete,
-    },
+    contract,
     perLine,
     ledger,
     warnings,

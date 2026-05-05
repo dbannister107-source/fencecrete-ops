@@ -181,3 +181,45 @@ export const TAX_EXEMPT_EXPECTED = {
     net_due:          5733.00,
   },
 };
+
+// ─── H1 regression: gate billed Cycle 1, no override Cycle 2 ────────
+//
+// Scenario: a single 16' Gate at $12,495 was billed to completion in
+// Cycle 1 (cumulative_qty=2 of 2). In Cycle 2, the user opens the
+// Accounting tab without toggling any single-stage checkbox.
+//
+// Pre-fix bug: cumulative_qty = NUM(undefined) = 0, prior_qty = 2,
+// current_qty = -2. Filing posts a credit of -$24,990. Bad.
+//
+// Post-fix: cumulative defaults to prior, current_qty = 0, no credit.
+
+export const GATE_BILLED_NO_OVERRIDE = {
+  job: { id: 'fix-job-2', job_number: '23H047', retainage_pct: 10, tax_exempt: false, retainage_held: 0 },
+  pricingLines: [
+    { id: 'pl-gate', line_number: 1, category: 'wi_gate', label: "16' Gate",
+      height: null, style: null, qty: 2, unit: 'EA',
+      price_per_unit: 12495, labor_per_unit: 8246.70, tax_basis_per_unit: 4248.30,
+      tax_exempt: false, extended_total: 24990 },
+  ],
+  effectiveWeights: [
+    { category: 'wi_gate', stage_key: 'complete', stage_label: 'Complete', weight: 1.00, display_order: 1 },
+  ],
+  pmSubmission: null,            // no PM submission in this cycle
+  priorAppLines: [
+    { job_pricing_line_id: 'pl-gate', stage_key: 'complete',
+      cumulative_qty: 2, prior_qty: 0, current_qty: 2, current_total: 26990.42 },
+  ],
+  priorApps: [
+    { id: 'app-1', app_number: 1, status: 'filed', current_amount: 26990.42 },
+  ],
+  cycleOverrides: {},            // user didn't touch the gate checkbox
+};
+
+export const GATE_BILLED_NO_OVERRIDE_EXPECTED = {
+  // After H1 fix: cumulative defaults to prior (= 2), current = 0, total = 0
+  cumulative_qty: 2,
+  prior_qty: 2,
+  current_qty: 0,
+  current_total: 0,
+  totals_current_amount: 0,
+};
