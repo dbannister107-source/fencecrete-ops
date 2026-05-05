@@ -9934,6 +9934,13 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   // — total / produced / remaining / planned / unplanned for each of the 4 mold pools.
   // Used by the plan-line progress chip to show "X of Y produced" + "Z still in queue".
   const[jobRemaining,setJobRemaining]=useState({});
+  // Today's production actuals — feeds the Production Pulse banner that
+  // appears when planDate === today. Sums actuals logged so far against
+  // today's plan totals so Carlos can see live "on pace" status mid-day.
+  // Sprint 3 (2026-05-04). Refetched on mount + refreshKey changes; no
+  // realtime subscription yet (1-2 min staleness is fine for a planning
+  // overview, and refresh happens on every save anyway).
+  const[todayActuals,setTodayActuals]=useState([]);
   useEffect(()=>{
     sbGet('v_style_capacity_lookup','select=*').then(d=>{if(Array.isArray(d))setCapacityLookup(d);}).catch(e=>console.warn('[ProductionPlanning] capacity lookup fetch failed:',e));
     sbGet('v_job_production_remaining','select=*').then(d=>{
@@ -9941,6 +9948,11 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       const m={};d.forEach(r=>{if(r.job_id)m[r.job_id]=r;});
       setJobRemaining(m);
     }).catch(e=>console.warn('[ProductionPlanning] job remaining fetch failed:',e));
+    // Fetch today's actuals for the Production Pulse banner.
+    const todayStr=new Date().toISOString().split('T')[0];
+    sbGet('production_actuals',`production_date=eq.${todayStr}&select=job_id,actual_panels,actual_posts,actual_rails,actual_caps,actual_lf,actual_pieces,style,color,shift,submitted_at`)
+      .then(d=>{if(Array.isArray(d))setTodayActuals(d);})
+      .catch(e=>console.warn('[ProductionPlanning] today actuals fetch failed:',e));
   },[refreshKey]);
   // Generate 4-week production schedule using Claude AI
   const generateAISchedule = async () => {
@@ -10744,6 +10756,93 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
         </div>;
       })()}
     </div>
+
+    {/* PRODUCTION PULSE BANNER — only when looking at today's plan.
+        Sums today's actuals (production_actuals where production_date=today)
+        against today's plan totals so Carlos can see live "on pace" status
+        mid-day without having to navigate to the Daily Report tab.
+        Sprint 3 (2026-05-04). When production_actuals starts flowing, this
+        widget becomes the at-a-glance health check; until then it shows
+        zeros against today's plan — useful for confirming what's planned
+        but not yet logged. */}
+    {planDate===todayISO&&(()=>{
+      const actualTotals=todayActuals.reduce((acc,a)=>{
+        acc.panels+=n(a.actual_panels)||(n(a.actual_pieces)/4||0);
+        acc.posts+=n(a.actual_posts);
+        acc.rails+=n(a.actual_rails);
+        acc.caps+=n(a.actual_caps);
+        acc.lf+=n(a.actual_lf);
+        acc.entries++;
+        return acc;
+      },{panels:0,posts:0,rails:0,caps:0,lf:0,entries:0});
+      const now=new Date();
+      // CT shift schedule: Shift 1 8a-4p (480 min), Shift 2 7p-2a (420 min next day).
+      // Compute % of available shift time elapsed for the "on pace" projection.
+      // Outside shift windows or weekends → no projection (just show actuals as-is).
+      const ctNow=(()=>{try{const f=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'numeric',hour12:false,minute:'numeric'});const parts=f.formatToParts(now);const h=Number(parts.find(p=>p.type==='hour')?.value||0);const m=Number(parts.find(p=>p.type==='minute')?.value||0);return h*60+m;}catch(e){return now.getHours()*60+now.getMinutes();}})();
+      const inShift1=ctNow>=480&&ctNow<=960;     // 8a (480 min) → 4p (960 min)
+      const inShift2=ctNow>=1140||ctNow<=120;    // 7p (1140 min) → 2a (120 min next day)
+      const dayOfWeek=now.getDay();
+      const shiftActive=(dayOfWeek>=1&&dayOfWeek<=6&&inShift1)||(dayOfWeek>=1&&dayOfWeek<=5&&inShift2);
+      // Combined daily window = Shift 1 (480m) + Shift 2 (420m) = 900m total,
+      // but Shift 2 starts AFTER Shift 1 ends. So elapsed = min within current
+      // shift × that shift's portion of 900.
+      let elapsedFraction=null;
+      if(inShift1){elapsedFraction=(ctNow-480)/900;}
+      else if(inShift2){const sh2Min=ctNow>=1140?ctNow-1140:ctNow+(1440-1140);elapsedFraction=(480+sh2Min)/900;}
+      else if(ctNow>960&&ctNow<1140){elapsedFraction=480/900;}  // between shifts → Shift 1 done, Shift 2 not started
+      const projectFor=(actual)=>elapsedFraction&&elapsedFraction>0&&elapsedFraction<1?Math.round(actual/elapsedFraction):null;
+      const onPaceColor=(actual,planned)=>{
+        if(planned<=0)return '#9E9B96';
+        const proj=projectFor(actual);
+        if(proj===null)return '#9E9B96';
+        const ratio=proj/planned;
+        if(ratio>=1)return '#065F46';
+        if(ratio>=0.85)return '#B45309';
+        return '#991B1B';
+      };
+      const cellPair=(label,plannedVal,actualVal,unit)=>{
+        const proj=projectFor(actualVal);
+        const col=onPaceColor(actualVal,plannedVal);
+        const pct=plannedVal>0?Math.round(actualVal/plannedVal*100):0;
+        return<div style={{flex:1,minWidth:120,padding:'0 12px',borderRight:'1px solid #E5E3E0'}}>
+          <div style={{fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>{label}</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:4,marginTop:3}}>
+            <span style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{actualVal.toLocaleString()}</span>
+            <span style={{fontSize:11,color:'#9E9B96'}}>/ {plannedVal.toLocaleString()} {unit}</span>
+          </div>
+          <div style={{fontSize:10,color:col,fontWeight:700,marginTop:1}}>
+            {actualVal===0&&plannedVal===0?'—':actualVal===0?'no actuals yet':`${pct}% logged${proj!==null?` · projecting ${proj.toLocaleString()}`:''}`}
+          </div>
+        </div>;
+      };
+      return<div style={{...card,marginBottom:16,padding:'12px 4px',borderLeft:'4px solid #065F46',background:shiftActive?'#F0FDF4':'#F9F8F6'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 12px 8px',borderBottom:'1px solid #E5E3E0',marginBottom:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:13,fontWeight:800,color:'#065F46',textTransform:'uppercase',letterSpacing:0.5}}>🟢 Today's Production Pulse</span>
+            <span style={{fontSize:10,color:'#625650',fontWeight:600}}>{now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'})} CT</span>
+            {shiftActive&&<span style={{fontSize:10,color:'#065F46',fontWeight:700,background:'#D1FAE5',padding:'1px 6px',borderRadius:3}}>{inShift1?'Shift 1 active':'Shift 2 active'}</span>}
+            {!shiftActive&&<span style={{fontSize:10,color:'#9E9B96',fontWeight:600,fontStyle:'italic'}}>Off-shift</span>}
+          </div>
+          <div style={{fontSize:10,color:'#625650'}}>{actualTotals.entries} actual{actualTotals.entries===1?'':'s'} logged today</div>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}>
+          {cellPair('Panels',planTotals.panels,actualTotals.panels,'pcs')}
+          {cellPair('Posts',planTotals.posts,actualTotals.posts,'pcs')}
+          {cellPair('Rails',planTotals.rails,actualTotals.rails,'pcs')}
+          {cellPair('Caps',planTotals.caps,actualTotals.caps,'pcs')}
+          <div style={{flex:1,minWidth:120,padding:'0 12px'}}>
+            <div style={{fontSize:9,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>Concrete</div>
+            <div style={{display:'flex',alignItems:'baseline',gap:4,marginTop:3}}>
+              <span style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:'#1A1A1A'}}>{(actualTotals.panels*0.42*1.4).toFixed(1)}</span>
+              <span style={{fontSize:11,color:'#9E9B96'}}>/ {planTotals.cy.toFixed(1)} CY</span>
+            </div>
+            <div style={{fontSize:10,color:'#9E9B96',marginTop:1}}>plant cap {dailyCyCap}</div>
+          </div>
+        </div>
+        {actualTotals.entries===0&&<div style={{padding:'8px 12px',marginTop:8,background:'#FEF3C7',borderTop:'1px solid #FDE68A',fontSize:11,color:'#92400E'}}>ℹ️ No production logged yet today. Pulse will populate as actuals are entered via the Daily Report tab.</div>}
+      </div>;
+    })()}
 
     {/* CAPACITY BAR */}
     <div style={{...card,marginBottom:16,padding:14,borderLeft:'4px solid #854F0B'}}>
