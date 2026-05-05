@@ -16354,6 +16354,14 @@ function PMDailyReportPage({jobs}){
   const[selJobId,setSelJobId]=useState('');const[jobTotals,setJobTotals]=useState(null);const[jobError,setJobError]=useState(false);
   const[showAllPMs,setShowAllPMs]=useState(false);
   const[editingReport,setEditingReport]=useState(null);
+  // In-flight guard. Prevents the double-tap / event-double-fire bug class
+  // that produced 11 visible duplicate groups across all 5 PMs (worst was
+  // 4 rows in 3.9ms on Doug Monroe / 25A009 / 2026-04-09). Wraps the entire
+  // submitReport critical section; the Submit button is disabled while
+  // truthy and the function early-returns if re-entered. Defense-in-depth
+  // backstop: partial UNIQUE index on (submitted_by, job_number, report_date)
+  // — see migration 20260505_pm_daily_reports_dedupe_and_unique_index.
+  const[submitting,setSubmitting]=useState(false);
   // Crew leader roster — page-level so selectJob can resolve a leader UUID
   // back to the leader's name when auto-populating from jobs.crew_leader_id.
   // Without this, picking a job pre-fills the dropdown with the leader (good)
@@ -16482,8 +16490,13 @@ function PMDailyReportPage({jobs}){
     setTab('history');
   };
   const submitReport=async()=>{
+    // In-flight guard — early-return if a submit is already running.
+    // Stops the double-tap / iOS touchend+click double-fire bug class
+    // (the source of 11 visible duplicate groups across all 5 PMs).
+    if(submitting)return;
     if(!selJobId){setJobError(true);setToast({message:'Please select a job before submitting',isError:true});return;}
     setJobError(false);
+    setSubmitting(true);
     // Body keys must match the pm_daily_reports schema exactly. Form uses legacy field
     // names (num_*, lf_panels_completed, etc.); we map them to actual DB column names here.
     const body={
@@ -16558,7 +16571,21 @@ function PMDailyReportPage({jobs}){
       setTimeout(()=>{setTab('history');fetchReports();},600);
     }catch(err){
       console.error('PM Daily Report submit failed:',err,'body:',body);
-      setToast({message:`${isEdit?'Update':'Submit'} failed: ${err.message||err}`,isError:true});
+      // 23505 = Postgres unique_violation. Backstop trigger from the partial
+      // unique index on (submitted_by, job_number, report_date). Means the
+      // PM already filed a report for this job + date and the client guard
+      // somehow let a second attempt through (e.g. mid-air refresh, race
+      // between two browser tabs). Surface a friendly path to History rather
+      // than the raw Postgres message.
+      const dupViolation=String(err?.code||err?.message||'').includes('23505')
+        || String(err?.message||'').includes('ux_pm_daily_reports_pm_job_date');
+      if(dupViolation){
+        setToast({message:'You already filed a report for this job + date. Open History to edit it.',isError:true});
+      }else{
+        setToast({message:`${isEdit?'Update':'Submit'} failed: ${err.message||err}`,isError:true});
+      }
+    }finally{
+      setSubmitting(false);
     }
   };
   const mInp={...inputS,minHeight:44,fontSize:16};const mSel={...mInp};const mTxt={...mInp,resize:'vertical'};
@@ -16751,7 +16778,7 @@ function PMDailyReportPage({jobs}){
       <div style={{position:'sticky',bottom:0,left:0,right:0,background:'#FFF',borderTop:'2px solid #8A261D',padding:'12px 14px',marginTop:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 16px rgba(0,0,0,0.08)',zIndex:50,marginLeft:-32,marginRight:-32,paddingLeft:32,paddingRight:32}}>
         <input value={form.submitted_by||selPM} onChange={e=>set('submitted_by',e.target.value)} placeholder="Submitted by" style={{...mInp,flex:'0 1 200px',minWidth:140,minHeight:48}}/>
         {editingReport&&<button onClick={cancelEdit} style={{...btnS,minHeight:48,fontSize:14,whiteSpace:'nowrap'}}>Cancel</button>}
-        <button onClick={submitReport} disabled={!selJobId} title={!selJobId?'Select a job to enable submit':''} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:selJobId?'#8A261D':'#9E9B96',color:'#fff',cursor:selJobId?'pointer':'not-allowed',opacity:selJobId?1:0.7}}>{editingReport?'Save Changes':'Submit Report'}</button>
+        <button onClick={submitReport} disabled={!selJobId||submitting} title={!selJobId?'Select a job to enable submit':(submitting?'Submitting…':'')} style={{...btnP,flex:'1 1 200px',padding:'14px 24px',fontSize:16,fontWeight:800,minHeight:48,background:(selJobId&&!submitting)?'#8A261D':'#9E9B96',color:'#fff',cursor:(selJobId&&!submitting)?'pointer':'not-allowed',opacity:(selJobId&&!submitting)?1:0.7}}>{submitting?(editingReport?'Saving…':'Submitting…'):(editingReport?'Save Changes':'Submit Report')}</button>
       </div>
     </div>;})()}
   </div>);
