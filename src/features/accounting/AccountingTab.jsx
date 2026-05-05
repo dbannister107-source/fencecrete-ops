@@ -37,6 +37,7 @@ import ContractSummaryCard from './ContractSummaryCard';
 import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
 import MarkPaidModal from './MarkPaidModal';
+import DrillDownModal from './DrillDownModal';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const NUM = (x) => Number(x) || 0;
@@ -153,6 +154,8 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
   const [releasing, setReleasing] = useState(false);
   // Mark Paid modal — when set, MarkPaidModal renders for that App.
   const [markPaidApp, setMarkPaidApp] = useState(null);
+  // Drill-down modal — when set, DrillDownModal renders for that App.
+  const [drillApp, setDrillApp] = useState(null);
   const [err, setErr] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -488,6 +491,7 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         releasing={releasing}
         onReleaseRetainage={releaseRetainage}
         onMarkPaid={(app) => setMarkPaidApp(app)}
+        onRowClick={(app) => setDrillApp(app)}
         canEdit={canEdit}
       />
 
@@ -504,6 +508,30 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
             setMarkPaidApp(null);
             await loadAll();
             setToast(msg);
+          }}
+        />
+      )}
+
+      {/* Drill-down modal — opens on App ledger row click. Quick actions
+          inside (Mark Paid) emit via onAction; we route to the existing
+          MarkPaidModal so flows stay consolidated. Drill-down doesn't
+          self-mutate — refresh happens through the action handler. */}
+      {drillApp && (
+        <DrillDownModal
+          title={`App #${drillApp.app_number} — ${drillApp.invoice_number || drillApp.id.slice(0, 8)}`}
+          subtitle={drillApp.billing_period
+            ? `Cycle ${new Date(drillApp.billing_period + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', year: 'numeric'})}`
+            : null}
+          entityType="invoice"
+          entityId={drillApp.id}
+          onClose={() => setDrillApp(null)}
+          onAction={(action) => {
+            if (action === 'mark_paid') {
+              // Hand off to the existing Mark Paid flow; close the drill-down.
+              const app = drillApp;
+              setDrillApp(null);
+              setMarkPaidApp(app);
+            }
           }}
         />
       )}

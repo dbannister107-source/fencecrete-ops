@@ -62,6 +62,7 @@ export default function AppLedger({
   releasing = false,
   onReleaseRetainage,
   onMarkPaid,        // (app) => void — opens MarkPaidModal in parent
+  onRowClick,        // (app) => void — opens DrillDownModal in parent
   canEdit = false,
 }) {
   const showReleaseBtn = canEdit && Number(retainageHeld) > 0;
@@ -145,10 +146,16 @@ export default function AppLedger({
               {ledger.map(a => {
                 const isPaid = a.status === 'paid';
                 const canMarkPaid = canEdit && a.status === 'filed' && !a.is_legacy_import && typeof onMarkPaid === 'function';
+                const rowClickable = typeof onRowClick === 'function';
                 return (
-                <tr key={a.id} style={{
+                <tr key={a.id}
+                    onClick={rowClickable ? () => onRowClick(a) : undefined}
+                    title={rowClickable ? 'Click to view detail' : undefined}
+                    style={{
                   borderBottom: `1px solid ${COLOR.border}`,
                   background: isPaid ? '#F0FDF4' : 'transparent',
+                  cursor: rowClickable ? 'pointer' : 'default',
+                  transition: 'background 0.15s ease',
                 }}>
                   <td style={{ padding: '8px 10px', fontFamily: FONT.data, fontWeight: 700 }}>
                     #{a.app_number}
@@ -192,7 +199,7 @@ export default function AppLedger({
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                     {canMarkPaid && (
                       <button
-                        onClick={() => onMarkPaid(a)}
+                        onClick={(e) => { e.stopPropagation(); onMarkPaid(a); }}
                         title="Record customer payment for this invoice"
                         style={{
                           padding: '4px 10px',
