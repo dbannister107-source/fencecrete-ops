@@ -16464,7 +16464,7 @@ function MoldsWhatIf({moldCapacity, plantLoad, totalLeaders, shiftFactor}){
   // Pass {} for current state. Mirrors v_mold_capacity's formula 1:1.
   const simWithDelta = (row, d) => {
     const c = row.cap;
-    const cure = Number(c.cure_time_hours) || 16;
+    const cure = Number(c.cure_time_hours) || 24;  // 24h is canonical per Carlos (2026-05-06)
     const cyclesPerDay = 24 / cure;
     const panelsPerMold = Number(c.panels_per_mold) || 12;
     const panelLf = Number(c.panel_lf) || 4.54;
