@@ -2737,7 +2737,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
-          {saveErr&&!isMobile&&<span style={{color:'#DC2626',fontSize:12,fontWeight:600,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={saveErr}>Error: {saveErr.substring(0,60)}</span>}
+          {/* Old truncated header span was the source of "PATCH jobs failed
+              (40…)" UX. Replaced by the full-width banner rendered below the
+              header (see the saveErr block further down). Removed here. */}
           {/* Mark Contract Executed — only visible while the job is still in
               Contract Review. Flipping the flag signals Max on the Production
               Board (green border) that material calc can proceed. Undoable in
@@ -2848,7 +2850,16 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             {showStatusPicker&&<div style={{position:'absolute',right:0,top:36,background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,.12)',zIndex:200,padding:12,minWidth:210}}>
               <div style={{fontSize:11,fontWeight:700,color:'#625650',textTransform:'uppercase',marginBottom:8}}>Change Status</div>
               {['contract_review','production_queue','in_production','material_ready','active_install','fence_complete','fully_complete','closed'].map(s=>(
-                <button key={s} onClick={async()=>{setReopening(true);const u={status:s};const t=new Date().toISOString().split('T')[0];if(s==='material_ready')u.inventory_ready_date=t;if(s==='active_install')u.active_install_date=t;if(s==='fence_complete')u.fence_complete_date=t;if(s==='fully_complete')u.fully_complete_date=t;if(s==='closed')u.closed_date=t;try{await sbPatch('jobs',job.id,u);logAct(job,'status_change',job.status,s,'Updated by '+currentUserEmail);setShowStatusPicker(false);/* Was: if(onChange)onChange() -- onChange is not a prop of EditPanel, so the parent jobs list never refreshed. Same bug as the Reopen button earlier today (5723a2b). */onSaved&&onSaved('Status → '+(SL[s]||s));}catch(e){setSaveErr('Status update failed: '+e.message);}setReopening(false);}} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',background:s===job.status?'#EFF6FF':'none',cursor:'pointer',fontSize:13,borderRadius:6,marginBottom:2,fontWeight:s===job.status?700:400}} onMouseEnter={e=>e.currentTarget.style.background='#F4F4F2'} onMouseLeave={e=>e.currentTarget.style.background=s===job.status?'#EFF6FF':'none'}>
+                <button key={s} onClick={async()=>{setReopening(true);const u={status:s};const t=new Date().toISOString().split('T')[0];if(s==='material_ready')u.inventory_ready_date=t;if(s==='active_install')u.active_install_date=t;if(s==='fence_complete')u.fence_complete_date=t;if(s==='fully_complete')u.fully_complete_date=t;if(s==='closed')u.closed_date=t;try{await sbPatch('jobs',job.id,u);logAct(job,'status_change',job.status,s,'Updated by '+currentUserEmail);setShowStatusPicker(false);/* Was: if(onChange)onChange() -- onChange is not a prop of EditPanel, so the parent jobs list never refreshed. Same bug as the Reopen button earlier today (5723a2b). */onSaved&&onSaved('Status → '+(SL[s]||s));}catch(e){
+                  // 2026-05-06 — Strip the technical "PATCH jobs failed (4XX):"
+                  // prefix from sb.js so the readiness-gate's friendly text
+                  // ("Cannot move job 26S008 out of contract_review: missing —
+                  // Customer linked to company master. …") is what surfaces.
+                  // Falls through to the raw e.message for other error shapes.
+                  const raw=String(e?.message||e||'');
+                  const stripped=raw.replace(/^PATCH\s+\w+\s+failed\s+\(\d+\):\s*/i,'').trim();
+                  setSaveErr(stripped||'Status update failed.');
+                }setReopening(false);}} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',background:s===job.status?'#EFF6FF':'none',cursor:'pointer',fontSize:13,borderRadius:6,marginBottom:2,fontWeight:s===job.status?700:400}} onMouseEnter={e=>e.currentTarget.style.background='#F4F4F2'} onMouseLeave={e=>e.currentTarget.style.background=s===job.status?'#EFF6FF':'none'}>
                   {{'contract_review':'Contract Review','production_queue':'Production Queue','in_production':'In Production','material_ready':'Material Ready','active_install':'Active Install','fence_complete':'Fence Complete','fully_complete':'Fully Complete','closed':'Closed'}[s]}
                   {s===job.status&&<span style={{marginLeft:6,fontSize:10,color:'#1D4ED8'}}>✓ current</span>}
                 </button>
@@ -2858,6 +2869,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           {!isMobile && <button onClick={onClose} style={btnS}>Close</button>}
         </div>
       </div>
+      {/* 2026-05-06 — Promoted saveErr from the truncated 60-char header span
+          to a full-width banner below the header. The previous treatment hid
+          the readiness-gate's actual blocker text behind ellipsis + a hover
+          title, so users only ever saw "PATCH jobs failed (40…" and had no
+          idea what the gate was actually objecting to. Now the full message
+          (including the "missing — Customer linked to company master. Open
+          the job in OPS → Money tab → …" hint baked into the trigger) is
+          visible inline. The header span (still rendered above) is suppressed
+          when this banner is up to avoid showing the same error twice. */}
+      {saveErr&&<div style={{margin:'0 20px 8px',padding:'10px 14px',background:'#FEE2E2',border:'1px solid #FECACA',borderRadius:8,display:'flex',alignItems:'flex-start',gap:10,flexShrink:0}}>
+        <span style={{fontSize:16,lineHeight:1,marginTop:1}}>⚠</span>
+        <div style={{flex:1,fontSize:13,color:'#991B1B',fontWeight:600,lineHeight:1.5,wordBreak:'break-word',whiteSpace:'pre-wrap'}}>{saveErr}</div>
+        <button onClick={()=>setSaveErr(null)} title="Dismiss" style={{background:'none',border:'none',color:'#991B1B',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
+      </div>}
       {!canEdit&&!isNew&&(canEditInstallDateOnly
         ? <div style={{padding:'8px 20px',background:'#DBEAFE',borderBottom:'1px solid #93C5FD',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
             <span style={{fontSize:16}}>📅</span>
