@@ -5614,6 +5614,13 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   const deleteInvEntry=async(entryId,jobId)=>{try{await sbDel('invoice_entries',entryId);invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
   const arMonthLabel=monthLabel(arMonth);
   const arIsCurrent=arMonth===curBillingMonth();
+  // Revert is allowed on current month + the immediately previous month.
+  // Wider than arIsCurrent so AR can fix accidental "Mark Reviewed"
+  // clicks while still working through the prior month's queue. Older
+  // months are intentionally locked — reverting a 6-month-old approved
+  // invoice is suspicious and should require explicit DB intervention.
+  const prevBillingMonth=(()=>{const d=new Date();d.setMonth(d.getMonth()-1);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;})();
+  const arIsRevertable=arMonth===curBillingMonth()||arMonth===prevBillingMonth;
   const fetchArSubs=useCallback(async()=>{const d=await sbGet('pm_bill_submissions',`billing_month=eq.${arMonth}&order=job_name.asc`);setArSubs(d||[]);},[arMonth]);
   const fetchArInvCounts=useCallback(async()=>{try{const d=await sbGet('invoice_entries',`billing_month=eq.${arMonth}&select=job_id,invoice_amount`);const m={};(d||[]).forEach(e=>{if(!m[e.job_id])m[e.job_id]={count:0,total:0};m[e.job_id].count++;m[e.job_id].total+=n(e.invoice_amount);});setArInvByJob(m);}catch(err){setArInvByJob({});}},[arMonth]);
   // 2026-05-05 — Acct Sheet Phase D. Fetch invoice_applications keyed by
@@ -5966,7 +5973,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                 <button onClick={()=>openArDetail(sub)} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>
                 {isPending&&<button onClick={()=>markReviewedInline(sub)} title="Mark this submission as reviewed" style={{background:'#065F46',border:'1px solid #065F46',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>✓ Mark Reviewed</button>}
-                {isReviewed&&arIsCurrent&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
+                {isReviewed&&arIsRevertable&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
               </div></td>
             </tr>;})}
           </tbody>
