@@ -73,6 +73,12 @@ import { MoneyInput } from './shared/ui';
 // + Phase C calc engine all agree.
 import { HEIGHT_BASIS, STYLE_BASIS, TAX_RATE } from './shared/billing/heightBasis';
 
+// Proactive duplicate-billing detection. Reused by the AR Over-Bill Block
+// modal (BillingPage) — when an approval would push a job past the 120%
+// threshold, run the same heuristics the new Accounting tab uses to give
+// AR specific guidance (vs. the generic "common causes" list).
+import { detectDoubleCounting } from './shared/billing/detectDoubleCounting';
+
 // Acct Sheet / Billing Engine Phase B — Pricing editor (lives outside
 // App.jsx per the architecture rule). Mounted on the new "Pricing" tab
 // in the EditPanel Money group, between Contract & Billing and Line Items.
@@ -5651,6 +5657,24 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const OVERBILL_THRESHOLD_PCT = 120; // hard-block above this
   const[arOverbillBlock,setArOverbillBlock]=useState(null);
   const[arOverbillTypeAck,setArOverbillTypeAck]=useState('');
+  // 2026-05-05 — Over-Bill modal enrichment. When the modal opens we fetch
+  // invoice_applications for the job + run detectDoubleCounting() so the
+  // dialog shows specific duplicate-billing reasons instead of the generic
+  // "common causes" list. Cleared when modal closes. Empty array = no
+  // double-counting found → fall back to the generic message.
+  const[arOverbillApps,setArOverbillApps]=useState([]);
+  const[arOverbillShowFix,setArOverbillShowFix]=useState(false);
+  useEffect(()=>{
+    if(!arOverbillBlock?.job?.id){setArOverbillApps([]);setArOverbillShowFix(false);return;}
+    let cancelled=false;
+    (async()=>{
+      try{
+        const apps=await sbGet('invoice_applications',`job_id=eq.${arOverbillBlock.job.id}&order=app_number.desc`);
+        if(!cancelled)setArOverbillApps(apps||[]);
+      }catch(e){if(!cancelled)setArOverbillApps([]);}
+    })();
+    return()=>{cancelled=true;};
+  },[arOverbillBlock?.job?.id]);
   // Returns { allow:true } if approval is safe, or {allow:false, projected, contract, pct} if it would push over the threshold.
   // currentYtd = jobs.ytd_invoiced; addAmount = how much this approval will ADD (the trigger is additive).
   const checkOverbillGuard=(job, addAmount)=>{
@@ -6162,12 +6186,26 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
       const {sub,job,projected,contract,pct,action} = arOverbillBlock;
       const jobNumber = job?.job_number || '';
       const ackMatches = arOverbillTypeAck.trim().toLowerCase() === jobNumber.trim().toLowerCase() && jobNumber.length > 0;
-      const close = ()=>{setArOverbillBlock(null);setArOverbillTypeAck('');};
+      const close = ()=>{setArOverbillBlock(null);setArOverbillTypeAck('');setArOverbillShowFix(false);};
       const proceed = async ()=>{
         if(!ackMatches) return;
         close();
         if(typeof action === 'function') await action();
       };
+      // Run the same heuristics the Accounting tab uses so the modal can
+      // surface SPECIFIC duplicate-billing reasons (legacy import + draft
+      // overlap, exact-amount match against a prior App, already over-
+      // billed, etc.) instead of the generic "common causes" list. Empty
+      // result → fall back to the original message. addAmount is the
+      // delta this approval would post, modelled as the draft.
+      const addAmount = n(projected) - n(job?.ytd_invoiced);
+      const dcWarnings = detectDoubleCounting({
+        job,
+        priorApps: arOverbillApps,
+        contract: { contract_value: contract, billed_to_date: n(job?.ytd_invoiced) },
+        selectedSubmission: sub || null,
+        draftTotals: { current_amount: addAmount },
+      });
       return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={close}>
         <div onClick={e=>e.stopPropagation()} style={{background:'#FFF',borderRadius:12,maxWidth:560,width:'100%',boxShadow:'0 24px 48px rgba(0,0,0,0.3)',overflow:'hidden'}}>
           <div style={{padding:'14px 20px',background:'#7F1D1D',color:'#FFF',display:'flex',alignItems:'center',gap:10}}>
@@ -6191,14 +6229,62 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               </div>
               <div style={{fontSize:11,color:'#991B1B',marginTop:4,fontStyle:'italic'}}>Threshold: {OVERBILL_THRESHOLD_PCT}% — anything beyond this needs CFO/CEO sign-off.</div>
             </div>
-            <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.5,marginBottom:14}}>
-              <strong>This approval is blocked.</strong> Approving would put this job at {pct.toFixed(0)}% billed — above the {OVERBILL_THRESHOLD_PCT}% threshold. Common causes:
-              <ul style={{margin:'6px 0 0 18px',padding:0,fontSize:12,color:'#625650'}}>
-                <li>Opening balance was migrated AND a final invoice was entered (double-count)</li>
-                <li>Change order amount wasn't reflected in adj_contract_value</li>
-                <li>Invoice was entered against the wrong job</li>
-              </ul>
-            </div>
+            {dcWarnings.length > 0 ? (
+              // ─── Detection-driven amber guidance ──────────────────────
+              // Specific duplicate-billing reasons surfaced by detectDoubleCounting().
+              // Same amber palette + "How to Fix" steps as the AccountingTab banner
+              // so AR (Virginia) sees consistent guidance across both surfaces.
+              <div style={{background:'#FEF3C7',border:'1px solid #F59E0B',borderLeft:'5px solid #F59E0B',borderRadius:8,padding:14,marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:800,color:'#92400E',marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:18}}>⚠</span>
+                  <span>Likely double-counting detected — {dcWarnings.length} specific issue{dcWarnings.length===1?'':'s'} found</span>
+                </div>
+                <ul style={{margin:'0 0 4px 0',paddingLeft:22,fontSize:12,color:'#92400E',lineHeight:1.5}}>
+                  {dcWarnings.map((w,i)=>(
+                    <li key={w.ruleId||i} style={{marginBottom:6}}>
+                      <div style={{fontWeight:700}}>{w.reason}</div>
+                      <div style={{fontWeight:500,marginTop:2,opacity:0.85}}>
+                        <span style={{fontWeight:700}}>Suggested fix:</span> {w.suggestedFix}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {/* Collapsible 4-step fix guide — same content as the
+                    AccountingTab banner so guidance is consistent. */}
+                <div style={{marginTop:10}}>
+                  <button
+                    type="button"
+                    onClick={()=>setArOverbillShowFix(s=>!s)}
+                    aria-expanded={arOverbillShowFix}
+                    style={{background:'transparent',border:'1px solid #F59E0B',color:'#92400E',fontSize:11,fontWeight:700,padding:'4px 10px',borderRadius:6,cursor:'pointer'}}>
+                    {arOverbillShowFix?'▾ Hide Fix Steps':'▸ Show Fix Steps'}
+                  </button>
+                  {arOverbillShowFix && (
+                    <div style={{marginTop:8,padding:'10px 14px',background:'#FFFBEB',border:'1px solid #F59E0B',borderRadius:6,color:'#92400E'}}>
+                      <div style={{fontWeight:800,fontSize:11,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>How to Fix Double-Counting</div>
+                      <ol style={{margin:0,paddingLeft:20,fontSize:12,fontWeight:500,lineHeight:1.5}}>
+                        <li style={{marginBottom:4}}>Go to <b>Contract</b> tab → verify the <b>Adjusted Contract Value</b> is correct.</li>
+                        <li style={{marginBottom:4}}>Go to <b>Scope</b> tab → check that all <b>Change Orders</b> are properly entered.</li>
+                        <li style={{marginBottom:4}}>In the <b>Accounting</b> tab → look for duplicate <b>"Opening Balance"</b> entries or old invoices in the App Ledger.</li>
+                        <li>Delete or correct the duplicate entry (open the App row drill-down to void or adjust).</li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // ─── Fallback: original generic causes list ──────────────
+              // Renders when detectDoubleCounting returns no specific hits
+              // (e.g. brand-new job over-billed by a one-off entry mistake).
+              <div style={{fontSize:13,color:'#1A1A1A',lineHeight:1.5,marginBottom:14}}>
+                <strong>This approval is blocked.</strong> Approving would put this job at {pct.toFixed(0)}% billed — above the {OVERBILL_THRESHOLD_PCT}% threshold. Common causes:
+                <ul style={{margin:'6px 0 0 18px',padding:0,fontSize:12,color:'#625650'}}>
+                  <li>Opening balance was migrated AND a final invoice was entered (double-count)</li>
+                  <li>Change order amount wasn't reflected in adj_contract_value</li>
+                  <li>Invoice was entered against the wrong job</li>
+                </ul>
+              </div>
+            )}
             <div style={{background:'#F9FAFB',border:'1px solid #E5E3E0',borderRadius:8,padding:12}}>
               <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>OVERRIDE — Type job number <code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontWeight:800,color:'#1A1A1A'}}>{jobNumber}</code> to confirm:</div>
               <input
