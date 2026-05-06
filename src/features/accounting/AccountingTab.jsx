@@ -109,7 +109,15 @@ function WarningsList({ warnings }) {
 // output of detectDoubleCounting() with severity-aware styling. Click
 // the banner to scroll to the App Ledger so the user can inspect the
 // flagged Apps. Empty input renders nothing.
+//
+// 2026-05-05 (enhancement) — added a collapsible "How to Fix Double-
+// Counting" quick guide so Virginia has actionable steps inside the
+// banner itself instead of having to remember the workflow doc. The
+// toggle + panel both stopPropagation so they don't trigger the
+// banner-level scroll-to-ledger. The fix panel is ALWAYS amber/warn
+// styled (instructional) regardless of banner severity (danger/warn).
 function DoubleCountingBanner({ warnings }) {
+  const [showFix, setShowFix] = useState(false);
   if (!warnings || warnings.length === 0) return null;
   // If any warning is severity=error, render the whole banner in danger
   // tone; otherwise warn. (Error trumps warning visually so users notice.)
@@ -158,6 +166,65 @@ function DoubleCountingBanner({ warnings }) {
           </li>
         ))}
       </ul>
+
+      {/* Collapsible "How to Fix Double-Counting" quick guide. Toggle button
+          and expanded panel both stopPropagation so they don't trigger the
+          parent banner's scroll-to-ledger handler. Panel is amber even when
+          the banner itself is danger-tone — fix steps are instructional,
+          not alarming. */}
+      <div style={{ marginTop: 10 }}>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setShowFix(s => !s); }}
+          aria-expanded={showFix}
+          style={{
+            background: 'transparent',
+            border: `1px solid ${COLOR.warn}`,
+            color: '#92400E',
+            fontSize: 11,
+            fontWeight: 700,
+            padding: '4px 10px',
+            borderRadius: RADIUS.md,
+            cursor: 'pointer',
+          }}>
+          {showFix ? '▾ Hide Fix Steps' : '▸ Show Fix Steps'}
+        </button>
+        {showFix && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              marginTop: 8,
+              padding: '10px 14px',
+              background: COLOR.warnBg,
+              border: `1px solid ${COLOR.warn}`,
+              borderRadius: RADIUS.md,
+              color: '#92400E',
+              cursor: 'default',
+            }}>
+            <div style={{
+              fontWeight: 800, fontSize: 11,
+              textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6,
+            }}>
+              How to Fix Double-Counting
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 20, fontWeight: 500 }}>
+              <li style={{ marginBottom: 4 }}>
+                Go to <b>Contract</b> tab → verify the <b>Adjusted Contract Value</b> is correct.
+              </li>
+              <li style={{ marginBottom: 4 }}>
+                Go to <b>Scope</b> tab → check that all <b>Change Orders</b> are properly entered.
+              </li>
+              <li style={{ marginBottom: 4 }}>
+                In the <b>Accounting</b> tab → look for duplicate <b>"Opening Balance"</b> entries or old invoices in the App Ledger below.
+              </li>
+              <li>
+                Delete or correct the duplicate entry (open the App row drill-down to void or adjust).
+              </li>
+            </ol>
+          </div>
+        )}
+      </div>
+
       <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5 }}>
         Click anywhere on this banner to jump to the App Ledger →
       </div>
