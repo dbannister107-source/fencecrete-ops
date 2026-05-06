@@ -5688,6 +5688,8 @@ if(sub&&sub.id&&sub.job_id===jobId){
     patchBody.ar_reviewed=true;
     patchBody.ar_reviewed_at=new Date().toISOString();
     patchBody.ar_reviewed_by=arForm.ar_reviewed_by||'AR';
+    // T2.2 (2026-05-06) — Symmetric reviewer FK alongside the legacy text.
+    patchBody.ar_reviewed_by_user_id=auth?.profile?.id||null;
     patchBody.ytd_applied=true;
   }
   try{
@@ -5790,13 +5792,49 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   // entries and invoiced_amount alone so the data is preserved for re-review.
   const revertToPending=async(sub)=>{
     try{
-      await sbPatch('pm_bill_submissions',sub.id,{ar_reviewed:false,ar_reviewed_at:null,ar_reviewed_by:null});
+      // T1.5 (2026-05-06) — Capture the prior review identity BEFORE clearing,
+      // then log the re-open to system_events. Re-opens are money-touch events
+      // (the bill sheet re-enters the editable pool, which can change LF/dollars
+      // that flow into invoice_entries). The snapshot_at_review trigger preserves
+      // the original frozen submission regardless; this just adds a forensic
+      // breadcrumb of WHEN and WHO reverted it.
+      const priorReviewer    = sub.ar_reviewed_by    || null;
+      const priorReviewerId  = sub.ar_reviewed_by_user_id || null;
+      const priorReviewedAt  = sub.ar_reviewed_at    || null;
+      await sbPatch('pm_bill_submissions',sub.id,{
+        ar_reviewed:false,
+        ar_reviewed_at:null,
+        ar_reviewed_by:null,
+        ar_reviewed_by_user_id:null,
+      });
+      // Audit log — fire-and-forget; failure here doesn't block the revert.
+      sbPost('system_events', {
+        event_type:'bill_sheet_reopened',
+        event_category:'billing',
+        actor_type:'user',
+        actor_email: currentUserEmail || null,
+        entity_type:'pm_bill_submission',
+        entity_id: sub.id,
+        payload: {
+          job_id: sub.job_id,
+          job_number: sub.job_number,
+          billing_month: sub.billing_month,
+          prior_reviewer: priorReviewer,
+          prior_reviewer_user_id: priorReviewerId,
+          prior_reviewed_at: priorReviewedAt,
+          reverted_by: currentUserEmail || null,
+          reverted_by_user_id: auth?.profile?.id || null,
+          reverted_at: new Date().toISOString(),
+        },
+      }, { returnMinimal:true, throwOnError:false }).catch(e=>{
+        console.warn('[revertToPending] audit log failed (non-fatal):', e);
+      });
       fetchArSubs();
       if(bumpRefresh)bumpRefresh();
       setToast(`↺ ${sub.job_name||'Submission'} moved back to Pending`);
     }catch(err){setToast({message:err.message||'Revert failed',isError:true});}
   };
-  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});// POST to invoice_entries (source of truth). Trigger trg_recalc_ytd_invoiced
+  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_reviewed_by_user_id:auth?.profile?.id||null,ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});// POST to invoice_entries (source of truth). Trigger trg_recalc_ytd_invoiced
 // will recompute jobs.ytd_invoiced + last_billed from the sum, and
 // trigger_calculate_billing will recompute pct_billed + left_to_bill.
 // This replaces a previous direct-patch-on-jobs path that bypassed the
@@ -6811,6 +6849,34 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     if(hasNotes&&!hasAnyLf){
       const ok=window.confirm('⚠ This bill sheet has notes but none of the LF / labor fields have a value.\n\nAR will have to manually transcribe your notes into the structured fields. Please put the breakdown in the LF / labor sections instead — the Notes field is for unusual situations only.\n\nClick OK to submit anyway (only do this if there is genuinely no structured number to record), or Cancel to go fill in the LF/labor fields.');
       if(!ok)return;
+    }
+    // T2.3 (2026-05-06) — Cycle-LF sanity check. Catches the most common PM
+    // data-entry error: typing CUMULATIVE LF in the cycle field. A bill sheet
+    // is supposed to reflect ONLY this month's installed work; if the value
+    // jumped >2x AND >500 LF over the prior reviewed cycle, that's almost
+    // certainly the cumulative confusion. Soft warning, cancellable.
+    try{
+      const totals=calcSectionLFs(form,job);
+      const newLf=n(totals.grand);
+      if(newLf>0){
+        const priorReviewed=await sbGet('pm_bill_submissions',
+          `job_id=eq.${job.id}&ar_reviewed=eq.true&billing_month=lt.${selMonth}&order=billing_month.desc&limit=1`);
+        const priorLf=Array.isArray(priorReviewed)&&priorReviewed[0]?n(priorReviewed[0].total_lf):0;
+        if(priorLf>0 && newLf>priorLf*2 && (newLf-priorLf)>500){
+          const pctJump=Math.round((newLf/priorLf - 1) * 100);
+          const ok=window.confirm(
+            `⚠ Total LF this cycle: ${newLf.toLocaleString()}\n`+
+            `Last reviewed cycle: ${priorLf.toLocaleString()} (${priorReviewed[0].billing_month})\n\n`+
+            `That's a ${pctJump}% jump.\n\n`+
+            `Bill sheets should reflect ONLY this month's installed work — not cumulative project totals. `+
+            `Are these CYCLE numbers, or did you accidentally enter cumulative LF?\n\n`+
+            `Click OK to submit anyway, or Cancel to fix.`);
+          if(!ok){setSaving(null);return;}
+        }
+      }
+    }catch(e){
+      // Soft check — never block submit on a fetch failure.
+      console.warn('[submitEntry] cycle-LF sanity check skipped:',e);
     }
     setSaving(job.id);
     try{

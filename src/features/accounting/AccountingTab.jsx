@@ -37,6 +37,7 @@ import { detectDoubleCounting } from '../../shared/billing/detectDoubleCounting'
 import ContractSummaryCard from './ContractSummaryCard';
 import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
+import BillSheetHistory from './BillSheetHistory';
 import MarkPaidModal from './MarkPaidModal';
 import DrillDownModal from './DrillDownModal';
 import LumpSumDraft from './LumpSumDraft';
@@ -807,6 +808,14 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
           canEdit={canEdit}
         />
       </div>
+
+      {/* 4. Per-job Bill Sheet History (T2.1, 2026-05-06). Collapsible
+            timeline of every PM bill sheet ever filed for this job, with
+            "View snapshot" → frozen JSONB captured at the moment AR
+            reviewed (T1.1). Read-only; complements the App ledger above
+            (App ledger = formal billing applications; this = the upstream
+            PM bill sheet rhythm). */}
+      <BillSheetHistory jobId={job?.id} jobNumber={job?.job_number} />
 
       {/* Mark Paid modal — only mounts when an App row is selected via the
           AppLedger's "Mark Paid" button. On success the trg_apply_payment_to_application
