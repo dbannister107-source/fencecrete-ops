@@ -11581,6 +11581,9 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   },[planFindCapRow,planUsageForPool]);
   // Scale each pool's sub-pieces down proportionally to fit auto-cap. Returns
   // {line, capped (boolean), flags (per-pool boolean)} for toast formatting.
+  // 2026-05-06 — also scale planned_lf in lockstep with the panel cap ratio
+  // (1 panel ≈ fixed LF for the style, so when panels get capped to e.g. 1.8%
+  // the LF should land at ~1.8% of the original, not stay at 100%).
   const planApplyAutoCap=useCallback((line,autoCap)=>{
     if(!autoCap)return{capped:false,line,flags:{}};
     const POOL_KEYS={
@@ -11591,6 +11594,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
     };
     const planned={...line.planned};
     const flags={panels:false,posts:false,rails:false,caps:false};
+    let panelRatio=1;
     Object.keys(POOL_KEYS).forEach(pool=>{
       const subKeys=POOL_KEYS[pool];
       const total=subKeys.reduce((s,k)=>s+n(planned[k]),0);
@@ -11598,13 +11602,19 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       if(total>max&&total>0){
         flags[pool]=true;
         const ratio=max/total;
+        if(pool==='panels')panelRatio=ratio;
         subKeys.forEach(k=>{
           const v=n(planned[k]);
           planned[k]=String(Math.round(v*ratio));
         });
       }
     });
-    return{capped:Object.values(flags).some(Boolean),line:{...line,planned},flags};
+    // Scale planned_lf by the panel ratio (panels are the LF-driving pool).
+    // If panels weren't capped, LF stays as-is.
+    const newLf=flags.panels&&n(line.planned_lf)>0
+      ? String(Math.round(n(line.planned_lf)*panelRatio))
+      : line.planned_lf;
+    return{capped:Object.values(flags).some(Boolean),line:{...line,planned,planned_lf:newLf},flags};
   },[]);
 
   const addJobToPlan=(j)=>{
