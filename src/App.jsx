@@ -4373,18 +4373,19 @@ function NewProjectForm({jobs,onClose,onSaved}){
         </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
         {/* 2026-05-06 — Promoted Customer Master Lookup to a tinted callout
-            so it doesn't blend into the field grid. Linking is optional, but
-            the contract-readiness gate enforces customer_linked auto-check
-            (company_id IS NOT NULL OR is_residential=true) before status can
-            move out of contract_review. Linking here saves a round-trip via
-            EditPanel later. */}
+            so it doesn't blend into the field grid. Linking is fully
+            optional — the contract-readiness gate no longer enforces it
+            (migration 20260506_readiness_gate_drop_customer_linked).
+            Recommended for commercial so reporting/Customer Master views
+            roll up correctly, but skipping is supported (residential /
+            one-off / brand-new customer not yet in Customer Master). */}
         <div style={{gridColumn:'1/-1',padding:'14px 16px',background:f.company_id?'#F0FDF4':'#EFF6FF',border:`1px solid ${f.company_id?'#86EFAC':'#BFDBFE'}`,borderRadius:10,marginBottom:4}}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
             <span style={{fontSize:14}}>🏢</span>
             <div style={{fontSize:12,fontWeight:800,color:f.company_id?'#065F46':'#1D4ED8',textTransform:'uppercase',letterSpacing:0.5}}>
               {f.company_id?'Linked to Customer Master':'Link to Customer Master'}
             </div>
-            <span style={{fontSize:10,color:'#9E9B96',fontWeight:600,marginLeft:'auto'}}>Optional · recommended for commercial</span>
+            <span style={{fontSize:10,color:'#9E9B96',fontWeight:600,marginLeft:'auto'}}>Optional · helps Customer Master reporting</span>
           </div>
           <CustomerLookup onSelect={c=>{setF(p=>({...p,company_id:c.id||null,customer_name:c.name||p.customer_name,address:c.address||p.address,city:c.city||p.city,state:c.state||p.state,zip:c.zip||p.zip}));}} placeholder="Type the customer name to search Customer Master…"/>
           {f.company_id?<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:8,fontSize:11}}>

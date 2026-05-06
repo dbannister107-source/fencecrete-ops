@@ -8,8 +8,12 @@
 // Keep this file authoritative — do not redefine these in any consumer.
 
 // Keys must match v_contract_readiness.auto_checks JSONB keys.
+//
+// 2026-05-06 — `customer_linked` removed per CEO direction. Customer Master
+// + the lookup UI in NewProjectForm + EditPanel Details tab stay (recommended
+// for commercial), but linking is no longer a contract-advance blocker.
+// Migration: 20260506_readiness_gate_drop_customer_linked.
 export const AUTO_LABELS = {
-  customer_linked:           'Linked to company',
   style_set:                 'Style selected',
   color_set:                 'Color selected',
   height_set:                'Height set',
