@@ -184,7 +184,8 @@ function InvoiceView({ data }) {
   // Group cells by pricing_line_id; sort each group by stage display order.
   const linesByPricing = {};
   lines.forEach(l => {
-    const k = l.job_pricing_line_id || '_unlinked';
+    // Prefer the new bridge column; fall back to legacy for any pre-cutover rows.
+    const k = l.job_line_item_id || l.job_pricing_line_id || '_unlinked';
     (linesByPricing[k] = linesByPricing[k] || []).push(l);
   });
   Object.values(linesByPricing).forEach(g =>
@@ -642,20 +643,35 @@ export default function DrillDownModal({
             setLoading(false);
             return;
           }
-          // Resolve pricing-line labels for the breakdown headers (cheap follow-up
+          // Resolve line labels for the breakdown headers (cheap follow-up
           // fetch only for the linked IDs; skipped if there are none).
-          const pricingIds = Array.from(
-            new Set((lines || []).map(l => l.job_pricing_line_id))
+          // 2026-05-05 (Option C — Phase 1): the source of truth is now
+          // job_line_items. Read from job_line_item_id with a legacy
+          // fallback to job_pricing_line_id for any pre-cutover rows.
+          const lineIds = Array.from(
+            new Set((lines || []).map(l => l.job_line_item_id || l.job_pricing_line_id))
           ).filter(Boolean);
           let pricingByLineId = {};
-          if (pricingIds.length > 0) {
+          if (lineIds.length > 0) {
             try {
-              const pricing = await sbGet(
-                'job_pricing_lines',
-                `id=in.(${pricingIds.join(',')})&select=id,label,category,height,style,unit`
+              const items = await sbGet(
+                'job_line_items',
+                `id=in.(${lineIds.join(',')})&select=id,description,category,fence_type,height,style,unit`
               );
-              if (!cancelled && Array.isArray(pricing)) {
-                pricingByLineId = Object.fromEntries(pricing.map(p => [p.id, p]));
+              if (!cancelled && Array.isArray(items)) {
+                pricingByLineId = Object.fromEntries(items.map(p => [p.id, {
+                  id: p.id,
+                  // Map job_line_items shape to the {label, category, height, style, unit}
+                  // shape the modal renders. Mirrors normalizeLineItem() label fallback.
+                  label: p.description ||
+                    (p.category === 'precast' && p.height ? `${String(p.height).replace(/['"]/g,'')}' pc` :
+                     p.category === 'sw'      && p.height ? `${String(p.height).replace(/['"]/g,'')}' sw` :
+                     p.fence_type || p.category || 'Line'),
+                  category: p.category,
+                  height: p.height,
+                  style: p.style,
+                  unit: p.unit,
+                }]));
               }
             } catch (e) {
               // Non-fatal — labels just won't resolve, headers fall back to 'Pricing Line'.

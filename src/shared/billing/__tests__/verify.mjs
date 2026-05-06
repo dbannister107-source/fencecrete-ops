@@ -19,6 +19,7 @@ import {
   CYCLE_2_PM, CYCLE_2_PRIOR_APP_LINES, CYCLE_2_PRIOR_APPS, CYCLE_2_EXPECTED,
   TAX_EXEMPT_JOB, TAX_EXEMPT_EXPECTED,
   GATE_BILLED_NO_OVERRIDE, GATE_BILLED_NO_OVERRIDE_EXPECTED,
+  RAW_LINE_ITEMS_SHAPE,
 } from './acctSheetFixtures.js';
 
 let failed = 0;
@@ -138,6 +139,20 @@ const apport2 = apportionPmSubmission({
 });
 assert('Apportion 2:1 share a',    apport2.a?.posts_only, 133.33);
 assert('Apportion 2:1 share b',    apport2.b?.posts_only,  66.67);
+
+console.log('\n─── Option C — raw job_line_items shape via lineItems param ───');
+// Same numerical case as Cycle 1, but the input is a raw job_line_items
+// row (fence_type='PC', quantity, unit_price, taxable). The normalizer
+// should map this to the engine's internal shape and produce identical
+// numbers to the legacy pricingLines-shape Cycle 1 fixture.
+const r5 = computeAcctSheet(RAW_LINE_ITEMS_SHAPE);
+const c5po = r5.draft.lines.find((l) => l.stage_key === 'posts_only');
+assert('Raw shape: posts_only cumulative_qty', c5po.cumulative_qty, CYCLE_1_EXPECTED.posts_only.cumulative_qty);
+assert('Raw shape: posts_only current_qty',    c5po.current_qty,    CYCLE_1_EXPECTED.posts_only.current_qty);
+assert('Raw shape: posts_only current_total',  c5po.current_total,  CYCLE_1_EXPECTED.posts_only.current_total);
+assert('Raw shape: totals current_amount',     r5.draft.totals.current_amount, CYCLE_1_EXPECTED.totals.current_amount);
+assert('Raw shape: totals net_due',            r5.draft.totals.net_due,        CYCLE_1_EXPECTED.totals.net_due);
+assert('Raw shape: contract.contract_value',   r5.contract.contract_value,     9800);
 
 console.log(`\n${'─'.repeat(60)}`);
 if (failed === 0) {

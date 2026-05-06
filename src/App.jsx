@@ -79,10 +79,12 @@ import { HEIGHT_BASIS, STYLE_BASIS, TAX_RATE } from './shared/billing/heightBasi
 // AR specific guidance (vs. the generic "common causes" list).
 import { detectDoubleCounting } from './shared/billing/detectDoubleCounting';
 
-// Acct Sheet / Billing Engine Phase B — Pricing editor (lives outside
-// App.jsx per the architecture rule). Mounted on the new "Pricing" tab
-// in the EditPanel Money group, between Contract & Billing and Line Items.
-import JobPricingEditor from './features/accounting/JobPricingEditor';
+// 2026-05-05 (Option C — Phase 1): JobPricingEditor unmounted. The Pricing
+// Book table (job_pricing_lines) collapsed into job_line_items as the
+// single source of truth — labor/tax_basis split is now derived by the
+// trg_jli_derive_split trigger. Import kept commented for one cycle so a
+// quick revert is trivial; Phase 2 deletes the file entirely.
+// import JobPricingEditor from './features/accounting/JobPricingEditor';
 
 // Acct Sheet / Billing Engine Phase D — user-facing Accounting tab.
 // Replaces Virginia's manual Excel "Acct Sheet" with a native OPS
@@ -1720,28 +1722,32 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
               <div style={cellStyle(150)}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
               </div>
-              {/* 2026-05-05 (P1 #6): Pricing Link column. Optional FK to
-                  job_pricing_lines — auto-suggests on (category, height,
-                  style) match; user can override or clear. 🔗 badge
-                  surfaces in the label when a link is set. Candidate pool
-                  is filtered by the line's fence_type → category mapping
-                  so users only see relevant pricing rows. */}
-              <div style={cellStyle(200)}>
-                <label style={fieldLabel}>
-                  Pricing Link
-                  {l.pricing_line_id&&<span title="Linked to a pricing-book row" style={{marginLeft:6,fontSize:11,color:'#1D4ED8'}}>🔗</span>}
+              {/* 2026-05-05 (Option C — Phase 1): display-only Labor + Tax
+                  Basis split. Auto-derived by the trg_jli_derive_split DB
+                  trigger from category + height + style + unit_price.
+                  Editing flexibility deferred to Phase E (no production
+                  adoption today; trigger output covers the 95% case). */}
+              <div style={cellStyle(120)}>
+                <label style={fieldLabel} title="Auto-derived from height/style. Used by the Acct Sheet calc engine for sales tax + labor split.">
+                  Labor / Unit
                 </label>
-                <select
-                  value={l.pricing_line_id||''}
-                  onChange={e=>updateLine(idx,'pricing_line_id',e.target.value||null)}
-                  style={{...inp,width:'100%'}}
-                  title={l.pricing_line_id?'Linked — change or clear here':'Pick a pricing-book row to link this line'}>
-                  <option value="">— None —</option>
-                  {availablePricingLines
-                    .filter(p=>!l.fence_type||FENCE_TYPE_TO_PRICING_CATEGORY[l.fence_type]===p.category)
-                    .map(p=><option key={p.id} value={p.id}>{p.label}{n(p.price_per_unit)>0?` ($${n(p.price_per_unit)}/${p.unit||'LF'})`:''}</option>)}
-                </select>
+                <div style={{...inp,width:'100%',background:'#F9F8F6',color:l.labor_per_unit==null?'#9E9B96':'#1A1A1A',fontFamily:'Inter',fontWeight:700,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',fontStyle:l.labor_per_unit==null?'italic':'normal'}}>
+                  {l.labor_per_unit==null?'—':$(l.labor_per_unit)}
+                </div>
               </div>
+              <div style={cellStyle(120)}>
+                <label style={fieldLabel} title="Auto-derived from height/style. Sales tax is computed on tax_basis × qty only.">
+                  Tax Basis / Unit
+                </label>
+                <div style={{...inp,width:'100%',background:'#F9F8F6',color:l.tax_basis_per_unit==null?'#9E9B96':'#1A1A1A',fontFamily:'Inter',fontWeight:700,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',fontStyle:l.tax_basis_per_unit==null?'italic':'normal'}}>
+                  {l.tax_basis_per_unit==null?'—':$(l.tax_basis_per_unit)}
+                </div>
+              </div>
+              {/* 2026-05-05 (Option C — Phase 1): Pricing Link column hidden.
+                  job_pricing_lines is being retired (zero production rows);
+                  the FK column on job_line_items will be dropped in Phase 2.
+                  The dropdown is left in the React tree as null so Phase 2
+                  removal is a single-line cleanup. */}
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
             {!isNonFence&&<div style={row2Style}>
@@ -3623,22 +3629,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       onDirtyChange={(d)=>setCoLineDirty(c.id,d)}
                     />
 
-                    {/* 2026-05-05 (P0 restructure, Option A): CO sub-pricing.
-                        Closes the Phase E gap — CO scope now has its own
-                        rate decomposition (labor + tax_basis split) feeding
-                        the Acct Sheet calc engine. Same registerSave hook
-                        pattern; saves run via handleSave's coPricingSaveRefs
-                        loop before main-contract pricing. */}
-                    <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #E5E3E0'}}>
-                      <div style={{fontSize:10,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>CO Pricing Book</div>
-                      <JobPricingEditor
-                        job={job}
-                        coId={c.id}
-                        canEdit={canApproveCO||canEdit}
-                        registerSave={(fn)=>{coPricingSaveRefs.current[c.id]=fn;}}
-                        onDirtyChange={(d)=>setCoPricingDirty(c.id,d)}
-                      />
-                    </div>
+                    {/* 2026-05-05 (Option C — Phase 1): CO Pricing Book
+                        retired. CO line items + their unit_price drive
+                        the Acct Sheet calc engine directly via the
+                        trg_jli_derive_split trigger (same labor/tax_basis
+                        derivation that fired on Phase B's pricing rows).
+                        coPricingSaveRefs is left as a no-op map for one
+                        cycle; Phase 2 cleans it up. */}
                   </div>}
 
                   {/* Contract Summary — auto-computed */}
@@ -4070,22 +4067,13 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               </>;
             })()}
 
-            {/* 2026-05-05 (P0 restructure): Pricing Book mounted as a
-                foundational section of the Contract tab. Was the standalone
-                "Pricing" tab from Phase B; folded here so Amiee sets up the
-                price book alongside other contract metadata + readiness. */}
-            {!isNew&&<>
-              <div style={{marginTop:24,marginBottom:10,paddingBottom:6,borderBottom:'2px solid #8A261D'}}>
-                <div style={{fontSize:11,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5}}>Pricing Book</div>
-                <div style={{fontSize:11,color:'#625650',marginTop:2}}>Per-unit prices that the Acct Sheet calc engine consumes. Auto-seeds from line items the first time you open it.</div>
-              </div>
-              <JobPricingEditor
-                job={job}
-                coId={null}
-                canEdit={canEdit}
-                registerSave={(fn)=>{pricingSaveRef.current=fn;}}
-              />
-            </>}
+            {/* 2026-05-05 (Option C — Phase 1): Pricing Book retired. The
+                calc engine now reads job_line_items as the single source of
+                truth — labor/tax_basis split is derived from height + style
+                + unit_price by trg_jli_derive_split. The JobPricingEditor
+                file is preserved (unmounted) for one cycle until Phase 2
+                deletes it; pricingSaveRef is left in place but no longer
+                receives a callback. */}
 
           {/* 2026-05-05 (P0 restructure): "LF on File from PM Bill Sheet"
               card REMOVED — redundant with the Accounting tab's Draft Table

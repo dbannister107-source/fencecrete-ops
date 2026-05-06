@@ -223,3 +223,45 @@ export const GATE_BILLED_NO_OVERRIDE_EXPECTED = {
   current_total: 0,
   totals_current_amount: 0,
 };
+
+// ─── Option C — Phase 1 normalizer regression ─────────────────────
+//
+// Same numerical case as HEB_MADERA_RUN, but with the fixture expressed
+// as a raw `job_line_items` row (quantity / unit_price / taxable / lf,
+// no labor_per_unit or tax_basis_per_unit set — the calc engine should
+// see the trigger-derived split via the live DB; here we're just
+// verifying the normalizer maps fields correctly and the engine still
+// produces the same numbers when given the raw shape via the new
+// `lineItems` parameter.
+
+export const RAW_LINE_ITEMS_SHAPE = {
+  job: { ...HEB_MADERA_RUN.job },
+  // Raw job_line_items shape — fence_type='PC', quantity, unit_price,
+  // taxable, plus the trigger-derived labor/basis columns.
+  lineItems: [
+    {
+      id: 'pl-6pc',
+      line_number: 1,
+      fence_type: 'PC',
+      category: 'precast',
+      height: '6',
+      style: null,
+      quantity: 100,
+      lf: 100,
+      unit: 'LF',
+      unit_price: 98,
+      contract_rate: 98,
+      // Trigger-derived in the live DB; we set them explicitly here so
+      // the test isolates the normalizer from the trigger:
+      labor_per_unit: 72,
+      tax_basis_per_unit: 26,
+      taxable: true,
+      line_value: 9800,
+    },
+  ],
+  effectiveWeights: HEB_MADERA_RUN.effectiveWeights,
+  pmSubmission: HEB_MADERA_RUN.pmSubmission,
+  priorAppLines: [],
+  priorApps: [],
+  cycleOverrides: {},
+};

@@ -50,6 +50,71 @@ const OVER_BILL_TOL = 1.001;
 const NUM = (x) => Number(x) || 0;
 const ROUND_2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
+// 2026-05-05 (Option C — Phase 1) — adapter for the new single-source-of-
+// truth model where `job_line_items` is the only pricing table. Translates
+// a job_line_items row into the engine's internal shape (qty / category /
+// price_per_unit / labor_per_unit / tax_basis_per_unit / tax_exempt /
+// extended_total / label).
+//
+// Idempotent: rows that already look normalized (have `qty` AND
+// `price_per_unit`) pass through unchanged so existing test fixtures keep
+// working without churn.
+//
+// Category normalization mirrors classifyForPricing() in JobPricingEditor.jsx
+// so the engine's PM_STAGE_MAP keys still match. Raw job_line_items.category
+// vocabulary (lump_sum / wi / gate / change_order / wood / site_work /
+// removal) is mapped to the engine's normalized vocabulary (precast / sw /
+// wi_gate / permit / bond / option / other) via category-then-fence_type
+// resolution.
+export function normalizeLineItem(li) {
+  if (!li) return li;
+  // Already normalized — bypass (test fixture path).
+  if (li.qty != null && li.price_per_unit != null) return li;
+
+  const rawCat = (li.category || '').toLowerCase();
+  const ft = li.fence_type || '';
+  let category = 'other';
+  if (rawCat === 'precast' || ft === 'PC')                                category = 'precast';
+  else if (rawCat === 'sw' || rawCat === 'site_work' || rawCat === 'wi' || rawCat === 'wood' || ft === 'SW' || ft === 'WI') category = 'sw';
+  else if (rawCat === 'gate' || rawCat === 'wi_gate' || ft === 'Gate')    category = 'wi_gate';
+  else if (rawCat === 'permit' || ft === 'Permit')                         category = 'permit';
+  else if (rawCat === 'bond' || ft === 'P&P Bond' || ft === 'Maint Bond' || ft === 'Insurance') category = 'bond';
+  else if (rawCat === 'lump_sum' || ft === 'Lump Sum' || ft === 'Columns' || ft === 'Gate Controls') category = 'option';
+
+  const qty            = NUM(li.quantity != null ? li.quantity : li.lf);
+  const price_per_unit = NUM(li.unit_price != null ? li.unit_price : li.contract_rate);
+  const extended_total = li.line_value != null ? NUM(li.line_value) : ROUND_2(qty * price_per_unit);
+
+  // Label: prefer description; fall back to "{height}' pc" / "{height}' sw"
+  // / "WI Gate" pattern, mirroring buildLabel() from JobPricingEditor.jsx.
+  let label = li.description || '';
+  if (!label) {
+    const h = String(li.height ?? '').replace(/['"]/g, '').trim();
+    if (category === 'precast' && h)    label = `${h}' pc`;
+    else if (category === 'sw' && h)    label = `${h}' sw`;
+    else if (category === 'wi_gate')    label = li.fence_type || 'WI Gate';
+    else                                label = li.fence_type || category;
+  }
+
+  return {
+    id:                 li.id,
+    co_id:              li.co_id || null,
+    line_number:        li.line_number,
+    category,
+    label,
+    height:             li.height || null,
+    style:              li.style || null,
+    fence_type:         li.fence_type || null,
+    qty,
+    unit:               li.unit || (category === 'wi_gate' ? 'EA' : (category === 'permit' || category === 'bond' || category === 'option') ? 'LS' : 'LF'),
+    price_per_unit,
+    labor_per_unit:     li.labor_per_unit != null ? NUM(li.labor_per_unit) : null,
+    tax_basis_per_unit: li.tax_basis_per_unit != null ? NUM(li.tax_basis_per_unit) : null,
+    tax_exempt:         li.taxable === false,  // inverted: taxable=false → exempt
+    extended_total,
+  };
+}
+
 // ─── 1. apportionPmSubmission ───────────────────────────────────────
 //
 // Maps the PM bill submission's aggregate per-stage LF columns onto
@@ -137,9 +202,13 @@ export function computeDraftCells({
   // Index prior cumulative qty per (pricing_line_id, stage_key).
   // Multiple prior apps can have lines for the same cell; cumulative_qty
   // is monotonically non-decreasing across apps, so MAX = latest.
+  // 2026-05-05 (Option C — Phase 1): the FK column is now
+  // `job_line_item_id` (legacy `job_pricing_line_id` falls back for any
+  // pre-cutover rows; both will be empty in production until first File).
   const priorCumByCell = {};
   priorAppLines.forEach((pl) => {
-    const k = `${pl.job_pricing_line_id}|${pl.stage_key}`;
+    const lineId = pl.job_line_item_id || pl.job_pricing_line_id;
+    const k = `${lineId}|${pl.stage_key}`;
     const v = NUM(pl.cumulative_qty);
     if (priorCumByCell[k] == null || v > priorCumByCell[k]) priorCumByCell[k] = v;
   });
@@ -226,7 +295,8 @@ export function aggregateDraftTotals({ draftLines = [], retainagePct = 0 } = {})
 export function computePerLineSummary({ pricingLines = [], priorAppLines = [], draftLines = [] } = {}) {
   const priorTotalById = {};
   priorAppLines.forEach((pl) => {
-    priorTotalById[pl.job_pricing_line_id] = NUM(priorTotalById[pl.job_pricing_line_id]) + NUM(pl.current_total);
+    const lineId = pl.job_line_item_id || pl.job_pricing_line_id;
+    priorTotalById[lineId] = NUM(priorTotalById[lineId]) + NUM(pl.current_total);
   });
 
   const draftTotalById = {};
@@ -306,7 +376,7 @@ export function validateAcctSheet({
 
   // L4 fix: distinguish "no pricing rows" from "no input"
   if (!pricingLines || pricingLines.length === 0) {
-    warnings.push('No pricing rows yet — set them up on the Pricing tab first.');
+    warnings.push('No line items yet — add them on the Scope tab first.');
   } else {
     // No data input at all → empty draft. Surface so the user knows why.
     const hasOverrides = cycleOverrides && Object.keys(cycleOverrides).length > 0;
@@ -326,7 +396,7 @@ export function validateAcctSheet({
   // produce $0 amounts in the draft and would silently underbill.
   pricingLines.forEach((line) => {
     if (NUM(line.price_per_unit) > 0 && (line.labor_per_unit == null || line.tax_basis_per_unit == null)) {
-      warnings.push(`Pricing row "${line.label}" is missing labor / tax_basis split — fix in the Pricing tab before billing.`);
+      warnings.push(`Line "${line.label}" is missing labor / tax_basis split — set unit price + height/style on the Scope tab so the trigger can derive it, or enter the split manually.`);
     }
   });
 
@@ -368,13 +438,21 @@ export function validateAcctSheet({
 
 export function computeAcctSheet({
   job = {},
-  pricingLines = [],
+  // 2026-05-05 (Option C — Phase 1) — new canonical input. `pricingLines`
+  // is kept as a legacy alias so existing test fixtures + any in-flight
+  // callers keep working through the cutover. After Phase 2 the alias
+  // disappears.
+  lineItems,
+  pricingLines: legacyPricingLines,
   effectiveWeights = [],
   pmSubmission = null,
   priorAppLines = [],
   priorApps = [],
   cycleOverrides = {},
 } = {}) {
+  const rawLines = lineItems != null ? lineItems : (legacyPricingLines || []);
+  const pricingLines = rawLines.map(normalizeLineItem);
+
   const apportioned = apportionPmSubmission({ pmSubmission, pricingLines });
   const cumulativeQtys = mergeCumulativeQtys(apportioned, cycleOverrides);
 

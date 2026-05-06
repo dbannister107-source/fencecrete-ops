@@ -1,5 +1,18 @@
-// JobPricingEditor — the per-job pricing book editor.
+// JobPricingEditor — DEPRECATED 2026-05-05 (Option C — Phase 1).
 //
+// The Pricing Book table (job_pricing_lines) was collapsed into
+// job_line_items as the single source of truth. The labor/tax_basis
+// split is now derived automatically by the trg_jli_derive_split trigger
+// from category + height + style + unit_price (mirrors derivePriceSplit
+// in src/shared/billing/heightBasis.js).
+//
+// This component is no longer mounted anywhere. The file is kept for one
+// cycle to make a quick revert trivial if any production issue surfaces;
+// Phase 2 deletes it along with the job_pricing_lines table itself.
+//
+// ─── Original docs (for reference) ────────────────────────────────────
+//
+// Per-job pricing book editor.
 // Mirrors the Excel "Original Contract Amounts" section. One row per
 // pricing scope (each precast height, SW, each gate type, each option,
 // each permit/bond, etc.). Each row carries the price decomposition

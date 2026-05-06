@@ -32,7 +32,7 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { sbGet, sbPost, sbPatch } from '../../shared/sb';
 import { COLOR, RADIUS, card, btnP, btnS, inputS, FONT } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
-import { computeAcctSheet } from '../../shared/billing/acctSheet';
+import { computeAcctSheet, normalizeLineItem } from '../../shared/billing/acctSheet';
 import { detectDoubleCounting } from '../../shared/billing/detectDoubleCounting';
 import ContractSummaryCard from './ContractSummaryCard';
 import DraftTable from './DraftTable';
@@ -348,7 +348,11 @@ function SubmissionSelector({ pmSubmissions, billedSubmissionIds, value, onChang
 export default function AccountingTab({ job, canEdit, currentUserEmail }) {
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
-  const [pricingLines, setPricingLines] = useState([]);
+  // 2026-05-05 (Option C — Phase 1) — single source of truth is now
+  // job_line_items. The calc engine's normalizeLineItem() maps the raw
+  // shape to its internal vocabulary, so we don't need a separate
+  // pricing_lines fetch anymore.
+  const [lineItems, setLineItems] = useState([]);
   const [effectiveWeights, setEffectiveWeights] = useState([]);
   const [priorApps, setPriorApps] = useState([]);
   const [priorAppLines, setPriorAppLines] = useState([]);
@@ -371,14 +375,16 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
     if (!job?.id) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [pl, ew, apps, subs] = await Promise.all([
-        sbGet('job_pricing_lines',         `job_id=eq.${job.id}&order=line_number.asc`),
+      // job_line_items uses job_number (legacy text FK), not job_id, for some
+      // historical rows. Filter on both to capture everything.
+      const [li, ew, apps, subs] = await Promise.all([
+        sbGet('job_line_items',            `or=(job_id.eq.${job.id},job_number.eq.${job.job_number})&order=line_number.asc`),
         sbGet('v_effective_stage_weights', `job_id=eq.${job.id}&order=category.asc,display_order.asc`),
         sbGet('invoice_applications',      `job_id=eq.${job.id}&order=app_number.desc`),
         sbGet('pm_bill_submissions',       `job_id=eq.${job.id}&order=billing_month.desc&limit=24`),
       ]);
       const appsArr = apps || [];
-      setPricingLines(pl || []);
+      setLineItems(li || []);
       setEffectiveWeights(ew || []);
       setPriorApps(appsArr);
       setPmSubmissions(subs || []);
@@ -423,13 +429,22 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
 
   const result = useMemo(() => computeAcctSheet({
     job: { ...job, retainage_held: liveRetainageHeld },
-    pricingLines,
+    lineItems,
     effectiveWeights,
     pmSubmission: selectedSubmission,
     priorAppLines,
     priorApps,
     cycleOverrides,
-  }), [job, liveRetainageHeld, pricingLines, effectiveWeights, selectedSubmission, priorAppLines, priorApps, cycleOverrides]);
+  }), [job, liveRetainageHeld, lineItems, effectiveWeights, selectedSubmission, priorAppLines, priorApps, cycleOverrides]);
+
+  // Normalized line shape passed to DraftTable. The engine internally
+  // normalizes too — we do it again here so DraftTable can read fields
+  // by their engine vocabulary names (qty / category / labor_per_unit /
+  // tax_basis_per_unit) without duplicating the mapping logic.
+  const normalizedLines = useMemo(
+    () => (lineItems || []).map(normalizeLineItem),
+    [lineItems]
+  );
 
   // ─── Double-counting detection ──────────────────────────────────
   // Lightweight heuristic check on top of the engine's standard warnings.
@@ -516,7 +531,10 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         .filter(c => Number(c.current_qty) !== 0 && Number(c.current_total) !== 0)
         .map(c => ({
           invoice_application_id:   app.id,
-          job_pricing_line_id:      c.pricing_line_id,
+          // 2026-05-05 (Option C — Phase 1): write to the new bridge
+          // column. job_pricing_line_id stays null going forward; Phase 2
+          // drops it. c.pricing_line_id now contains the job_line_items.id.
+          job_line_item_id:         c.pricing_line_id,
           stage_key:                c.stage_key,
           cumulative_qty:           c.cumulative_qty,
           prior_qty:                c.prior_qty,
@@ -718,7 +736,7 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
             <DraftTable
               draftLines={result.draft.lines}
               draftTotals={result.draft.totals}
-              pricingLines={pricingLines}
+              pricingLines={normalizedLines}
               cycleOverrides={cycleOverrides}
               setCycleOverrides={setCycleOverrides}
               canEdit={canEdit}
