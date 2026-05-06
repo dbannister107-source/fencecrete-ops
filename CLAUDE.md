@@ -639,7 +639,49 @@ grep -F -c "expected_string" bundle.js
 
 ---
 
-*Last updated: May 5, 2026 — **Accounting System / Billing Engine shipped end-to-end + post-ship bug sweep + relational integrity audit.** **8 commits today** (`89dfc6f` → `6eb8843`): 2 setup-form pre-cleanup commits, 4 phased build commits (Phases A–D), 1 docs commit, 1 bug-fix commit. **Replaces Virginia's manual Excel "Acct Sheet"** with a native OPS feature — full pricing book → draft invoice → filed invoice flow now lives in the EditPanel Money group.
+*Last updated: May 5, 2026 (late evening) — **Pricing Book retired; collapsed into `job_line_items` as the single source of truth (Option C, Phases 1 + 2).** **2 commits today** (`99ba387` → `3298e4d`) close out a build that landed earlier the same day. The audit was the unlock: `job_pricing_lines` had **0 production rows** after a month of availability — the per-row override flexibility had zero adoption. Collapsing eliminates a parallel maintenance surface for Amiee (no more "edit Line Items + edit Pricing Book") without losing any capability — labor / tax_basis split is now derived automatically by `trg_jli_derive_split` from `category + height + style + unit_price`, mirroring `derivePriceSplit()` in `src/shared/billing/heightBasis.js`.
+
+**Schema (Phase 1 + 2):**
+- `job_line_items` gained `labor_per_unit` and `tax_basis_per_unit` (numeric(12,4), nullable, trigger-derived).
+- `trg_jli_derive_split` BEFORE INSERT/UPDATE OF `(unit_price, contract_rate, category, height, style)`. Handles raw vocabulary (`'gate'`, `'wi'`, `'site_work'`) + `fence_type` fallback. Strips apostrophes from height (`6'` → `6`) so legacy-import rows match.
+- `invoice_application_lines.job_line_item_id` (UUID FK to `job_line_items.id`, ON DELETE SET NULL) replaces the old `job_pricing_line_id` column.
+- **Phase 2 drops:** `v_acct_sheet_summary` view; `invoice_application_lines.job_pricing_line_id` column; `job_line_items.pricing_line_id` column; `trg_jpl_extended_total` trigger + `fn_jpl_extended_total` function; `job_pricing_lines` table renamed to `_legacy_job_pricing_lines` (one-day safety window — Phase 2b drops it tomorrow).
+
+**Backfill stats (live DB, 502 rows across 288 jobs):**
+- 235 / 241 precast rows now have splits (apostrophe-strip picked up 7 extras).
+- 5 / 5 gate rows.
+- 10 fence_type-fallback null-category rows.
+- 6 precast still null — out-of-range heights (12ft) or null. Engine emits a warning + Virginia enters manually if/when those jobs go through the Accounting tab.
+- SW (57 rows) intentionally null — pricing varies too much to preset.
+
+**Engine (`src/shared/billing/acctSheet.js`):**
+- New `normalizeLineItem()` exported. Idempotent — already-normalized rows pass through, so test fixtures didn't break during the cutover.
+- Maps raw `job_line_items` shape (`fence_type`/`quantity`/`unit_price`/`taxable`) → engine internal vocabulary (`category`/`qty`/`price_per_unit`/`tax_exempt`).
+- `computeAcctSheet({lineItems, ...})` — single canonical input. Phase 1 had a `pricingLines` legacy alias; Phase 2 dropped it.
+- Tests: 53 → **59 PASS** (added 6 raw-shape assertions exercising the normalizer end-to-end).
+
+**UI:**
+- `AccountingTab.jsx` fetches `job_line_items` directly (not `job_pricing_lines`). File flow writes `invoice_application_lines.job_line_item_id`.
+- `DrillDownModal.jsx` resolves line labels from `job_line_items` (description fallback to computed `${height}' pc` / `${height}' sw` / fence_type).
+- `LineItemsEditor` (in App.jsx) gains 2 read-only display cells: **Labor / Unit** and **Tax Basis / Unit** showing the trigger output. Editable override path deferred to Phase E (zero adoption today).
+- `JobPricingEditor.jsx` deleted (~480 lines). All related plumbing in App.jsx removed: `pricingSaveRef`, `coPricingSaveRefs`, `setCoPricingDirty`, `availablePricingLines` state + fetch, `FENCE_TYPE_TO_PRICING_CATEGORY`, `autoLinkPricingLine`, M1 fence_type-change link clear, `pricing_line_id` from line item save body. Pricing tab + CO Pricing Book section both unmounted.
+
+**Workflow docs (v2 → v2.1):**
+- `docs/billing-workflow-v2.md` — Stage 3 (Amiee) simplifies; no Pricing Book step. CO step drops the sub-pricing-row requirement (was the historical over-billing gap from Phase D). What-changes table reflects that Amiee maintains one place now.
+- `docs/money-billing-workflow.html` — Stage 03 card retitled "Scope (Line Items)"; detail panel rewritten with auto-derive explanation; comparison table updated; version stamp v2 → v2.1.
+
+**Validation:** 59/59 JS engine assertions PASS; production build clean (Phase 1: −4.62 kB main; Phase 2: another −455 B; net ~−5 kB after JobPricingEditor was tree-shaken and dead plumbing removed); live DB spot-check confirms basis derivation matches Excel exactly (4ft → $23, 6ft → $26, 8ft → $29.25; sums to unit_price).
+
+**Code stats:** Phase 1 +251 / −81 = +170 net. Phase 2 +62 / −854 = **−792 net.** Combined: **−622 net lines** while gaining auto-derive consistency and removing a maintenance burden.
+
+**Tomorrow (Phase 2b):**
+- One-line cleanup: `DROP TABLE IF EXISTS _legacy_job_pricing_lines;`. Operational, no engineering.
+
+**Phase E candidates (parked, all optional now that the Pricing Book retirement closed the biggest gap):** Editable labor / tax_basis cells in LineItemsEditor (only if anyone surfaces a real override need — zero today); orphan draft App cleanup UI; "Mark Final" action writing `jobs.final_invoice_amount`; Acct Sheet PDF export matching Virginia's preferred Excel layout; Phase G2/G3/G4 (Milestone billing / T&M / AIA G702/G703 PDF format). All deferred unless real users surface a need.*
+
+---
+
+*Earlier same day, May 5, 2026 — **Accounting System / Billing Engine shipped end-to-end + post-ship bug sweep + relational integrity audit.** **8 commits** (`89dfc6f` → `6eb8843`): 2 setup-form pre-cleanup commits, 4 phased build commits (Phases A–D), 1 docs commit, 1 bug-fix commit. **Replaces Virginia's manual Excel "Acct Sheet"** with a native OPS feature — full pricing book → draft invoice → filed invoice flow now lives in the EditPanel Money group.
 
 **Schema:** 5 new tables (`job_pricing_lines`, `stage_weights`, `job_stage_weights`, `invoice_applications`, `invoice_application_lines`) + 2 views (`v_effective_stage_weights`, `v_acct_sheet_summary`) + 7 triggers (extended_total maintenance, weight-sum validation, app_number auto-increment, invoice_number auto-generation, header total computation, post-on-file with synthetic-skip, retainage_held maintenance). Synthetic backfill of 164 historical `invoice_entries` → 164 `invoice_applications` rows ($21.9M cumulative, 138 jobs) preserves provenance via `source_invoice_entry_id`.
 
