@@ -33,6 +33,7 @@ import { sbGet, sbPost, sbPatch } from '../../shared/sb';
 import { COLOR, RADIUS, card, btnP, btnS, inputS, FONT } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
 import { computeAcctSheet } from '../../shared/billing/acctSheet';
+import { detectDoubleCounting } from '../../shared/billing/detectDoubleCounting';
 import ContractSummaryCard from './ContractSummaryCard';
 import DraftTable from './DraftTable';
 import AppLedger from './AppLedger';
@@ -101,6 +102,66 @@ function WarningsList({ warnings }) {
         {warnings.map((w, i) => <li key={i}>{w}</li>)}
       </ul>
     </Banner>
+  );
+}
+
+// 2026-05-05 — proactive double-counting detection banner. Renders the
+// output of detectDoubleCounting() with severity-aware styling. Click
+// the banner to scroll to the App Ledger so the user can inspect the
+// flagged Apps. Empty input renders nothing.
+function DoubleCountingBanner({ warnings }) {
+  if (!warnings || warnings.length === 0) return null;
+  // If any warning is severity=error, render the whole banner in danger
+  // tone; otherwise warn. (Error trumps warning visually so users notice.)
+  const hasError = warnings.some(w => w.severity === 'error');
+  const colors = hasError
+    ? { bg: COLOR.dangerBg,  border: COLOR.danger,  fg: COLOR.danger,  icon: '🛑' }
+    : { bg: COLOR.warnBg,    border: COLOR.warn,    fg: '#92400E',     icon: '⚠' };
+  const scrollToLedger = () => {
+    if (typeof document === 'undefined') return;
+    const el = document.querySelector('[data-acct-app-ledger]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <div
+      onClick={scrollToLedger}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') scrollToLedger(); }}
+      title="Click to jump to the App Ledger and inspect"
+      style={{
+        marginBottom: 14,
+        padding: '12px 16px',
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderLeft: `5px solid ${colors.border}`,
+        borderRadius: RADIUS.lg,
+        color: colors.fg,
+        fontSize: 12,
+        lineHeight: 1.5,
+        cursor: 'pointer',
+        transition: 'background 0.15s ease',
+      }}>
+      <div style={{ fontWeight: 800, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 18 }}>{colors.icon}</span>
+        <span>
+          {hasError ? 'Possible duplicate billing detected' : 'Double-counting check'} — {warnings.length} item{warnings.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 22 }}>
+        {warnings.map((w, i) => (
+          <li key={w.ruleId || i} style={{ marginBottom: 6 }}>
+            <div style={{ fontWeight: 700 }}>{w.reason}</div>
+            <div style={{ fontWeight: 500, marginTop: 2, opacity: 0.85 }}>
+              <span style={{ fontWeight: 700 }}>Suggested fix:</span> {w.suggestedFix}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        Click anywhere on this banner to jump to the App Ledger →
+      </div>
+    </div>
   );
 }
 
@@ -303,6 +364,19 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
     cycleOverrides,
   }), [job, liveRetainageHeld, pricingLines, effectiveWeights, selectedSubmission, priorAppLines, priorApps, cycleOverrides]);
 
+  // ─── Double-counting detection ──────────────────────────────────
+  // Lightweight heuristic check on top of the engine's standard warnings.
+  // Catches the most common over-billing scenarios (already-overbilled,
+  // synthetic-import + new draft, exact-amount match) BEFORE the user
+  // hits the AR Over-Bill Block dialog or files a duplicate.
+  const doubleCountingWarnings = useMemo(() => detectDoubleCounting({
+    job,
+    priorApps,
+    contract: result.contract,
+    selectedSubmission,
+    draftTotals: result.draft.totals,
+  }), [job, priorApps, result.contract, selectedSubmission, result.draft.totals]);
+
   // ─── "Already billed" badge data ─────────────────────────────────
   const billedSubmissionIds = useMemo(
     () => new Set(priorApps.filter(a => a.pm_bill_submission_id).map(a => a.pm_bill_submission_id)),
@@ -483,6 +557,12 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
       {/* 1. Contract Summary — always visible regardless of method */}
       <ContractSummaryCard contract={result.contract} retainagePct={job?.retainage_pct} />
 
+      {/* 1b. Double-counting detection banner — proactive duplicate-billing
+              warning, surfaced above the draft section so Virginia notices
+              before filing. Empty array (no issues) renders nothing. Click
+              the banner to scroll to the App Ledger for inspection. */}
+      <DoubleCountingBanner warnings={doubleCountingWarnings} />
+
       {/* 2. Current Bill Draft — branches by method.
             Progress / AIA / null → existing per-stage Acct Sheet flow
             Lump Sum              → LumpSumDraft (one-click full bill)
@@ -607,16 +687,19 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         <UnsupportedMethodNotice method={billingMethod} />
       )}
 
-      {/* 3. App Ledger + Retainage Release */}
-      <AppLedger
-        ledger={result.ledger}
-        retainageHeld={liveRetainageHeld}
-        releasing={releasing}
-        onReleaseRetainage={releaseRetainage}
-        onMarkPaid={(app) => setMarkPaidApp(app)}
-        onRowClick={(app) => setDrillApp(app)}
-        canEdit={canEdit}
-      />
+      {/* 3. App Ledger + Retainage Release. data-attribute is the scroll
+            anchor for DoubleCountingBanner's click handler. */}
+      <div data-acct-app-ledger>
+        <AppLedger
+          ledger={result.ledger}
+          retainageHeld={liveRetainageHeld}
+          releasing={releasing}
+          onReleaseRetainage={releaseRetainage}
+          onMarkPaid={(app) => setMarkPaidApp(app)}
+          onRowClick={(app) => setDrillApp(app)}
+          canEdit={canEdit}
+        />
+      </div>
 
       {/* Mark Paid modal — only mounts when an App row is selected via the
           AppLedger's "Mark Paid" button. On success the trg_apply_payment_to_application
