@@ -1310,7 +1310,7 @@ const FIXED_DOLLAR_TYPES_MAP={
   'Maint Bond':   {category:'maint_bond',taxable:false},
   'Insurance':    {category:'insurance', taxable:false},
 };
-function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
+function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirtyChange}){
   useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
   // 2026-05-05 (mobile pass): useViewport drives Row 1 + Row 2 stacking on
   // narrow screens. Below 768px, each line card's fields stack vertically
@@ -1385,8 +1385,11 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
   // Returns the pricing_line_id of the unambiguous match (exactly 1 candidate)
   // for a line, or null when there's no match / multiple matches.
   const autoLinkPricingLine=(line,pool)=>{
+    // M3 fix (2026-05-05): early-out when the pool is empty so we don't
+    // run the filter on every keystroke for jobs without a Pricing Book.
+    if(!Array.isArray(pool)||pool.length===0)return null;
     const cat=FENCE_TYPE_TO_PRICING_CATEGORY[line?.fence_type];
-    if(!cat||!Array.isArray(pool))return null;
+    if(!cat)return null;
     const lh=_normH(line.height);
     const ls=_normS(line.style);
     const matches=pool.filter(p=>p.category===cat
@@ -1430,6 +1433,16 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
     // line doesn't already have a manual pricing link, attempt auto-link
     // to the unambiguous matching pricing row. Skip when user has already
     // chosen a link explicitly (don't clobber explicit selections).
+    //
+    // M1 fix (2026-05-05): when fence_type changes, the existing link may
+    // now point at a row of the wrong category (e.g. line was 'PC' linked
+    // to a precast row, user switches to 'Gate' → link now stale). Clear
+    // it so the auto-link below can re-evaluate from the new tuple.
+    if(field==='fence_type'&&next.pricing_line_id){
+      const linked=availablePricingLines.find(p=>p.id===next.pricing_line_id);
+      const newCat=FENCE_TYPE_TO_PRICING_CATEGORY[next.fence_type];
+      if(linked&&linked.category!==newCat)next.pricing_line_id=null;
+    }
     if(['fence_type','height','style'].includes(field)&&!next.pricing_line_id){
       const auto=autoLinkPricingLine(next,availablePricingLines);
       if(auto)next.pricing_line_id=auto;
@@ -1600,6 +1613,15 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
     registerSave(async()=>{if(dirty&&saveAllRef.current)await saveAllRef.current();});
     return ()=>{registerSave(null);};
   },[dirty,registerSave]);
+  // M2 fix (2026-05-05): emit dirty-state changes to parent so each CO
+  // card can render an "unsaved changes" warning banner before collapse.
+  // Ref pattern avoids re-running the effect when the parent passes a
+  // fresh callback per render. Same shape as JobPricingEditor's hook.
+  const onDirtyChangeRef=useRef(onDirtyChange);
+  onDirtyChangeRef.current=onDirtyChange;
+  useEffect(()=>{
+    if(typeof onDirtyChangeRef.current==='function')onDirtyChangeRef.current(dirty);
+  },[dirty]);
   const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
   const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
   // Mobile-aware cell wrapper: full-width stacked cells on phones,
@@ -2043,6 +2065,18 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   //   coPricingSaveRefs.current  = { [co_id]: saveAllFn }
   const coLineItemSaveRefs=useRef({});
   const coPricingSaveRefs=useRef({});
+  // M2 fix (2026-05-05): track per-CO dirty state for the embedded
+  // editors so each card can render an "unsaved changes" warning banner
+  // before the user collapses it. Shape: { [co_id]: { lineItems: bool, pricing: bool } }.
+  // Either branch true → banner shows. Cleared to false on save (each
+  // editor's setDirty(false) → onDirtyChange(false) → setter here).
+  const[coEditorDirty,setCoEditorDirty]=useState({});
+  const setCoLineDirty=useCallback((coId,dirty)=>{
+    setCoEditorDirty(prev=>({...prev,[coId]:{...(prev[coId]||{}),lineItems:dirty}}));
+  },[]);
+  const setCoPricingDirty=useCallback((coId,dirty)=>{
+    setCoEditorDirty(prev=>({...prev,[coId]:{...(prev[coId]||{}),pricing:dirty}}));
+  },[]);
 
   // Bonding derivation (2026-05-05): replaces the legacy partiesDraft.bonding_required
   // checkbox. Per David, a job is "bonded" iff it has a P&P Bond or Maint Bond
@@ -3561,11 +3595,26 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       onCoLinesChanged refreshes the read-only table above. */}
                   {editingCoId===c.id&&<div style={{margin:'8px 0 14px',padding:'10px 12px',background:'#FFFBEB',border:'2px solid #F59E0B',borderRadius:8}}>
                     <div style={{fontSize:11,fontWeight:700,color:'#92400E',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>✎ Editing line items for {c.co_number||`CO ${idx+1}`}</div>
+
+                    {/* M2 fix (2026-05-05): unsaved-changes banner when either
+                        embedded editor reports dirty. Non-intrusive amber pill;
+                        clears automatically when the user clicks Save inside
+                        the editor or the parent's top-level Save. */}
+                    {(coEditorDirty[c.id]?.lineItems||coEditorDirty[c.id]?.pricing)&&<div style={{
+                      marginBottom:10,padding:'8px 12px',
+                      background:'#FEF3C7',border:'1px solid #F59E0B',borderRadius:6,
+                      color:'#92400E',fontSize:11,fontWeight:600,
+                      display:'flex',alignItems:'center',gap:8,
+                    }}>
+                      ⚠ You have unsaved changes in this Change Order — save before collapsing or switching.
+                    </div>}
+
                     <LineItemsEditor
                       job={job}
                       coId={c.id}
                       onCoLinesChanged={reloadCOs}
                       registerSave={(fn)=>{coLineItemSaveRefs.current[c.id]=fn;}}
+                      onDirtyChange={(d)=>setCoLineDirty(c.id,d)}
                     />
 
                     {/* 2026-05-05 (P0 restructure, Option A): CO sub-pricing.
@@ -3581,6 +3630,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                         coId={c.id}
                         canEdit={canApproveCO||canEdit}
                         registerSave={(fn)=>{coPricingSaveRefs.current[c.id]=fn;}}
+                        onDirtyChange={(d)=>setCoPricingDirty(c.id,d)}
                       />
                     </div>
                   </div>}

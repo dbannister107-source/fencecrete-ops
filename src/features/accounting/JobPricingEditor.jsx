@@ -162,7 +162,7 @@ function seedFromLineItems(lineItems) {
 }
 
 // ─── Component ────────────────────────────────────────────────────────
-export default function JobPricingEditor({ job, coId = null, canEdit, onChange, registerSave }) {
+export default function JobPricingEditor({ job, coId = null, canEdit, onChange, registerSave, onDirtyChange }) {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);  // true ⇒ banner showing
@@ -404,6 +404,16 @@ export default function JobPricingEditor({ job, coId = null, canEdit, onChange, 
     });
     return () => { registerSave(null); };
   }, [dirty, registerSave]);
+
+  // ─── M2 fix (2026-05-05): emit dirty-state changes to parent so each ──
+  // ─── CO card can render an "unsaved changes" warning banner before ────
+  // ─── the user collapses the card. Ref pattern avoids re-running the ───
+  // ─── effect when the parent passes a fresh callback per render. ───────
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    if (typeof onDirtyChangeRef.current === 'function') onDirtyChangeRef.current(dirty);
+  }, [dirty]);
 
   // ─── Render ─────────────────────────────────────────────────────────
   if (loading) {
