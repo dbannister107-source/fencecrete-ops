@@ -4347,10 +4347,27 @@ function NewProjectForm({jobs,onClose,onSaved}){
           {jobCodeMode==='manual'&&<div style={{fontSize:10,color:'#625650',marginTop:2}}>Residential entry — type any job code</div>}
         </div>
         <div>{fLbl('Job Name',true)}<input value={f.job_name} onChange={e=>set('job_name',e.target.value)} style={inputS}/></div>
-        <div style={{gridColumn:'1/-1'}}>
-          {fLbl('Customer Master Lookup')}
-          <CustomerLookup onSelect={c=>{setF(p=>({...p,company_id:c.id||null,customer_name:c.name||p.customer_name,address:c.address||p.address,city:c.city||p.city,state:c.state||p.state,zip:c.zip||p.zip}));}} placeholder="Search Customer Master to autofill name + address…"/>
-          <div style={{fontSize:10,color:'#9E9B96',marginTop:3}}>Pick a master record to autofill <b>Customer Name</b>, <b>Address</b>, <b>City/State/ZIP</b>, and link <b>company_id</b>. Otherwise type the name below for residential / one-off customers.</div>
+        {/* 2026-05-06 — Promoted Customer Master Lookup to a tinted callout
+            so it doesn't blend into the field grid. Linking is optional, but
+            the contract-readiness gate enforces customer_linked auto-check
+            (company_id IS NOT NULL OR is_residential=true) before status can
+            move out of contract_review. Linking here saves a round-trip via
+            EditPanel later. */}
+        <div style={{gridColumn:'1/-1',padding:'14px 16px',background:f.company_id?'#F0FDF4':'#EFF6FF',border:`1px solid ${f.company_id?'#86EFAC':'#BFDBFE'}`,borderRadius:10,marginBottom:4}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <span style={{fontSize:14}}>🏢</span>
+            <div style={{fontSize:12,fontWeight:800,color:f.company_id?'#065F46':'#1D4ED8',textTransform:'uppercase',letterSpacing:0.5}}>
+              {f.company_id?'Linked to Customer Master':'Link to Customer Master'}
+            </div>
+            <span style={{fontSize:10,color:'#9E9B96',fontWeight:600,marginLeft:'auto'}}>Optional · recommended for commercial</span>
+          </div>
+          <CustomerLookup onSelect={c=>{setF(p=>({...p,company_id:c.id||null,customer_name:c.name||p.customer_name,address:c.address||p.address,city:c.city||p.city,state:c.state||p.state,zip:c.zip||p.zip}));}} placeholder="Type the customer name to search Customer Master…"/>
+          {f.company_id?<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:8,fontSize:11}}>
+            <span style={{color:'#065F46',fontWeight:700}}>✓ {f.customer_name||'(no name)'}{f.city?` · ${f.city}, ${f.state||''}`:''}</span>
+            <button type="button" onClick={()=>setF(p=>({...p,company_id:null}))} style={{background:'none',border:'none',color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',textDecoration:'underline'}}>Unlink</button>
+          </div>:<div style={{fontSize:11,color:'#1D4ED8',marginTop:6,lineHeight:1.5}}>
+            Picking a master record auto-fills <b>Customer Name</b>, <b>Address</b>, <b>City / State / ZIP</b> and links <b>company_id</b>. Skip for residential / one-off customers — the free-text Customer Name field below still works.
+          </div>}
         </div>
         <div>{fLbl('Customer Name',true)}<input value={f.customer_name} onChange={e=>set('customer_name',e.target.value)} style={inputS}/>{f.company_id&&<div style={{fontSize:10,color:'#065F46',marginTop:3,fontWeight:600}}>✓ Linked to Customer Master</div>}</div>
         <div>{fLbl('Cust # (per-job PO)')}<input value={f.cust_number} onChange={e=>set('cust_number',e.target.value)} style={inputS} placeholder="Optional"/></div>
