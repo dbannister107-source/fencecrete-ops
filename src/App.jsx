@@ -5545,6 +5545,23 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const[arSubs,setArSubs]=useState([]);
   const[arPmF,setArPmF]=useState('');
   const[arMktF,setArMktF]=useState(null);
+  // 2026-05-06 — Search box on the Submissions tab. Matches across job_number,
+  // job_name, pm, and (where available) customer_name. Applied to arTabCounts,
+  // arTableData, arFilteredJobs, and arInvoiceEntryCount so the KPI tiles and
+  // table stay in sync with what Virginia is filtering for.
+  const[arSearch,setArSearch]=useState('');
+  // Predicate is reused everywhere — single source of truth.
+  const arSearchMatches=useMemo(()=>{
+    const q=arSearch.trim().toLowerCase();
+    if(!q)return null;
+    return(jobLike,sub)=>{
+      const job_number=(sub?.job_number||jobLike?.job_number||'').toLowerCase();
+      const job_name=(sub?.job_name||jobLike?.job_name||'').toLowerCase();
+      const pm=(sub?.pm||jobLike?.pm||'').toLowerCase();
+      const customer=(jobLike?.customer_name||'').toLowerCase();
+      return job_number.includes(q)||job_name.includes(q)||pm.includes(q)||customer.includes(q);
+    };
+  },[arSearch]);
   // ar_reviewed=false, no_bill=false ⇒ "pending"; ar_reviewed=true ⇒ "reviewed"; no_bill_required=true ⇒ "no_bill".
   const[arTab,setArTab]=useState('pending');
   // Per-job invoice_entries aggregates for the current arMonth. Powers the
@@ -5662,13 +5679,13 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   useEffect(()=>{if(billingTab==='submissions'&&arSubs.length>0)fetchArBilledBySub();},[fetchArBilledBySub,arSubs,billingTab]);
   const arActiveJobs=useMemo(()=>jobs.filter(j=>ACTIVE_BILL_STATUSES.includes(j.status)),[jobs]);
   const arSubByJob=useMemo(()=>{const m={};arSubs.forEach(s=>{m[s.job_id]=s;});return m;},[arSubs]);
-  const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);return f;},[arActiveJobs,arPmF,arMktF]);
+  const arFilteredJobs=useMemo(()=>{let f=arActiveJobs;if(arPmF)f=f.filter(j=>j.pm===arPmF);if(arMktF)f=f.filter(j=>j.market===arMktF);if(arSearchMatches)f=f.filter(j=>arSearchMatches(j,null));return f;},[arActiveJobs,arPmF,arMktF,arSearchMatches]);
   // No-bill submissions are acknowledged but excluded from the AR pending-review
   // bucket (they have no dollars to invoice). Tracked in their own counter.
   const arStats=useMemo(()=>{const total=arFilteredJobs.length;let submitted=0,reviewed=0,missing=0,noBill=0;arFilteredJobs.forEach(j=>{const s=arSubByJob[j.id];if(!s)missing++;else if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else submitted++;});return{total,submitted,pending:submitted,missing,reviewed,noBill};},[arFilteredJobs,arSubByJob]);
   // Tab counts are computed from submissions (not jobs), honoring the active
   // PM/Market filter so counts always match what the current tab will render.
-  const arTabCounts=useMemo(()=>{let subs=arSubs;if(arPmF)subs=subs.filter(s=>s.pm===arPmF);if(arMktF)subs=subs.filter(s=>s.market===arMktF);let pending=0,reviewed=0,noBill=0;subs.forEach(s=>{if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else pending++;});return{pending,reviewed,noBill,total:pending+reviewed+noBill};},[arSubs,arPmF,arMktF]);
+  const arTabCounts=useMemo(()=>{let subs=arSubs;if(arPmF)subs=subs.filter(s=>s.pm===arPmF);if(arMktF)subs=subs.filter(s=>s.market===arMktF);if(arSearchMatches){const jobsById=new Map(jobs.map(j=>[j.id,j]));subs=subs.filter(s=>arSearchMatches(jobsById.get(s.job_id),s));}let pending=0,reviewed=0,noBill=0;subs.forEach(s=>{if(s.no_bill_required)noBill++;else if(s.ar_reviewed)reviewed++;else pending++;});return{pending,reviewed,noBill,total:pending+reviewed+noBill};},[arSubs,arPmF,arMktF,arSearchMatches,jobs]);
   // Direct invoice entries logged this month — counted separately from
   // "Bill Sheets Reviewed" because they're a different workflow path.
   //
@@ -5699,6 +5716,11 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
     if(arTab==='pending')filtered=filtered.filter(s=>!s.ar_reviewed&&!s.no_bill_required);
     else if(arTab==='reviewed')filtered=filtered.filter(s=>!!s.ar_reviewed);
     else if(arTab==='no_bill')filtered=filtered.filter(s=>!!s.no_bill_required);
+    // 2026-05-06 — Search predicate (job_number / job_name / pm / customer_name).
+    if(arSearchMatches){
+      const jobsById=new Map(jobs.map(j=>[j.id,j]));
+      filtered=filtered.filter(s=>arSearchMatches(jobsById.get(s.job_id),s));
+    }
     return [...filtered].map(s=>{
       // Fall back to submission-stored fields when the job is no longer active
       // (e.g. viewing a historical month after the job closed) so the row still
@@ -5707,7 +5729,7 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
       const status=s.no_bill_required?'no_bill':s.ar_reviewed?'reviewed':'pending';
       return{job,sub:s,status};
     }).sort((a,b)=>(a.job.job_name||'').localeCompare(b.job.job_name||''));
-  },[arSubs,arPmF,arMktF,arTab,jobs]);
+  },[arSubs,arPmF,arMktF,arTab,jobs,arSearchMatches]);
   // Inline Mark Reviewed from the Pending tab: flips the flags and stamps
   // invoiced_amount with SUM(invoice_entries). Distinct from the detail
   // modal's "Mark Submission Complete" which also accepts a form amount —
@@ -5913,6 +5935,26 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
         <span style={{fontSize:11,color:'#9E9B96',fontWeight:600}}>Market:</span>
         <button onClick={()=>setArMktF(null)} style={fpill(!arMktF)}>All</button>
         {MKTS.map(m=><button key={m} title={MARKET_FULL[m]} onClick={()=>setArMktF(m)} style={fpill(arMktF===m)}>{MS[m]}</button>)}
+        {/* 2026-05-06 — Search box (job #, name, PM, customer). Filters table + KPIs. */}
+        <span style={{color:'#E5E3E0'}}>|</span>
+        <div style={{position:'relative',display:'inline-flex',alignItems:'center'}}>
+          <span style={{position:'absolute',left:8,fontSize:12,color:'#9E9B96',pointerEvents:'none'}}>🔍</span>
+          <input
+            type="text"
+            value={arSearch}
+            onChange={e=>setArSearch(e.target.value)}
+            placeholder="Search job #, name, PM, customer…"
+            aria-label="Search submissions"
+            style={{...inputS,paddingLeft:28,paddingRight:arSearch?26:10,minWidth:240,fontSize:12}}
+          />
+          {arSearch&&<button
+            onClick={()=>setArSearch('')}
+            aria-label="Clear search"
+            title="Clear search"
+            style={{position:'absolute',right:4,background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer',padding:'2px 6px',lineHeight:1}}
+          >×</button>}
+        </div>
+        {arSearch&&<span style={{fontSize:11,color:'#1D4ED8',fontWeight:600}}>{arTabCounts.total} match{arTabCounts.total===1?'':'es'}</span>}
       </div>
       {/* Summary stats — mirrors the three review-status buckets so Virginia/Mary
           can eyeball the month's progress regardless of which tab is active.
