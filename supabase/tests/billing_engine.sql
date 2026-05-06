@@ -12,7 +12,7 @@
 --   failure (aborts the run) or INSERTs into _test_results on pass.
 --
 -- COVERAGE
---   1.  job_pricing_lines.extended_total auto-recomputes on UPDATE
+--   1.  trg_jli_derive_split fills labor + tax_basis from height + unit_price
 --   2a. job_stage_weights accepts a balanced override set
 --   2b. job_stage_weights rejects mis-summed overrides
 --   3.  v_effective_stage_weights resolves override-then-default
@@ -24,11 +24,15 @@
 --   8.  synthetic apps (source_invoice_entry_id set) skip the post-back
 --   9.  jobs.retainage_held mirrors latest filed App
 --   10. retainage-release App resets jobs.retainage_held to 0
---   11. v_acct_sheet_summary returns 0 rows for jobs with no pricing
---   12. v_acct_sheet_summary pct_complete reflects filed App lines
+--   11. trg_jli_derive_split: SW category leaves split null (manual entry)
+--   12. trg_jli_derive_split: apostrophe-stripped height matches ('6'' → '6')
 --   13. invoice_payments: partial payment keeps status='filed'
 --   14. invoice_payments: full payment flips status to 'paid' + sets paid_at
 --   15. invoice_payments: deleting a payment reverts paid → filed
+--
+-- 2026-05-05 — Pricing Book retired (Option C). Tests that referenced
+-- job_pricing_lines / v_acct_sheet_summary were rewritten to exercise
+-- the replacement path: job_line_items + trg_jli_derive_split.
 
 BEGIN;
 
@@ -38,27 +42,41 @@ CREATE TEMP TABLE _test_results (
   status text DEFAULT 'PASS'
 );
 
--- Test 1: extended_total auto-recomputes on qty / price_per_unit UPDATE
+-- Test 1: trg_jli_derive_split fills labor + tax_basis from height + unit_price
+-- Replaces the old "extended_total recomputes" test (job_pricing_lines retired).
+-- Verifies the trigger that mirrors derivePriceSplit() in heightBasis.js.
 DO $$
-DECLARE v_job_id uuid; v_line_id uuid; v_total numeric;
+DECLARE
+  v_job_id uuid; v_line_id uuid;
+  v_labor numeric; v_basis numeric;
 BEGIN
   SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
   IF v_job_id IS NULL THEN RAISE EXCEPTION 'TEST 1 SETUP: no jobs available'; END IF;
 
-  INSERT INTO job_pricing_lines (job_id, line_number, category, label, qty, unit, price_per_unit, labor_per_unit, tax_basis_per_unit)
-  VALUES (v_job_id, 9001, 'precast', 'TEST', 100, 'LF', 95, 72, 23) RETURNING id INTO v_line_id;
-  SELECT extended_total INTO v_total FROM job_pricing_lines WHERE id = v_line_id;
-  IF v_total <> 9500 THEN RAISE EXCEPTION 'TEST 1: expected 9500, got %', v_total; END IF;
+  -- Precast at 6ft → tax_basis_per_unit should be $26.00, labor = $98 - $26 = $72
+  INSERT INTO job_line_items (job_id, line_number, category, fence_type, height, lf, unit_price)
+       VALUES (v_job_id, 9001, 'precast', 'PC', '6', 100, 98)
+    RETURNING id INTO v_line_id;
+  SELECT labor_per_unit, tax_basis_per_unit INTO v_labor, v_basis
+    FROM job_line_items WHERE id = v_line_id;
+  IF v_basis <> 26.00 THEN RAISE EXCEPTION 'TEST 1 (precast 6ft basis): expected 26.00, got %', v_basis; END IF;
+  IF v_labor <> 72.00 THEN RAISE EXCEPTION 'TEST 1 (precast 6ft labor): expected 72.00, got %', v_labor; END IF;
 
-  UPDATE job_pricing_lines SET qty=200 WHERE id=v_line_id;
-  SELECT extended_total INTO v_total FROM job_pricing_lines WHERE id=v_line_id;
-  IF v_total <> 19000 THEN RAISE EXCEPTION 'TEST 1 (UPDATE qty): expected 19000, got %', v_total; END IF;
+  -- Update unit_price → trigger refires, labor recomputes
+  UPDATE job_line_items SET unit_price = 100 WHERE id = v_line_id;
+  SELECT labor_per_unit, tax_basis_per_unit INTO v_labor, v_basis
+    FROM job_line_items WHERE id = v_line_id;
+  IF v_basis <> 26.00 THEN RAISE EXCEPTION 'TEST 1 (UPDATE basis): expected 26.00, got %', v_basis; END IF;
+  IF v_labor <> 74.00 THEN RAISE EXCEPTION 'TEST 1 (UPDATE labor): expected 74.00, got %', v_labor; END IF;
 
-  UPDATE job_pricing_lines SET price_per_unit=100 WHERE id=v_line_id;
-  SELECT extended_total INTO v_total FROM job_pricing_lines WHERE id=v_line_id;
-  IF v_total <> 20000 THEN RAISE EXCEPTION 'TEST 1 (UPDATE price): expected 20000, got %', v_total; END IF;
+  -- Update height to 8ft → tax_basis switches to $29.25
+  UPDATE job_line_items SET height = '8' WHERE id = v_line_id;
+  SELECT labor_per_unit, tax_basis_per_unit INTO v_labor, v_basis
+    FROM job_line_items WHERE id = v_line_id;
+  IF v_basis <> 29.25 THEN RAISE EXCEPTION 'TEST 1 (height change basis): expected 29.25, got %', v_basis; END IF;
+  IF v_labor <> 70.75 THEN RAISE EXCEPTION 'TEST 1 (height change labor): expected 70.75, got %', v_labor; END IF;
 
-  INSERT INTO _test_results (test) VALUES ('1: extended_total recomputes on qty + price_per_unit UPDATE');
+  INSERT INTO _test_results (test) VALUES ('1: trg_jli_derive_split fills + recomputes split for precast');
 END;
 $$;
 
@@ -156,20 +174,22 @@ $$;
 
 -- Test 6: current_retainage = current_amount × retainage_pct/100; net_due = current - retainage
 DO $$
-DECLARE v_job_id uuid; v_pl_id uuid; v_app_id uuid; v_ret numeric; v_net numeric;
+DECLARE v_job_id uuid; v_li_id uuid; v_app_id uuid; v_ret numeric; v_net numeric;
 BEGIN
   SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
   UPDATE jobs SET retainage_pct = 10 WHERE id = v_job_id;
 
-  INSERT INTO job_pricing_lines (job_id, line_number, category, label, qty, unit, price_per_unit, labor_per_unit, tax_basis_per_unit)
-       VALUES (v_job_id, 9100, 'precast', 'TEST', 100, 'LF', 95, 72, 23) RETURNING id INTO v_pl_id;
+  -- Use job_line_items as the source of truth (Pricing Book retired).
+  INSERT INTO job_line_items (job_id, line_number, category, fence_type, height, lf, unit_price)
+       VALUES (v_job_id, 9100, 'precast', 'PC', '6', 100, 95)
+    RETURNING id INTO v_li_id;
   INSERT INTO invoice_applications (job_id) VALUES (v_job_id) RETURNING id INTO v_app_id;
   INSERT INTO invoice_application_lines (
-    invoice_application_id, job_pricing_line_id, stage_key,
+    invoice_application_id, job_line_item_id, stage_key,
     cumulative_qty, prior_qty, current_qty, rate_per_unit,
     current_labor_amount, current_tax_basis_amount, current_tax_amount, current_total
   ) VALUES (
-    v_app_id, v_pl_id, 'posts_only', 100, 0, 100, 61.75,
+    v_app_id, v_li_id, 'posts_only', 100, 0, 100, 61.75,
     4680.00, 1495.00, 123.34, 6298.34
   );
 
@@ -272,54 +292,64 @@ BEGIN
 END;
 $$;
 
--- Test 11: v_acct_sheet_summary returns 0 rows for jobs with no pricing
+-- Test 11: trg_jli_derive_split leaves SW/Wood/site_work split null
+-- (these categories are manual-entry; trigger doesn't auto-derive).
 DO $$
-DECLARE v_job_id uuid; v_count int;
-BEGIN
-  SELECT id INTO v_job_id FROM jobs
-   WHERE NOT EXISTS (SELECT 1 FROM job_pricing_lines WHERE job_id = jobs.id) LIMIT 1;
-  IF v_job_id IS NULL THEN
-    INSERT INTO _test_results (test, status) VALUES ('11: v_acct_sheet_summary empty (skipped — every job has pricing)', 'SKIP');
-    RETURN;
-  END IF;
-  SELECT count(*) INTO v_count FROM v_acct_sheet_summary WHERE job_id = v_job_id;
-  IF v_count <> 0 THEN RAISE EXCEPTION 'TEST 11: expected 0 rows, got %', v_count; END IF;
-  INSERT INTO _test_results (test) VALUES ('11: v_acct_sheet_summary returns 0 for jobs with no pricing');
-END;
-$$;
-
--- Test 12: v_acct_sheet_summary pct_complete reflects filed App lines
-DO $$
-DECLARE v_job_id uuid; v_pl_id uuid; v_app_id uuid; v_pct numeric; v_billed numeric;
+DECLARE
+  v_job_id uuid; v_li_id uuid;
+  v_labor numeric; v_basis numeric;
 BEGIN
   SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
 
-  INSERT INTO job_pricing_lines (job_id, line_number, category, label, qty, unit, price_per_unit, labor_per_unit, tax_basis_per_unit)
-       VALUES (v_job_id, 9200, 'precast', 'TEST 12', 100, 'LF', 95, 72, 23)
-    RETURNING id INTO v_pl_id;
-  INSERT INTO invoice_applications (job_id) VALUES (v_job_id) RETURNING id INTO v_app_id;
-  INSERT INTO invoice_application_lines (
-    invoice_application_id, job_pricing_line_id, stage_key,
-    cumulative_qty, prior_qty, current_qty, rate_per_unit,
-    current_labor_amount, current_tax_basis_amount, current_tax_amount, current_total
-  ) VALUES (
-    v_app_id, v_pl_id, 'posts_only', 100, 0, 100, 61.75,
-    4680.00, 1495.00, 123.34, 6298.34
-  );
-  UPDATE invoice_applications SET status='filed', filed_by='test-suite', invoice_date=CURRENT_DATE WHERE id=v_app_id;
+  -- SW row should NOT get auto-derived values (manual entry expected)
+  INSERT INTO job_line_items (job_id, line_number, category, fence_type, height, lf, unit_price)
+       VALUES (v_job_id, 9300, 'sw', 'SW', '8', 100, 120)
+    RETURNING id INTO v_li_id;
+  SELECT labor_per_unit, tax_basis_per_unit INTO v_labor, v_basis
+    FROM job_line_items WHERE id = v_li_id;
+  IF v_labor IS NOT NULL THEN RAISE EXCEPTION 'TEST 11 (SW labor): expected NULL, got %', v_labor; END IF;
+  IF v_basis IS NOT NULL THEN RAISE EXCEPTION 'TEST 11 (SW basis): expected NULL, got %', v_basis; END IF;
 
-  SELECT pct_complete, billed_to_date INTO v_pct, v_billed
-    FROM v_acct_sheet_summary WHERE pricing_line_id = v_pl_id;
+  -- User-entered values on SW persist through unit_price changes
+  -- (trigger only auto-derives for precast/wi_gate/permit/bond)
+  UPDATE job_line_items SET labor_per_unit = 90, tax_basis_per_unit = 30 WHERE id = v_li_id;
+  UPDATE job_line_items SET unit_price = 130 WHERE id = v_li_id;
+  SELECT labor_per_unit, tax_basis_per_unit INTO v_labor, v_basis
+    FROM job_line_items WHERE id = v_li_id;
+  IF v_labor <> 90 THEN RAISE EXCEPTION 'TEST 11 (SW labor preserved): expected 90, got %', v_labor; END IF;
+  IF v_basis <> 30 THEN RAISE EXCEPTION 'TEST 11 (SW basis preserved): expected 30, got %', v_basis; END IF;
 
-  -- Expected: billed_to_date=6298.34; contract_value=9500; pct = 66.3%
-  IF v_billed <> 6298.34 THEN
-    RAISE EXCEPTION 'TEST 12 (billed_to_date): expected 6298.34, got %', v_billed;
+  INSERT INTO _test_results (test) VALUES ('11: trg_jli_derive_split skips SW + preserves manual entries');
+END;
+$$;
+
+-- Test 12: trg_jli_derive_split strips apostrophes from height ('6'' → '6')
+-- Regression test for legacy-import rows that stored heights with stray punctuation.
+DO $$
+DECLARE
+  v_job_id uuid; v_li_id uuid;
+  v_basis numeric;
+BEGIN
+  SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
+
+  INSERT INTO job_line_items (job_id, line_number, category, fence_type, height, lf, unit_price)
+       VALUES (v_job_id, 9400, 'precast', 'PC', '6''', 100, 92)  -- '6'' with apostrophe
+    RETURNING id INTO v_li_id;
+  SELECT tax_basis_per_unit INTO v_basis FROM job_line_items WHERE id = v_li_id;
+  IF v_basis <> 26.00 THEN
+    RAISE EXCEPTION 'TEST 12 (apostrophe): expected basis 26.00, got %', v_basis;
   END IF;
-  IF v_pct < 66 OR v_pct > 67 THEN
-    RAISE EXCEPTION 'TEST 12 (pct_complete): expected ~66.3, got %', v_pct;
+
+  -- Permit category should derive 100% labor / 0 basis
+  INSERT INTO job_line_items (job_id, line_number, category, fence_type, lf, unit_price)
+       VALUES (v_job_id, 9401, 'permit', 'Permit', 1, 5000)
+    RETURNING id INTO v_li_id;
+  SELECT tax_basis_per_unit INTO v_basis FROM job_line_items WHERE id = v_li_id;
+  IF v_basis <> 0 THEN
+    RAISE EXCEPTION 'TEST 12 (permit basis): expected 0, got %', v_basis;
   END IF;
 
-  INSERT INTO _test_results (test) VALUES ('12: v_acct_sheet_summary pct_complete reflects filed App lines');
+  INSERT INTO _test_results (test) VALUES ('12: trg_jli_derive_split apostrophe-strip + permit 100%-labor');
 END;
 $$;
 
