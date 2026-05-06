@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fencecrete OPS — Money & Billing Workflow (May 2026)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+<style>
+/* ================================================================
+   Fencecrete OPS — Money & Billing Workflow
+   Inline brand tokens mirrored from src/shared/ui.js
+   ================================================================ */
+
+:root {
+  --brand:        #8A261D;   /* Pantone 7620C */
+  --brand-deep:   #6F1D17;
+  --warm-gray:    #625650;   /* Pantone 7531C */
+  --text:         #1A1A1A;
+  --text-2:       #625650;
+  --text-3:       #9E9B96;
+  --border:       #E5E3E0;
+  --border-soft:  #EFEDEA;
+  --bg-page:      #F4F4F2;
+  --bg-soft:      #FAFAF8;
+  --white:        #FFFFFF;
+
+  --info:         #1D4ED8;
+  --info-bg:      #DBEAFE;
+  --success:      #16A34A;
+  --success-bg:   #D1FAE5;
+  --warn:         #F59E0B;
+  --warn-bg:      #FEF3C7;
+  --warn-text:    #92400E;
+  --danger:       #B91C1C;
+  --danger-bg:    #FEE2E2;
+
+  /* Role colors — distinct, each chosen to complement the brand without
+     stealing red from primary actions. */
+  --role-sales:    #475569;  /* slate */
+  --role-amiee:    #7C3AED;  /* violet */
+  --role-pm:       #0891B2;  /* teal */
+  --role-virginia: #92400E;  /* amber-brown — fits AR/billing semantics */
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-page);
+  line-height: 1.55;
+  scroll-behavior: smooth;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Syne', 'Inter', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.9em;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+
+.topbar {
+  background: var(--brand);
+  color: var(--white);
+  padding: 22px 32px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: var(--shadow-md);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.topbar .logo {
+  height: 44px;
+  width: auto;
+  display: block;
+  filter: brightness(0) invert(1);  /* show white logo over red */
+  flex-shrink: 0;
+}
+
+.topbar .title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.topbar h1 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.topbar .subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+.topbar .stamp {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: rgba(255,255,255,0.15);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* ── Page wrapper ────────────────────────────────────────────────── */
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+@media (max-width: 720px) {
+  .topbar { padding: 16px 18px; gap: 12px; }
+  .topbar h1 { font-size: 17px; }
+  .topbar .subtitle { font-size: 11px; }
+  .topbar .stamp { display: none; }
+  .topbar .logo { height: 32px; }
+  .page { padding: 18px; }
+}
+
+/* ── Section header ──────────────────────────────────────────────── */
+
+.section {
+  margin-bottom: 36px;
+}
+
+.section h2 {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--brand);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.section h2 .lede {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Role legend ─────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.legend .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.legend .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.swatch.sales    { background: var(--role-sales); }
+.swatch.amiee    { background: var(--role-amiee); }
+.swatch.pm       { background: var(--role-pm); }
+.swatch.virginia { background: var(--role-virginia); }
+
+/* ── Swimlane diagram ────────────────────────────────────────────── */
+
+.swimlane {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+}
+
+.swimlane-grid {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0;
+  min-width: 940px;
+}
+
+.lane-label {
+  display: flex;
+  align-items: center;
+  padding: 18px 14px;
+  border-right: 2px solid var(--border);
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.lane-label .swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.lane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px 14px 18px;
+  flex-wrap: nowrap;
+  position: relative;
+}
+
+.lane + .lane-label, .lane-label + .lane-label {
+  border-top: 1px solid var(--border-soft);
+}
+
+.lane + .lane {
+  border-top: 1px solid var(--border-soft);
+}
+
+.stage {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  min-width: 160px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  font-family: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+
+.stage:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: var(--white);
+}
+
+.stage[data-role="sales"]    { border-left-color: var(--role-sales); }
+.stage[data-role="amiee"]    { border-left-color: var(--role-amiee); }
+.stage[data-role="pm"]       { border-left-color: var(--role-pm); }
+.stage[data-role="virginia"] { border-left-color: var(--role-virginia); }
+
+.stage .stage-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: 0.08em;
+}
+
+.stage .stage-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
+.stage .stage-meta {
+  font-size: 10px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+.lane-arrow {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 16px;
+  user-select: none;
+  align-self: center;
+}
+
+.lane-empty {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-3);
+  padding: 0 8px;
+}
+
+/* ── Stage detail blocks ─────────────────────────────────────────── */
+
+.stage-detail {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  margin-bottom: 18px;
+  scroll-margin-top: 90px;  /* header offset for anchor scroll */
+  box-shadow: var(--shadow-sm);
+}
+
+.stage-detail .head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.stage-detail .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+}
+
+.stage-detail h3 {
+  font-size: 18px;
+  font-weight: 800;
+  flex: 1;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.role-pill .swatch { width: 8px; height: 8px; border-radius: 50%; }
+
+.stage-detail p {
+  margin: 0 0 10px 0;
+  color: var(--text);
+}
+
+.stage-detail ol, .stage-detail ul {
+  padding-left: 22px;
+  margin: 8px 0 14px 0;
+}
+
+.stage-detail li { margin-bottom: 6px; }
+
+.stage-detail h4 {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.callout {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.callout.info {
+  border-left-color: var(--info);
+  background: var(--info-bg);
+  color: var(--text);
+}
+
+.callout.warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.callout.danger {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.callout.success {
+  border-left-color: var(--success);
+  background: var(--success-bg);
+}
+
+.callout strong { color: inherit; }
+
+.kvp {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 6px 16px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.kvp dt {
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.kvp dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-soft);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+
+.btn-back:hover {
+  background: var(--white);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* ── Comparison table ────────────────────────────────────────────── */
+
+table.cmp {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+  background: var(--white);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+table.cmp th {
+  text-align: left;
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+table.cmp td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+
+table.cmp td:first-child {
+  font-weight: 700;
+  color: var(--text);
+  width: 140px;
+}
+
+/* ── FAQ accordion ───────────────────────────────────────────────── */
+
+.faq details {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.faq summary {
+  cursor: pointer;
+  padding: 14px 18px;
+  font-weight: 700;
+  color: var(--text);
+  font-size: 13px;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.faq summary::-webkit-details-marker { display: none; }
+
+.faq summary::before {
+  content: '+';
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--brand);
+  font-size: 16px;
+  transition: transform 0.12s ease;
+}
+
+.faq details[open] summary::before {
+  content: '–';
+}
+
+.faq details[open] summary {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.faq .answer {
+  padding: 14px 18px 18px 18px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+
+.footer {
+  margin-top: 50px;
+  padding: 24px 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-3);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ── Print ───────────────────────────────────────────────────────── */
+
+@media print {
+  .topbar { position: static; }
+  .swimlane { overflow: visible; }
+  .stage-detail { break-inside: avoid; }
+  .faq details { break-inside: avoid; }
+  .faq details summary::before { display: none; }
+  .faq details { open: true; }
+}
+</style>
+</head>
+<body>
+<a id="top" aria-hidden="true"></a>
+
+<!-- ───────────── Topbar ───────────── -->
+<header class="topbar">
+  <img src="../public/logo.png" class="logo" alt="Fencecrete" />
+  <div class="title-block">
+    <h1>Money &amp; Billing Workflow</h1>
+    <div class="subtitle">End-to-end process — Proposal → Project Setup → Scope → Accounting</div>
+  </div>
+  <span class="stamp">v2 · May 2026</span>
+</header>
+
+<!-- ───────────── Page body ───────────── -->
+<main class="page">
+
+  <!-- Intro -->
+  <section class="section">
+    <p style="font-size:15px; line-height:1.65; max-width:780px;">
+      This workflow replaces the Excel <strong>Acct Sheet</strong> template with a native flow inside OPS.
+      Every billing-relevant step now happens in the app — no email handoffs, no per-job spreadsheets, no Power Automate.
+      Use the swimlane below as a map; click any stage to jump to the detailed instructions.
+    </p>
+
+    <div class="legend" style="margin-top:18px;">
+      <span class="chip"><span class="swatch sales"></span>Sales</span>
+      <span class="chip"><span class="swatch amiee"></span>Amiee · Contracts</span>
+      <span class="chip"><span class="swatch pm"></span>PM · Field</span>
+      <span class="chip"><span class="swatch virginia"></span>Virginia · AR</span>
+    </div>
+  </section>
+
+  <!-- Swimlane -->
+  <section class="section">
+    <h2>The full flow <span class="lede">click any stage card to expand</span></h2>
+    <div class="swimlane" role="region" aria-label="Workflow swimlane diagram">
+      <div class="swimlane-grid">
+
+        <!-- Sales lane -->
+        <div class="lane-label"><span class="swatch sales"></span>Sales</div>
+        <div class="lane">
+          <a href="#stage-1" class="stage" data-role="sales">
+            <span class="stage-num">STAGE 01</span>
+            <span class="stage-title">Proposal Accepted</span>
+            <span class="stage-meta">Lead → Won → Job created</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <span class="lane-empty">Hands off to Amiee</span>
+        </div>
+
+        <!-- Amiee lane -->
+        <div class="lane-label"><span class="swatch amiee"></span>Amiee</div>
+        <div class="lane">
+          <a href="#stage-2" class="stage" data-role="amiee">
+            <span class="stage-num">STAGE 02</span>
+            <span class="stage-title">Project Setup</span>
+            <span class="stage-meta">Contract tab</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <a href="#stage-3" class="stage" data-role="amiee">
+            <span class="stage-num">STAGE 03</span>
+            <span class="stage-title">Scope &amp; Pricing Book</span>
+            <span class="stage-meta">Line Items + Pricing</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <a href="#stage-4" class="stage" data-role="amiee">
+            <span class="stage-num">STAGE 04</span>
+            <span class="stage-title">Change Orders</span>
+            <span class="stage-meta">Ongoing — as signed</span>
+          </a>
+        </div>
+
+        <!-- PM lane -->
+        <div class="lane-label"><span class="swatch pm"></span>PM</div>
+        <div class="lane">
+          <a href="#stage-5" class="stage" data-role="pm">
+            <span class="stage-num">STAGE 05</span>
+            <span class="stage-title">PM Bill Sheet</span>
+            <span class="stage-meta">Monthly · cumulative LF</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <span class="lane-empty">Hands off to Virginia</span>
+        </div>
+
+        <!-- Virginia lane -->
+        <div class="lane-label"><span class="swatch virginia"></span>Virginia</div>
+        <div class="lane">
+          <a href="#stage-6" class="stage" data-role="virginia">
+            <span class="stage-num">STAGE 06</span>
+            <span class="stage-title">Review &amp; File Invoice</span>
+            <span class="stage-meta">Accounting tab</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <a href="#stage-7" class="stage" data-role="virginia">
+            <span class="stage-num">STAGE 07</span>
+            <span class="stage-title">Mark Paid</span>
+            <span class="stage-meta">When customer pays</span>
+          </a>
+          <span class="lane-arrow" aria-hidden="true">→</span>
+          <a href="#stage-8" class="stage" data-role="virginia">
+            <span class="stage-num">STAGE 08</span>
+            <span class="stage-title">Release Retainage</span>
+            <span class="stage-meta">At job close</span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Stage details -->
+  <section class="section">
+    <h2>Stage details</h2>
+
+    <!-- ─── Stage 1 ─── -->
+    <article class="stage-detail" id="stage-1">
+      <div class="head">
+        <span class="num">STAGE 01</span>
+        <h3>Proposal Accepted</h3>
+        <span class="role-pill"><span class="swatch sales"></span>Sales</span>
+      </div>
+      <p>The flow starts when a prospect signs off and the lead is marked <strong>Won</strong> in the Pipeline.</p>
+      <h4>What happens automatically</h4>
+      <ul>
+        <li>Lead's status flip to <code>won</code> triggers a job-creation edge function.</li>
+        <li>A <code>jobs</code> row is created with the proposal's contract value, fence type, height, market, and PM assignment carried over.</li>
+        <li>Amiee gets a notification that a new contract is ready to set up.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Sales rep's job ends here.</strong> Once the lead is Won, all downstream billing is handled by Amiee + the PM + Virginia. The sales rep just confirms the proposal lines and signs off.
+      </div>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 2 ─── -->
+    <article class="stage-detail" id="stage-2">
+      <div class="head">
+        <span class="num">STAGE 02</span>
+        <h3>Project Setup — Contract Tab</h3>
+        <span class="role-pill"><span class="swatch amiee"></span>Amiee</span>
+      </div>
+      <p>Amiee opens the new job and confirms the financial baseline. This is the foundation every downstream step builds on.</p>
+
+      <h4>Where to go</h4>
+      <p>Open the job → <strong>Money group → Contract tab</strong>.</p>
+
+      <h4>What to confirm</h4>
+      <dl class="kvp">
+        <dt>Net Contract Value</dt><dd>Carried over from the proposal — verify it matches the signed contract.</dd>
+        <dt>Sales Tax Amount</dt><dd>Auto-calculated from height/style. Verify against contract.</dd>
+        <dt>Bonds / Permit Amounts</dt><dd>Add if applicable.</dd>
+        <dt>Retainage %</dt><dd>Typically 5% or 10%. Confirms what the engine will withhold each cycle.</dd>
+        <dt>Billing Method</dt><dd>Progress (default) · Lump Sum · Milestone · T&amp;M · AIA.</dd>
+      </dl>
+
+      <h4>Verify before moving on</h4>
+      <p>The <strong>Adjusted Contract Value</strong> at the top of the tab is what the system will measure billed % against. It must match the signed contract total (including bonds, permits, sales tax, approved COs).</p>
+
+      <div class="callout warn">
+        <strong>Why this matters:</strong> if Adjusted Contract Value is wrong, every downstream over-bill check is wrong. A signed CO that isn't entered will trip Virginia's File Invoice block — even though the customer has agreed to the higher amount.
+      </div>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 3 ─── -->
+    <article class="stage-detail" id="stage-3">
+      <div class="head">
+        <span class="num">STAGE 03</span>
+        <h3>Scope &amp; Pricing Book</h3>
+        <span class="role-pill"><span class="swatch amiee"></span>Amiee</span>
+      </div>
+      <p>The Pricing Book is the rate sheet Virginia's draft engine apportions PM bill sheets against. Without it, drafts come out empty.</p>
+
+      <h4>Where to go</h4>
+      <p>Same job → <strong>Money group → Scope tab</strong>.</p>
+
+      <h4>Step by step</h4>
+      <ol>
+        <li><strong>Line Items</strong> are pre-seeded from the contract (qty / category / fence_type / height). Verify them.</li>
+        <li>The <strong>Pricing Book</strong> auto-seeds from Line Items the first time you open Scope and click Save. Yellow banner: <em>"🌱 Generated from N line items — review and Save"</em>.</li>
+        <li>Review the generated rates per row:
+          <ul>
+            <li><code>price_per_unit</code> — total customer rate (LF / EA / LS).</li>
+            <li><code>labor_per_unit</code> — labor portion (used to split tax basis).</li>
+            <li><code>tax_basis_per_unit</code> — height-derived ($23 at 4ft → $31.75 at 10ft).</li>
+            <li><code>exempt</code> checkbox — if the line is tax-exempt.</li>
+          </ul>
+        </li>
+        <li>Click <strong>Save Lines</strong>. The Pricing Book is now live.</li>
+      </ol>
+
+      <div class="callout info">
+        <strong>Tip:</strong> the Pricing Book is decoupled from <code>job_line_items</code>. You can edit either side without affecting the other. The Acct Sheet engine surfaces drift if rates diverge.
+      </div>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 4 ─── -->
+    <article class="stage-detail" id="stage-4">
+      <div class="head">
+        <span class="num">STAGE 04</span>
+        <h3>Change Orders — Ongoing</h3>
+        <span class="role-pill"><span class="swatch amiee"></span>Amiee</span>
+      </div>
+      <p>Throughout the life of the contract, scope changes require CO entry. This is the gap that historically caused over-billing.</p>
+
+      <h4>Where to go</h4>
+      <p>Same job → <strong>Scope tab → Change Orders card</strong>.</p>
+
+      <h4>For each new CO</h4>
+      <ol>
+        <li>Add the CO with description, amount, and customer signature reference.</li>
+        <li><strong>Add CO Line Items + CO Pricing Book rows inside the CO card</strong> (same auto-seed flow as the main contract).</li>
+        <li>Mark the CO <strong>Approved</strong> when signed — only Amiee has this permission.</li>
+      </ol>
+
+      <div class="callout danger">
+        <strong>Critical:</strong> a CO entered without sub-pricing rows will inflate the Adjusted Contract Value but give the engine no rows to bill against. Virginia hits the over-bill block on legitimate billing. Always pair the CO header with line-item + pricing-row entry.
+      </div>
+
+      <div class="callout">
+        If you collapse a CO card while there are unsaved changes, you'll see a yellow warning banner inside the card. Click <strong>Save</strong> at the top of the EditPanel to commit, or expand the card to discard intentionally.
+      </div>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 5 ─── -->
+    <article class="stage-detail" id="stage-5">
+      <div class="head">
+        <span class="num">STAGE 05</span>
+        <h3>PM Bill Sheet — Monthly</h3>
+        <span class="role-pill"><span class="swatch pm"></span>PM</span>
+      </div>
+      <p>Once a month per active job, the PM reports cumulative LF installed by stage. <strong>The PM workflow has not changed</strong> — same submission, same form, same fields.</p>
+
+      <h4>Where to go</h4>
+      <p>OPS app → <strong>PM Bill Sheet</strong> (mobile-friendly; tap-target sized for phones).</p>
+
+      <h4>For each job in your queue</h4>
+      <ol>
+        <li>Pick the job from your assigned list.</li>
+        <li>Fill in <strong>cumulative LF since project start</strong> for each stage that has activity:
+          <ul>
+            <li><strong>Precast:</strong> Posts Only · Posts &amp; Panels · Complete</li>
+            <li><strong>Stick-built:</strong> Foundation · Columns · Panels · Cleanup</li>
+          </ul>
+        </li>
+        <li>Enter your reported <strong>Invoiced Amount</strong> (total dollar value of work this cycle).</li>
+        <li>Or click <strong>No Bill Required</strong> + reason (rain delays, awaiting permit, etc.).</li>
+        <li>Submit.</li>
+      </ol>
+
+      <div class="callout warn">
+        <strong>Cumulative, not incremental.</strong> If you have 500 LF installed at Posts Only and 400 LF were already billed last cycle, report <strong>500</strong> — not 100. The engine subtracts prior billing automatically. This is the #1 source of cycle-to-cycle errors.
+      </div>
+
+      <h4>What happens after you submit</h4>
+      <p>Your submission lands in the system and Virginia sees it within minutes on her Accounting queue. You don't get an email confirmation today — the PM Bill Sheet page shows your submission in history immediately.</p>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 6 ─── -->
+    <article class="stage-detail" id="stage-6">
+      <div class="head">
+        <span class="num">STAGE 06</span>
+        <h3>Review &amp; File Invoice</h3>
+        <span class="role-pill"><span class="swatch virginia"></span>Virginia</span>
+      </div>
+      <p>This is the new heart of the flow. Virginia reviews the auto-generated draft and files the invoice — replacing the Excel "Acct Sheet" template per job.</p>
+
+      <h4>Where Virginia picks it up</h4>
+      <ol>
+        <li>Open the job → <strong>Money group → Accounting tab</strong>.</li>
+        <li>The <strong>Cycle Source dropdown auto-selects</strong> the most recent un-billed PM submission (no more hunting through the AR Pending list).</li>
+        <li>The <strong>draft table</strong> populates automatically — the engine apportions the PM's per-stage LF across the Pricing Book proportionally to contract qty share.</li>
+      </ol>
+
+      <h4>What to review</h4>
+      <ul>
+        <li><strong>Contract Summary card</strong> at the top — Contract / Billed / Pending / Balance / Retainage tiles + progress bar.</li>
+        <li><strong>Double-Counting Banner</strong> — if the system spots a likely duplicate (legacy import + new draft, exact-amount match against a prior App, already over-billed), an amber banner appears with specific reasons + a collapsible <strong>Show Fix Steps</strong> guide.</li>
+        <li><strong>Draft table</strong> — per-pricing-line × per-stage breakdown. Cells with red borders are over-billing warnings.</li>
+        <li><strong>Single-stage rows</strong> (gates, options, permits, bonds) — Virginia toggles a checkbox or types a partial qty for these (the PM doesn't track them).</li>
+      </ul>
+
+      <h4>File the invoice</h4>
+      <ol>
+        <li>Verify the totals.</li>
+        <li>Click <strong>📋 File Invoice ($amount)</strong>.</li>
+        <li>The system creates an <code>invoice_applications</code> record (App #N), posts to <code>invoice_entries</code>, and recalcs <code>ytd_invoiced</code> automatically.</li>
+      </ol>
+
+      <h4>What the system blocks</h4>
+      <table class="cmp">
+        <thead><tr><th>Problem</th><th>What Virginia sees</th></tr></thead>
+        <tbody>
+          <tr><td>Already filed</td><td>Amber "⚠ Already billed via Acct Sheet" pill in the Cycle Source dropdown</td></tr>
+          <tr><td>Likely duplicate</td><td>Amber double-counting banner with reason + Show Fix Steps</td></tr>
+          <tr><td>Pending + Billed &gt; Contract</td><td>Hard-block — File Invoice button disabled, reason shown</td></tr>
+          <tr><td>Approved CO needed</td><td>Generic "common causes" message in the Over-Bill Block modal</td></tr>
+        </tbody>
+      </table>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 7 ─── -->
+    <article class="stage-detail" id="stage-7">
+      <div class="head">
+        <span class="num">STAGE 07</span>
+        <h3>Mark Paid</h3>
+        <span class="role-pill"><span class="swatch virginia"></span>Virginia</span>
+      </div>
+      <p>When the customer pays, Virginia records the payment against the App.</p>
+
+      <h4>Step by step</h4>
+      <ol>
+        <li>In the <strong>App Ledger</strong> at the bottom of the Accounting tab, click <strong>✓ Mark Paid</strong> on the relevant App row.</li>
+        <li>Enter payment date, method, and reference (check #, ACH, etc.).</li>
+        <li>Submit. The App row turns green; status flips to <code>paid</code>.</li>
+      </ol>
+
+      <div class="callout success">
+        Partial payments are supported — the App stays <code>filed</code> until the cumulative payment matches the net due, then auto-flips to <code>paid</code>.
+      </div>
+
+      <h4>Drill into history</h4>
+      <p>Click any App row to open the <strong>Drill-Down Modal</strong>:</p>
+      <ul>
+        <li><strong>PM Bill Sheet Source</strong> panel — shows the original PM submission: cycle, PM, submitted date, reported total vs filed amount (with drift % if any), per-stage LF table.</li>
+        <li><strong>Line Breakdown</strong> — how the engine apportioned those PM totals to your pricing lines.</li>
+        <li><strong>Payment History</strong> — all payments recorded against this App.</li>
+      </ul>
+      <p>One modal, full chain, top to bottom — answer to "where did this number come from?"</p>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+    <!-- ─── Stage 8 ─── -->
+    <article class="stage-detail" id="stage-8">
+      <div class="head">
+        <span class="num">STAGE 08</span>
+        <h3>Release Retainage</h3>
+        <span class="role-pill"><span class="swatch virginia"></span>Virginia</span>
+      </div>
+      <p>At job close, when retainage becomes due, Virginia releases it as a final invoice.</p>
+
+      <h4>Step by step</h4>
+      <ol>
+        <li>In the App Ledger, click <strong>↳ Release Retainage</strong>.</li>
+        <li>Confirm the held amount in the dialog.</li>
+        <li>The system creates a final App, zeroes out the <code>retainage_held</code> balance, and posts to <code>invoice_entries</code>.</li>
+      </ol>
+
+      <div class="callout info">
+        Release Retainage is header-only — no per-stage breakdown. The held amount is the full retainage withheld across all prior cycles, plus any released through Mark Final on individual COs (Phase E).
+      </div>
+      <a href="#top" class="btn-back">↑ Back to top</a>
+    </article>
+
+  </section>
+
+  <!-- Comparison: Before vs Now -->
+  <section class="section">
+    <h2>What changes for each role</h2>
+    <div class="card" style="padding:0;">
+      <table class="cmp" style="border:none; border-radius:var(--radius-lg);">
+        <thead>
+          <tr>
+            <th style="width:130px;">Role</th>
+            <th>Before</th>
+            <th>Now</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Amiee</td>
+            <td>Set contract value + COs in Excel; no link to billing.</td>
+            <td>Pricing Book + CO sub-pricing in OPS feeds Virginia's draft engine directly. CO setup is now a forcing function — skip it and Virginia's draft fails.</td>
+          </tr>
+          <tr>
+            <td>PM</td>
+            <td>Submit monthly bill sheet.</td>
+            <td><strong>No change.</strong> Same submission, same form, same fields.</td>
+          </tr>
+          <tr>
+            <td>Virginia</td>
+            <td>Open Excel "Acct Sheet" template per job → manually plug PM numbers in → File invoice in QuickBooks.</td>
+            <td>Open Accounting tab → review auto-generated draft → click File Invoice. App Ledger replaces the per-job Excel file. Drill-down modal replaces "where did this number come from?" digging.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section faq">
+    <h2>Common questions</h2>
+
+    <details>
+      <summary>What if the PM enters the wrong LF on a stage?</summary>
+      <div class="answer">
+        Virginia spots it during draft review (over-billing warnings, drift % shown in the App drill-down). She can edit per-cell quantities via cycle overrides on the Accounting tab, or send the PM back to fix the bill sheet before filing.
+      </div>
+    </details>
+
+    <details>
+      <summary>What if Virginia files an invoice and the PM resubmits the same cycle?</summary>
+      <div class="answer">
+        The amber <strong>"⚠ Already billed via Acct Sheet"</strong> pill appears on the Cycle Source dropdown. The double-counting banner fires Rule C (exact-amount match) if the resubmission's total matches what was already filed. Virginia ignores the duplicate or works with the PM to file an amendment.
+      </div>
+    </details>
+
+    <details>
+      <summary>What if a job has historical billing from before the cutover?</summary>
+      <div class="answer">
+        Each historical <code>invoice_entries</code> row was synthesized into an <code>invoice_applications</code> row during the Phase A backfill. Those Apps carry a <strong>"Legacy Import"</strong> badge in the App Ledger; their dollar amounts are accurate but per-stage breakdown isn't available (the original Excel didn't capture it).
+      </div>
+    </details>
+
+    <details>
+      <summary>How does Amiee know if her CO setup is incomplete?</summary>
+      <div class="answer">
+        When Virginia opens the Accounting tab and the draft is wrong (e.g., over-billing because CO scope isn't priced), she pings Amiee. Phase E will add a Contract Readiness check that flags missing CO pricing before the next cycle starts.
+      </div>
+    </details>
+
+    <details>
+      <summary>What if the customer disputes the invoice?</summary>
+      <div class="answer">
+        Open the App row drill-down. The <strong>PM Bill Sheet Source</strong> panel shows exactly what the PM reported and when. The <strong>Line Breakdown</strong> shows how those totals became dollars. Forward the modal screenshot or quote the figures back to the customer with confidence.
+      </div>
+    </details>
+
+    <details>
+      <summary>Can Virginia still use the legacy AR Approve path on the Billing page?</summary>
+      <div class="answer">
+        Yes — for now both paths work. An amber <strong>📋 Acct Sheet App #N</strong> pill appears on BillingPage rows when a submission has already been filed via the new Accounting tab — visual heads-up to prevent double-billing. Once Virginia is fully comfortable on the new tab, the legacy AR Approve path can be deprecated.
+      </div>
+    </details>
+
+    <details>
+      <summary>What does the Over-Bill Block modal show now?</summary>
+      <div class="answer">
+        When an approval would push the job past 120% billed, the modal pops with the red header + numbers as before. <strong>New:</strong> if double-counting is detected, an amber box at the top shows the specific reason(s) (e.g. "exact-amount match against App #5") plus a collapsible <strong>Show Fix Steps</strong> guide. If no double-counting is detected, the original generic "common causes" message remains. Override still requires typing the job number.
+      </div>
+    </details>
+
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div>
+      <strong style="color:var(--text-2);">Fencecrete OPS</strong> · Internal documentation · Not for external distribution
+    </div>
+    <div>
+      Document v2 · May 2026 · Replaces <code>billing-workflow.md</code> for end-user reference
+    </div>
+  </footer>
+
+</main>
+
+<script>
+// Smooth-scroll already handled by CSS scroll-behavior. Add a small assist
+// for the very first click after page load so the offset works on Chrome.
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', (e) => {
+    const id = a.getAttribute('href').slice(1);
+    if (!id || id === 'top') return;  // let the browser handle #top
+    const el = document.getElementById(id);
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    history.replaceState(null, '', '#' + id);
+  });
+});
+</script>
+
+</body>
+</html>
