@@ -1431,7 +1431,11 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
       /* lf_other holds Wood + Other (the "everything non-PC/SW/WI" bucket on Totals) */
       lf_other:woodLF+otherLF,
       number_of_gates:gateLines.reduce((s,x)=>s+n(x.lf),0),
-      total_lf:all.reduce((s,x)=>s+n(x.lf),0),
+      // 2026-05-06: total_lf now only sums fence-type LF (excludes Bonds,
+      // Permits, Lump Sum, Gates, etc. which use `lf` for piece count or
+      // are unit-less). Was inflating the LF count on the Scope tab's
+      // Totals strip whenever a job had a P&P Bond / Maint Bond / Permit row.
+      total_lf:pcLF+swLF+wiLF+woodLF+otherLF,
       ...(primaryPC?.style?{style:primaryPC.style}:{}),
       ...(primaryPC?.color?{color:primaryPC.color}:{}),
       ...(primaryPC?.height?{height_precast:String(primaryPC.height)}:{}),
@@ -1654,30 +1658,38 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
                   persist (trigger doesn't touch them). For precast, manual
                   edits stick until the next unit_price/category/height/style
                   change re-fires the trigger and re-derives. */}
-              <div style={cellStyle(120)}>
-                <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond from height/style. Manual entry for SW/Wood/WI/site_work.">
-                  Labor / Unit
-                </label>
-                <input
-                  type="number" min="0" step="0.01"
-                  value={l.labor_per_unit==null?'':l.labor_per_unit}
-                  onChange={e=>updateLine(idx,'labor_per_unit',e.target.value===''?null:Number(e.target.value))}
-                  placeholder="auto"
-                  style={{...inp,width:'100%',textAlign:'right'}}
-                />
-              </div>
-              <div style={cellStyle(120)}>
-                <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond from height/style. Sales tax is computed on tax_basis × qty only.">
-                  Tax Basis / Unit
-                </label>
-                <input
-                  type="number" min="0" step="0.01"
-                  value={l.tax_basis_per_unit==null?'':l.tax_basis_per_unit}
-                  onChange={e=>updateLine(idx,'tax_basis_per_unit',e.target.value===''?null:Number(e.target.value))}
-                  placeholder="auto"
-                  style={{...inp,width:'100%',textAlign:'right'}}
-                />
-              </div>
+              {/* Hide labor/tax_basis cells for line types where the split
+                  is meaningless (Lump Sum, Columns, Gate Controls, Other).
+                  Show for: PC/SW/WI/Wood (fence — split applies), Gate
+                  (66/34 auto), Permit/Bonds/Insurance (100/0 auto). The
+                  trigger fills the auto-derived ones on save; SW/Wood/WI
+                  rows accept manual entry. */}
+              {!['Lump Sum','Columns','Gate Controls','Other'].includes(l.fence_type)&&<>
+                <div style={cellStyle(120)}>
+                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Manual entry for SW/Wood/WI fence.">
+                    Labor / Unit
+                  </label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={l.labor_per_unit==null?'':l.labor_per_unit}
+                    onChange={e=>updateLine(idx,'labor_per_unit',e.target.value===''?null:Number(e.target.value))}
+                    placeholder="auto on save"
+                    style={{...inp,width:'100%',textAlign:'right'}}
+                  />
+                </div>
+                <div style={cellStyle(120)}>
+                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Sales tax computed on tax_basis × qty only.">
+                    Tax Basis / Unit
+                  </label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={l.tax_basis_per_unit==null?'':l.tax_basis_per_unit}
+                    onChange={e=>updateLine(idx,'tax_basis_per_unit',e.target.value===''?null:Number(e.target.value))}
+                    placeholder="auto on save"
+                    style={{...inp,width:'100%',textAlign:'right'}}
+                  />
+                </div>
+              </>}
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
             {!isNonFence&&<div style={row2Style}>
