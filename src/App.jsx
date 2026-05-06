@@ -12475,7 +12475,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                     <span style={{color:'#9E9B96',fontSize:10}}>#{l.job_number}</span>
                     {partial&&<span style={{background:'#FEF3C7',color:'#B45309',fontSize:9,fontWeight:800,padding:'1px 5px',borderRadius:3}}>⚡ PARTIAL</span>}
                   </div>
-                  <div style={{fontSize:10,color:'#625650',marginTop:1}}>{[l.style,l.color,l.height?l.height+'ft':null,n(l.planned_lf)?`${n(l.planned_lf).toLocaleString()} LF`:null].filter(Boolean).join(' | ')}</div>
+                  <div style={{fontSize:10,color:'#625650',marginTop:1}}>{(()=>{
+                    // Header shows the JOB's actual LF (the contract size), not
+                    // the plan line's planned_lf. planned_lf is the today's-run
+                    // amount which can be partial; bleeding it into the header
+                    // makes "Rock Style 8ft | 18 LF | 1568 panels" look broken.
+                    const job=jobs.find(x=>x.id===l.job_id);
+                    const jobLF=lfPC(job)||n(job?.total_lf)||n(l.planned_lf)||0;
+                    return[l.style,l.color,l.height?l.height+'ft':null,jobLF?`${jobLF.toLocaleString()} LF`:null].filter(Boolean).join(' | ');
+                  })()}</div>
                   {l.material_calc_date&&<div style={{fontSize:9,color:'#065F46',fontWeight:600}}>📋 Material order calculated {new Date(l.material_calc_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>}
                 </div>
                 <button onClick={()=>removePlanLine(idx)} style={{background:'none',border:'none',color:'#9E9B96',fontSize:14,cursor:'pointer'}}>✕</button>
@@ -12573,6 +12581,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
               <div style={{marginTop:8,display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
                 <label style={{fontSize:9,color:'#625650',fontWeight:600}}>Shift:</label>
                 {['1','2','both'].map(s=><button key={s} onClick={()=>updatePlanLine(idx,'shift_assignment',s)} style={{padding:'3px 8px',border:l.shift_assignment===s?'2px solid #854F0B':'1px solid #E5E3E0',background:l.shift_assignment===s?'#FAEEDA':'#FFF',borderRadius:4,fontSize:10,fontWeight:700,color:l.shift_assignment===s?'#854F0B':'#625650',cursor:'pointer'}}>{s==='both'?'Both':'Shift '+s}</button>)}
+                <span title="Each mold pours once per 24h cure cycle, so capacity is daily, not per-shift. The shift tag records which shift owns the work; if you want to allocate across shifts, lower the today's-run quantities above to the per-shift portion." style={{fontSize:9,color:'#9E9B96',fontStyle:'italic',marginLeft:6,cursor:'help'}}>ⓘ tags only — capacity is daily</span>
               </div>
               {partial&&<div style={{marginTop:8,padding:'8px 10px',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:6}}>
                 <label style={{display:'block',fontSize:9,color:'#B45309',fontWeight:800,textTransform:'uppercase',marginBottom:3}}>⚡ Partial run reason (required)</label>
