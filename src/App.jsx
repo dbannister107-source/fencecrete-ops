@@ -11536,7 +11536,13 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
     if(candidates.length===0)return null;
     const exact=h>0?candidates.find(r=>n(r.height_ft)===h):null;
     const generic=candidates.find(r=>r.height_ft===null);
-    return exact||generic||null;
+    // Family-pool fallback: when v_style_capacity_lookup returns post/rail/cap
+    // supply at a different height (e.g. Vertical Wood 6' inherits Combo's
+    // 8ft posts), the exact + generic match both fail. Fall back to the row
+    // with the most posts (typically the family pool's only entry) so auto-cap
+    // gets real numbers instead of treating the style as unconstrained.
+    const fallback=candidates.find(r=>n(r.posts_total_at_height)>0||n(r.rails_total)>0||n(r.caps_total)>0||n(r.panels_owned)>0);
+    return exact||generic||fallback||null;
   },[capacityLookup,planLookupNameFor]);
   // Per-pool usage across existing plan lines that share this (style, height).
   const planUsageForPool=useCallback((lineList,style,height)=>{
@@ -11599,7 +11605,12 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
       const subKeys=POOL_KEYS[pool];
       const total=subKeys.reduce((s,k)=>s+n(planned[k]),0);
       const max=autoCap[pool].max;
-      if(total>max&&total>0){
+      // 2026-05-06 (P1 fix): when a pool's max is 0 (no capacity row data
+      // for this style/family), don't scale to zero — that wipes out the
+      // user's full material order. Treat as unconstrained instead so the
+      // line lands at full piece counts; user manually adjusts the
+      // today's-run amount if a partial cycle is intended.
+      if(total>max&&total>0&&max>0){
         flags[pool]=true;
         const ratio=max/total;
         if(pool==='panels')panelRatio=ratio;
@@ -12530,6 +12541,15 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
                     {poolBar('rails',r.rails_total,r.rails_produced,r.rails_planned)}
                     {poolBar('caps',r.caps_total,r.caps_produced,r.caps_planned)}
                   </div>
+                  {/* 2026-05-06 (P2): empty-state hint when no produced AND no
+                      planned across every pool. Common when production_actuals
+                      is empty for the job (Carlos hasn't logged any pours)
+                      AND the plan line is fresh / unsaved. */}
+                  {(n(r.panels_produced)+n(r.posts_produced)+n(r.rails_produced)+n(r.caps_produced)+
+                    n(r.panels_planned)+n(r.posts_planned)+n(r.rails_planned)+n(r.caps_planned))===0&&
+                    <div style={{marginTop:6,paddingTop:6,borderTop:'1px dashed #E5E3E0',fontSize:10,color:'#9E9B96',fontStyle:'italic',textAlign:'center'}}>
+                      No production logged or scheduled yet. Save the plan + log via Daily Production Report to populate.
+                    </div>}
                 </div>;
               })()}
               {l.quantities_stale&&<div style={{marginTop:6,padding:'8px 10px',background:'#FEF3C7',border:'1px solid #B45309',borderRadius:6,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
