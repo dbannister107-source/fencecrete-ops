@@ -161,9 +161,22 @@ function ErrorBanner({ msg }) {
   );
 }
 
+// PM submission column → friendly label. Order matches the precast →
+// stick-built progression so the panel reads top-to-bottom like a
+// build sequence.
+const PM_STAGES = [
+  { col: 'labor_post_only',   label: 'Posts Only',     group: 'Precast' },
+  { col: 'labor_post_panels', label: 'Posts & Panels', group: 'Precast' },
+  { col: 'labor_complete',    label: 'Complete',       group: 'Precast' },
+  { col: 'sw_foundation',     label: 'Foundation',     group: 'Stick-Built' },
+  { col: 'sw_columns',        label: 'Columns',        group: 'Stick-Built' },
+  { col: 'sw_panels',         label: 'Panels',         group: 'Stick-Built' },
+  { col: 'sw_complete',       label: 'Cleanup',        group: 'Stick-Built' },
+];
+
 // ─── Invoice (entity_type='invoice') view ────────────────────────────
 function InvoiceView({ data }) {
-  const { app, lines, payments, pricingByLineId } = data;
+  const { app, lines, payments, pricingByLineId, pmSubmission } = data;
   const isLegacy = !!app.source_invoice_entry_id;
   const isReleaseApp = !!app.is_retainage_release;
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
@@ -216,6 +229,173 @@ function InvoiceView({ data }) {
           </div>
         )}
       </div>
+
+      {/* PM Bill Sheet Source — renders only when the App is linked to a
+          pm_bill_submissions row. Shows the chain Virginia would otherwise
+          have to mentally stitch from the Accounting tab + BillingPage:
+          PM submitted these LF totals → engine apportioned to per-stage
+          cells (table below) → these dollars were filed. Reported total
+          vs filed amount surfaces any cycle-override math. Skipped on
+          synthetic / manual / release Apps (no submission to point at). */}
+      {pmSubmission && (
+        <>
+          <SectionHeader>PM Bill Sheet Source</SectionHeader>
+          <div style={{
+            border: `1px solid ${COLOR.border}`,
+            borderRadius: RADIUS.lg,
+            overflow: 'hidden',
+          }}>
+            {/* Header strip — month, PM, submitted_by, submitted_at */}
+            <div style={{
+              padding: '10px 14px',
+              background: COLOR.page,
+              borderBottom: `1px solid ${COLOR.border}`,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 14,
+              fontSize: 11,
+              color: COLOR.text2,
+            }}>
+              <div>
+                <span style={{ color: COLOR.text3, fontWeight: 700 }}>Cycle:</span>{' '}
+                <b style={{ color: COLOR.text }}>{pmSubmission.billing_month || '—'}</b>
+              </div>
+              {pmSubmission.pm && (
+                <div>
+                  <span style={{ color: COLOR.text3, fontWeight: 700 }}>PM:</span>{' '}
+                  <b style={{ color: COLOR.text }}>{pmSubmission.pm}</b>
+                </div>
+              )}
+              {pmSubmission.submitted_by && pmSubmission.submitted_by !== pmSubmission.pm && (
+                <div>
+                  <span style={{ color: COLOR.text3, fontWeight: 700 }}>Submitted by:</span>{' '}
+                  <b style={{ color: COLOR.text }}>{pmSubmission.submitted_by}</b>
+                </div>
+              )}
+              {(pmSubmission.submitted_at || pmSubmission.created_at) && (
+                <div>
+                  <span style={{ color: COLOR.text3, fontWeight: 700 }}>Submitted:</span>{' '}
+                  <b style={{ color: COLOR.text }}>{fD(pmSubmission.submitted_at || pmSubmission.created_at)}</b>
+                </div>
+              )}
+            </div>
+
+            {/* Reported vs filed totals — flag any drift so cycle overrides
+                or apportionment rounding are visible at a glance. */}
+            {(() => {
+              const reported = Number(pmSubmission.invoiced_amount || 0);
+              const filed    = Number(app.current_amount || 0);
+              const drift    = filed - reported;
+              const driftPct = reported > 0 ? (drift / reported) * 100 : 0;
+              const hasDrift = reported > 0 && Math.abs(drift) > 1;
+              return (
+                <div style={{
+                  padding: '10px 14px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                  gap: 10,
+                  borderBottom: `1px solid ${COLOR.border}`,
+                  fontSize: 12,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 }}>
+                      PM Reported Total
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, fontFamily: FONT.data, color: COLOR.text }}>
+                      {$(reported)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 }}>
+                      Filed (this App)
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, fontFamily: FONT.data, color: COLOR.text }}>
+                      {$(filed)}
+                    </div>
+                  </div>
+                  {hasDrift && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#92400E', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 }}>
+                        Drift
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 800, fontFamily: FONT.data, color: drift > 0 ? COLOR.warn : COLOR.info }}>
+                        {drift > 0 ? '+' : ''}{$(drift)}
+                        <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 6, opacity: 0.75 }}>
+                          ({driftPct > 0 ? '+' : ''}{driftPct.toFixed(1)}%)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Per-stage LF reported by the PM. Only render rows with a
+                non-zero value; if the PM didn't fill any stage column,
+                show an empty-state line instead of a blank table. */}
+            {(() => {
+              const rows = PM_STAGES
+                .map(s => ({ ...s, value: Number(pmSubmission[s.col] || 0) }))
+                .filter(r => r.value > 0);
+              if (rows.length === 0) {
+                return (
+                  <div style={{
+                    padding: '10px 14px',
+                    fontSize: 11,
+                    color: COLOR.text3,
+                    fontStyle: 'italic',
+                  }}>
+                    No per-stage LF reported on this submission — likely a non-fence cycle (gates, options, retainage release, etc.).
+                  </div>
+                );
+              }
+              return (
+                <div style={{ overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: COLOR.page, borderBottom: `1px solid ${COLOR.border}` }}>
+                        <th style={{ padding: '7px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                          Stage
+                        </th>
+                        <th style={{ padding: '7px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                          Group
+                        </th>
+                        <th style={{ padding: '7px 14px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                          PM Reported (cumulative LF)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(r => (
+                        <tr key={r.col} style={{ borderBottom: `1px solid ${COLOR.border}` }}>
+                          <td style={{ padding: '6px 14px', fontWeight: 600, color: COLOR.text }}>{r.label}</td>
+                          <td style={{ padding: '6px 14px', color: COLOR.text2, fontSize: 10 }}>{r.group}</td>
+                          <td style={{ padding: '6px 14px', textAlign: 'right', fontFamily: FONT.data, fontWeight: 700 }}>
+                            {r.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+
+            {/* Note pointer to the breakdown below — explains the data flow. */}
+            <div style={{
+              padding: '8px 14px',
+              background: COLOR.page,
+              borderTop: `1px solid ${COLOR.border}`,
+              fontSize: 10,
+              color: COLOR.text3,
+              fontStyle: 'italic',
+              lineHeight: 1.5,
+            }}>
+              ↓ The Line Breakdown below shows how the engine apportioned these PM totals across the job's pricing lines.
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Legacy-import note */}
       {isLegacy && (
@@ -481,8 +661,26 @@ export default function DrillDownModal({
               // Non-fatal — labels just won't resolve, headers fall back to 'Pricing Line'.
             }
           }
+          // Conditional follow-up: if this App was filed from a PM bill
+          // submission, fetch the linked row so the source panel can
+          // show what the PM reported (per-stage LF + total) alongside
+          // what was filed. Synthetic / manual / release Apps skip this.
+          let pmSubmission = null;
+          if (app.pm_bill_submission_id) {
+            try {
+              const subs = await sbGet(
+                'pm_bill_submissions',
+                `id=eq.${app.pm_bill_submission_id}&limit=1`
+              );
+              if (!cancelled && Array.isArray(subs) && subs.length > 0) {
+                pmSubmission = subs[0];
+              }
+            } catch (e) {
+              // Non-fatal — panel just falls back to the no-source state.
+            }
+          }
           if (cancelled) return;
-          setData({ app, lines: lines || [], payments: payments || [], pricingByLineId });
+          setData({ app, lines: lines || [], payments: payments || [], pricingByLineId, pmSubmission });
         } else {
           // Stubs — no fetch
           setData({ stub: true });

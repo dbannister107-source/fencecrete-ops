@@ -28,7 +28,7 @@
 //     leaves an orphan draft App with no invoice_entries side effect.
 //   - Phase E will add a "draft Apps" surface for cleanup.
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { sbGet, sbPost, sbPatch } from '../../shared/sb';
 import { COLOR, RADIUS, card, btnP, btnS, inputS, FONT } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
@@ -449,6 +449,29 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
     () => new Set(priorApps.filter(a => a.pm_bill_submission_id).map(a => a.pm_bill_submission_id)),
     [priorApps]
   );
+
+  // ─── Auto-select latest unbilled PM submission on initial load ────
+  // Virginia opens a job → the obvious target submission auto-populates
+  // the Cycle Source dropdown so she can review the draft immediately.
+  // Skips no-bill, zero-amount, and already-filed submissions.
+  // Uses a ref keyed on job.id so we only auto-select once per job —
+  // after a successful File the dropdown clears and stays cleared until
+  // the user picks again (avoids surprise re-selection mid-cycle).
+  const autoSelectJobIdRef = useRef(null);
+  useEffect(() => {
+    if (loading) return;
+    if (autoSelectJobIdRef.current === job?.id) return;
+    autoSelectJobIdRef.current = job?.id;
+    if (selectedSubmissionId !== null) return;
+    if (!pmSubmissions || pmSubmissions.length === 0) return;
+    // pmSubmissions is already ordered billing_month.desc — first match wins.
+    const next = pmSubmissions.find(s =>
+      !s.no_bill_required &&
+      !billedSubmissionIds.has(s.id) &&
+      Number(s.invoiced_amount) > 0
+    );
+    if (next) setSelectedSubmissionId(next.id);
+  }, [loading, job?.id, pmSubmissions, billedSubmissionIds, selectedSubmissionId]);
 
   // ─── File Invoice ────────────────────────────────────────────────
   const fileInvoice = async () => {
