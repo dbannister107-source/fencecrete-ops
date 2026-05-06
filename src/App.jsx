@@ -5622,30 +5622,36 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const fetchInvEntries=useCallback(async(jobId,force=false)=>{if(!jobId)return;if(!force&&invCacheRef.current.has(jobId)){setInvEntries(invCacheRef.current.get(jobId));return;}setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);const arr=d||[];invCacheRef.current.set(jobId,arr);setInvEntries(arr);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
   const fetchArCOs=useCallback(async(jobId)=>{if(!jobId)return;try{const d=await sbGet('change_orders',`job_id=eq.${jobId}&order=created_at.asc`);setArCOs(d||[]);}catch(e){setArCOs([]);}},[]);
   const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();
-// Virginia (AR) feedback 2026-05-05: invoice entry alone leaves the row in
-// "pending" — she has to remember a second click on "Mark Submission
-// Complete." Auto-complete the submission if this invoice is the FIRST
-// non-Opening-Balance entry on a not-yet-reviewed submission. AR can still
-// add additional invoice rows later (the Add Invoice action remains);
-// they'll just no longer flip the review flag a second time.
+// 2026-05-06 — Auto-mark-reviewed on EVERY invoice entry (was: first-only).
+// Per CEO direction: entering the invoice amount IS the review action;
+// remove the manual "Mark Reviewed" button entirely. Each Add Invoice now
+// (a) always saves invoice_number + invoiced_amount + invoice_date onto
+// the bill sheet so they persist month-over-month, and (b) flips
+// ar_reviewed=true if not already reviewed.
+//
+// Multiple invoices per bill sheet (split bills, retainage release):
+// last-write-wins for the bill sheet's invoice_number/invoiced_amount —
+// these are summary fields. The full ledger lives in invoice_entries.
 const sub=arDetail&&arDetail.sub;
-if(sub&&sub.id&&!sub.ar_reviewed&&sub.job_id===jobId){
-  const priorReal=(invEntries||[]).filter(e=>!(e.notes||'').includes('Opening Balance')).length;
-  if(priorReal===0){
-    try{
-      await sbPatch('pm_bill_submissions',sub.id,{
-        ar_reviewed:true,
-        ar_reviewed_at:new Date().toISOString(),
-        ar_reviewed_by:arForm.ar_reviewed_by||'AR',
-        invoiced_amount:amt,
-        invoice_number:arForm.invoice_number||null,
-        invoice_date:arForm.invoice_date||null,
-        ytd_applied:true,
-      });
-      fetchArSubs();
-      setArDetail(prev=>prev?{...prev,sub:{...prev.sub,ar_reviewed:true,ar_reviewed_at:new Date().toISOString()}}:prev);
-    }catch(e){console.warn('[addInvEntry] auto-mark-reviewed failed; row stays pending:',e);}
+if(sub&&sub.id&&sub.job_id===jobId){
+  const patchBody={
+    invoiced_amount:amt,
+    invoice_number:arForm.invoice_number||null,
+    invoice_date:arForm.invoice_date||null,
+  };
+  // Only flip review fields on the first time (don't overwrite ar_reviewed_at
+  // / ar_reviewed_by once they're set — preserves audit history).
+  if(!sub.ar_reviewed){
+    patchBody.ar_reviewed=true;
+    patchBody.ar_reviewed_at=new Date().toISOString();
+    patchBody.ar_reviewed_by=arForm.ar_reviewed_by||'AR';
+    patchBody.ytd_applied=true;
   }
+  try{
+    await sbPatch('pm_bill_submissions',sub.id,patchBody);
+    fetchArSubs();
+    setArDetail(prev=>prev?{...prev,sub:{...prev.sub,...patchBody}}:prev);
+  }catch(e){console.warn('[addInvEntry] auto-mark-reviewed / persist failed; bill sheet may be locked or row stays pending:',e);}
 }
 setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast(`${$(amt)} invoice entry added`);}catch(e){setToast({message:e.message||'Failed to add entry',isError:true});}};
   const deleteInvEntry=async(entryId,jobId)=>{try{await sbDel('invoice_entries',entryId);invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();setInvDelConfirm(null);setToast('Invoice entry removed');}catch(e){setToast({message:'Delete failed',isError:true});}};
@@ -5730,71 +5736,13 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
       return{job,sub:s,status};
     }).sort((a,b)=>(a.job.job_name||'').localeCompare(b.job.job_name||''));
   },[arSubs,arPmF,arMktF,arTab,jobs,arSearchMatches]);
-  // Inline Mark Reviewed from the Pending tab: flips the flags and stamps
-  // invoiced_amount with SUM(invoice_entries). Distinct from the detail
-  // modal's "Mark Submission Complete" which also accepts a form amount —
-  // Virginia/Mary enter invoices via Add Invoice first, then hit this.
-  const markReviewedInline=async(sub, override)=>{
-    const info=arInvByJob[sub.job_id]||{count:0,total:0};
-    const reviewer=currentUserEmail||'AR';
-    // 2026-05-06 — Simplified after C1 trigger drop.
-    //
-    // History: there used to be TWO trigger paths writing jobs.ytd_invoiced —
-    // recalc_ytd_invoiced() on invoice_entries (a SETTER from SUM, canonical) AND
-    // update_ytd_invoiced_from_submission() on pm_bill_submissions (an ADDER on
-    // ar_reviewed flip). They raced and double-counted. The 2026-05-05 fix tried
-    // to compensate at the JS layer with an `addAmount = subAmt - info.total`
-    // delta heuristic, but the additive trigger still corrupted Tamarron 25H052
-    // by $64,844.14 on 2026-05-06.
-    //
-    // 2026-05-06 fix (C1): the additive trigger has been DROPPED. Now ytd_invoiced
-    // is recomputed solely from invoice_entries via recalc_ytd_invoiced(). This
-    // function no longer needs the delta heuristic — it just flips the AR-review
-    // flags. The submission's stored `invoiced_amount` is preserved as metadata
-    // (it's what Virginia entered via the modal flow); ytd is correct from the
-    // entries trigger regardless of what we set here.
-    const subAmt = n(sub.invoiced_amount);
-    const job = jobs.find(j=>j.id===sub.job_id);
-    // Guard: block if this approval would push billed % above OVERBILL_THRESHOLD_PCT.
-    // Use info.total (current SUM of entries) as the basis, not a synthetic delta —
-    // the recalc trigger has already canonicalized ytd_invoiced from those entries.
-    const projectedAdd = Math.max(0, subAmt - info.total);
-    if(!override){
-      const guard = checkOverbillGuard(job, projectedAdd);
-      if(!guard.allow){
-        setArOverbillBlock({
-          sub, job,
-          projected: guard.projected,
-          contract: guard.contract,
-          pct: guard.pct,
-          // Captured continuation: when user confirms the override, this gets called.
-          action: ()=>markReviewedInline(sub, true),
-          flow: 'inline'
-        });
-        setArOverbillTypeAck('');
-        return;
-      }
-    }
-    try{
-      const overrideNote = override
-        ? `\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${reviewer}: approved at ${(((n(job?.ytd_invoiced)+projectedAdd)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`
-        : '';
-      const existingNotes = sub.ar_notes || '';
-      // C1 cleanup: leave invoiced_amount alone — it's metadata of what Virginia
-      // entered. ytd_invoiced is recomputed from invoice_entries by the entries
-      // trigger; there is no longer a parallel additive path on the submission.
-      await sbPatch('pm_bill_submissions',sub.id,{
-        ar_reviewed:true,
-        ar_reviewed_at:new Date().toISOString(),
-        ar_reviewed_by:reviewer,
-        ar_notes: override ? (existingNotes + overrideNote).trim() : existingNotes || null,
-        ytd_applied:true
-      });
-      fetchArSubs();
-      if(bumpRefresh)bumpRefresh();
-      setToast(`✓ ${sub.job_name||'Submission'} marked reviewed${override?' (over-bill override logged)':''}`);
-    }catch(err){setToast({message:err.message||'Mark reviewed failed',isError:true});}
-  };
+  // 2026-05-06 — markReviewedInline removed. The standalone "Mark Reviewed"
+  // button it powered was retired per CEO direction: entering an invoice
+  // amount via Add Invoice now auto-marks the bill sheet reviewed AND saves
+  // invoice_number / invoiced_amount / invoice_date onto the row. The
+  // detail modal's markArReviewed (still alive) handles the over-bill
+  // override flow and the form-driven mark-complete path. AR's workflow
+  // is now: open submission → enter amount → Add Invoice → done.
   // Revert is current-month only (enforced at render time). Leaves invoice
   // entries and invoiced_amount alone so the data is preserved for re-review.
   const revertToPending=async(sub)=>{
@@ -6025,7 +5973,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               <td style={{padding:'8px 10px',fontSize:11}}>{j.job_number||sub.job_number||'—'}</td>
               <td style={{padding:'8px 10px',fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 <span onClick={e=>{e.stopPropagation();setBilQuickView(j);}} style={{cursor:'pointer',borderBottom:'1px dashed transparent'}} onMouseEnter={e=>e.currentTarget.style.borderBottomColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderBottomColor='transparent'}>{j.job_name||sub.job_name||'—'}</span>
-                {isPending&&hasInv&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginTop:3,fontStyle:'normal'}}>ℹ {inv.count} invoice{inv.count!==1?'s':''} entered — click Mark Reviewed when verified</div>}
+                {isPending&&hasInv&&<div style={{fontSize:10,color:'#1D4ED8',fontWeight:600,marginTop:3,fontStyle:'normal'}}>ℹ {inv.count} invoice{inv.count!==1?'s':''} entered — open to review</div>}
                 {isReviewed&&<div style={{fontSize:10,color:'#065F46',fontWeight:600,marginTop:3,fontStyle:'normal'}}>✓ Reviewed {sub.ar_reviewed_at?new Date(sub.ar_reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}{sub.ar_reviewed_by?' by '+sub.ar_reviewed_by:''}</div>}
               </td>
               <td style={{padding:'8px 10px',fontSize:11}}>{j.pm||sub.pm||'—'}</td>
@@ -6037,8 +5985,11 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
               <td style={{padding:'8px 10px',fontSize:11,color:'#625650'}}>{sub.submitted_at?new Date(sub.submitted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</td>
               <td style={{padding:'8px 10px'}}>{isNoBill?<span style={{color:'#625650',fontSize:11,fontStyle:'italic'}}>—</span>:isReviewed?<span style={pill('#1D4ED8','#DBEAFE')}>Reviewed</span>:<span style={pill('#B45309','#FEF3C7')}>Pending Review</span>}</td>
               <td style={{padding:'8px 10px'}}><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                <button onClick={()=>openArDetail(sub)} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>View</button>
-                {isPending&&<button onClick={()=>markReviewedInline(sub)} title="Mark this submission as reviewed" style={{background:'#065F46',border:'1px solid #065F46',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>✓ Mark Reviewed</button>}
+                {/* 2026-05-06 — Manual "Mark Reviewed" button removed.
+                    Entering the invoice amount auto-marks the bill sheet
+                    reviewed (see addInvEntry). The Pending row's primary
+                    action is now "Enter Invoice" → opens the detail modal. */}
+                <button onClick={()=>openArDetail(sub)} style={isPending?{background:'#8A261D',border:'1px solid #8A261D',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}:{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>{isPending?'Enter Invoice':'View'}</button>
                 {isReviewed&&arIsRevertable&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
               </div></td>
             </tr>;})}
@@ -6435,13 +6386,14 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
             <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/>
           </div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
-          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice</button></div>
-          {invEntries.filter(e=>!e.notes?.includes('Opening Balance')).length>0&&!s.ar_reviewed&&(
-            <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #E5E3E0'}}>
-              <button onClick={()=>markArReviewed()} style={{...btnP,background:'#065F46',width:'100%',justifyContent:'center',display:'flex',alignItems:'center',gap:6}}>
-                ✓ Mark Submission Complete
-              </button>
-              <div style={{fontSize:10,color:'#9E9B96',textAlign:'center',marginTop:4}}>Stamps this PM submission as processed for {arMonth}</div>
+          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice & Mark Reviewed</button></div>
+          {/* 2026-05-06 — Standalone "Mark Submission Complete" button removed.
+              Add Invoice now auto-marks reviewed, saves invoice number +
+              amount + date onto the bill sheet, and timestamps the audit
+              fields. One-click flow per CEO direction. */}
+          {!s.ar_reviewed&&(
+            <div style={{marginTop:8,padding:'8px 12px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:6,fontSize:11,color:'#1D4ED8',lineHeight:1.5}}>
+              ℹ Adding an invoice automatically marks this submission reviewed and saves the invoice number/amount/date onto the bill sheet.
             </div>
           )}
           {s.ar_reviewed&&(
