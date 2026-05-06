@@ -1497,7 +1497,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
         const l=lines[i];
         if(!l._touched)continue;
         const lineNum=i+1;
-        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
+        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false,labor_per_unit:l.labor_per_unit==null?null:n(l.labor_per_unit),tax_basis_per_unit:l.tax_basis_per_unit==null?null:n(l.tax_basis_per_unit)};
         if(l._new){await sbPost('job_line_items',body);}
         else{await sbPatch('job_line_items',l.id,body);}
       }
@@ -1647,26 +1647,36 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
               <div style={cellStyle(150)}><label style={fieldLabel}>Line Value</label>
                 <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
               </div>
-              {/* 2026-05-05 (Option C — Phase 1): display-only Labor + Tax
-                  Basis split. Auto-derived by the trg_jli_derive_split DB
-                  trigger from category + height + style + unit_price.
-                  Editing flexibility deferred to Phase E (no production
-                  adoption today; trigger output covers the 95% case). */}
+              {/* Labor + Tax Basis split. Auto-derived by trg_jli_derive_split
+                  for precast / wi_gate / permit / bond. SW / Wood / WI fence /
+                  site_work / null categories: trigger leaves null and Amiee
+                  enters manually here. Manual entries on those categories
+                  persist (trigger doesn't touch them). For precast, manual
+                  edits stick until the next unit_price/category/height/style
+                  change re-fires the trigger and re-derives. */}
               <div style={cellStyle(120)}>
-                <label style={fieldLabel} title="Auto-derived from height/style. Used by the Acct Sheet calc engine for sales tax + labor split.">
+                <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond from height/style. Manual entry for SW/Wood/WI/site_work.">
                   Labor / Unit
                 </label>
-                <div style={{...inp,width:'100%',background:'#F9F8F6',color:l.labor_per_unit==null?'#9E9B96':'#1A1A1A',fontFamily:'Inter',fontWeight:700,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',fontStyle:l.labor_per_unit==null?'italic':'normal'}}>
-                  {l.labor_per_unit==null?'—':$(l.labor_per_unit)}
-                </div>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={l.labor_per_unit==null?'':l.labor_per_unit}
+                  onChange={e=>updateLine(idx,'labor_per_unit',e.target.value===''?null:Number(e.target.value))}
+                  placeholder="auto"
+                  style={{...inp,width:'100%',textAlign:'right'}}
+                />
               </div>
               <div style={cellStyle(120)}>
-                <label style={fieldLabel} title="Auto-derived from height/style. Sales tax is computed on tax_basis × qty only.">
+                <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond from height/style. Sales tax is computed on tax_basis × qty only.">
                   Tax Basis / Unit
                 </label>
-                <div style={{...inp,width:'100%',background:'#F9F8F6',color:l.tax_basis_per_unit==null?'#9E9B96':'#1A1A1A',fontFamily:'Inter',fontWeight:700,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',fontStyle:l.tax_basis_per_unit==null?'italic':'normal'}}>
-                  {l.tax_basis_per_unit==null?'—':$(l.tax_basis_per_unit)}
-                </div>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={l.tax_basis_per_unit==null?'':l.tax_basis_per_unit}
+                  onChange={e=>updateLine(idx,'tax_basis_per_unit',e.target.value===''?null:Number(e.target.value))}
+                  placeholder="auto"
+                  style={{...inp,width:'100%',textAlign:'right'}}
+                />
               </div>
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
