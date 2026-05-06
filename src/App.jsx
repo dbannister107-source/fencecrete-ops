@@ -5715,28 +5715,30 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   const markReviewedInline=async(sub, override)=>{
     const info=arInvByJob[sub.job_id]||{count:0,total:0};
     const reviewer=currentUserEmail||'AR';
-    // 2026-05-05 — Opening Balance double-count fix.
+    // 2026-05-06 — Simplified after C1 trigger drop.
     //
-    // Bug: every legacy job has an "Opening Balance - Prior Invoices
-    // (migrated from legacy YTD)" entry in invoice_entries. That row is
-    // already rolled into ytd_invoiced via trg_recalc_ytd_invoiced.
-    // The old logic took the WORST-CASE of (info.total OR sub.invoiced_amount)
-    // and treated it as "what approval would add" — but if invoice_entries
-    // for the month already exist (Opening Balance, prior manual entries),
-    // they're already in YTD. Approval only ADDS the delta between the
-    // submission's own invoiced_amount and what's already entered.
+    // History: there used to be TWO trigger paths writing jobs.ytd_invoiced —
+    // recalc_ytd_invoiced() on invoice_entries (a SETTER from SUM, canonical) AND
+    // update_ytd_invoiced_from_submission() on pm_bill_submissions (an ADDER on
+    // ar_reviewed flip). They raced and double-counted. The 2026-05-05 fix tried
+    // to compensate at the JS layer with an `addAmount = subAmt - info.total`
+    // delta heuristic, but the additive trigger still corrupted Tamarron 25H052
+    // by $64,844.14 on 2026-05-06.
     //
-    // April symptom: every "1 invoice entered" row in the AR Pending list
-    // tripped the over-bill block because the check was double-counting
-    // the migration entry against itself. 21 false-positive matches in
-    // April alone.
+    // 2026-05-06 fix (C1): the additive trigger has been DROPPED. Now ytd_invoiced
+    // is recomputed solely from invoice_entries via recalc_ytd_invoiced(). This
+    // function no longer needs the delta heuristic — it just flips the AR-review
+    // flags. The submission's stored `invoiced_amount` is preserved as metadata
+    // (it's what Virginia entered via the modal flow); ytd is correct from the
+    // entries trigger regardless of what we set here.
     const subAmt = n(sub.invoiced_amount);
-    const addAmount = subAmt > info.total ? (subAmt - info.total) : 0;
     const job = jobs.find(j=>j.id===sub.job_id);
-    // Guard: block if this approval would push billed % above OVERBILL_THRESHOLD_PCT,
-    // unless caller already passed override flag (from the typed-confirmation modal).
+    // Guard: block if this approval would push billed % above OVERBILL_THRESHOLD_PCT.
+    // Use info.total (current SUM of entries) as the basis, not a synthetic delta —
+    // the recalc trigger has already canonicalized ytd_invoiced from those entries.
+    const projectedAdd = Math.max(0, subAmt - info.total);
     if(!override){
-      const guard = checkOverbillGuard(job, addAmount);
+      const guard = checkOverbillGuard(job, projectedAdd);
       if(!guard.allow){
         setArOverbillBlock({
           sub, job,
@@ -5753,16 +5755,18 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
     }
     try{
       const overrideNote = override
-        ? `\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${reviewer}: approved at ${(((n(job?.ytd_invoiced)+addAmount)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`
+        ? `\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${reviewer}: approved at ${(((n(job?.ytd_invoiced)+projectedAdd)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`
         : '';
       const existingNotes = sub.ar_notes || '';
+      // C1 cleanup: leave invoiced_amount alone — it's metadata of what Virginia
+      // entered. ytd_invoiced is recomputed from invoice_entries by the entries
+      // trigger; there is no longer a parallel additive path on the submission.
       await sbPatch('pm_bill_submissions',sub.id,{
         ar_reviewed:true,
         ar_reviewed_at:new Date().toISOString(),
         ar_reviewed_by:reviewer,
         ar_notes: override ? (existingNotes + overrideNote).trim() : existingNotes || null,
-        ytd_applied:true,
-        invoiced_amount:addAmount
+        ytd_applied:true
       });
       fetchArSubs();
       if(bumpRefresh)bumpRefresh();
@@ -6463,6 +6467,25 @@ const NO_BILL_REASON_LABELS=Object.fromEntries(NO_BILL_REASONS);
 
 function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const v=useViewport();
+  const auth=useAuth();
+  // 2026-05-06 — pm_team_visibility allow list (C2). Authoritative replacement
+  // for the old PM_TEAM_VISIBILITY JS constant. The ids set holds user_ids of
+  // teammates the current SSO user can file/edit on behalf of (Israel↔Manuel,
+  // Israel↔Jr, Hugo↔Manuel, Hugo↔Jr — symmetric).
+  const[pmTeammateIds,setPmTeammateIds]=useState(()=>new Set());
+  const[pmTeammateProfiles,setPmTeammateProfiles]=useState([]);
+  useEffect(()=>{
+    if(!auth?.profile?.id)return;
+    sbGet('pm_team_visibility',`primary_user_id=eq.${auth.profile.id}&active=eq.true&select=on_behalf_user_id`)
+      .then(rows=>{
+        const ids=new Set((rows||[]).map(r=>r.on_behalf_user_id));
+        setPmTeammateIds(ids);
+        if(ids.size===0){setPmTeammateProfiles([]);return;}
+        const idList=[...ids].map(x=>`"${x}"`).join(',');
+        sbGet('user_profiles',`id=in.(${idList})&select=id,full_name,email`).then(p=>setPmTeammateProfiles(p||[]));
+      })
+      .catch(()=>{setPmTeammateIds(new Set());setPmTeammateProfiles([]);});
+  },[auth?.profile?.id]);
   // Line items are fetched lazily — only when a job row is expanded — keyed by job_number.
   // This replaces the prior bulk fetch to keep the initial page load fast.
   const[pmLineItemsByJob,setPmLineItemsByJob]=useState({});
@@ -6723,7 +6746,12 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   // former contracted-total value.
   const buildPayload=(job,formVals)=>{
     const totals=calcSectionLFs(formVals,job);
-    return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_accent_columns:parseFloat(formVals.sw_accent_columns)||0,sw_large_columns:parseFloat(formVals.sw_large_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,sw_other_lf:parseFloat(formVals.sw_other_lf)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,wood_fencing:parseFloat(formVals.wood_fencing)||0,mow_strip:parseFloat(formVals.mow_strip)||0,lf_panels_washed:0,notes:formVals.notes||null,submitted_by:selPM,submitted_at:new Date().toISOString(),ar_reviewed:false};
+    // 2026-05-06 — submitted_by is the SSO user (immutable post-insert per DB
+    // trigger). pm column stays as the displayed PM tile (Houston co-mgmt:
+    // Israel filing for Manuel → pm='Manuel Salazar', submitted_by='Israel
+    // Santibanez', filed_on_behalf=Manuel's id).
+    const ssoFullName=auth?.profile?.full_name||selPM;
+    return{billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:totals.grand,labor_post_only:parseFloat(formVals.labor_post_only)||0,labor_post_panels:parseFloat(formVals.labor_post_panels)||0,labor_complete:parseFloat(formVals.labor_complete)||0,sw_foundation:parseFloat(formVals.sw_foundation)||0,sw_columns:parseFloat(formVals.sw_columns)||0,sw_accent_columns:parseFloat(formVals.sw_accent_columns)||0,sw_large_columns:parseFloat(formVals.sw_large_columns)||0,sw_panels:parseFloat(formVals.sw_panels)||0,sw_complete:parseFloat(formVals.sw_complete)||0,sw_other_lf:parseFloat(formVals.sw_other_lf)||0,wi_gates:parseFloat(formVals.wi_gates)||0,wi_fencing:parseFloat(formVals.wi_fencing)||0,wi_columns:parseFloat(formVals.wi_columns)||0,line_bonds:parseFloat(formVals.line_bonds)||0,line_permits:parseFloat(formVals.line_permits)||0,remove_existing:parseFloat(formVals.remove_existing)||0,gate_controls:parseFloat(formVals.gate_controls)||0,wood_fencing:parseFloat(formVals.wood_fencing)||0,mow_strip:parseFloat(formVals.mow_strip)||0,lf_panels_washed:0,notes:formVals.notes||null,submitted_by:ssoFullName,submitted_at:new Date().toISOString(),ar_reviewed:false};
   };
 
   // Save path splits by whether a submission already exists for this job+month.
@@ -6749,15 +6777,41 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     }
     setSaving(job.id);
     try{
+      // 2026-05-06 — Block edit-after-AR-review at the app layer (DB trigger
+      // also enforces). Surfaces a friendlier error than the raw 23514.
+      const existingPre=subByJob[job.id];
+      if(existingPre && existingPre.ar_reviewed===true){
+        setToast({message:'This bill sheet has been AR-reviewed and is locked. AR must re-open it before edits.',isError:true});
+        setSaving(null);
+        return;
+      }
       const payload=buildPayload(job,form);
-      const existing=subByJob[job.id];
+      const existing=existingPre;
+      // C2: derive identity columns
+      const ssoUserId=auth?.profile?.id||null;
+      const ssoFullName=auth?.profile?.full_name||'';
+      const onBehalfProfile=(selPM && selPM!==ssoFullName)
+        ? pmTeammateProfiles.find(p=>p.full_name===selPM)
+        : null;
       let saved;
       if(existing&&existing.id){
-        // EDIT path — PATCH the existing row by id.
-        saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${existing.id}`, payload, { returnRepresentation: true });
+        // EDIT path — strip submitted_by (immutable per DB trigger), add audit trio.
+        const{submitted_by:_omit,...editablePayload}=payload;
+        const patchBody={
+          ...editablePayload,
+          last_edited_at:new Date().toISOString(),
+          last_edited_by_user_id:ssoUserId,
+          edit_count:(existing.edit_count||0)+1,
+        };
+        saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${existing.id}`, patchBody, { returnRepresentation: true });
       } else {
-        // NEW submission — plain INSERT.
-        saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });
+        // NEW submission — include identity columns.
+        const insertBody={
+          ...payload,
+          submitted_by_user_id:ssoUserId,
+          filed_on_behalf_of_user_id:onBehalfProfile?.id||null,
+        };
+        saved=await sbPost('pm_bill_submissions', insertBody, { throwOnError: true });
       }
       const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
       if(existing){
@@ -6791,14 +6845,44 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
     const zeroed=Object.fromEntries(NO_BILL_ZERO_FIELDS.map(f=>[f,0]));
     const nowIso=new Date().toISOString();
     try{
-      const existing=subByJob[job.id];
+      // 2026-05-06 — Block No-Bill flip on AR-reviewed sheet (locked).
+      const existingPre=subByJob[job.id];
+      if(existingPre && existingPre.ar_reviewed===true){
+        setToast({message:'Bill sheet is AR-reviewed and locked. AR must re-open before changing No-Bill state.',isError:true});
+        setNoBillSaving(false);
+        return;
+      }
+      // C2 identity columns
+      const ssoUserId=auth?.profile?.id||null;
+      const ssoFullName=auth?.profile?.full_name||'';
+      const onBehalfProfile=(selPM && selPM!==ssoFullName)
+        ? pmTeammateProfiles.find(p=>p.full_name===selPM)
+        : null;
+      const existing=existingPre;
       if(existing&&existing.id){
-        const patch={...zeroed,total_lf:0,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,ytd_applied:false,submitted_by:selPM,submitted_at:nowIso};
+        // EDIT — strip submitted_by, add audit trio
+        const patch={
+          ...zeroed,total_lf:0,
+          no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,
+          ytd_applied:false,submitted_at:nowIso,
+          last_edited_at:nowIso,
+          last_edited_by_user_id:ssoUserId,
+          edit_count:(existing.edit_count||0)+1,
+        };
         const saved=await sbPatchWhere('pm_bill_submissions', `id=eq.${existing.id}`, patch, { returnRepresentation: true });
         const rec=(Array.isArray(saved)?saved[0]:saved)||{...existing,...patch};
         setSubs(prev=>prev.map(s=>s.id===existing.id?{...rec,id:existing.id}:s));
       }else{
-        const payload={billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:0,...zeroed,no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,notes:'No bill required',ytd_applied:false,submitted_by:selPM,submitted_at:nowIso,ar_reviewed:false};
+        const payload={
+          billing_month:selMonth,job_id:job.id,job_number:job.job_number,job_name:job.job_name,
+          pm:selPM,market:job.market,style:job.style||null,color:job.color||null,height:job.height_precast||null,
+          adj_contract_value:parseFloat(job.adj_contract_value)||0,total_lf:0,
+          ...zeroed,
+          no_bill_required:true,no_bill_reason:reason,no_bill_notes:notes||null,notes:'No bill required',
+          ytd_applied:false,submitted_by:ssoFullName||selPM,submitted_at:nowIso,ar_reviewed:false,
+          submitted_by_user_id:ssoUserId,
+          filed_on_behalf_of_user_id:onBehalfProfile?.id||null,
+        };
         const saved=await sbPost('pm_bill_submissions', payload, { throwOnError: true });
         const rec=(Array.isArray(saved)?saved[0]:saved)||payload;
         setSubs(prev=>[rec,...prev]);
@@ -15693,7 +15777,11 @@ function CoPilotHome({onNav}){
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=job_id,invoice_amount,invoice_date&order=invoice_date.desc&limit=2000'),
       sbGet('install_rates','select=*&order=category.asc'),
-      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date&lf_panels_installed=gt.0'),
+      // 2026-05-06 (H1) — include submitted_at so we can dedup cross-PM filings
+      // for the same (job_id, report_date). Houston co-mgmt means Israel + Manuel
+      // can both legitimately file for 25H011/2026-04-30; without dedup the
+      // production rollups double-count LF.
+      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date,submitted_at&lf_panels_installed=gt.0&order=submitted_at.desc'),
       sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
       sbGet('proposal_validations','select=id,validated_at,validated_by_email,passed&order=validated_at.desc&limit=200'),
       sbGet('leads','select=id,sales_rep,stage,proposal_sent_date,proposal_value&proposal_sent_date=gte.'+new Date(Date.now()-30*86400000).toISOString().slice(0,10)),
@@ -15702,11 +15790,23 @@ function CoPilotHome({onNav}){
       // returns bottleneck_component + bottlenecked_lf_per_day per style. Source of truth for plant load.
       sbGet('v_mold_capacity','select=style_name,style_family,mold_inventory_alias,direct_molds,effective_pool_molds,shares_pool,panels_per_mold,panel_lf,theoretical_lf_per_day,bottlenecked_panels_per_day,bottlenecked_lf_per_day,bottleneck_component,posts_total,rails_total,caps_total,data_quality'),
     ]).then(([j,cl,inv,ir,r,ld,pv,ls30,rdy,mc])=>{
+      // H1: dedup pm_daily_reports by (job_id, report_date) — keep the most
+      // recent submission. Cross-PM filings on Houston co-mgmt jobs would
+      // otherwise double-count LF in the rollups below.
+      const dedupedReports=(()=>{
+        if(!Array.isArray(r))return[];
+        const seen=new Map();
+        for(const row of r){
+          const k=`${row.job_id||''}|${row.report_date||''}`;
+          if(!seen.has(k))seen.set(k,row); // input is submitted_at DESC → first wins
+        }
+        return[...seen.values()];
+      })();
       setJobs(Array.isArray(j)?j:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
       setInvoices(Array.isArray(inv)?inv:[]);
       setInstallRates(Array.isArray(ir)?ir:[]);
-      setReports(Array.isArray(r)?r:[]);
+      setReports(dedupedReports);
       setLeads(Array.isArray(ld)?ld:[]);
       setValidations(Array.isArray(pv)?pv:[]);
       setRecentProposals(Array.isArray(ls30)?ls30:[]);
@@ -16634,18 +16734,29 @@ function DemandPlanningPage(){
       sbGet('crew_leaders','select=*&active=eq.true'),
       sbGet('invoice_entries','select=invoice_amount,invoice_date,job_id&order=invoice_date.desc'),
       sbGet('install_rates','select=*&order=category.asc'),
-      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date&lf_panels_installed=gt.0'),
+      // H1 (2026-05-06) — dedup cross-PM filings via submitted_at DESC + post-process Map.
+      sbGet('pm_daily_reports','select=lf_panels_installed,fence_style,job_id,crew_leader_id,report_date,submitted_at&lf_panels_installed=gt.0&order=submitted_at.desc'),
       sbGet('leads','select=id,stage,market,proposal_value,estimated_lf,fence_type,win_probability,expected_close_date&stage=in.(proposal_sent,qualifying,new_lead)'),
       // v_mold_capacity: pre-computed bottleneck math (panels × 24/cure_time, posts/rails/caps).
       // Powers MoldsWhatIf simulator on the Capacity tab.
       sbGet('v_mold_capacity','select=style_name,mold_inventory_alias,direct_molds,effective_pool_molds,panels_per_mold,panel_lf,cure_time_hours,posts_total,rails_total,caps_total,bottleneck_component,bottlenecked_lf_per_day'),
     ]).then(([j,m,cl,inv,ir,r,ld,mc])=>{
+      // H1: dedup by (job_id, report_date), latest wins.
+      const dedupedReports=(()=>{
+        if(!Array.isArray(r))return[];
+        const seen=new Map();
+        for(const row of r){
+          const k=`${row.job_id||''}|${row.report_date||''}`;
+          if(!seen.has(k))seen.set(k,row);
+        }
+        return[...seen.values()];
+      })();
       setJobs(Array.isArray(j)?j:[]);
       setMolds(Array.isArray(m)?m:[]);
       setCrewLeaders(Array.isArray(cl)?cl:[]);
       setInvoices(Array.isArray(inv)?inv:[]);
       setInstallRates(Array.isArray(ir)?ir:[]);
-      setReports(Array.isArray(r)?r:[]);
+      setReports(dedupedReports);
       setLeads(Array.isArray(ld)?ld:[]);
       setMoldCapacity(Array.isArray(mc)?mc:[]);
       setLoading(false);
@@ -17664,17 +17775,48 @@ function PMDailyReportPage({jobs}){
   // Active filter matches CrewLeaderSelect so we don't include retired leaders.
   const[leadersRoster,setLeadersRoster]=useState([]);
   useEffect(()=>{sbGet('crew_leaders','select=id,name&active=eq.true').then(d=>setLeadersRoster(Array.isArray(d)?d:[]));},[]);
+  // 2026-05-06 — pm_team_visibility allow list (replaces JS PM_TEAM_VISIBILITY).
+  // The set holds user_ids of teammates whose reports the current SSO user can
+  // file/edit on behalf of. Symmetric pairs: Israel↔Manuel, Israel↔Jr,
+  // Hugo↔Manuel, Hugo↔Jr.
+  const[pmTeammateIds,setPmTeammateIds]=useState(()=>new Set());
+  const[pmTeammateProfiles,setPmTeammateProfiles]=useState([]);
+  useEffect(()=>{
+    if(!auth?.profile?.id)return;
+    sbGet('pm_team_visibility',`primary_user_id=eq.${auth.profile.id}&active=eq.true&select=on_behalf_user_id`)
+      .then(rows=>{
+        const ids=new Set((rows||[]).map(r=>r.on_behalf_user_id));
+        setPmTeammateIds(ids);
+        if(ids.size===0){setPmTeammateProfiles([]);return;}
+        const idList=[...ids].map(x=>`"${x}"`).join(',');
+        sbGet('user_profiles',`id=in.(${idList})&select=id,full_name,email`).then(p=>setPmTeammateProfiles(p||[]));
+      })
+      .catch(()=>{setPmTeammateIds(new Set());setPmTeammateProfiles([]);});
+  },[auth?.profile?.id]);
   const todayISO=new Date().toISOString().split('T')[0];
   const yesterdayISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
   // Texas-based: edit window is "same day in America/Chicago".
   const ctDateStr=(ts)=>{try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ts));}catch(e){return '';}};
   const ctTimeStr=(ts)=>{try{return new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'numeric',minute:'2-digit'}).format(new Date(ts));}catch(e){return '';}};
+  // 2026-05-06 — Authorship enforcement (C2). Edits are allowed only when:
+  //   • Admin, OR
+  //   • Current SSO user is the original submitter, OR
+  //   • Current SSO user filed it on someone's behalf, OR
+  //   • Current SSO user is in pm_team_visibility with the submitter (Houston co-mgmt).
+  // Date-window remains the secondary gate (same-day in America/Chicago).
+  const currentUserId=auth?.profile?.id;
   const canEditReport=(rpt)=>{
     if(!rpt)return false;
     if(isAdmin)return true;
     const ts=rpt.submitted_at||rpt.created_at;
-    if(!ts)return false;
-    return ctDateStr(ts)===ctDateStr(Date.now());
+    if(!ts||ctDateStr(ts)!==ctDateStr(Date.now()))return false;
+    if(!currentUserId)return false;
+    if(rpt.submitted_by_user_id===currentUserId)return true;
+    if(rpt.filed_on_behalf_of_user_id===currentUserId)return true;
+    // Team visibility check — caller pre-loads pmTeammateIds (Set of user_ids
+    // the current user is allowed to file/edit on behalf of).
+    if(pmTeammateIds && rpt.submitted_by_user_id && pmTeammateIds.has(rpt.submitted_by_user_id))return true;
+    return false;
   };
   const emptyForm=()=>({job_number:'',repair_location:'',job_type:'Commercial',crew:'',crew_leader_id:'',num_employees:'',daily_target:'',gate_style:'Precast',gate_height:'',num_gates_installed:'',num_holes_dug:'',num_posts_placed:'',lf_panels_installed:'',fence_style:'Precast',fence_height:'',num_cut_sections:'',num_sections_leveled:'',lf_panels_washed:'',precast_style_onsite:'',drill_piercing_lf:'',num_columns_laid_out:'',num_columns_34_built:'',num_columns_capped:'',lf_panels_shoulder:'',lf_panels_completed:'',lf_precast:'',lf_single_wythe:'',lf_wrought_iron:'',machinery_used:localStorage.getItem('last_machinery')||'',soil_type:'Soil',soil_quality:'3',terrain_rating:'3',weather_condition:'',weather_temp_f:'',weather_notes:'',delay_reason:'None',delay_time:'None',lf_impacted_delays:'',num_defective_panels:'',num_defective_posts:'',other_defective_materials:'',delay_notes:'',general_notes:'',submitted_by:selPM,report_date:todayISO,photos:[]});
   const reportToForm=(r)=>{
@@ -17840,24 +17982,40 @@ function PMDailyReportPage({jobs}){
       weather_temp_f:form.weather_temp_f?n(form.weather_temp_f):null,
       weather_notes:form.weather_notes||null,
       general_notes:form.general_notes||null,
-      submitted_by:selPM||form.submitted_by,
+      // 2026-05-06 — Authorship from SSO (C2). Author is always the logged-in user.
+      // If the user picked a teammate's tile (selPM ≠ own full_name), this is a
+      // legitimate "filing on behalf of" — record both the author and the on-behalf
+      // target. The DB trigger trg_pmd_enforce_on_behalf validates the pair.
+      submitted_by:auth?.profile?.full_name||selPM||form.submitted_by,
       photos:Array.isArray(form.photos)&&form.photos.length?form.photos:null,
     };
     if(form.machinery_used)localStorage.setItem('last_machinery',form.machinery_used);
+    // Resolve filed_on_behalf_of_user_id: only set when selPM points to a teammate.
+    const onBehalfProfile=(selPM && selPM!==auth?.profile?.full_name)
+      ? pmTeammateProfiles.find(p=>p.full_name===selPM)
+      : null;
     const isEdit=!!editingReport;
     try{
       if(isEdit){
         if(!canEditReport(editingReport))throw new Error('Edit window closed');
+        // C2: submitted_by_user_id is immutable on edits (DB trigger enforces).
+        // Don't include it in the PATCH body. last_edited_by_user_id is the SSO user.
+        const{submitted_by:_omitSubmittedBy,...rest}=body;
         const patchBody={
-          ...body,
+          ...rest,
           last_edited_at:new Date().toISOString(),
-          last_edited_by:currentUserEmail||(selPM||form.submitted_by||''),
+          last_edited_by:currentUserEmail||auth?.profile?.full_name||'',
           edit_count:(editingReport.edit_count||0)+1,
         };
         await sbPatch('pm_daily_reports',editingReport.id,patchBody);
         setToast({message:'Report updated',isError:false});
       }else{
-        const insertBody={...body,submitted_at:new Date().toISOString()};
+        const insertBody={
+          ...body,
+          submitted_at:new Date().toISOString(),
+          submitted_by_user_id:auth?.profile?.id||null,
+          filed_on_behalf_of_user_id:onBehalfProfile?.id||null,
+        };
         await sbPost('pm_daily_reports', insertBody, { throwOnError: true });
         setToast({message:'Report submitted',isError:false});
       }
@@ -19590,7 +19748,18 @@ function MapPage({ jobs, onNav }) {
     { val: 'all', label: 'All', group: 'all' }
   ];
 
-  return <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', gap: 8 }}>
+  // 2026-05-06 — Fit the map page to the ACTUAL available area instead of
+  // hardcoding `calc(100vh - 80px)`. The old number assumed only the Topbar
+  // (~64px) and ignored the parent page-wrapper's padding (24px top + 24px
+  // bottom on desktop, 20+20 on tablet, 12+12 on mobile + bottom-nav buffer).
+  // The mismatch made the map ~32px taller than its container on desktop;
+  // Mapbox's wheel-zoom then ate scroll events, making the page feel locked.
+  // Using 100dvh so iOS Safari's dynamic chrome doesn't push the map past the
+  // viewport on mobile.
+  const mapPageHeight = isMobile
+    ? 'calc(100dvh - 88px - 72px)'   // topbar + bottom nav
+    : 'calc(100dvh - 112px)';        // topbar + 48px desktop/tablet padding
+  return <div style={{ display: 'flex', flexDirection: 'column', height: mapPageHeight, minHeight: 480, gap: 8 }}>
     {/* Header bar with horizon slider */}
     <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div>
