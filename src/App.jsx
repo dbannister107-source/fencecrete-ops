@@ -5688,7 +5688,23 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
   const markReviewedInline=async(sub, override)=>{
     const info=arInvByJob[sub.job_id]||{count:0,total:0};
     const reviewer=currentUserEmail||'AR';
-    const addAmount = info.total||n(sub.invoiced_amount)||0;
+    // 2026-05-05 — Opening Balance double-count fix.
+    //
+    // Bug: every legacy job has an "Opening Balance - Prior Invoices
+    // (migrated from legacy YTD)" entry in invoice_entries. That row is
+    // already rolled into ytd_invoiced via trg_recalc_ytd_invoiced.
+    // The old logic took the WORST-CASE of (info.total OR sub.invoiced_amount)
+    // and treated it as "what approval would add" — but if invoice_entries
+    // for the month already exist (Opening Balance, prior manual entries),
+    // they're already in YTD. Approval only ADDS the delta between the
+    // submission's own invoiced_amount and what's already entered.
+    //
+    // April symptom: every "1 invoice entered" row in the AR Pending list
+    // tripped the over-bill block because the check was double-counting
+    // the migration entry against itself. 21 false-positive matches in
+    // April alone.
+    const subAmt = n(sub.invoiced_amount);
+    const addAmount = subAmt > info.total ? (subAmt - info.total) : 0;
     const job = jobs.find(j=>j.id===sub.job_id);
     // Guard: block if this approval would push billed % above OVERBILL_THRESHOLD_PCT,
     // unless caller already passed override flag (from the typed-confirmation modal).
