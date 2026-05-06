@@ -38,24 +38,21 @@ Each role hands off cleanly to the next. No emails, no Excel files, no Power Aut
 
 ### Money group → Scope tab
 
-4. **Line Items** are pre-seeded from the contract setup (qty / category / fence_type / height).
-5. **Pricing Book** auto-seeds from Line Items the first time you click Save — review the generated rates:
-   - `price_per_unit` — total customer rate (LF for fence, EA for gates, LS for permits/bonds)
-   - `labor_per_unit` — labor portion (used to split tax basis)
-   - `tax_basis_per_unit` — height-derived ($23 at 4ft → $31.75 at 10ft)
-   - **Save Lines** commits.
+4. **Line Items** are pre-seeded from the contract setup (qty / category / fence_type / height / unit price). Verify each row.
+5. The **Labor / Unit** and **Tax Basis / Unit** columns auto-fill from height and style. No separate Pricing Book to maintain — the system derives the split automatically (precast: $23 basis at 4ft up to $31.75 at 10ft; gates: 66% labor; permits/bonds: 100% labor).
+6. Click **Save Lines**.
 
 ### Whenever a Change Order comes in
 
-6. Open the job → **Scope tab → Change Orders card.**
-7. Add the CO with description, amount, customer signature reference.
-8. **Add CO Line Items + CO Pricing Book rows** inside the CO card (same auto-seed logic). This is the gap that historically caused over-billing — without CO pricing rows, Virginia's draft engine doesn't know the new scope exists.
-9. Mark the CO **Approved** when signed (only Amiee can do this).
+7. Open the job → **Scope tab → Change Orders card.**
+8. Add the CO with description, amount, customer signature reference.
+9. Add **CO Line Items** inside the CO card (same auto-derive applies — labor/tax_basis fill automatically).
+10. Mark the CO **Approved** when signed (only Amiee can do this).
 
 ### What changes if Amiee skips a step
 
-- **No Pricing Book** → Virginia's draft is empty; she has to bill manually.
-- **CO entered but no CO Pricing Book** → Adjusted Contract Value goes up but the engine has no rows to bill against; Virginia hits over-bill blocks.
+- **No Line Items** → Virginia's draft is empty; she has to bill manually.
+- **CO entered but no CO Line Items** → Adjusted Contract Value goes up but the engine has no rows to bill against; Virginia hits over-bill blocks.
 - **CO not marked Approved** → Adjusted Contract Value doesn't include it; legitimate billing trips the over-bill block.
 
 ---
@@ -164,7 +161,7 @@ This is the answer to "where can I see the history?" — one modal, full chain, 
 
 | Role | Before | Now |
 |---|---|---|
-| **Amiee** | Set contract value + COs in Excel; no link to billing | Pricing Book + CO sub-pricing in OPS feeds Virginia's draft engine directly. CO setup is now a forcing function — skip it and Virginia's draft fails. |
+| **Amiee** | Set contract value + COs in Excel; no link to billing | Line Items in OPS feed Virginia's draft engine directly. Labor / tax_basis split auto-derives from height + style + unit price (no Pricing Book to maintain). CO setup is a forcing function — skip it and Virginia's draft fails. |
 | **PM** | Submit monthly bill sheet | **No change.** Same submission, same form, same fields. |
 | **Virginia** | Open Excel "Acct Sheet" template per job → manually plug PM numbers in → File invoice in QuickBooks | Open Accounting tab → review auto-generated draft → click File Invoice. App Ledger replaces the per-job Excel file. Drill-down modal replaces "where did this number come from?" digging. |
 
@@ -189,4 +186,4 @@ A: Open the App row drill-down. The PM Bill Sheet Source panel shows exactly wha
 
 ---
 
-*Document version: v2 (May 2026). Supersedes `billing-workflow.md` for end-user guidance; the older doc remains for historical reference. Built alongside the May 2026 Accounting System launch.*
+*Document version: v2.1 (May 2026). Supersedes `billing-workflow.md` for end-user guidance; the older doc remains for historical reference. Built alongside the May 2026 Accounting System launch. v2.1 reflects the Pricing Book retirement (Option C) — labor / tax_basis split now auto-derives from Line Items, no separate price book to maintain.*

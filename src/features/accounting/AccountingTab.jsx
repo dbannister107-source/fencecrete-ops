@@ -531,9 +531,8 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
         .filter(c => Number(c.current_qty) !== 0 && Number(c.current_total) !== 0)
         .map(c => ({
           invoice_application_id:   app.id,
-          // 2026-05-05 (Option C — Phase 1): write to the new bridge
-          // column. job_pricing_line_id stays null going forward; Phase 2
-          // drops it. c.pricing_line_id now contains the job_line_items.id.
+          // The engine's c.pricing_line_id holds the job_line_items.id
+          // (set by normalizeLineItem during the calc pass).
           job_line_item_id:         c.pricing_line_id,
           stage_key:                c.stage_key,
           cumulative_qty:           c.cumulative_qty,

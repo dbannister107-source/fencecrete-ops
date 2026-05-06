@@ -199,16 +199,12 @@ export function computeDraftCells({
     weightsByCategory[w.category].push(w);
   });
 
-  // Index prior cumulative qty per (pricing_line_id, stage_key).
+  // Index prior cumulative qty per (job_line_item_id, stage_key).
   // Multiple prior apps can have lines for the same cell; cumulative_qty
   // is monotonically non-decreasing across apps, so MAX = latest.
-  // 2026-05-05 (Option C — Phase 1): the FK column is now
-  // `job_line_item_id` (legacy `job_pricing_line_id` falls back for any
-  // pre-cutover rows; both will be empty in production until first File).
   const priorCumByCell = {};
   priorAppLines.forEach((pl) => {
-    const lineId = pl.job_line_item_id || pl.job_pricing_line_id;
-    const k = `${lineId}|${pl.stage_key}`;
+    const k = `${pl.job_line_item_id}|${pl.stage_key}`;
     const v = NUM(pl.cumulative_qty);
     if (priorCumByCell[k] == null || v > priorCumByCell[k]) priorCumByCell[k] = v;
   });
@@ -295,8 +291,7 @@ export function aggregateDraftTotals({ draftLines = [], retainagePct = 0 } = {})
 export function computePerLineSummary({ pricingLines = [], priorAppLines = [], draftLines = [] } = {}) {
   const priorTotalById = {};
   priorAppLines.forEach((pl) => {
-    const lineId = pl.job_line_item_id || pl.job_pricing_line_id;
-    priorTotalById[lineId] = NUM(priorTotalById[lineId]) + NUM(pl.current_total);
+    priorTotalById[pl.job_line_item_id] = NUM(priorTotalById[pl.job_line_item_id]) + NUM(pl.current_total);
   });
 
   const draftTotalById = {};
@@ -438,20 +433,14 @@ export function validateAcctSheet({
 
 export function computeAcctSheet({
   job = {},
-  // 2026-05-05 (Option C — Phase 1) — new canonical input. `pricingLines`
-  // is kept as a legacy alias so existing test fixtures + any in-flight
-  // callers keep working through the cutover. After Phase 2 the alias
-  // disappears.
-  lineItems,
-  pricingLines: legacyPricingLines,
+  lineItems = [],
   effectiveWeights = [],
   pmSubmission = null,
   priorAppLines = [],
   priorApps = [],
   cycleOverrides = {},
 } = {}) {
-  const rawLines = lineItems != null ? lineItems : (legacyPricingLines || []);
-  const pricingLines = rawLines.map(normalizeLineItem);
+  const pricingLines = lineItems.map(normalizeLineItem);
 
   const apportioned = apportionPmSubmission({ pmSubmission, pricingLines });
   const cumulativeQtys = mergeCumulativeQtys(apportioned, cycleOverrides);

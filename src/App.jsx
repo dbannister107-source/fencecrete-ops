@@ -62,15 +62,12 @@ import { convertHeicIfNeeded, usePasteUpload } from './shared/upload';
 // where both forms can arrive (PIS flow, deep-link params).
 import { resolveJobId } from './shared/jobs';
 
-// MoneyInput — currency-formatted input. Lived inline in this file until
-// 2026-05-05; extracted to shared/ui.js so the new JobPricingEditor can
-// import the same component without copy-paste drift.
+// MoneyInput — currency-formatted input.
 import { MoneyInput } from './shared/ui';
 
-// Tax-basis lookups for the Acct Sheet. Same numbers that used to be
-// inline literals in computedSalesTax (and a near-twin in NewProjectForm)
-// — single source of truth so the new Pricing editor + sales tax memo
-// + Phase C calc engine all agree.
+// Tax-basis lookups for the Acct Sheet. Single source of truth shared by
+// the sales tax memo, NewProjectForm computedSalesTax, the Phase C calc
+// engine, and the trg_jli_derive_split DB trigger.
 import { HEIGHT_BASIS, STYLE_BASIS, TAX_RATE } from './shared/billing/heightBasis';
 
 // Proactive duplicate-billing detection. Reused by the AR Over-Bill Block
@@ -78,13 +75,6 @@ import { HEIGHT_BASIS, STYLE_BASIS, TAX_RATE } from './shared/billing/heightBasi
 // threshold, run the same heuristics the new Accounting tab uses to give
 // AR specific guidance (vs. the generic "common causes" list).
 import { detectDoubleCounting } from './shared/billing/detectDoubleCounting';
-
-// 2026-05-05 (Option C — Phase 1): JobPricingEditor unmounted. The Pricing
-// Book table (job_pricing_lines) collapsed into job_line_items as the
-// single source of truth — labor/tax_basis split is now derived by the
-// trg_jli_derive_split trigger. Import kept commented for one cycle so a
-// quick revert is trivial; Phase 2 deletes the file entirely.
-// import JobPricingEditor from './features/accounting/JobPricingEditor';
 
 // Acct Sheet / Billing Engine Phase D — user-facing Accounting tab.
 // Replaces Virginia's manual Excel "Acct Sheet" with a native OPS
@@ -1195,7 +1185,7 @@ const SECS=[
   // ─── Money (contract + billing) ───
   // 2026-05-05 (P0 restructure) — collapsed 6 Money tabs into 3 to retire
   // redundancy and give Amiee + Virginia a clearer pipeline:
-  //   Contract  = setup metadata + Pricing Book      (Amiee's setup workspace)
+  //   Contract  = setup metadata                      (Amiee's setup workspace)
   //   Scope     = Line Items + CO cards + Totals     (Amiee's contract scope)
   //   Accounting = billing execution                  (Virginia's monthly work)
   // Removed: pricing, lineitems, totals, co tab keys (folded into Contract +
@@ -1331,11 +1321,6 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
   const[confirmDel,setConfirmDel]=useState(null);
-  // 2026-05-05 (P1 #6): pricing-line FK support. The dropdown column on each
-  // line row reads from this pool; auto-link helper picks the unambiguous
-  // match by (category, height, style). Same scope filter as loadLines —
-  // CO scope sees CO pricing only, main contract sees main pricing only.
-  const[availablePricingLines,setAvailablePricingLines]=useState([]);
   /* Style and color options come from the canonical `styles` / `colors`
      lookup tables via the CatalogContext. Options are filtered by the line's
      fence_type; if the row carries a legacy value not in the canonical list
@@ -1358,53 +1343,6 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
     setLoading(false);
   },[job?.job_number,coId]);
   useEffect(()=>{loadLines();},[loadLines]);
-
-  // 2026-05-05 (P1 #6): fetch available pricing lines for this scope so the
-  // Pricing Link dropdown can populate. Same coId-aware filter as loadLines
-  // — CO scope sees CO pricing rows, main contract sees main pricing rows.
-  useEffect(()=>{
-    if(!job?.id){setAvailablePricingLines([]);return;}
-    const filter=coId
-      ?`co_id=eq.${coId}&order=line_number.asc&select=id,label,category,height,style,unit,price_per_unit`
-      :`job_id=eq.${job.id}&co_id=is.null&order=line_number.asc&select=id,label,category,height,style,unit,price_per_unit`;
-    sbGet('job_pricing_lines',filter)
-      .then(rows=>setAvailablePricingLines(Array.isArray(rows)?rows:[]))
-      .catch(()=>setAvailablePricingLines([]));
-  },[job?.id,coId]);
-
-  // 2026-05-05 (P1 #6): map from job_line_items.fence_type → job_pricing_lines.category.
-  // Lets autoLinkPricingLine and the dropdown filter restrict the candidate
-  // pool to pricing rows of the right category for the line's type.
-  const FENCE_TYPE_TO_PRICING_CATEGORY={
-    PC:'precast',
-    SW:'sw',
-    WI:'sw',
-    Gate:'wi_gate',
-    Permit:'permit',
-    'P&P Bond':'bond',
-    'Maint Bond':'bond',
-    Insurance:'bond',
-    'Lump Sum':'option',
-    Columns:'option',
-    'Gate Controls':'option',
-  };
-  const _normH=(h)=>String(h||'').replace(/['"]/g,'').trim().toLowerCase();
-  const _normS=(s)=>String(s||'').trim().toLowerCase();
-  // Returns the pricing_line_id of the unambiguous match (exactly 1 candidate)
-  // for a line, or null when there's no match / multiple matches.
-  const autoLinkPricingLine=(line,pool)=>{
-    // M3 fix (2026-05-05): early-out when the pool is empty so we don't
-    // run the filter on every keystroke for jobs without a Pricing Book.
-    if(!Array.isArray(pool)||pool.length===0)return null;
-    const cat=FENCE_TYPE_TO_PRICING_CATEGORY[line?.fence_type];
-    if(!cat)return null;
-    const lh=_normH(line.height);
-    const ls=_normS(line.style);
-    const matches=pool.filter(p=>p.category===cat
-      &&_normH(p.height)===lh
-      &&_normS(p.style)===ls);
-    return matches.length===1?matches[0].id:null;
-  };
 
   // Combined map for non-fence types — used by updateLine to set taxable +
   // category + clear non-applicable fields when the user switches type.
@@ -1442,19 +1380,6 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
     // to the unambiguous matching pricing row. Skip when user has already
     // chosen a link explicitly (don't clobber explicit selections).
     //
-    // M1 fix (2026-05-05): when fence_type changes, the existing link may
-    // now point at a row of the wrong category (e.g. line was 'PC' linked
-    // to a precast row, user switches to 'Gate' → link now stale). Clear
-    // it so the auto-link below can re-evaluate from the new tuple.
-    if(field==='fence_type'&&next.pricing_line_id){
-      const linked=availablePricingLines.find(p=>p.id===next.pricing_line_id);
-      const newCat=FENCE_TYPE_TO_PRICING_CATEGORY[next.fence_type];
-      if(linked&&linked.category!==newCat)next.pricing_line_id=null;
-    }
-    if(['fence_type','height','style'].includes(field)&&!next.pricing_line_id){
-      const auto=autoLinkPricingLine(next,availablePricingLines);
-      if(auto)next.pricing_line_id=auto;
-    }
     return next;
   }));setDirty(true);};
   const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',co_id:coId||null,line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
@@ -1572,7 +1497,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
         const l=lines[i];
         if(!l._touched)continue;
         const lineNum=i+1;
-        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false,pricing_line_id:l.pricing_line_id||null};
+        const body={job_id:job.id,job_number:job.job_number,co_id:coId||null,line_number:lineNum,fence_type:l.fence_type||'PC',lf:n(l.lf),height:l.height?String(l.height):null,style:l.style||null,color:l.color||null,contract_rate:n(l.contract_rate),description:l.description||null,is_produced:l.is_produced!==false};
         if(l._new){await sbPost('job_line_items',body);}
         else{await sbPatch('job_line_items',l.id,body);}
       }
@@ -1624,7 +1549,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
   // M2 fix (2026-05-05): emit dirty-state changes to parent so each CO
   // card can render an "unsaved changes" warning banner before collapse.
   // Ref pattern avoids re-running the effect when the parent passes a
-  // fresh callback per render. Same shape as JobPricingEditor's hook.
+  // fresh callback per render.
   const onDirtyChangeRef=useRef(onDirtyChange);
   onDirtyChangeRef.current=onDirtyChange;
   useEffect(()=>{
@@ -1743,11 +1668,6 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
                   {l.tax_basis_per_unit==null?'—':$(l.tax_basis_per_unit)}
                 </div>
               </div>
-              {/* 2026-05-05 (Option C — Phase 1): Pricing Link column hidden.
-                  job_pricing_lines is being retired (zero production rows);
-                  the FK column on job_line_items will be dropped in Phase 2.
-                  The dropdown is left in the React tree as null so Phase 2
-                  removal is a single-line cleanup. */}
             </div>
             {/* Row 2: Style, Color, Produced — only on fence types */}
             {!isNonFence&&<div style={row2Style}>
@@ -2063,31 +1983,17 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   // parent's handleSave so clicking top "Save" also commits line item edits.
   const lineItemsSaveRef=useRef(null);
 
-  // Ref held by JobPricingEditor (2026-05-05, Acct Sheet Phase B). Same
-  // registerSave hook pattern as lineItemsSaveRef. handleSave below calls
-  // pricing first, then line items, so a single click commits both.
-  const pricingSaveRef=useRef(null);
-
-  // 2026-05-05 (P0 restructure): per-CO save refs. Each CO card on the
-  // new Scope tab mounts its own LineItemsEditor (existing) AND its own
-  // JobPricingEditor (new — closes the Phase E gap from the bug sweep).
-  // handleSave iterates these maps before saving the main contract so
-  // a single top-level Save commits everything.
+  // Per-CO save refs. Each CO card on the Scope tab mounts its own
+  // LineItemsEditor; handleSave iterates this map before saving the main
+  // contract so a single top-level Save commits everything.
   //   coLineItemSaveRefs.current = { [co_id]: saveAllFn }
-  //   coPricingSaveRefs.current  = { [co_id]: saveAllFn }
   const coLineItemSaveRefs=useRef({});
-  const coPricingSaveRefs=useRef({});
-  // M2 fix (2026-05-05): track per-CO dirty state for the embedded
-  // editors so each card can render an "unsaved changes" warning banner
-  // before the user collapses it. Shape: { [co_id]: { lineItems: bool, pricing: bool } }.
-  // Either branch true → banner shows. Cleared to false on save (each
-  // editor's setDirty(false) → onDirtyChange(false) → setter here).
+  // M2 fix (2026-05-05): track per-CO dirty state so each card can render
+  // an "unsaved changes" warning banner before the user collapses it.
+  // Shape: { [co_id]: { lineItems: bool } }. Cleared to false on save.
   const[coEditorDirty,setCoEditorDirty]=useState({});
   const setCoLineDirty=useCallback((coId,dirty)=>{
     setCoEditorDirty(prev=>({...prev,[coId]:{...(prev[coId]||{}),lineItems:dirty}}));
-  },[]);
-  const setCoPricingDirty=useCallback((coId,dirty)=>{
-    setCoEditorDirty(prev=>({...prev,[coId]:{...(prev[coId]||{}),pricing:dirty}}));
   },[]);
 
   // Bonding derivation (2026-05-05): replaces the legacy partiesDraft.bonding_required
@@ -2606,7 +2512,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     }catch(e){setSaveErr('Reopen failed: '+e.message);}
     setReopening(false);
   };
-  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* 2026-05-05 (P0 restructure): commit per-CO Pricing + Line Item edits BEFORE the main contract's pricing + line items. Order matters because the main contract's recompute aggregator reads CO state. Each CO card on the Scope tab registers its own save fns into coPricingSaveRefs / coLineItemSaveRefs maps, keyed by co_id. Iterate both before falling through to main-contract saves. */for(const fn of Object.values(coPricingSaveRefs.current||{})){if(typeof fn==='function'){try{await fn();}catch(coPrErr){console.error('[EditPanel] CO pricing save failed:',coPrErr);setSaveErr('CO pricing save failed: '+coPrErr.message);setSaving(false);return;}}}for(const fn of Object.values(coLineItemSaveRefs.current||{})){if(typeof fn==='function'){try{await fn();}catch(coLiErr){console.error('[EditPanel] CO line items save failed:',coLiErr);setSaveErr('CO line items save failed: '+coLiErr.message);setSaving(false);return;}}}/* 2026-05-05: commit pending Pricing-editor edits before line items so the price book is fresh when downstream calc engines (Phase C+) read it. Mirrors the lineItemsSaveRef pattern below — clean = no-op; throw aborts the project-level save. */if(typeof pricingSaveRef.current==='function'){try{await pricingSaveRef.current();}catch(prErr){console.error('[EditPanel] Pricing save failed:',prErr);setSaveErr('Pricing save failed: '+prErr.message);setSaving(false);return;}}/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with what the read-only top-of-Contract&Billing display shows. trg_recalc_adj_contract reads sales_tax_amount, so this also keeps adj_contract_value correct. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;const saved=await sbPost('jobs',rest,{throwOnError:true});if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','ntp_issued_date','ntp_received_date','ntp_received_by','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);/* contract_age is computed live from contract_date in the Dates tab — never PATCH it from form state, since stale values can drift wildly (Amiee's LOCI - Section 3 showed -46049 from a prior corruption that was being re-saved on every edit). */delete rest.contract_age;/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with the read-only top-of-Contract&Billing display. trg_recalc_adj_contract reads sales_tax_amount and recomputes adj_contract_value. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
+  const handleSave=async()=>{setSaving(true);setSaveErr(null);try{/* Commit per-CO line item edits BEFORE the main contract so the recompute aggregator sees fresh CO state. Each CO card on the Scope tab registers its saveAll into coLineItemSaveRefs keyed by co_id. */for(const fn of Object.values(coLineItemSaveRefs.current||{})){if(typeof fn==='function'){try{await fn();}catch(coLiErr){console.error('[EditPanel] CO line items save failed:',coLiErr);setSaveErr('CO line items save failed: '+coLiErr.message);setSaving(false);return;}}}/* First, commit any dirty line item edits. The LineItemsEditor registers a saveIfDirty() hook via the registerSave prop; if lines are clean this is a no-op. If lines are dirty and the save throws, we propagate up so the project-level save is aborted. */if(typeof lineItemsSaveRef.current==='function'){try{await lineItemsSaveRef.current();}catch(liErr){console.error('[EditPanel] Line items save failed:',liErr);setSaveErr('Line items save failed: '+liErr.message);setSaving(false);return;}}if(isNew){const{id,created_at,updated_at,...rest}=form;if(!rest.job_name){setSaving(false);return;}if(!rest.status)rest.status='contract_review';rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with what the read-only top-of-Contract&Billing display shows. trg_recalc_adj_contract reads sales_tax_amount, so this also keeps adj_contract_value correct. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;const saved=await sbPost('jobs',rest,{throwOnError:true});if(saved&&saved[0]){fireAlert('new_job',saved[0]);logAct(saved[0],'job_created','','',saved[0].job_number);}}else{const{id,created_at,updated_at,...rest}=form;rest.fence_addons=syncFenceAddons(rest);['number_of_gates','gate_controls_qty','lump_sum_amount','gate_rate','estimated_value','lf_precast','lf_single_wythe','lf_wrought_iron','adj_contract_value','contract_value','bonds_amount','permits_amount','pp_bond_amount','maint_bond_amount','sales_tax_amount'].forEach(f=>{if(rest[f]===''||rest[f]===undefined)rest[f]=null;else if(rest[f]!==null)rest[f]=Number(rest[f])||null;});const VALID_JOB_COLS=new Set(['deal_id','contact_id','job_number','job_name','customer_name','market','address','city','state','zip','job_type','fence_type','product','lf_precast','lf_single_wythe','lf_wrought_iron','lf_other','total_lf','style','color','height','contract_value','change_orders','adj_contract_value','sales_tax','contract_date','billing_method','billing_date','billing_trigger','billing_day_of_month','sales_rep','status','est_start_date','production_start_date','production_complete_date','install_start_date','install_complete_date','ytd_invoiced','last_billed','left_to_bill','pct_billed','pm','pm_folder_setup','notes','cust_number','documents_needed','file_location','height_precast','contract_rate_precast','height_single_wythe','contract_rate_single_wythe','style_single_wythe','height_wrought_iron','contract_rate_wrought_iron','lf_removal','height_removal','removal_material_type','contract_rate_removal','height_other','other_material_type','contract_rate_other','number_of_gates','gate_height','gate_description','gate_rate','lump_sum_amount','lump_sum_description','average_height_installed','total_lf_removed','net_contract_value','active_entry_date','complete_date','ntp_issued_date','ntp_received_date','ntp_received_by','billing_alert_sent_30','billing_alert_sent_60','billing_alert_sent_90','included_on_billing_schedule','included_on_lf_schedule','average_height_removed','contract_month','start_month','complete_month','aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing','labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_panels','sw_complete','wi_gates','wi_fencing','wi_columns','line_bonds','line_permits','remove_existing','gate_controls','retainage_pct','retainage_held','collected','collected_date','final_invoice_amount','ready_to_install_date','in_install_date','lat','lng','primary_fence_type','fence_addons','inventory_ready_date','active_install_date','fence_complete_date','fully_complete_date','closed_date','material_posts_line','material_posts_corner','material_posts_stop','material_post_height','material_panels_regular','material_panels_half','material_panels_bottom','material_panels_top','material_rails_regular','material_rails_top','material_rails_bottom','material_rails_center','material_caps_line','material_caps_stop','material_calc_date','material_calc_lf','material_calc_height','material_calc_style','produced_panels','produced_posts','produced_rails','produced_caps','produced_lf','production_complete','lf_installed_to_date','lf_last_billed_date','pct_lf_complete','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','cancellation_reason','cancellation_notes','canceled_date','canceled_by','sw_accent_columns','sw_large_columns','precast_other_lf','sw_other_lf','one_line_other_lf','bonds_amount','permits_amount','gate_controls_qty','permit_amount','pp_bond_amount','maint_bond_amount','tax_exempt','sales_tax_amount','lf_wood','company_id']);Object.keys(rest).forEach(k=>{if(!VALID_JOB_COLS.has(k))delete rest[k];});/* Defense-in-depth: never PATCH line-item-derived LF rollup fields from EditPanel form state. The LineItemsEditor.recomputeJobFromLines aggregator is the only writer of these fields on jobs. If the form has stale values (e.g., panel was opened before line items were updated), letting handleSave write them would clobber the correct DB rollup. The Totals tab UI marks these fields "Auto" and reads them from form, but writing them back to DB is reserved to the aggregator path. Caused the 25H046 (Emberly Sec 8-11) bug Amiee reported on 2026-04-28: SW LF was 8210 in line items + DB, but Totals tab showed 1,236 (stale). number_of_gates is intentionally NOT stripped here — it's still editable from the Gates & Extras tab as a manual override. */const DERIVED_LINE_ITEM_FIELDS=['total_lf','total_lf_precast','total_lf_masonry','total_lf_wrought_iron','lf_precast','lf_single_wythe','lf_wrought_iron','lf_wood','lf_other'];DERIVED_LINE_ITEM_FIELDS.forEach(k=>delete rest[k]);/* contract_age is computed live from contract_date in the Dates tab — never PATCH it from form state, since stale values can drift wildly (Amiee's LOCI - Section 3 showed -46049 from a prior corruption that was being re-saved on every edit). */delete rest.contract_age;/* 2026-05-05: stamp sales_tax + sales_tax_amount from the canonical computedSalesTax memo so the DB stays in lockstep with the read-only top-of-Contract&Billing display. trg_recalc_adj_contract reads sales_tax_amount and recomputes adj_contract_value. */rest.sales_tax_amount=computedSalesTax;rest.sales_tax=computedSalesTax;await sbPatch('jobs',job.id,rest);fireAlert('job_updated',{id:job.id,...rest});logAct(job,'field_update','multiple_fields','','saved');try{const fresh=await sbGet('jobs',`id=eq.${job.id}&limit=1`);if(fresh&&fresh[0])setForm(p=>({...p,...fresh[0]}));}catch(e){}}setSaving(false);onSaved(isNew?'Project created':'Project saved');}catch(e){console.error('[EditPanel] Save failed:',e);setSaveErr(e.message);setSaving(false);}};
   const handleSaveInstallDateOnly=async()=>{
     /* Narrow save path for sales reps and PMs who can edit Install Date but
        nothing else. Patches est_start_date only -- no other column is sent to
@@ -2980,12 +2886,11 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             {days!=null&&<div style={{gridColumn:'1 / -1'}}><span style={{color:'#9E9B96'}}>Days to close:</span> <b>{days}d</b></div>}
           </div>
         </div>;})()}
-        {/* 2026-05-05 (P0 restructure): the standalone 'pricing' and 'lineitems'
-            render branches were removed — Pricing Book is now mounted on the
-            Contract tab below the Readiness card; main-contract LineItemsEditor
-            now lives at the top of the Scope tab alongside CO cards + Totals.
-            REMOVED_TAB_REDIRECTS in the EditPanel useEffect handles any stale
-            tab key landing here. */}
+        {/* 2026-05-05: the standalone 'pricing' and 'lineitems' render
+            branches were removed when the Money group was collapsed to 3
+            tabs. Main-contract LineItemsEditor now lives at the top of
+            the Scope tab alongside CO cards + Totals. REMOVED_TAB_REDIRECTS
+            in the EditPanel useEffect handles any stale tab key landing here. */}
         {tab==='accounting'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to bill.</div>:<AccountingTab job={job} canEdit={canEdit} currentUserEmail={currentUserEmail}/>):tab==='tasks'?(isNew?<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Save the project first, then return to add tasks.</div>:<TaskTile scope={{job_id:job?.id}} title="Tasks for this Project"/>):tab==='history'?<><ActivityHistory jobId={job?.id}/>{job?.id&&<JobDiagnostic jobId={job.id}/>}</>:tab==='pis'?<div style={{padding:'4px 0'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
             <div><div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Information Sheet</div><div style={{fontSize:11,color:'#625650',marginTop:2}}>Pursuant to Section 53.159 of the Texas Property Code</div></div>
@@ -3485,9 +3390,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         </div>:tab==='scope'?<div style={{padding:'4px 0'}}>
           {/* 2026-05-05 (P0 restructure): unified Scope tab.
               Top    = Original Contract line items (was the "Line Items" tab)
-              Middle = Change Order cards, each with its own LineItemsEditor +
-                       JobPricingEditor scoped by co_id (was the "Change Orders"
-                       tab; now closes the Phase E sub-pricing gap)
+              Middle = Change Order cards, each with its own LineItemsEditor
+                       (was the "Change Orders" tab)
               Bottom = Totals strip (was the "Totals" tab; reduced to a strip)
               Replaces 4 standalone tabs with 1 cohesive scope view. */}
 
@@ -3629,13 +3533,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       onDirtyChange={(d)=>setCoLineDirty(c.id,d)}
                     />
 
-                    {/* 2026-05-05 (Option C — Phase 1): CO Pricing Book
-                        retired. CO line items + their unit_price drive
-                        the Acct Sheet calc engine directly via the
-                        trg_jli_derive_split trigger (same labor/tax_basis
-                        derivation that fired on Phase B's pricing rows).
-                        coPricingSaveRefs is left as a no-op map for one
-                        cycle; Phase 2 cleans it up. */}
                   </div>}
 
                   {/* Contract Summary — auto-computed */}
@@ -4066,14 +3963,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                     a third copy. */}
               </>;
             })()}
-
-            {/* 2026-05-05 (Option C — Phase 1): Pricing Book retired. The
-                calc engine now reads job_line_items as the single source of
-                truth — labor/tax_basis split is derived from height + style
-                + unit_price by trg_jli_derive_split. The JobPricingEditor
-                file is preserved (unmounted) for one cycle until Phase 2
-                deletes it; pricingSaveRef is left in place but no longer
-                receives a callback. */}
 
           {/* 2026-05-05 (P0 restructure): "LF on File from PM Bill Sheet"
               card REMOVED — redundant with the Accounting tab's Draft Table

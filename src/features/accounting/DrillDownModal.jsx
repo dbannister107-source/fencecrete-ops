@@ -184,8 +184,7 @@ function InvoiceView({ data }) {
   // Group cells by pricing_line_id; sort each group by stage display order.
   const linesByPricing = {};
   lines.forEach(l => {
-    // Prefer the new bridge column; fall back to legacy for any pre-cutover rows.
-    const k = l.job_line_item_id || l.job_pricing_line_id || '_unlinked';
+    const k = l.job_line_item_id || '_unlinked';
     (linesByPricing[k] = linesByPricing[k] || []).push(l);
   });
   Object.values(linesByPricing).forEach(g =>
@@ -645,11 +644,8 @@ export default function DrillDownModal({
           }
           // Resolve line labels for the breakdown headers (cheap follow-up
           // fetch only for the linked IDs; skipped if there are none).
-          // 2026-05-05 (Option C — Phase 1): the source of truth is now
-          // job_line_items. Read from job_line_item_id with a legacy
-          // fallback to job_pricing_line_id for any pre-cutover rows.
           const lineIds = Array.from(
-            new Set((lines || []).map(l => l.job_line_item_id || l.job_pricing_line_id))
+            new Set((lines || []).map(l => l.job_line_item_id))
           ).filter(Boolean);
           let pricingByLineId = {};
           if (lineIds.length > 0) {

@@ -23,7 +23,7 @@ export const HEB_MADERA_RUN = {
     tax_exempt: false,
     retainage_held: 0,
   },
-  pricingLines: [
+  lineItems: [
     {
       id: 'pl-6pc',
       line_number: 1,
@@ -108,7 +108,7 @@ export const CYCLE_2_PM = {
 // Prior app lines from Cycle 1 (filed).
 export const CYCLE_2_PRIOR_APP_LINES = [
   {
-    job_pricing_line_id: 'pl-6pc',
+    job_line_item_id: 'pl-6pc',
     stage_key: 'posts_only',
     cumulative_qty: 100,
     prior_qty: 0,
@@ -195,7 +195,7 @@ export const TAX_EXEMPT_EXPECTED = {
 
 export const GATE_BILLED_NO_OVERRIDE = {
   job: { id: 'fix-job-2', job_number: '23H047', retainage_pct: 10, tax_exempt: false, retainage_held: 0 },
-  pricingLines: [
+  lineItems: [
     { id: 'pl-gate', line_number: 1, category: 'wi_gate', label: "16' Gate",
       height: null, style: null, qty: 2, unit: 'EA',
       price_per_unit: 12495, labor_per_unit: 8246.70, tax_basis_per_unit: 4248.30,
@@ -206,7 +206,7 @@ export const GATE_BILLED_NO_OVERRIDE = {
   ],
   pmSubmission: null,            // no PM submission in this cycle
   priorAppLines: [
-    { job_pricing_line_id: 'pl-gate', stage_key: 'complete',
+    { job_line_item_id: 'pl-gate', stage_key: 'complete',
       cumulative_qty: 2, prior_qty: 0, current_qty: 2, current_total: 26990.42 },
   ],
   priorApps: [

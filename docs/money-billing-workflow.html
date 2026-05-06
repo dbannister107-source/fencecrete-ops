@@ -625,7 +625,7 @@ table.cmp td:first-child {
     <h1>Money &amp; Billing Workflow</h1>
     <div class="subtitle">End-to-end process — Proposal → Project Setup → Scope → Accounting</div>
   </div>
-  <span class="stamp">v2 · May 2026</span>
+  <span class="stamp">v2.1 · May 2026</span>
 </header>
 
 <!-- ───────────── Page body ───────────── -->
@@ -676,8 +676,8 @@ table.cmp td:first-child {
           <span class="lane-arrow" aria-hidden="true">→</span>
           <a href="#stage-3" class="stage" data-role="amiee">
             <span class="stage-num">STAGE 03</span>
-            <span class="stage-title">Scope &amp; Pricing Book</span>
-            <span class="stage-meta">Line Items + Pricing</span>
+            <span class="stage-title">Scope (Line Items)</span>
+            <span class="stage-meta">Auto-derived rate split</span>
           </a>
           <span class="lane-arrow" aria-hidden="true">→</span>
           <a href="#stage-4" class="stage" data-role="amiee">
@@ -783,31 +783,30 @@ table.cmp td:first-child {
     <article class="stage-detail" id="stage-3">
       <div class="head">
         <span class="num">STAGE 03</span>
-        <h3>Scope &amp; Pricing Book</h3>
+        <h3>Scope (Line Items)</h3>
         <span class="role-pill"><span class="swatch amiee"></span>Amiee</span>
       </div>
-      <p>The Pricing Book is the rate sheet Virginia's draft engine apportions PM bill sheets against. Without it, drafts come out empty.</p>
+      <p>Line Items is the single source of truth Virginia's draft engine apportions PM bill sheets against. The labor / tax_basis split auto-derives — no separate Pricing Book to maintain.</p>
 
       <h4>Where to go</h4>
       <p>Same job → <strong>Money group → Scope tab</strong>.</p>
 
       <h4>Step by step</h4>
       <ol>
-        <li><strong>Line Items</strong> are pre-seeded from the contract (qty / category / fence_type / height). Verify them.</li>
-        <li>The <strong>Pricing Book</strong> auto-seeds from Line Items the first time you open Scope and click Save. Yellow banner: <em>"🌱 Generated from N line items — review and Save"</em>.</li>
-        <li>Review the generated rates per row:
+        <li><strong>Line Items</strong> are pre-seeded from the contract (qty / category / fence_type / height / unit price). Verify each row.</li>
+        <li>The <strong>Labor / Unit</strong> and <strong>Tax Basis / Unit</strong> columns auto-fill from height and style. Read-only — the values are derived by the <code>trg_jli_derive_split</code> trigger:
           <ul>
-            <li><code>price_per_unit</code> — total customer rate (LF / EA / LS).</li>
-            <li><code>labor_per_unit</code> — labor portion (used to split tax basis).</li>
-            <li><code>tax_basis_per_unit</code> — height-derived ($23 at 4ft → $31.75 at 10ft).</li>
-            <li><code>exempt</code> checkbox — if the line is tax-exempt.</li>
+            <li><strong>Precast:</strong> tax_basis from height ($23 at 4ft → $31.75 at 10ft); labor = unit price − tax_basis.</li>
+            <li><strong>Gates:</strong> labor = 66% of unit price; tax_basis = 34%.</li>
+            <li><strong>Permits / Bonds:</strong> labor = 100% of price; tax_basis = 0 (non-taxable).</li>
+            <li><strong>Stick-Built / Wood / Other:</strong> manual entry (left blank for now — engine emits a warning if the cell can't be billed).</li>
           </ul>
         </li>
-        <li>Click <strong>Save Lines</strong>. The Pricing Book is now live.</li>
+        <li>Click <strong>Save Lines</strong>. The engine reads from this table immediately on the Accounting tab.</li>
       </ol>
 
       <div class="callout info">
-        <strong>Tip:</strong> the Pricing Book is decoupled from <code>job_line_items</code>. You can edit either side without affecting the other. The Acct Sheet engine surfaces drift if rates diverge.
+        <strong>Why no Pricing Book anymore?</strong> The audit found 0 production rows in <code>job_pricing_lines</code> after a month of availability — the override flexibility we built had zero adoption. Collapsing into <code>job_line_items</code> means a single edit point and no drift. Phase 2 dropped the table on 2026-05-05.
       </div>
       <a href="#top" class="btn-back">↑ Back to top</a>
     </article>
@@ -827,12 +826,12 @@ table.cmp td:first-child {
       <h4>For each new CO</h4>
       <ol>
         <li>Add the CO with description, amount, and customer signature reference.</li>
-        <li><strong>Add CO Line Items + CO Pricing Book rows inside the CO card</strong> (same auto-seed flow as the main contract).</li>
+        <li>Add <strong>CO Line Items</strong> inside the CO card (same auto-derive applies — labor / tax_basis fill automatically based on category, height, style, and unit price).</li>
         <li>Mark the CO <strong>Approved</strong> when signed — only Amiee has this permission.</li>
       </ol>
 
       <div class="callout danger">
-        <strong>Critical:</strong> a CO entered without sub-pricing rows will inflate the Adjusted Contract Value but give the engine no rows to bill against. Virginia hits the over-bill block on legitimate billing. Always pair the CO header with line-item + pricing-row entry.
+        <strong>Critical:</strong> a CO entered without line items will inflate the Adjusted Contract Value but give the engine no rows to bill against. Virginia hits the over-bill block on legitimate billing. Always pair the CO header with line-item entry.
       </div>
 
       <div class="callout">
@@ -991,7 +990,7 @@ table.cmp td:first-child {
           <tr>
             <td>Amiee</td>
             <td>Set contract value + COs in Excel; no link to billing.</td>
-            <td>Pricing Book + CO sub-pricing in OPS feeds Virginia's draft engine directly. CO setup is now a forcing function — skip it and Virginia's draft fails.</td>
+            <td>Line Items in OPS feed Virginia's draft engine directly. Labor / tax_basis split auto-derives from height + style + unit price (no Pricing Book to maintain). CO setup is a forcing function — skip it and Virginia's draft fails.</td>
           </tr>
           <tr>
             <td>PM</td>
@@ -1069,7 +1068,7 @@ table.cmp td:first-child {
       <strong style="color:var(--text-2);">Fencecrete OPS</strong> · Internal documentation · Not for external distribution
     </div>
     <div>
-      Document v2 · May 2026 · Replaces <code>billing-workflow.md</code> for end-user reference
+      Document v2.1 · May 2026 · Reflects Pricing Book retirement (Option C)
     </div>
   </footer>
 
