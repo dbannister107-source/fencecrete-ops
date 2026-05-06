@@ -4232,6 +4232,14 @@ function NewProjectForm({jobs,onClose,onSaved}){
       // Coerce optional text-ish fields that were empty strings to null (safer than empty strings for nullable columns).
       // (file_location + documents_needed no longer collected at create time; left out of this list.)
       ['job_number','address','city','zip','notes','gate_description','lump_sum_description','pm','sales_rep'].forEach(k=>{if(body[k]==='')body[k]=null;});
+      // 2026-05-06: defensive empty-string-to-null sweep for ALL remaining
+      // fields. Same fix as the EditPanel handleSave path — Postgres rejects
+      // empty strings on numeric/integer/uuid/date/timestamp columns. The
+      // hardcoded lists above only cover known-problem fields; this catches
+      // the long tail (contract_rate_*, gate_rate, gate_height, est_install_days,
+      // bonds_amount, permits_amount, lat, lng, etc.) so a blank input on the
+      // new-project form doesn't break creation.
+      Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
       body.fence_addons=syncFenceAddons(body);
       // Filter out line items that have no meaningful data — user may add an empty row and not fill it
       const filled=f.lineItems.filter(li=>{
@@ -23560,11 +23568,16 @@ function ProspectingPage({jobs}){
 
   const saveCo=async()=>{
     try{
+      // 2026-05-06: defensive empty-string-to-null sweep. The form defaults
+      // include next_action_date:'' (DATE column) and other text inputs that
+      // can be empty. Postgres rejects empty strings on date/numeric columns
+      // with "invalid input syntax". Coerce all "" → null before sending.
+      const cleaned=Object.fromEntries(Object.entries(form).map(([k,v])=>[k,v===''?null:v]));
       if(editCo){
-        await sbPatch('prospect_companies',editCo.id,{...form,updated_at:new Date().toISOString()});
+        await sbPatch('prospect_companies',editCo.id,{...cleaned,updated_at:new Date().toISOString()});
         setToast({msg:'Company updated',ok:true});
       }else{
-        await sbPost('prospect_companies', form, { returnMinimal: true, throwOnError: true });
+        await sbPost('prospect_companies', cleaned, { returnMinimal: true, throwOnError: true });
         setToast({msg:'Company added',ok:true});
       }
       setShowForm(false);load();
