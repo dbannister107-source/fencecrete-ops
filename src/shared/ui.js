@@ -186,9 +186,8 @@ export const statValue = {
 // the formatted view is presentational only.
 //
 // Originally lived as `function MoneyInput(...)` near the top of
-// App.jsx. Extracted on 2026-05-05 as part of the Acct Sheet build
-// (Phase B) — the JobPricingEditor needs it too, and a shared copy
-// stops App.jsx and the new feature from drifting.
+// App.jsx. Extracted on 2026-05-05 so multiple consumers can share
+// a single currency-formatted input without copy-paste drift.
 //
 // Props:
 //   value     numeric string or number; '' / null render as a muted dash

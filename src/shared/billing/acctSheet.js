@@ -60,8 +60,8 @@ const ROUND_2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 // `price_per_unit`) pass through unchanged so existing test fixtures keep
 // working without churn.
 //
-// Category normalization mirrors classifyForPricing() in JobPricingEditor.jsx
-// so the engine's PM_STAGE_MAP keys still match. Raw job_line_items.category
+// Category normalization maps the raw job_line_items.category vocabulary
+// to the engine's PM_STAGE_MAP keys. Raw job_line_items.category
 // vocabulary (lump_sum / wi / gate / change_order / wood / site_work /
 // removal) is mapped to the engine's normalized vocabulary (precast / sw /
 // wi_gate / permit / bond / option / other) via category-then-fence_type
@@ -86,7 +86,7 @@ export function normalizeLineItem(li) {
   const extended_total = li.line_value != null ? NUM(li.line_value) : ROUND_2(qty * price_per_unit);
 
   // Label: prefer description; fall back to "{height}' pc" / "{height}' sw"
-  // / "WI Gate" pattern, mirroring buildLabel() from JobPricingEditor.jsx.
+  // / "WI Gate" pattern.
   let label = li.description || '';
   if (!label) {
     const h = String(li.height ?? '').replace(/['"]/g, '').trim();
@@ -283,10 +283,9 @@ export function aggregateDraftTotals({ draftLines = [], retainagePct = 0 } = {})
 
 // ─── 5. computePerLineSummary ───────────────────────────────────────
 //
-// Per-pricing-line rollup for the Acct Sheet header (one row per
-// pricing line, summed across all stages). Mirrors what
-// v_acct_sheet_summary returns from the DB; engine version includes
-// the in-flight draft so the UI reflects pending billing immediately.
+// Per-line rollup for the Acct Sheet header (one row per line item,
+// summed across all stages). Includes the in-flight draft so the UI
+// reflects pending billing immediately.
 
 export function computePerLineSummary({ pricingLines = [], priorAppLines = [], draftLines = [] } = {}) {
   const priorTotalById = {};
