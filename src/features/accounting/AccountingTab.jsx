@@ -44,6 +44,20 @@ import UnsupportedMethodNotice from './UnsupportedMethodNotice';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const NUM = (x) => Number(x) || 0;
 
+// 2026-05-05 (mobile pass 2): inline mobile detection. Mirrors the shared
+// useViewport / useIsMobile pattern at the 768px breakpoint without an
+// import dance. Same logic as in MarkPaidModal / DrillDownModal.
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fn = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, [bp]);
+  return m;
+}
+
 // ─── Banner sub-components (small, kept inline) ─────────────────────
 function Banner({ children, tone = 'danger', onClose }) {
   const colors = {
@@ -204,6 +218,7 @@ function SubmissionSelector({ pmSubmissions, billedSubmissionIds, value, onChang
 
 // ─── Main component ─────────────────────────────────────────────────
 export default function AccountingTab({ job, canEdit, currentUserEmail }) {
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [pricingLines, setPricingLines] = useState([]);
   const [effectiveWeights, setEffectiveWeights] = useState([]);
@@ -488,12 +503,12 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
               Current Bill Draft
             </div>
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '2fr 1fr 2fr',
-              gap: 12,
-              marginBottom: 14,
-            }}>
+            {/* 2026-05-05 (mobile pass 2): 3-input row stacks vertically on
+                phones (Cycle Source / Invoice Date / Notes each go full
+                width), keeps the 2:1:2 grid on tablet+. */}
+            <div style={isMobile
+              ? { display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }
+              : { display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, marginBottom: 14 }}>
               <SubmissionSelector
                 pmSubmissions={pmSubmissions}
                 billedSubmissionIds={billedSubmissionIds}
@@ -559,8 +574,11 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
                 title={fileBlockedReason || 'File this draft as an invoice'}
                 style={{
                   ...btnP,
-                  padding: '10px 18px',
-                  fontSize: 13,
+                  // 2026-05-05 (mobile pass 2): meet iOS HIG 44px touch target.
+                  // Desktop keeps the original 10px/18px padding + 13px font.
+                  padding: isMobile ? '14px 22px' : '10px 18px',
+                  fontSize: isMobile ? 14 : 13,
+                  minHeight: isMobile ? 44 : undefined,
                   opacity: fileBlocked || filing ? 0.5 : 1,
                   cursor: fileBlocked || filing ? 'not-allowed' : 'pointer',
                 }}>

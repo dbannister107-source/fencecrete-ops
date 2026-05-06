@@ -1630,11 +1630,11 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
         <span style={{fontSize:18}}>⚠️</span>
         <span>You have unsaved line item changes. Click "Save Lines" (or the top Save button) before closing this project, or your changes will be lost.</span>
       </div>
-      <button onClick={saveAll} disabled={saving} style={{...btnP,padding:'6px 14px',fontSize:12,background:'#B45309',opacity:saving?0.5:1,whiteSpace:'nowrap'}}>{saving?'Saving…':'Save Lines Now'}</button>
+      <button onClick={saveAll} disabled={saving} style={{...btnP,padding:v.mobile?'12px 18px':'6px 14px',fontSize:v.mobile?14:12,minHeight:v.mobile?44:undefined,background:'#B45309',opacity:saving?0.5:1,whiteSpace:'nowrap'}}>{saving?'Saving…':'Save Lines Now'}</button>
     </div>}
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
       <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>{coId?`Change Order Line Items (${lines.length})`:`Fence Line Items (${lines.length})`}</div>
-      <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:'6px 14px',fontSize:12,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
+      <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:v.mobile?'12px 18px':'6px 14px',fontSize:v.mobile?14:12,minHeight:v.mobile?44:undefined,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
     </div>
     <div style={{display:'flex',flexDirection:'column',gap:10}}>
       {lines.map((l,idx)=>{
@@ -1753,7 +1753,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave}){
         directly under the last line item so PMs adding lines bottom-up
         don't have to scroll back to the top header to save. Disabled
         when there's nothing dirty (matches the top button's behavior). */}
-    {lines.length>0&&<button onClick={saveAll} disabled={!dirty||saving} style={{width:'100%',padding:'14px',marginTop:10,border:'none',background:dirty&&!saving?'#8A261D':'#9E9B96',color:'#FFF',borderRadius:10,fontSize:14,fontWeight:800,cursor:(!dirty||saving)?'not-allowed':'pointer',opacity:(!dirty||saving)?0.7:1,letterSpacing:0.3}}>{saving?'Saving…':dirty?'💾 Save Lines':'Save Lines (no unsaved changes)'}</button>}
+    {lines.length>0&&<button onClick={saveAll} disabled={!dirty||saving} style={{width:'100%',padding:v.mobile?'16px':'14px',minHeight:v.mobile?52:undefined,marginTop:10,border:'none',background:dirty&&!saving?'#8A261D':'#9E9B96',color:'#FFF',borderRadius:10,fontSize:v.mobile?15:14,fontWeight:800,cursor:(!dirty||saving)?'not-allowed':'pointer',opacity:(!dirty||saving)?0.7:1,letterSpacing:0.3}}>{saving?'Saving…':dirty?'💾 Save Lines':'Save Lines (no unsaved changes)'}</button>}
     {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
       {/* PC LF (produced) is a main-contract concept — hide on CO sub-line scope */}
       {!coId&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>}

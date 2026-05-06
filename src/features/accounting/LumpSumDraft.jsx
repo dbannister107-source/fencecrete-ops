@@ -16,13 +16,27 @@
 //     existing trg_post_to_invoice_entries_on_file trigger fires
 //     and posts to invoice_entries (which cascades to ytd_invoiced).
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { sbPost, sbPatch } from '../../shared/sb';
 import { COLOR, RADIUS, card, btnP, btnS, FONT, inputS } from '../../shared/ui';
 import { $, fD } from '../../shared/fmt';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const NUM = (x) => Number(x) || 0;
+
+// 2026-05-05 (mobile pass 2): inline mobile detection. Same 768px breakpoint
+// as the other accounting feature files; keeps the component self-contained
+// without an import dance.
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fn = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, [bp]);
+  return m;
+}
 
 export default function LumpSumDraft({
   job,
@@ -32,6 +46,7 @@ export default function LumpSumDraft({
   currentUserEmail,
   onSuccess,          // (msg) => void — parent runs loadAll() + setToast
 }) {
+  const isMobile = useIsMobile();
   const [invoiceDate, setInvoiceDate] = useState(todayISO());
   const [notes, setNotes]             = useState('');
   const [filing, setFiling]           = useState(false);
@@ -197,8 +212,11 @@ export default function LumpSumDraft({
               }
               style={{
                 ...btnP,
-                padding: '12px 24px',
-                fontSize: 13,
+                // 2026-05-05 (mobile pass 2): meet iOS HIG 44px touch target.
+                // Desktop keeps the original padding + font size.
+                padding: isMobile ? '14px 22px' : '12px 24px',
+                fontSize: isMobile ? 14 : 13,
+                minHeight: isMobile ? 44 : undefined,
                 opacity: (!canEdit || filing || billAmount <= 0) ? 0.5 : 1,
                 cursor: (!canEdit || filing || billAmount <= 0) ? 'not-allowed' : 'pointer',
               }}>
