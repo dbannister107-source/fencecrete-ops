@@ -7923,6 +7923,7 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
 
   const executiveReports=[
     {id:'waterfall',title:'Revenue Pipeline Waterfall',desc:'Deal lifecycle from proposal to collected',icon:'💧'},
+    {id:'billing_completeness',title:'Billing Completeness Control',desc:'Monthly close-week artifact — flags underbilled active jobs by status, PM submission coverage, and stuck AR reviews. Built post-Yuda to replace tribal QC with a process.',icon:'🧾'},
     {id:'ltb_pm',title:'Left to Bill by PM',desc:'Unbilled revenue by project manager',icon:'💰'},
     {id:'backlog_aging',title:'Backlog Aging',desc:'How long jobs have been in each status',icon:'⏳'},
     {id:'lf_drift',title:'LF Data Quality Check',desc:'Jobs where header LF values disagree with Line Items — flags stale data for cleanup',icon:'🔍'},
@@ -9133,6 +9134,251 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
         <div style={{marginTop:12,fontSize:11,color:'#9E9B96',lineHeight:1.6}}>
           <b>Days late</b> = days from end of billing month to submission date. Negative = submitted before month end.
           PMs typically have a few days into the new month before submissions are considered late; 0–3 days is normal.
+        </div>
+      </div>;
+    }
+    if(activeRpt==='billing_completeness'){
+      // Billing Completeness Control — monthly artifact for CFO/SVP Ops/Board.
+      // Built in response to April 2026 billings dip + 3 simultaneous process changes
+      // (OPS bill sheet migration, Josh PM departure, Yuda removed from billing review).
+      //
+      // Four sections:
+      //   A. Underbilled Active Jobs — the leak quantified (status × ACV vs YTD billed)
+      //   B. April Bill Submissions by PM — coverage, $/sub, missing PMs
+      //   C. Submission Review Status — anything stuck in PM-submitted but not AR-reviewed
+      //   D. Context note — explains month-over-month OPS trend not available until May
+      //
+      // Data sources (all already loaded above):
+      //   - jobs (passed in via props) → status, adj_contract_value, ytd_invoiced, pm
+      //   - bsHistorySubs → all pm_bill_submissions ever
+      const PM_CANON=['Doug Monroe','Manuel Salazar','Ray Garcia','Rafael Anaya Jr.'];
+      // ── A. UNDERBILLED ACTIVE JOBS ──────────────────────────────────────────────
+      const ACTIVE_STATUSES=['active_install','in_production','material_ready','fence_complete','fully_complete'];
+      const STATUS_RANK={fully_complete:1,fence_complete:2,active_install:3,material_ready:4,in_production:5};
+      const STATUS_DISPLAY={fully_complete:'Fully Complete',fence_complete:'Fence Complete',active_install:'Active Install',material_ready:'Material Ready',in_production:'In Production'};
+      // Status-level expected billing thresholds.
+      // These are conservative: complete jobs should be ~100%, active install ~80%,
+      // production stages lower. Used purely to flag jobs as underbilled vs status.
+      const EXPECTED_PCT={fully_complete:1.0,fence_complete:0.95,active_install:0.80,material_ready:0.30,in_production:0.20};
+      const underbilledJobs=jobs.filter(j=>{
+        if(!ACTIVE_STATUSES.includes(j.status))return false;
+        const acv=n(j.adj_contract_value||j.contract_value);
+        if(acv<1000)return false;
+        const billed=n(j.ytd_invoiced);
+        const pct=billed/acv;
+        return pct<EXPECTED_PCT[j.status];
+      }).map(j=>{
+        const acv=n(j.adj_contract_value||j.contract_value);
+        const billed=n(j.ytd_invoiced);
+        const gap=acv-billed;
+        const pct=acv>0?billed/acv:0;
+        const expected=EXPECTED_PCT[j.status]||0;
+        const expDollars=acv*expected;
+        const flagDollars=Math.max(0,expDollars-billed);
+        return{...j,_acv:acv,_billed:billed,_gap:gap,_pct:pct,_flagDollars:flagDollars,_statusRank:STATUS_RANK[j.status]||99};
+      }).sort((a,b)=>{
+        if(a._statusRank!==b._statusRank)return a._statusRank-b._statusRank;
+        return b._flagDollars-a._flagDollars;
+      });
+      // Roll-up by status for the summary header
+      const statusRollup={};
+      ACTIVE_STATUSES.forEach(st=>{
+        const stJobs=jobs.filter(j=>j.status===st&&n(j.adj_contract_value||j.contract_value)>=1000);
+        const totalACV=stJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
+        const totalBilled=stJobs.reduce((s,j)=>s+n(j.ytd_invoiced),0);
+        const totalGap=totalACV-totalBilled;
+        statusRollup[st]={count:stJobs.length,acv:totalACV,billed:totalBilled,gap:totalGap,pct:totalACV>0?totalBilled/totalACV:0};
+      });
+      const totalUnderbilledExposure=underbilledJobs.reduce((s,j)=>s+j._flagDollars,0);
+      // ── B. CURRENT MONTH BILL SUBMISSIONS BY PM ─────────────────────────────────
+      // Use the most recent month present in submissions (typically the current
+      // billing month). Falls back to no data if the table is empty.
+      const allMonths=[...new Set(bsHistorySubs.map(s=>s.billing_month).filter(Boolean))].sort();
+      const currentMonth=allMonths.length>0?allMonths[allMonths.length-1]:null;
+      const monthSubs=currentMonth?bsHistorySubs.filter(s=>s.billing_month===currentMonth):[];
+      const pmStats={};
+      PM_CANON.forEach(pm=>{pmStats[pm]={pm,submissions:0,reviewed:0,no_bill:0,dollars:0};});
+      monthSubs.forEach(s=>{
+        const pm=s.submitted_by||'(unattributed)';
+        if(!pmStats[pm])pmStats[pm]={pm,submissions:0,reviewed:0,no_bill:0,dollars:0};
+        pmStats[pm].submissions++;
+        if(s.ar_reviewed)pmStats[pm].reviewed++;
+        if(s.no_bill_required)pmStats[pm].no_bill++;
+        pmStats[pm].dollars+=n(s.invoiced_amount);
+      });
+      const pmRows=Object.values(pmStats).sort((a,b)=>b.dollars-a.dollars);
+      const monthTotals={subs:monthSubs.length,reviewed:monthSubs.filter(s=>s.ar_reviewed).length,dollars:monthSubs.reduce((s,r)=>s+n(r.invoiced_amount),0)};
+      // ── C. STUCK SUBMISSIONS (submitted but not AR-reviewed, last 60 days) ──────
+      const sixtyDaysAgo=Date.now()-60*86400000;
+      const stuckSubs=bsHistorySubs.filter(s=>{
+        if(s.ar_reviewed)return false;
+        if(!s.submitted_at)return false;
+        return new Date(s.submitted_at).getTime()>=sixtyDaysAgo;
+      }).sort((a,b)=>new Date(a.submitted_at)-new Date(b.submitted_at));
+      // ── RENDER ──────────────────────────────────────────────────────────────────
+      const fmtMonth=(m)=>{if(!m)return'—';const[y,mm]=m.split('-');return new Date(y,Number(mm)-1,1).toLocaleString('en-US',{month:'long',year:'numeric'});};
+      return<div>
+        {/* HEADER KPI STRIP */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>
+          <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:10,padding:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5}}>Underbilled exposure</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#991B1B',marginTop:4}}>{$(totalUnderbilledExposure)}</div>
+            <div style={{fontSize:11,color:'#7F1D1D',marginTop:2}}>{underbilledJobs.length} jobs flagged vs. status threshold</div>
+          </div>
+          <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#075985',textTransform:'uppercase',letterSpacing:0.5}}>{fmtMonth(currentMonth)} submissions</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#075985',marginTop:4}}>{monthTotals.subs}</div>
+            <div style={{fontSize:11,color:'#0C4A6E',marginTop:2}}>{$(monthTotals.dollars)} billed · {monthTotals.reviewed}/{monthTotals.subs} reviewed</div>
+          </div>
+          <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:0.5}}>PMs reporting</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#92400E',marginTop:4}}>{pmRows.filter(r=>r.submissions>0).length}/{PM_CANON.length}</div>
+            <div style={{fontSize:11,color:'#78350F',marginTop:2}}>
+              {pmRows.filter(r=>r.submissions===0&&PM_CANON.includes(r.pm)).map(r=>r.pm.split(' ')[0]).join(', ')||'all PMs reporting'}
+              {pmRows.filter(r=>r.submissions===0&&PM_CANON.includes(r.pm)).length>0?' missing':''}
+            </div>
+          </div>
+          <div style={{background:'#F5F3FF',border:'1px solid #DDD6FE',borderRadius:10,padding:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#5B21B6',textTransform:'uppercase',letterSpacing:0.5}}>Stuck submissions</div>
+            <div style={{fontFamily:'Inter',fontSize:22,fontWeight:800,color:'#5B21B6',marginTop:4}}>{stuckSubs.length}</div>
+            <div style={{fontSize:11,color:'#4C1D95',marginTop:2}}>Submitted, awaiting AR review (60 days)</div>
+          </div>
+        </div>
+        {/* SECTION A — UNDERBILLED ACTIVE JOBS */}
+        <div style={{marginBottom:24}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8}}>
+            <h2 style={{fontFamily:'Syne',fontSize:16,fontWeight:800,margin:0}}>A. Underbilled Active Jobs</h2>
+            <div style={{fontSize:11,color:'#9E9B96'}}>Jobs where YTD billed % is below the threshold for their status</div>
+          </div>
+          {/* Status roll-up */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:14}}>
+            {ACTIVE_STATUSES.map(st=>{
+              const r=statusRollup[st];if(!r||r.count===0)return null;
+              const exp=EXPECTED_PCT[st];
+              const flagged=r.pct<exp;
+              return<div key={st} style={{padding:10,background:flagged?'#FEF2F2':'#F9F8F6',borderRadius:8,border:`1px solid ${flagged?'#FECACA':'#E5E3E0'}`}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#625650',textTransform:'uppercase',letterSpacing:0.4,marginBottom:4}}>{STATUS_DISPLAY[st]}</div>
+                <div style={{fontFamily:'Inter',fontSize:18,fontWeight:800,color:flagged?'#991B1B':'#1A1A1A'}}>{Math.round(r.pct*100)}%</div>
+                <div style={{fontSize:11,color:'#625650',marginTop:2}}>{r.count} jobs · {$(r.gap)} unbilled</div>
+                <div style={{fontSize:10,color:'#9E9B96',marginTop:1}}>Threshold {Math.round(exp*100)}%</div>
+              </div>;
+            })}
+          </div>
+          {/* Job-level table */}
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid #E5E3E0'}}>
+                  {['Job','Status','PM','Market','Contract','Billed','% Billed','Gap to Threshold'].map((h,i)=>(
+                    <th key={h} style={{textAlign:i<4?'left':'right',padding:'8px 10px',color:'#625650',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {underbilledJobs.slice(0,40).map(j=>{
+                  const isComplete=j.status==='fully_complete'||j.status==='fence_complete';
+                  return<tr key={j.id} className="fc-row" style={{borderBottom:'1px solid #F4F4F2',cursor:'pointer'}} onClick={()=>onOpenJob&&onOpenJob(j)}>
+                    <td style={{padding:'6px 10px',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      <div style={{fontWeight:600}}>{j.job_name}</div>
+                      <div style={{fontSize:10,color:'#9E9B96'}}>{j.job_number||'—'}</div>
+                    </td>
+                    <td style={{padding:'6px 10px'}}>
+                      <span style={pill(SC[j.status]||'#625650','#F4F4F2')}>{STATUS_DISPLAY[j.status]||j.status}</span>
+                    </td>
+                    <td style={{padding:'6px 10px',fontSize:11}}>{j.pm||'—'}</td>
+                    <td style={{padding:'6px 10px'}}>
+                      <span style={pill(MC[j.market]||'#625650',MB[j.market]||'#F4F4F2')}>{MS[j.market]||'—'}</span>
+                    </td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(j._acv)}</td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter'}}>{$(j._billed)}</td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:isComplete?'#991B1B':'#B45309'}}>{Math.round(j._pct*100)}%</td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:'#991B1B'}}>{$(j._flagDollars)}</td>
+                  </tr>;
+                })}
+                {underbilledJobs.length===0&&<tr><td colSpan={8} style={{padding:24,textAlign:'center',color:'#9E9B96'}}>No active jobs flagged. Billing is at or above status thresholds.</td></tr>}
+              </tbody>
+            </table>
+            {underbilledJobs.length>40&&<div style={{padding:10,textAlign:'center',color:'#9E9B96',fontSize:11}}>Showing top 40 of {underbilledJobs.length} flagged jobs.</div>}
+          </div>
+          <div style={{marginTop:10,padding:'10px 14px',background:'#F9F8F6',borderRadius:8,fontSize:11,color:'#625650',lineHeight:1.6}}>
+            <b>Thresholds:</b> Fully Complete 100% · Fence Complete 95% · Active Install 80% · Material Ready 30% · In Production 20%. <b>Gap to Threshold</b> is the dollar amount needed to bring each job up to the expected billing % for its status — i.e. the immediate billing opportunity.
+          </div>
+        </div>
+        {/* SECTION B — PM SUBMISSIONS THIS MONTH */}
+        <div style={{marginBottom:24}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8}}>
+            <h2 style={{fontFamily:'Syne',fontSize:16,fontWeight:800,margin:0}}>B. {fmtMonth(currentMonth)} Bill Submissions by PM</h2>
+            <div style={{fontSize:11,color:'#9E9B96'}}>Coverage and average submission size by project manager</div>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid #E5E3E0'}}>
+                  {['PM','Submissions','AR Reviewed','No-Bill','$ Billed','Avg per Submission'].map((h,i)=>(
+                    <th key={h} style={{textAlign:i===0?'left':'right',padding:'8px 10px',color:'#625650',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pmRows.map(r=>{
+                  const isMissing=r.submissions===0&&PM_CANON.includes(r.pm);
+                  const avg=r.submissions>0?r.dollars/r.submissions:0;
+                  return<tr key={r.pm} style={{borderBottom:'1px solid #F4F4F2',background:isMissing?'#FEF2F2':'transparent'}}>
+                    <td style={{padding:'8px 10px',fontWeight:600,color:isMissing?'#991B1B':'#1A1A1A'}}>{r.pm}{isMissing?' ⚠️ no submissions':''}</td>
+                    <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{r.submissions}</td>
+                    <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',color:r.submissions>0&&r.reviewed<r.submissions?'#B45309':'#1A1A1A'}}>{r.reviewed}/{r.submissions}</td>
+                    <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{r.no_bill}</td>
+                    <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(r.dollars)}</td>
+                    <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{r.submissions>0?$(avg):'—'}</td>
+                  </tr>;
+                })}
+                <tr style={{borderTop:'2px solid #E5E3E0',background:'#F9F8F6',fontWeight:700}}>
+                  <td style={{padding:'8px 10px'}}>Total</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{monthTotals.subs}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{monthTotals.reviewed}/{monthTotals.subs}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{monthSubs.filter(s=>s.no_bill_required).length}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{$(monthTotals.dollars)}</td>
+                  <td style={{padding:'8px 10px',textAlign:'right',fontFamily:'Inter'}}>{monthTotals.subs>0?$(monthTotals.dollars/monthTotals.subs):'—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {/* SECTION C — STUCK SUBMISSIONS */}
+        {stuckSubs.length>0&&<div style={{marginBottom:24}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8}}>
+            <h2 style={{fontFamily:'Syne',fontSize:16,fontWeight:800,margin:0}}>C. Submissions Awaiting AR Review</h2>
+            <div style={{fontSize:11,color:'#9E9B96'}}>PM-submitted bills not yet reviewed by AR (last 60 days)</div>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid #E5E3E0'}}>
+                  {['Submitted','PM','Job','Billing Month','Amount','Days Pending'].map((h,i)=>(
+                    <th key={h} style={{textAlign:i<3?'left':'right',padding:'8px 10px',color:'#625650',fontWeight:700,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stuckSubs.slice(0,30).map(s=>{
+                  const days=Math.round((Date.now()-new Date(s.submitted_at).getTime())/86400000);
+                  return<tr key={s.id} style={{borderBottom:'1px solid #F4F4F2'}}>
+                    <td style={{padding:'6px 10px'}}>{fD(s.submitted_at)}</td>
+                    <td style={{padding:'6px 10px'}}>{s.submitted_by||'—'}</td>
+                    <td style={{padding:'6px 10px',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(jobs.find(j=>j.id===s.job_id)||{}).job_name||s.job_id||'—'}</td>
+                    <td style={{padding:'6px 10px'}}>{fmtMonth(s.billing_month)}</td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700}}>{$(n(s.invoiced_amount))}</td>
+                    <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'Inter',fontWeight:700,color:days>14?'#991B1B':days>7?'#B45309':'#625650'}}>{days}d</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>}
+        {/* SECTION D — METHODOLOGY / CONTEXT NOTE */}
+        <div style={{padding:14,background:'#F9F8F6',borderRadius:10,fontSize:11,color:'#625650',lineHeight:1.7,border:'1px dashed #D1CEC9'}}>
+          <div style={{fontWeight:700,color:'#1A1A1A',marginBottom:6}}>About this report</div>
+          This is the monthly billing-completeness control. It tests whether jobs in active production statuses are being billed on pace with their physical progress, and whether all PMs are submitting bills consistently. <b>Section A</b> is the buried exposure — work performed but not yet invoiced. <b>Section B</b> tests submission coverage. <b>Section C</b> flags any AR-review backlog. Note: Month-over-month OPS submission trends will be available starting May 2026 — April was the first full month of pm_bill_submissions data. Pre-April historical billing must be reconciled against Viewpoint.
         </div>
       </div>;
     }
