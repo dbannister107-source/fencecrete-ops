@@ -625,7 +625,7 @@ table.cmp td:first-child {
     <h1>Money &amp; Billing Workflow</h1>
     <div class="subtitle">End-to-end process — Proposal → Project Setup → Scope → Accounting</div>
   </div>
-  <span class="stamp">v2.1 · May 2026</span>
+  <span class="stamp">v3 · May 2026</span>
 </header>
 
 <!-- ───────────── Page body ───────────── -->
@@ -806,7 +806,7 @@ table.cmp td:first-child {
       </ol>
 
       <div class="callout info">
-        <strong>Why no Pricing Book anymore?</strong> The audit found 0 production rows in <code>job_pricing_lines</code> after a month of availability — the override flexibility we built had zero adoption. Collapsing into <code>job_line_items</code> means a single edit point and no drift. Phase 2 dropped the table on 2026-05-05.
+        <strong>Single source of truth.</strong> Line Items is the only place to maintain rates. Sales tax is calculated on the tax_basis portion only — the engine reads these columns directly when building Virginia's draft.
       </div>
       <a href="#top" class="btn-back">↑ Back to top</a>
     </article>
@@ -895,7 +895,7 @@ table.cmp td:first-child {
       <ul>
         <li><strong>Contract Summary card</strong> at the top — Contract / Billed / Pending / Balance / Retainage tiles + progress bar.</li>
         <li><strong>Double-Counting Banner</strong> — if the system spots a likely duplicate (legacy import + new draft, exact-amount match against a prior App, already over-billed), an amber banner appears with specific reasons + a collapsible <strong>Show Fix Steps</strong> guide.</li>
-        <li><strong>Draft table</strong> — per-pricing-line × per-stage breakdown. Cells with red borders are over-billing warnings.</li>
+        <li><strong>Draft table</strong> — per-line × per-stage breakdown. Cells with red borders are over-billing warnings.</li>
         <li><strong>Single-stage rows</strong> (gates, options, permits, bonds) — Virginia toggles a checkbox or types a partial qty for these (the PM doesn't track them).</li>
       </ul>
 
@@ -1060,6 +1060,13 @@ table.cmp td:first-child {
       </div>
     </details>
 
+    <details>
+      <summary>Where does the labor / tax_basis split come from?</summary>
+      <div class="answer">
+        It auto-derives from <strong>category + height + style + unit price</strong> the moment a Line Item is saved — no separate price book to maintain. Sales tax is calculated on the tax_basis portion only. Line Items is the single source of truth.
+      </div>
+    </details>
+
   </section>
 
   <!-- Footer -->
@@ -1068,7 +1075,7 @@ table.cmp td:first-child {
       <strong style="color:var(--text-2);">Fencecrete OPS</strong> · Internal documentation · Not for external distribution
     </div>
     <div>
-      Document v2.1 · May 2026 · Reflects Pricing Book retirement (Option C)
+      Document v3 · May 2026 · Canonical end-user reference
     </div>
   </footer>
 
