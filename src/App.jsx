@@ -1177,7 +1177,7 @@ const SECS=[
   // alongside other Setup metadata. The dedicated 'requirements' tab is gone;
   // tab key still mapped to 'details' if anything still navigates there.
   {key:'details',label:'Details & Requirements',group:'Setup',fields:['sales_rep','pm','job_type','address','city','state','zip','cust_number','notes']},
-  {key:'parties',label:'Parties',group:'Setup',fields:[]},
+  {key:'parties',label:'Edit Parties',group:'Setup',fields:[]},
   // 2026-05-05: Removed `contract_month` + `active_entry_date` per David —
   // both kept in DB but not rendered.
   {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','complete_date']},
@@ -2992,6 +2992,14 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received ({pisSheets.length})</span>}
             </div>
           </div>
+          {/* 2026-05-07 (Phase 1) — Cross-link to Edit Parties so the
+              relationship between the two tabs is obvious. Same underlying
+              project_info_sheets row; this tab views, the other edits. */}
+          <div style={{marginBottom:14,padding:'8px 12px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:8,fontSize:12,color:'#0C4A6E',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <span>ℹ︎ This tab is read-only.</span>
+            <span>To correct GC / Owner / Billing or pull from SharePoint:</span>
+            <button onClick={()=>setTab('parties')} style={{background:'transparent',border:'none',padding:0,color:'#0369A1',fontWeight:700,cursor:'pointer',textDecoration:'underline',fontSize:12}}>open the Edit Parties tab →</button>
+          </div>
           {pisToast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'10px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>{pisToast}</div>}
           {pisSheets.map((s,sheetIdx)=>{
             // Build sectioned field list. Empty sections are hidden via the
@@ -3154,9 +3162,9 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               missing or incorrect data. */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12,gap:12,flexWrap:'wrap'}}>
             <div>
-              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Parties</div>
+              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Edit Parties</div>
               <div style={{fontSize:11,color:'#625650',marginTop:2,maxWidth:520,lineHeight:1.4}}>
-                Internal edit surface for the General Contractor, Owner, Billing contact, and (when bonded) Agent + Surety. {pisSheets&&pisSheets[0]?<>Linked to the customer's PIS submission — edits here update the same row.</>:<>No PIS submitted yet — saving here will create the row so contracts has a single source of truth.</>}
+                Edit the General Contractor, Owner, Billing contact, and (when bonded) Agent + Surety. {pisSheets&&pisSheets[0]?<>Linked to the customer's PIS submission — edits here update the same row. <button onClick={()=>setTab('pis')} style={{background:'transparent',border:'none',padding:0,color:'#0369A1',fontWeight:700,cursor:'pointer',textDecoration:'underline',fontSize:11}}>View the full submission on the Info Sheet tab →</button></>:<>No PIS submitted yet — saving here will create the row so contracts has a single source of truth.</>}
               </div>
             </div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
