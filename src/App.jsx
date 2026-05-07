@@ -5861,7 +5861,9 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
       pm:sub.pm,market:sub.market,style:sub.style,color:sub.color,
       height_precast:sub.height,
     };
-    const drawerCanEdit=mode==='edit'&&pageCanEdit;
+    // pageCanEdit is scoped to ProjectsPage; BillingPage has its own auth
+    // hook at line ~5590 — call canEditProjects(auth?.profile) inline.
+    const drawerCanEdit=mode==='edit'&&canEditProjects(auth?.profile);
     return(
       <div onClick={onClose} style={{
         position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,
