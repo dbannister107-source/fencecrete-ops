@@ -2099,6 +2099,37 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
 
   const[saveErr,setSaveErr]=useState(null);
+  // 2026-05-07 — Drift Watch. Surfaces a yellow banner when stored
+  // jobs.net_contract_value disagrees with SUM(job_line_items.line_value)
+  // by more than $50 (excluding bonds/permits which are separate fields).
+  // Pre-existing data hygiene from the Pricing-Book retirement; the
+  // 2026-05-07 sync trigger fix only propagates forward, so existing
+  // disagreements stay until Amiee touches a line item with real value.
+  // Banner is read-only — just visibility, no auto-fix. ~55 active jobs
+  // have this drift; see docs/contract_value_drift_audit_2026-05-07.csv.
+  const[driftBanner,setDriftBanner]=useState(null);
+  useEffect(()=>{
+    if(!job?.id||isNew)return;
+    let cancelled=false;
+    sbGet('job_line_items',`job_id=eq.${job.id}&select=fence_type,line_value`).then(rows=>{
+      if(cancelled)return;
+      if(!Array.isArray(rows)||rows.length===0){setDriftBanner(null);return;}
+      const lineSum=rows
+        .filter(r=>!['P&P Bond','Maint Bond','Permit'].includes(r.fence_type))
+        .reduce((s,r)=>s+(Number(r.line_value)||0),0);
+      const stored=Number(job.net_contract_value)||0;
+      const delta=lineSum-stored;
+      // Only surface when both sides are non-zero AND |delta| > $50.
+      // Skip the zero-sum legacy cases (line_value all 0) — they're
+      // protected by the trigger guard and would create noise here.
+      if(stored>0&&lineSum>0&&Math.abs(delta)>50){
+        setDriftBanner({stored,lineSum,delta});
+      }else{
+        setDriftBanner(null);
+      }
+    }).catch(()=>setDriftBanner(null));
+    return()=>{cancelled=true;};
+  },[job?.id,job?.net_contract_value,isNew]);
   const loadPisData=useCallback(async()=>{
     if(!job?.id)return;
     const[tokens,sheets]=await Promise.all([
@@ -2882,6 +2913,21 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
         <span style={{fontSize:16,lineHeight:1,marginTop:1}}>⚠</span>
         <div style={{flex:1,fontSize:13,color:'#991B1B',fontWeight:600,lineHeight:1.5,wordBreak:'break-word',whiteSpace:'pre-wrap'}}>{saveErr}</div>
         <button onClick={()=>setSaveErr(null)} title="Dismiss" style={{background:'none',border:'none',color:'#991B1B',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
+      </div>}
+      {/* 2026-05-07 — Drift Watch banner. Surfaces stored vs line-items
+          disagreement on contract value so Amiee sees it the moment she
+          opens an affected project, not buried in a CSV. Read-only; the
+          fix is to reconcile line items + stored contract value manually. */}
+      {driftBanner&&<div style={{margin:'0 20px 8px',padding:'10px 14px',background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:8,display:'flex',alignItems:'flex-start',gap:10,flexShrink:0}}>
+        <span style={{fontSize:16,lineHeight:1,marginTop:1}}>📊</span>
+        <div style={{flex:1,fontSize:13,color:'#92400E',fontWeight:600,lineHeight:1.5}}>
+          Contract value drift detected — <b>${Math.abs(driftBanner.delta).toLocaleString()}</b> {driftBanner.delta>0?'higher':'lower'} in line items than the stored contract.
+          <div style={{fontWeight:500,fontSize:12,marginTop:3}}>
+            Stored: ${driftBanner.stored.toLocaleString()} · Line items: ${driftBanner.lineSum.toLocaleString()}.
+            Review line items on the Scope tab before filing the next App, or open the project's Money tab to confirm the right value.
+          </div>
+        </div>
+        <button onClick={()=>setDriftBanner(null)} title="Dismiss for this session" style={{background:'none',border:'none',color:'#92400E',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
       </div>}
       {!canEdit&&!isNew&&(canEditInstallDateOnly
         ? <div style={{padding:'8px 20px',background:'#DBEAFE',borderBottom:'1px solid #93C5FD',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>

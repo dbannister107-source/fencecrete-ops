@@ -1,0 +1,57 @@
+priority,job_number,job_name,status,pm,market,stored_net,line_items_sum,delta,pattern,adj,ytd,lines_missing_value,total_lines,notes
+🚨 URGENT,25H088,Sofi Lakes,in_production,Manuel Salazar,HOU,731625,731625,0,permit_misclassification,748686,0,0,3,"Permit line item = $195,550 (suspiciously large). Will propagate to jobs.permit_amount on next line-item edit and inflate adj_contract_value. Verify line item is correctly categorized as Permit before any edit."
+🔴 HIGH,25A047,"South Austin Commerce Center, Ph 1",contract_review,Doug Monroe,AUS,175495,63875,-111620,stored > line items,176595,0,0,2,"Pre-billing. Line items appear incomplete relative to stored contract value."
+🔴 HIGH,25H085,Tam III - Boilerplate,active_install,Manuel Salazar,HOU,52815,155243,102428,line items > stored,55207,36862,0,3,"Active install + ytd $36k. Line items show $155k of scope but stored only $52k. Reconcile before next App."
+🟠 MED,25H013,Monet Estates,active_install,Rafael Anaya Jr.,HOU,478267,382103,-96164,stored > line items,478542,429396,0,4,"Heavily billed (ytd $429k). Likely Pricing-Book-era data; stored value is the source of truth."
+🟠 MED,25A046,Cedar Tech - Leander #ATX041-3450,in_production,Doug Monroe,AUS,298875,208125,-90750,stored > line items,301298,0,1,2,"Pre-billing. 1 line item missing line_value."
+🟠 MED,25H086,Telge Ranch West LS,contract_review,Rafael Anaya Jr.,HOU,41896,122065,80169,line items > stored,42330,0,1,3,"Line items show 3x stored. 1 line missing value. Likely needs reconciliation before contract advance."
+🟠 MED,26H014,The Trails Ph 2B,production_queue,Manuel Salazar,HOU,259066,217050,-42016,stored > line items,261468,0,0,3,"Pre-billing."
+🟠 MED,24H079,WCH MUD No. 11 WP No. 1 # 241-080-11 (L),active_install,Manuel Salazar,HOU,152630,121305,-31325,stored > line items,154536,0,0,2,
+🟠 MED,25A009,Presidential Glen Storage #2501-S41B,active_install,Doug Monroe,AUS,114170,85050,-29120,stored > line items,116122,87331,0,2,"Heavily billed (ytd $87k of $114k stored)."
+🟠 MED,24H043,BraeBurn Country Club,active_install,Manuel Salazar,HOU,1774215,1746703,-27512,stored > line items,1800323,1414913,0,3,"Heavily billed ($1.4M ytd). Largest job in this audit."
+🟡 LOW,25H074,Dunham Pointe Section 22,active_install,Rafael Anaya Jr.,HOU,189887,169308,-20579,stored > line items,189935,35112,0,4,
+🟡 LOW,25H040,Edinburgh Estates,fence_complete,Manuel Salazar,HOU,122650,102300,-20350,stored > line items,125010,112994,0,1,"Near close-out (ytd ~92%)."
+🟡 LOW,24A036,Kyle FM 1626 Pump Station #224055,production_queue,Doug Monroe,AUS,629100,609100,-20000,stored > line items,629100,0,0,3,
+🟡 LOW,10148,"Sadanada, Dokuru",material_ready,Ray Garcia,SA,57190,37410,-19780,stored > line items,58123,0,1,2,"Residential. 1 line missing value."
+🟡 LOW,25H091,King Manor WTP,contract_review,Manuel Salazar,HOU,52025,34525,-17500,stored > line items,52592,0,0,2,
+🟡 LOW,25H064,NHCRWA Project 35B # S250203-14,fence_complete,Manuel Salazar,HOU,58390,41400,-16990,stored > line items,59114,31202,0,1,
+🟡 LOW,25A011,CR 158 Pump Station,active_install,Doug Monroe,AUS,163625,147625,-16000,stored > line items,165833,157045,0,2,"Heavily billed."
+🟡 LOW,26H031,Lago Mar Regional LS #2025092,contract_review,Rafael Anaya Jr.,HOU,106955,91355,-15600,stored > line items,107763,0,0,3,
+🟡 LOW,25H071,Dunham Pointe Section 16,active_install,Rafael Anaya Jr.,HOU,220422,205108,-15313,stored > line items,220422,202332,0,2,"Heavily billed (~92%)."
+🟡 LOW,25S036,Tapatio WTP,production_queue,Ray Garcia,SA,167260,152010,-15250,stored > line items,169625,0,0,2,
+🟡 LOW,24H024,Sheldon Road MUD - Rolling Hills WWTP Exp Alt 2,production_queue,Manuel Salazar,HOU,108890,95550,-13340,stored > line items,110664,0,0,1,
+🟡 LOW,25H080,HC MUD 171 LS No. 6 # 802-09,active_install,Rafael Anaya Jr.,HOU,71550,58300,-13250,stored > line items,71550,54495,0,2,
+🟡 LOW,24H067,HC MUD 171 WW No. 9,material_ready,Rafael Anaya Jr.,HOU,136328,123728,-12600,stored > line items,136328,0,0,1,
+🟡 LOW,25H056,Gulfbelt Logistics Park LS #811-03,in_production,Manuel Salazar,HOU,53900,42015,-11885,stored > line items,54564,0,0,2,
+🟡 LOW,25H019,BC MUD 57 WS & Storage # G24-1120,active_install,Manuel Salazar,HOU,129675,118030,-11645,stored > line items,131871,0,0,2,
+🟡 LOW,25H090,HC MUD 171 WW No. 7,active_install,Rafael Anaya Jr.,HOU,158120,147200,-10920,stored > line items,158120,0,0,1,
+🟡 LOW,25H042,Wildrye Phase 1 # TL25010,active_install,Rafael Anaya Jr.,HOU,832033,842883,10850,line items > stored,832033,832068,0,15,"Line items slightly higher (delta within 1.3%). Heavily billed (ytd matches stored)."
+🟡 LOW,26H027,TxDOT SWPS Greenhouse Pump Station,contract_review,Manuel Salazar,HOU,84950,74200,-10750,stored > line items,86229,0,0,1,
+🟡 LOW,25H039,BC MUD 57 LS No. 2,active_install,Manuel Salazar,HOU,35150,24600,-10550,stored > line items,35645,22638,0,1,
+🟡 LOW,25A025,Townhomes at Old Settlers #001,active_install,Doug Monroe,AUS,345262,335414,-9848,stored > line items,353667,122576,0,2,
+🟡 LOW,26H023,Heights of Barbers Hill Sec 3 (Baytown),contract_review,Manuel Salazar,HOU,178089,168370,-9719,stored > line items,180900,0,0,2,
+🟡 LOW,25H068,Wildrye LS #1 SC-808-09,active_install,Rafael Anaya Jr.,HOU,54820,45120,-9700,stored > line items,54820,53017,0,1,"Heavily billed (~97%)."
+🟡 LOW,25H073,Dunham Pointe Section 19,active_install,Rafael Anaya Jr.,HOU,430499,420859,-9640,stored > line items,430499,278723,0,2,
+🟡 LOW,25H062,BC MUD 87 W. No. 2 #908,in_production,Manuel Salazar,HOU,109510,99871,-9639,stored > line items,111279,0,0,1,
+🟡 LOW,25H035,Little York FD # 2414,material_ready,Manuel Salazar,HOU,82380,73167,-9213,stored > line items,83635,0,0,3,
+🟡 LOW,26H024,WC MUD 40 - Cameron Prairie LS No 1,contract_review,Manuel Salazar,HOU,83846,74646,-9200,stored > line items,84756,0,0,1,
+🟡 LOW,25A042,Santa Rita - Lift Station,production_queue,Doug Monroe,AUS,47120,38720,-8400,stored > line items,47892,0,0,1,
+🟡 LOW,26H021,Louetta Farms #TLTAF1-001,contract_review,Manuel Salazar,HOU,47660,39515,-8145,stored > line items,48275,0,0,2,
+🟡 LOW,25H030,Ellwood Ph 1,active_install,Manuel Salazar,HOU,413163,421041,7878,line items > stored,420990,290760,0,3,
+🟡 LOW,25H037,Life Pointe Church,material_ready,Manuel Salazar,HOU,61875,54000,-7875,stored > line items,62961,0,0,1,
+🟡 LOW,25H036,Magnolia Forest LS #25-002,fence_complete,Manuel Salazar,HOU,47400,42000,-5400,stored > line items,48124,44082,0,1,
+🟡 LOW,25H057,Arabella on the Prairie Ph 3,active_install,Manuel Salazar,HOU,232834,238083,5249,line items > stored,238083,232360,0,3,
+🟡 LOW,24A017,Ranch Camp - Dumpster Enclosure,production_queue,Doug Monroe,AUS,8430,3680,-4750,stored > line items,8516,0,0,1,
+🟡 LOW,26H009,LOCI - Detention A & Sec 1,contract_review,Manuel Salazar,HOU,104442,108554,4112,line items > stored,104442,0,0,3,
+🟡 LOW,26H010,"LOCI - Detention B, C & Sec 2",contract_review,Manuel Salazar,HOU,100408,104419,4011,line items > stored,100408,0,0,3,
+🟡 LOW,24A030,Daniels Mountain Pump Station,in_production,Doug Monroe,AUS,240580,236680,-3900,stored > line items,243197,0,0,2,
+🟡 LOW,26S006,Citywide LS Repairs,contract_review,Ray Garcia,SA,70300,66800,-3500,stored > line items,70469,0,0,2,
+🟡 LOW,26H029,Gulfbelt Logistics Park SWPS #812-07,contract_review,Manuel Salazar,HOU,14118,17160,3042,line items > stored,14369,0,0,1,
+🟡 LOW,5500,"Rosenau, Brian",fence_complete,Ray Garcia,SA,24030,21130,-2900,stored > line items,24491,0,0,2,
+🟡 LOW,24H056,Elyson Section 60,active_install,Rafael Anaya Jr.,HOU,367800,370670,2870,line items > stored,367800,176022,0,3,
+🟡 LOW,26S003,Tiger IV - WO#25038-10 SC-022,active_install,Ray Garcia,SA,17080,19215,2135,line items > stored,19408,0,0,4,
+🟡 LOW,25A030,Briarwood Ph 2,material_ready,Doug Monroe,AUS,270135,272116,1982,line items > stored,272121,0,0,3,
+🟡 LOW,25H076,Grand Prairie Ph 8 (PC),active_install,Manuel Salazar,HOU,155940,157823,1883,line items > stored,161459,144437,0,2,"Heavily billed (~93%)."
+🟡 LOW,26H012,"LOCI - Detention D, E & Sec 4",contract_review,Manuel Salazar,HOU,21516,23016,1500,line items > stored,21516,0,0,2,
+🟡 LOW,25S031,Veramendi Lift Station #25-031,production_queue,Ray Garcia,SA,43685,42185,-1500,stored > line items,44397,0,0,1,
+🟡 LOW,26H015,The Trails Ph 2C,production_queue,Manuel Salazar,HOU,61860,61360,-500,stored > line items,63115,0,0,3,
