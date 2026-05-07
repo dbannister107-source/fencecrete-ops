@@ -5740,7 +5740,23 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const[arCOs,setArCOs]=useState([]);
   const fetchInvEntries=useCallback(async(jobId,force=false)=>{if(!jobId)return;if(!force&&invCacheRef.current.has(jobId)){setInvEntries(invCacheRef.current.get(jobId));return;}setInvLoading(true);try{const d=await sbGet('invoice_entries',`job_id=eq.${jobId}&order=invoice_date.desc`);const arr=d||[];invCacheRef.current.set(jobId,arr);setInvEntries(arr);}catch(e){setInvEntries([]);}setInvLoading(false);},[]);
   const fetchArCOs=useCallback(async(jobId)=>{if(!jobId)return;try{const d=await sbGet('change_orders',`job_id=eq.${jobId}&order=created_at.asc`);setArCOs(d||[]);}catch(e){setArCOs([]);}},[]);
-  const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();
+  const addInvEntry=async(jobId)=>{const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}
+/* 2026-05-08 — Phase E hard-block (Carlos C1 from the integrity audit).
+   Refuse the legacy AR write when this submission has already been filed
+   via the Accounting tab (invoice_applications row exists). Both paths post
+   to the canonical invoice_entries ledger, so approving via both would
+   create duplicate entries that double-count toward jobs.ytd_invoiced.
+   The amber 'Acct Sheet App #N' pill on the row is the heads-up; this is
+   the lock. Stale-data race is OK: even if arBilledBySub hasn't refreshed,
+   the modal-level UI block (banner + disabled button) catches it. */
+{
+  const linked=arDetail?.sub&&arBilledBySub[arDetail.sub.id];
+  if(linked){
+    setToast({message:`🔒 Already filed as Acct Sheet App #${linked.app_number}${linked.invoice_number?' ('+linked.invoice_number+')':''}. Use the Bill Draft drawer to file the next App.`,isError:true});
+    return;
+  }
+}
+/* Over-billing guard: warn (don't block) if this entry would push total billed past the contract value by more than $1K. Past Mary-class billing errors (Elyson 24H052: $651K over) happened silently; this gives AR an explicit moment to verify. Approved-CO and tax-billed-separately cases are legitimate; user can proceed. */try{const job=jobs.find(j=>j.id===jobId);const adj=n(job?.adj_contract_value);if(adj>0){const existingTotal=(invEntries||[]).reduce((s,e)=>s+n(e.invoice_amount),0);const newTotal=existingTotal+amt;const overBy=newTotal-adj;if(overBy>1000){const pct=Math.round((newTotal/adj)*100);const ok=window.confirm(`This invoice would put ${job?.job_name||'this job'} at ${pct}% of contract.\n\nContract: $${adj.toLocaleString()}\nAlready invoiced: $${existingTotal.toLocaleString()}\nThis invoice: $${amt.toLocaleString()}\nNew total: $${newTotal.toLocaleString()}\nOver by: $${Math.round(overBy).toLocaleString()}\n\nIf there's an approved change order or tax billed separately, this may be correct. Add anyway?`);if(!ok){return;}}}}catch(e){console.warn('[addInvEntry] over-bill guard skipped:',e);}const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOString().slice(0,7);try{await sbPost('invoice_entries',{job_id:jobId,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:arForm.ar_notes||null,entered_by:arForm.ar_reviewed_by||'Accounting'});invCacheRef.current.delete(jobId);await fetchInvEntries(jobId,true);onRefresh();
 // 2026-05-06 — Auto-mark-reviewed on EVERY invoice entry (was: first-only).
 // Per CEO direction: entering the invoice amount IS the review action;
 // remove the manual "Mark Reviewed" button entirely. Each Add Invoice now
@@ -5910,7 +5926,20 @@ setArForm(p=>({...p,invoiced_amount:'',invoice_number:'',ar_notes:''}));setToast
       setToast(`↺ ${sub.job_name||'Submission'} moved back to Pending`);
     }catch(err){setToast({message:err.message||'Revert failed',isError:true});}
   };
-  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_reviewed_by_user_id:auth?.profile?.id||null,ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});// POST to invoice_entries (source of truth). Trigger trg_recalc_ytd_invoiced
+  const markArReviewed=async(override)=>{if(!arDetail)return;const amt=n(arForm.invoiced_amount);if(!amt){setToast({message:'Invoice amount is required',isError:true});return;}const s=arDetail.sub;
+/* 2026-05-08 — Phase E hard-block. Same guard as addInvEntry; markArReviewed
+   is the override-flow target invoked from the over-bill confirmation modal,
+   so we re-check after override consent — the linked-to-Accounting state
+   trumps any AR override. Avoids the case where Virginia clicks Override at
+   the over-bill prompt for a submission that's already been filed via
+   Accounting tab. */
+{
+  const linked=arBilledBySub[s.id];
+  if(linked){
+    setToast({message:`🔒 Already filed as Acct Sheet App #${linked.app_number}${linked.invoice_number?' ('+linked.invoice_number+')':''}. Use the Bill Draft drawer to file the next App.`,isError:true});
+    return;
+  }
+}const job=jobs.find(j=>j.id===s.job_id);if(!override){const guard=checkOverbillGuard(job,amt);if(!guard.allow){setArOverbillBlock({sub:s,job,projected:guard.projected,contract:guard.contract,pct:guard.pct,action:()=>markArReviewed(true),flow:'modal'});setArOverbillTypeAck('');return;}}try{const overrideNote=override?`\n[OVER-BILL OVERRIDE ${new Date().toISOString().slice(0,16).replace('T',' ')} by ${arForm.ar_reviewed_by||'AR'}: approved at ${(((n(job?.ytd_invoiced)+amt)/n(job?.adj_contract_value||1))*100).toFixed(1)}% of contract]`:'';const finalNotes=((arForm.ar_notes||'')+overrideNote).trim()||null;await sbPatch('pm_bill_submissions',s.id,{ar_reviewed:true,ar_reviewed_at:new Date().toISOString(),ar_reviewed_by:arForm.ar_reviewed_by||'AR',ar_reviewed_by_user_id:auth?.profile?.id||null,ar_notes:finalNotes,invoiced_amount:amt,invoice_number:arForm.invoice_number||null,invoice_date:arForm.invoice_date||null,ytd_applied:true});// POST to invoice_entries (source of truth). Trigger trg_recalc_ytd_invoiced
 // will recompute jobs.ytd_invoiced + last_billed from the sum, and
 // trigger_calculate_billing will recompute pct_billed + left_to_bill.
 // This replaces a previous direct-patch-on-jobs path that bypassed the
@@ -6194,8 +6223,15 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
                 {/* 2026-05-06 — Manual "Mark Reviewed" button removed.
                     Entering the invoice amount auto-marks the bill sheet
                     reviewed (see addInvEntry). The Pending row's primary
-                    action is now "Enter Invoice" → opens the detail modal. */}
-                <button onClick={()=>openArDetail(sub)} style={isPending?{background:'#8A261D',border:'1px solid #8A261D',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}:{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>{isPending?'Enter Invoice':'View'}</button>
+                    action is now "Enter Invoice" → opens the detail modal.
+                    2026-05-08 — Phase E hard-block. Pending+linked rows
+                    swap the red "Enter Invoice" CTA for a gray "🔒 Locked"
+                    button — legacy AR write would double-bill. The 🧾 Bill
+                    Draft button next to it stays usable so AR can still
+                    file the next App via the Accounting flow. */}
+                {isPending&&arBilledBySub[sub.id]
+                  ?<button disabled title={`Locked — already filed as Acct Sheet App #${arBilledBySub[sub.id].app_number}${arBilledBySub[sub.id].invoice_number?' ('+arBilledBySub[sub.id].invoice_number+')':''}. Use 🧾 Bill Draft to file the next App.`} style={{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#9E9B96',fontSize:11,fontWeight:700,cursor:'not-allowed',padding:'4px 10px',whiteSpace:'nowrap'}}>🔒 Locked</button>
+                  :<button onClick={()=>openArDetail(sub)} style={isPending?{background:'#8A261D',border:'1px solid #8A261D',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}:{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>{isPending?'Enter Invoice':'View'}</button>}
                 {/* 2026-05-07 — Bill Draft drawer (Amiee). Pending = editable
                     (red outline, full File Invoice flow); Reviewed = read-only
                     (gray, view the draft as filed); No Bill = hidden. */}
@@ -6603,7 +6639,19 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
             <input value={arForm.ar_reviewed_by} onChange={e=>setArForm(p=>({...p,ar_reviewed_by:e.target.value}))} placeholder="Accounting" style={inputS}/>
           </div>
           {invDelConfirm&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:12,marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span style={{fontSize:12,color:'#991B1B'}}>Remove invoice entry for {$(invDelConfirm.amount)}?</span><div style={{display:'flex',gap:8}}><button onClick={()=>setInvDelConfirm(null)} style={btnS}>Cancel</button><button onClick={()=>deleteInvEntry(invDelConfirm.id,invDelConfirm.jobId)} style={{...btnP,background:'#DC2626',fontSize:12,padding:'6px 14px'}}>Remove</button></div></div>}
-          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} style={{...btnP,background:'#8A261D'}}>Add Invoice & Mark Reviewed</button></div>
+          {/* 2026-05-08 — Phase E hard-block. When this submission is already
+              linked to an invoice_applications row (filed via the Accounting
+              tab), legacy AR billing is locked: both paths post to the same
+              invoice_entries ledger and approving via both would double-bill.
+              Banner explains the lock + points to the Bill Draft drawer.
+              Button is disabled (and the handler also short-circuits with a
+              toast as defense in depth). */}
+          {arBilledBySub[s.id]&&<div style={{marginTop:8,marginBottom:8,padding:'10px 14px',background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:8,fontSize:12,color:'#92400E',lineHeight:1.5}}>
+            🔒 <b>Already filed as Acct Sheet App #{arBilledBySub[s.id].app_number}</b>{arBilledBySub[s.id].invoice_number?` (${arBilledBySub[s.id].invoice_number})`:''}.
+            Adding an invoice here would create a duplicate <code style={{background:'rgba(0,0,0,0.05)',padding:'1px 4px',borderRadius:3,fontSize:11}}>invoice_entries</code> row.
+            To bill more on this job, close this modal and use the <b>🧾 Bill Draft</b> button on the row to file the next App.
+          </div>}
+          <div style={{display:'flex',gap:8,marginTop:4}}><button onClick={()=>addInvEntry(s.job_id)} disabled={!!arBilledBySub[s.id]} title={arBilledBySub[s.id]?`Locked — already filed as Acct Sheet App #${arBilledBySub[s.id].app_number}`:undefined} style={{...btnP,background:arBilledBySub[s.id]?'#9E9B96':'#8A261D',cursor:arBilledBySub[s.id]?'not-allowed':'pointer',opacity:arBilledBySub[s.id]?0.7:1}}>{arBilledBySub[s.id]?'🔒 Locked — see Bill Draft':'Add Invoice & Mark Reviewed'}</button></div>
           {/* 2026-05-06 — Standalone "Mark Submission Complete" button removed.
               Add Invoice now auto-marks reviewed, saves invoice number +
               amount + date onto the bill sheet, and timestamps the audit
