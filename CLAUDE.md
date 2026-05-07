@@ -156,7 +156,9 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
-### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes ✅ Verified live
+### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes ✅ Complete
+
+**Status: shipped, verified live, closed out.** Unifying create + edit experiences for line items is finished — no follow-up work planned in this area.
 
 **Setup (NewProjectForm) and edit (EditPanel `LineItemsEditor`) now expose the same line-item options.** Previously create had 8 types and edit had 13, with different field shapes and a stale `'Lump Sum / Other'` label.
 
