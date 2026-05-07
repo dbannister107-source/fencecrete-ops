@@ -156,16 +156,18 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
-### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes
+### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes ✅ Verified live
 
 **Setup (NewProjectForm) and edit (EditPanel `LineItemsEditor`) now expose the same line-item options.** Previously create had 8 types and edit had 13, with different field shapes and a stale `'Lump Sum / Other'` label.
+
+**Verified end-to-end on 2026-05-07** by creating DEMO-002 via the live form with a Precast + Wood + Permit line set: dropdown showed all 14 types ✓, Labor/Unit + Tax Basis/Unit inputs render on the right types ✓, Wood manual entries (`labor_per_unit=25, tax_basis_per_unit=35`) persisted to DB ✓, Precast row's `labor_per_unit/tax_basis_per_unit` auto-derived by `fn_jli_derive_split` from style/height ✓, Permit row auto-derived to `labor=500, tax_basis=0` ✓, 🏠 RESIDENTIAL pill renders in EditPanel header ✓, Money → Contract → Sales Tax shows `PC Fence Tax Basis $29.25/LF × 100 LF = $241` ✓.
 
 - New `NP_LINE_TYPE_CONFIG` map at the top of NewProjectForm (App.jsx ~4147) drives 14 types (the 13 from EditPanel `TYPE_OPTS` plus `Removal` as a NewProjectForm convenience that stamps `fence_type='Other'` with a `REMOVAL: <material_type>` description prefix).
 - `lineSubtotal`, `totalLF`, `derivedFenceType`, `lineAgg`, `drainageEligibleLineIdx`, `isLFType`, and the per-line render block all switched from hard-coded type checks to reading `NP_LINE_TYPE_CONFIG[lt]?.{ui,drainage,color,fenceType,…}`. Three UI modes (`fence` / `per-piece` / `fixed-dollar`) drive field layout.
 - **Residential save bug fixed:** `toDBLineItem` now passes `labor_per_unit`, `tax_basis_per_unit`, `category`, and `taxable` on insert. SW / Wood / WI fence rows used to land with NULL split because the form never wrote those columns and the `fn_jli_derive_split` trigger only auto-derives for PC / Gate / Permit / Bond. New project form now also has Labor/Unit + Tax Basis/Unit inputs (mirrors EditPanel App.jsx:1671-1696), placeholder "auto on save" — leave blank for the auto-derived categories, type a value for SW/Wood/WI/Insurance and it persists.
 - **Residential pill bug fixed:** the "Residential" job-code button now sets `is_residential=true` on the saved row (`body.is_residential = jobCodeMode === 'manual'` in `submit`). Before this, jobs created via the Residential toggle never got the 🏠 RESIDENTIAL pill in EditPanel until someone manually edited the row.
 - **Sales tax not changed:** `computedSalesTax` was already correct on both surfaces (PC via `STYLE_BASIS`/`HEIGHT_BASIS` × LF × 8.25%, WI via 33% × contract × 8.25%). The Money → Contract → Sales Tax breakdown also unchanged.
-- Single commit, App.jsx only — see `41f7c91`.
+- Two commits, App.jsx only — `41f7c91` (main change) + `50fa234` (regression fix: the submit-time empty-line filter still hardcoded the legacy `'Lump Sum / Other'` label and only checked `lf/rate`, so fixed-dollar lines that store their value in `li.amount` — Permit, P&P Bond, Maint Bond, Insurance, Lump Sum — silently dropped on submit. Now driven by `NP_LINE_TYPE_CONFIG[lt].ui` to match the rest of the form).
 
 **Same day, separate commits:**
 - Contract-readiness `v_contract_readiness` view fixed — was double-counting CO line items vs `co_total`. Unblocked 26H009 / 26H010 / 26H012 from `contract_review`. View change only; no code deploy.
