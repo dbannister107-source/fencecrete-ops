@@ -5553,6 +5553,12 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
 function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const isMobile = useIsMobile();
   const[bilQuickView,setBilQuickView]=useState(null);
+  // 2026-05-07 — Bill Draft drawer. When set to {sub, mode}, renders the
+  // AccountingTab inside a right-side slideout for that submission's job.
+  // Per Amiee's ask: surface the Current Bill Draft from the project's
+  // Accounting tab on the Billing page so AR doesn't have to drill into
+  // each project's EditPanel. mode='edit' for Pending; 'view' for Reviewed.
+  const[billDraftDrawer,setBillDraftDrawer]=useState(null);
   
   const[bilRemindSending,setBilRemindSending]=useState(false);
   const sendBilReminders=async()=>{setBilRemindSending(true);try{const data=await sbFn('bill-sheet-reminder');setToast(`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing.`);}catch(e){setToast({message:e.message||'Failed to send reminders',isError:true});}setBilRemindSending(false);};
@@ -5844,6 +5850,55 @@ const bm=arForm.invoice_date?arForm.invoice_date.slice(0,7):new Date().toISOStri
 await sbPost('invoice_entries',{job_id:s.job_id,invoice_amount:amt,invoice_date:arForm.invoice_date||new Date().toISOString().split('T')[0],billing_month:bm,invoice_number:arForm.invoice_number||null,notes:finalNotes,entered_by:arForm.ar_reviewed_by||'AR'});
 if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});fetchArSubs();if(bumpRefresh)bumpRefresh();setToast({message:`Reviewed — ${$(amt)} logged for ${s.job_name}.${override?' Over-bill override logged.':''}`,isError:false});}catch(e){setToast({message:e.message||'Review failed',isError:true});}};
   const openArDetail=(sub)=>{setArDetail({sub});if(!invCacheRef.current.has(sub.job_id))setInvEntries([]);setArCOs([]);fetchInvEntries(sub.job_id);fetchArCOs(sub.job_id);setArForm({ar_notes:'',ar_reviewed_by:'',invoiced_amount:'',invoice_number:'',invoice_date:new Date().toISOString().split('T')[0]});};
+  // 2026-05-07 — Bill Draft drawer (right-side slideout). Mounts AccountingTab
+  // for the row's job/submission so AR can review and File Invoice without
+  // leaving the Billing page. canEdit gates the File button: Pending = edit;
+  // Reviewed = view-only. Drawer width is min(1100px, 95vw) so the
+  // 9-column DraftTable renders comfortably; falls back to 95vw on laptops.
+  const BillDraftDrawer=({sub,mode,onClose})=>{
+    const drawerJob=jobs.find(j=>j.id===sub.job_id)||{
+      id:sub.job_id,job_number:sub.job_number,job_name:sub.job_name,
+      pm:sub.pm,market:sub.market,style:sub.style,color:sub.color,
+      height_precast:sub.height,
+    };
+    const drawerCanEdit=mode==='edit'&&pageCanEdit;
+    return(
+      <div onClick={onClose} style={{
+        position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,
+        display:'flex',justifyContent:'flex-end',
+      }}>
+        <div onClick={e=>e.stopPropagation()} style={{
+          width:'min(1100px, 95vw)',height:'100vh',background:'#FFF',
+          boxShadow:'-8px 0 24px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column',
+        }}>
+          <div style={{
+            padding:'14px 20px',borderBottom:'1px solid #E5E3E0',
+            display:'flex',justifyContent:'space-between',alignItems:'center',
+            flexShrink:0,background:'#F9F8F6',gap:12,
+          }}>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontFamily:'Syne',fontSize:16,fontWeight:800,color:'#1A1A1A',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                🧾 Bill Draft — {drawerJob.job_number} · {drawerJob.job_name}
+              </div>
+              <div style={{fontSize:11,color:'#625650',marginTop:2}}>
+                {mode==='edit'
+                  ? 'Review the draft and File Invoice when ready. New App appears in the ledger below after filing.'
+                  : 'Read-only view. Click ↺ Revert to Pending on the row to make changes.'}
+              </div>
+            </div>
+            <button onClick={onClose} style={btnS}>Close</button>
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
+            <AccountingTab
+              job={drawerJob}
+              canEdit={drawerCanEdit}
+              currentUserEmail={currentUserEmail}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
   // Read-only PM Bill Sheet panel for the Billing View modal. Displays
   // stored pm_bill_submissions values grouped by section; empty fields
   // render as "—". Fields `precast_other_lf` and `one_line_other_lf`
@@ -6069,6 +6124,16 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
                     reviewed (see addInvEntry). The Pending row's primary
                     action is now "Enter Invoice" → opens the detail modal. */}
                 <button onClick={()=>openArDetail(sub)} style={isPending?{background:'#8A261D',border:'1px solid #8A261D',borderRadius:6,color:'#FFF',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}:{background:'#F4F4F2',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px'}}>{isPending?'Enter Invoice':'View'}</button>
+                {/* 2026-05-07 — Bill Draft drawer (Amiee). Pending = editable
+                    (red outline, full File Invoice flow); Reviewed = read-only
+                    (gray, view the draft as filed); No Bill = hidden. */}
+                {!isNoBill&&<button
+                  onClick={()=>setBillDraftDrawer({sub,mode:isPending?'edit':'view'})}
+                  title={isPending?'Open the Bill Draft to review pricing × stages and File Invoice':'View the saved Bill Draft (read-only)'}
+                  style={isPending
+                    ?{background:'#FFF',border:'1px solid #8A261D',borderRadius:6,color:'#8A261D',fontSize:11,fontWeight:700,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}
+                    :{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}
+                >🧾 {isPending?'Bill Draft':'View Draft'}</button>}
                 {isReviewed&&arIsRevertable&&<button onClick={()=>revertToPending(sub)} title="Move this submission back to Pending" style={{background:'#FFF',border:'1px solid #D1CEC9',borderRadius:6,color:'#625650',fontSize:11,fontWeight:600,cursor:'pointer',padding:'4px 10px',whiteSpace:'nowrap'}}>↺ Revert to Pending</button>}
               </div></td>
             </tr>;})}
@@ -6184,6 +6249,7 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
       </div>
     </div>;})()}
     {bilQuickView&&<ProjectQuickView job={bilQuickView} onClose={()=>setBilQuickView(null)} billSub={arSubByJob[bilQuickView.id]}/>}
+    {billDraftDrawer&&<BillDraftDrawer sub={billDraftDrawer.sub} mode={billDraftDrawer.mode} onClose={()=>setBillDraftDrawer(null)}/>}
     {/* AR Detail Modal */}
     {/* OVER-BILL GUARD MODAL — renders above arDetail. Hard-blocks an
         approval that would push billed % above OVERBILL_THRESHOLD_PCT.
