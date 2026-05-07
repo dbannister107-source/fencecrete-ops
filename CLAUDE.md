@@ -156,6 +156,22 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
+### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes
+
+**Setup (NewProjectForm) and edit (EditPanel `LineItemsEditor`) now expose the same line-item options.** Previously create had 8 types and edit had 13, with different field shapes and a stale `'Lump Sum / Other'` label.
+
+- New `NP_LINE_TYPE_CONFIG` map at the top of NewProjectForm (App.jsx ~4147) drives 14 types (the 13 from EditPanel `TYPE_OPTS` plus `Removal` as a NewProjectForm convenience that stamps `fence_type='Other'` with a `REMOVAL: <material_type>` description prefix).
+- `lineSubtotal`, `totalLF`, `derivedFenceType`, `lineAgg`, `drainageEligibleLineIdx`, `isLFType`, and the per-line render block all switched from hard-coded type checks to reading `NP_LINE_TYPE_CONFIG[lt]?.{ui,drainage,color,fenceType,…}`. Three UI modes (`fence` / `per-piece` / `fixed-dollar`) drive field layout.
+- **Residential save bug fixed:** `toDBLineItem` now passes `labor_per_unit`, `tax_basis_per_unit`, `category`, and `taxable` on insert. SW / Wood / WI fence rows used to land with NULL split because the form never wrote those columns and the `fn_jli_derive_split` trigger only auto-derives for PC / Gate / Permit / Bond. New project form now also has Labor/Unit + Tax Basis/Unit inputs (mirrors EditPanel App.jsx:1671-1696), placeholder "auto on save" — leave blank for the auto-derived categories, type a value for SW/Wood/WI/Insurance and it persists.
+- **Residential pill bug fixed:** the "Residential" job-code button now sets `is_residential=true` on the saved row (`body.is_residential = jobCodeMode === 'manual'` in `submit`). Before this, jobs created via the Residential toggle never got the 🏠 RESIDENTIAL pill in EditPanel until someone manually edited the row.
+- **Sales tax not changed:** `computedSalesTax` was already correct on both surfaces (PC via `STYLE_BASIS`/`HEIGHT_BASIS` × LF × 8.25%, WI via 33% × contract × 8.25%). The Money → Contract → Sales Tax breakdown also unchanged.
+- Single commit, App.jsx only — see `41f7c91`.
+
+**Same day, separate commits:**
+- Contract-readiness `v_contract_readiness` view fixed — was double-counting CO line items vs `co_total`. Unblocked 26H009 / 26H010 / 26H012 from `contract_review`. View change only; no code deploy.
+- 11 active jobs had stale `net_contract_value` refreshed (6 with CO-linked line items + 5 small "trigger never fired" cases). Closed jobs intentionally skipped — they're part of the broader `docs/contract_value_drift_audit_2026-05-07.csv` that still has 49 Cat A jobs (line items incomplete) and 2 large Cat B jobs (25H085 / 25H086) needing accounting reconciliation.
+- New roles `production_manager` (Max Rodriguez) and `admin_assistant` (Yvonne Garcia) added to `src/shared/nav.js` `ROLE_META` + `ROLE_NAV_GROUPS` and to the `user_profiles_role_check` constraint.
+
 ### Recently shipped (2026-05-05) — Accounting System / Billing Engine end-to-end
 
 **Replaced Virginia's manual Excel "Acct Sheet" with a native OPS feature in 4 phased commits over a single day.** The Excel template (per-job XLSX file with 4 sheets, ~160 rows of formulas, manually maintained per cycle) is the system of record for billing today; this build moves that into Postgres + a React UI on the EditPanel. Cutover is operational, not engineering — Virginia switches when ready; both paths (legacy AR review on BillingPage + new Accounting tab) coexist with a visual heads-up to prevent double-billing during transition.
