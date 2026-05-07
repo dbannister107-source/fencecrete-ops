@@ -1177,7 +1177,11 @@ const SECS=[
   // alongside other Setup metadata. The dedicated 'requirements' tab is gone;
   // tab key still mapped to 'details' if anything still navigates there.
   {key:'details',label:'Details & Requirements',group:'Setup',fields:['sales_rep','pm','job_type','address','city','state','zip','cust_number','notes']},
-  {key:'parties',label:'Edit Parties',group:'Setup',fields:[]},
+  // 2026-05-07 (Phase 2) — Parties tab consolidated INTO Info Sheet.
+  // The edit form now lives behind the ✎ Edit Parties toggle on the
+  // Info Sheet tab. The standalone tab entry is gone; a useEffect
+  // redirects any stale 'parties' tab references to 'pis'.
+  // (Old entry: {key:'parties',label:'Edit Parties',group:'Setup',fields:[]})
   // 2026-05-05: Removed `contract_month` + `active_entry_date` per David —
   // both kept in DB but not rendered.
   {key:'dates',label:'Dates',group:'Setup',fields:['contract_date','ntp_issued_date','ntp_received_date','ntp_received_by','est_start_date','contract_age','complete_date']},
@@ -2155,20 +2159,35 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[partiesDraft,setPartiesDraft]=useState({});
   const[partiesSaving,setPartiesSaving]=useState(false);
   const[partiesToast,setPartiesToast]=useState(null);
+  // 2026-05-07 (Phase 2) — Parties tab consolidated into Info Sheet. The
+  // edit form is now an inline collapsible inside the Info Sheet tab,
+  // toggled by editPartiesOpen. The standalone 'parties' tab key is
+  // deprecated; REMOVED_TAB_REDIRECTS routes any stale references to 'pis'.
+  const[editPartiesOpen,setEditPartiesOpen]=useState(false);
+  // Redirect stale 'parties' tab key → 'pis' + open the edit accordion.
+  // Anyone with a saved/bookmarked 'parties' tab lands on Info Sheet
+  // with the Edit form already expanded.
+  useEffect(()=>{
+    if(tab==='parties'){setTab('pis');setEditPartiesOpen(true);}
+  },[tab]);
   // SharePoint PIS extraction state — drives the "Pull from SharePoint PIS file" button
   // + preview/confirm modal. Edge function: pis-extract-from-sharepoint (deployed 2026-05-03).
   const[pisExtractBusy,setPisExtractBusy]=useState(false);
   const[pisExtractResult,setPisExtractResult]=useState(null);
   const[pisExtractError,setPisExtractError]=useState(null);
-  // Reseed draft whenever the underlying PIS data refreshes (or the user switches jobs).
+  // Reseed draft whenever the underlying PIS data refreshes, the user
+  // switches jobs, or the user opens the Edit Parties accordion. (Phase 2
+  // consolidation: the seed used to fire on tab='parties'; now fires on
+  // tab='pis' AND on editPartiesOpen flips so the inline form has fresh
+  // data the moment Amiee opens it.)
   useEffect(()=>{
-    if(tab!=='parties')return;
+    if(tab!=='pis'&&tab!=='parties')return; // 'parties' kept for stale tab keys
     const latest=pisSheets&&pisSheets[0];
     const seed={};
     PARTY_FIELDS.forEach(k=>{seed[k]=latest&&latest[k]!=null?latest[k]:'';});
     setPartiesDraft(seed);
     setPartiesToast(null);
-  },[tab,pisSheets,PARTY_FIELDS,job?.id]);
+  },[tab,pisSheets,PARTY_FIELDS,job?.id,editPartiesOpen]);
   const savePartiesDraft=async()=>{
     if(!job?.id||!canEdit)return;
     setPartiesSaving(true);setPartiesToast(null);
@@ -2992,13 +3011,43 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               {pisSheets.length>0&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700}}>Received ({pisSheets.length})</span>}
             </div>
           </div>
-          {/* 2026-05-07 (Phase 1) — Cross-link to Edit Parties so the
-              relationship between the two tabs is obvious. Same underlying
-              project_info_sheets row; this tab views, the other edits. */}
-          <div style={{marginBottom:14,padding:'8px 12px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:8,fontSize:12,color:'#0C4A6E',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            <span>ℹ︎ This tab is read-only.</span>
-            <span>To correct GC / Owner / Billing or pull from SharePoint:</span>
-            <button onClick={()=>setTab('parties')} style={{background:'transparent',border:'none',padding:0,color:'#0369A1',fontWeight:700,cursor:'pointer',textDecoration:'underline',fontSize:12}}>open the Edit Parties tab →</button>
+          {/* 2026-05-07 (Phase 2) — Parties tab consolidated INTO Info Sheet.
+              Toolbar exposes the Edit accordion + SharePoint extract here so
+              there's one canonical surface for everything PIS-related.
+              The standalone Parties tab is gone; REMOVED_TAB_REDIRECTS routes
+              any stale 'parties' tab references to 'pis'. */}
+          <div style={{marginBottom:14,padding:'10px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+            <div style={{fontSize:11,color:'#625650',flex:1,minWidth:240,lineHeight:1.5}}>
+              {pisSheets&&pisSheets[0]?<>Linked to the customer's PIS submission. Edits update the same row contracts + Command Center read from.</>:<>No PIS submitted yet — you can pull from a SharePoint PIS file or fill in known contacts manually.</>}
+            </div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {/* SharePoint extract — only useful when no customer submission yet. */}
+              {canEdit && job?.sharepoint_folder_url && !(pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at) && <button
+                onClick={async()=>{
+                  setPisExtractBusy(true);
+                  setPisExtractResult(null);
+                  setPisExtractError(null);
+                  try {
+                    const data = await sbFn('pis-extract-from-sharepoint', { job_id: job.id });
+                    if (!data.found) throw new Error(data.reason || 'No PIS file found in the SharePoint folder.');
+                    setPisExtractResult(data);
+                    setEditPartiesOpen(true); // open the form so the extract preview lands somewhere visible
+                  } catch (e) {
+                    setPisExtractError(e.message || String(e));
+                  } finally {
+                    setPisExtractBusy(false);
+                  }
+                }}
+                disabled={pisExtractBusy}
+                style={{background:'#1E40AF',color:'#FFF',border:'none',borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:pisExtractBusy?'wait':'pointer',opacity:pisExtractBusy?0.6:1}}>
+                {pisExtractBusy ? '⏳ Extracting…' : '📥 Pull from SharePoint'}
+              </button>}
+              {canEdit && <button
+                onClick={()=>setEditPartiesOpen(v=>!v)}
+                style={{background:editPartiesOpen?'#8A261D':'#FFF',border:'1px solid #8A261D',borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:700,color:editPartiesOpen?'#FFF':'#8A261D',cursor:'pointer'}}>
+                {editPartiesOpen ? '✕ Close Edit' : '✎ Edit Parties'}
+              </button>}
+            </div>
           </div>
           {pisToast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'10px 14px',borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>{pisToast}</div>}
           {pisSheets.map((s,sheetIdx)=>{
@@ -3115,6 +3164,112 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               </div>}
             </div>;
           })}
+
+          {/* 2026-05-07 (Phase 2) — Inline Edit Parties accordion. Same form
+              that previously lived under tab='parties'; now rendered here
+              behind the editPartiesOpen toggle in the toolbar above. The
+              5-card layout (GC / Owner / Billing + conditional Agent / Surety),
+              the SharePoint extract preview modal, and the Save button all
+              come along unchanged — savePartiesDraft is the same handler. */}
+          {editPartiesOpen && <div style={{background:'#FFF',border:'2px solid #8A261D',borderRadius:10,padding:16,marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,gap:10,flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:.5}}>✎ Edit Parties</div>
+                <div style={{fontSize:11,color:'#625650',marginTop:2,maxWidth:520,lineHeight:1.4}}>
+                  Update GC / Owner / Billing contact and (when bonded) Agent + Surety. Saves to the same project_info_sheets row Command Center reads from.
+                </div>
+              </div>
+              {pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>✓ Customer-submitted PIS on file</span>}
+              {pisSheets&&pisSheets[0]&&!pisSheets[0].submitted_at&&<span style={{background:'#FEF3C7',color:'#B45309',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>Internal-only entry</span>}
+              {!(pisSheets&&pisSheets[0])&&<span style={{background:'#FEE2E2',color:'#991B1B',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>No PIS row yet</span>}
+            </div>
+
+            {pisExtractError && <div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:'#FEE2E2',color:'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>⚠ {pisExtractError}</span>
+              <button onClick={()=>setPisExtractError(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button>
+            </div>}
+
+            {pisExtractResult && pisExtractResult.found && <PisExtractPreviewModal
+              result={pisExtractResult}
+              onClose={()=>setPisExtractResult(null)}
+              onApply={(picks)=>{
+                setPartiesDraft(d=>({...d, ...picks}));
+                setPisExtractResult(null);
+                setPartiesToast({kind:'success', msg:'Extracted fields applied to draft. Review then click Save Parties.'});
+              }}
+            />}
+
+            {partiesToast&&<div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:partiesToast.kind==='success'?'#D1FAE5':'#FEE2E2',color:partiesToast.kind==='success'?'#065F46':'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{partiesToast.msg}</span><button onClick={()=>setPartiesToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
+
+            <div style={{padding:'8px 12px',marginBottom:14,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,fontSize:11,color:'#625650',lineHeight:1.5}}>
+              ℹ︎ Bonding details (Agent + Surety) auto-appear when a <b>P&amp;P Bond</b> or <b>Maint Bond</b> line item is added on the Line Items tab.
+            </div>
+
+            {(()=>{
+              const partyBlocks=[
+                {key:'gc',label:'General Contractor',hint:'The party running the jobsite — usually different from the billing customer.',color:'#8A261D',bg:'#FDF4F4',companyField:'gc_company',contactField:'gc_contact',phoneField:'gc_phone',emailField:'gc_email',addrField:'gc_address',cityField:'gc_city',stateField:'gc_state',zipField:'gc_zip'},
+                {key:'owner',label:'Owner',hint:'The party that owns the property where the fence is being installed.',color:'#0F6E56',bg:'#E1F5EE',companyField:'owner_company',contactField:'owner_contact',phoneField:'owner_phone',emailField:'owner_email',addrField:'owner_address',cityField:'owner_city',stateField:'owner_state',zipField:'owner_zip'},
+                {key:'billing',label:'Billing Contact',hint:'Where invoices are sent. May differ from the GC and Owner.',color:'#185FA5',bg:'#E6F1FB',companyField:null,contactField:'billing_contact',phoneField:'billing_phone',emailField:'billing_email',addrField:'billing_address',cityField:'billing_city',stateField:'billing_state',zipField:'billing_zip'},
+              ];
+              const isBonded=panelBondLines.some(l=>l.fence_type==='P&P Bond'||l.fence_type==='Maint Bond');
+              if(isBonded){
+                partyBlocks.push({key:'agent',label:'Bonding Agent',hint:'The agent who handles the bond paperwork.',color:'#854F0B',bg:'#FAEEDA',companyField:null,contactField:'agent_name',phoneField:'agent_phone',emailField:'agent_email',addrField:'agent_address',cityField:'agent_city',stateField:'agent_state',zipField:'agent_zip'});
+                partyBlocks.push({key:'surety',label:'Surety Company',hint:'The insurance company issuing the bond.',color:'#7C3AED',bg:'#EDE9FE',companyField:'surety_name',contactField:'surety_contact',phoneField:'surety_phone',emailField:'surety_email',addrField:'surety_address',cityField:'surety_city',stateField:'surety_state',zipField:'surety_zip'});
+              }
+              return <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                {partyBlocks.map(b=><div key={b.key} style={{border:`1px solid ${b.color}30`,borderRadius:10,overflow:'hidden'}}>
+                  <div style={{padding:'8px 14px',background:b.bg,borderBottom:`1px solid ${b.color}30`}}>
+                    <div style={{fontSize:12,fontWeight:800,color:b.color,letterSpacing:'.02em'}}>{b.label}</div>
+                    <div style={{fontSize:10,color:'#625650',marginTop:1}}>{b.hint}</div>
+                  </div>
+                  <div style={{padding:'12px 14px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                    {b.companyField&&<div style={{gridColumn:'1/-1'}}>
+                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Company</label>
+                      <input value={partiesDraft[b.companyField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.companyField]:e.target.value}))} disabled={!canEdit} placeholder={b.label==='Surety Company'?'e.g. Liberty Mutual Surety':b.label==='General Contractor'?'e.g. Peltier Brothers Construction, LLC':''} style={{...inputS,fontSize:13,fontWeight:600,...(canEdit?{}:roInput)}}/>
+                    </div>}
+                    <div>
+                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>{b.label==='Bonding Agent'?'Agent Name':'Contact Name'}</label>
+                      <input value={partiesDraft[b.contactField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.contactField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                    </div>
+                    <div>
+                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Phone</label>
+                      <input value={partiesDraft[b.phoneField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.phoneField]:e.target.value}))} disabled={!canEdit} placeholder="(###) ###-####" style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                    </div>
+                    <div style={{gridColumn:'1/-1'}}>
+                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Email</label>
+                      <input type="email" value={partiesDraft[b.emailField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.emailField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                    </div>
+                    <div style={{gridColumn:'1/-1'}}>
+                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Address</label>
+                      <input value={partiesDraft[b.addrField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.addrField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:6,gridColumn:'1/-1'}}>
+                      <div>
+                        <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>City</label>
+                        <input value={partiesDraft[b.cityField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.cityField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>State</label>
+                        <input value={partiesDraft[b.stateField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.stateField]:e.target.value}))} disabled={!canEdit} maxLength={2} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>ZIP</label>
+                        <input value={partiesDraft[b.zipField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.zipField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
+                      </div>
+                    </div>
+                  </div>
+                </div>)}
+              </div>;
+            })()}
+
+            {canEdit&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:10,border:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+              <div style={{fontSize:11,color:'#625650',lineHeight:1.5,flex:1,minWidth:240}}>
+                Saved here → written to the same project_info_sheets row that the PIS portal uses.
+              </div>
+              <button onClick={async()=>{await savePartiesDraft();/* close on success-ish: only if no toast OR success toast */}} disabled={partiesSaving} style={{...btnP,padding:'10px 20px',fontSize:13,opacity:partiesSaving?0.6:1,cursor:partiesSaving?'wait':'pointer'}}>{partiesSaving?'Saving…':'Save Parties'}</button>
+            </div>}
+          </div>}
+
           <div style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:10,padding:16,marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:700,color:'#625650',marginBottom:12}}>{pisSheets.length>0?'Re-send Request':'Send Request to Customer'}</div>
             <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'#625650',marginBottom:4}}>Recipient Email <span style={{color:'#991B1B'}}>*</span></div><input value={pisEmail} onChange={e=>setPisEmail(e.target.value)} placeholder="customer@example.com" style={{...inputS,pointerEvents:'auto'}} onPointerDown={e=>e.stopPropagation()}/></div>
@@ -3152,145 +3307,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                   <a href={formUrl} target="_blank" rel="noreferrer" style={{padding:'3px 8px',border:'1px solid #E5E3E0',borderRadius:5,background:'#FFF',color:'#625650',fontSize:10,fontWeight:700,cursor:'pointer',textDecoration:'none',flexShrink:0}}>Open</a>
                 </div>}
               </div>;})}
-          </div>}
-        </div>:tab==='parties'?<div style={{padding:'4px 0'}}>
-          {/* Parties Tab — internal edit surface for project_info_sheets rows.
-              Same database row that the PIS portal writes. Either path can
-              populate or overwrite these fields; whichever happens later wins.
-              Use cases: (1) job has no PIS yet but Amiee has GC/Owner from
-              contract docs, (2) GC changed mid-project, (3) PIS submitted but
-              missing or incorrect data. */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12,gap:12,flexWrap:'wrap'}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Edit Parties</div>
-              <div style={{fontSize:11,color:'#625650',marginTop:2,maxWidth:520,lineHeight:1.4}}>
-                Edit the General Contractor, Owner, Billing contact, and (when bonded) Agent + Surety. {pisSheets&&pisSheets[0]?<>Linked to the customer's PIS submission — edits here update the same row. <button onClick={()=>setTab('pis')} style={{background:'transparent',border:'none',padding:0,color:'#0369A1',fontWeight:700,cursor:'pointer',textDecoration:'underline',fontSize:11}}>View the full submission on the Info Sheet tab →</button></>:<>No PIS submitted yet — saving here will create the row so contracts has a single source of truth.</>}
-              </div>
-            </div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              {pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>✓ Customer-submitted PIS on file</span>}
-              {pisSheets&&pisSheets[0]&&!pisSheets[0].submitted_at&&<span style={{background:'#FEF3C7',color:'#B45309',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>Internal-only entry (no PIS submission)</span>}
-              {!(pisSheets&&pisSheets[0])&&<span style={{background:'#FEE2E2',color:'#991B1B',padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>No PIS row yet</span>}
-              {/* Pull-from-SharePoint button — only shown when job has a folder linked AND no submitted PIS yet.
-                  When a customer-submitted PIS already exists, that's the source of truth and we don't want
-                  Amiee to overwrite it with a stale SharePoint copy by accident. */}
-              {canEdit && job?.sharepoint_folder_url && !(pisSheets&&pisSheets[0]&&pisSheets[0].submitted_at) && <button
-                onClick={async()=>{
-                  setPisExtractBusy(true);
-                  setPisExtractResult(null);
-                  setPisExtractError(null);
-                  try {
-                    const data = await sbFn('pis-extract-from-sharepoint', { job_id: job.id });
-                    if (!data.found) throw new Error(data.reason || 'No PIS file found in the SharePoint folder.');
-                    setPisExtractResult(data);
-                  } catch (e) {
-                    setPisExtractError(e.message || String(e));
-                  } finally {
-                    setPisExtractBusy(false);
-                  }
-                }}
-                disabled={pisExtractBusy}
-                style={{background:'#1E40AF',color:'#FFF',border:'none',borderRadius:6,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:pisExtractBusy?'wait':'pointer',opacity:pisExtractBusy?0.6:1}}>
-                {pisExtractBusy ? '⏳ Extracting…' : '📥 Pull from SharePoint PIS file'}
-              </button>}
-            </div>
-          </div>
-
-          {pisExtractError && <div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:'#FEE2E2',color:'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span>⚠ {pisExtractError}</span>
-            <button onClick={()=>setPisExtractError(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button>
-          </div>}
-
-          {pisExtractResult && pisExtractResult.found && <PisExtractPreviewModal
-            result={pisExtractResult}
-            onClose={()=>setPisExtractResult(null)}
-            onApply={(picks)=>{
-              setPartiesDraft(d=>({...d, ...picks}));
-              setPisExtractResult(null);
-              setPartiesToast({kind:'success', msg:'Extracted fields applied to draft. Review then click Save Parties.'});
-            }}
-          />}
-
-          {partiesToast&&<div style={{marginBottom:10,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:partiesToast.kind==='success'?'#D1FAE5':'#FEE2E2',color:partiesToast.kind==='success'?'#065F46':'#991B1B',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>{partiesToast.msg}</span><button onClick={()=>setPartiesToast(null)} style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0}}>×</button></div>}
-
-          {/* Bonding is derived from line items (2026-05-05): the Agent + Surety
-              cards auto-show when any line item is a P&P Bond or Maint Bond.
-              Old "Bonding Required" + "Taxable" checkboxes retired — the line
-              items are the source of truth. partiesDraft.bonding_required and
-              partiesDraft.taxable still exist in the DB row for audit trail
-              but are no longer read or written from the form. */}
-          <div style={{padding:'8px 12px',marginBottom:14,background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,fontSize:11,color:'#625650',lineHeight:1.5}}>
-            ℹ︎ Bonding details (Agent + Surety) auto-appear when a <b>P&amp;P Bond</b> or <b>Maint Bond</b> line item is added on the Line Items tab.
-          </div>
-
-          {/* Party blocks. Each is a card with company/contact/phone/email and a
-              compact City/State/ZIP row. Address is one line for compactness;
-              the PIS form has separate Address fields and writes to the same
-              underlying DB columns. */}
-          {(()=>{
-            const partyBlocks=[
-              {key:'gc',label:'General Contractor',hint:'The party running the jobsite — usually different from the billing customer.',color:'#8A261D',bg:'#FDF4F4',companyField:'gc_company',contactField:'gc_contact',phoneField:'gc_phone',emailField:'gc_email',addrField:'gc_address',cityField:'gc_city',stateField:'gc_state',zipField:'gc_zip'},
-              {key:'owner',label:'Owner',hint:'The party that owns the property where the fence is being installed.',color:'#0F6E56',bg:'#E1F5EE',companyField:'owner_company',contactField:'owner_contact',phoneField:'owner_phone',emailField:'owner_email',addrField:'owner_address',cityField:'owner_city',stateField:'owner_state',zipField:'owner_zip'},
-              {key:'billing',label:'Billing Contact',hint:'Where invoices are sent. May differ from the GC and Owner.',color:'#185FA5',bg:'#E6F1FB',companyField:null,contactField:'billing_contact',phoneField:'billing_phone',emailField:'billing_email',addrField:'billing_address',cityField:'billing_city',stateField:'billing_state',zipField:'billing_zip'},
-            ];
-            // 2026-05-05: bonding now derived from line items (P&P Bond OR Maint Bond)
-            // instead of the retired partiesDraft.bonding_required checkbox.
-            const isBonded=panelBondLines.some(l=>l.fence_type==='P&P Bond'||l.fence_type==='Maint Bond');
-            if(isBonded){
-              partyBlocks.push({key:'agent',label:'Bonding Agent',hint:'The agent who handles the bond paperwork.',color:'#854F0B',bg:'#FAEEDA',companyField:null,contactField:'agent_name',phoneField:'agent_phone',emailField:'agent_email',addrField:'agent_address',cityField:'agent_city',stateField:'agent_state',zipField:'agent_zip'});
-              partyBlocks.push({key:'surety',label:'Surety Company',hint:'The insurance company issuing the bond.',color:'#7C3AED',bg:'#EDE9FE',companyField:'surety_name',contactField:'surety_contact',phoneField:'surety_phone',emailField:'surety_email',addrField:'surety_address',cityField:'surety_city',stateField:'surety_state',zipField:'surety_zip'});
-            }
-            return <div style={{display:'flex',flexDirection:'column',gap:14}}>
-              {partyBlocks.map(b=><div key={b.key} style={{border:`1px solid ${b.color}30`,borderRadius:10,overflow:'hidden'}}>
-                <div style={{padding:'8px 14px',background:b.bg,borderBottom:`1px solid ${b.color}30`}}>
-                  <div style={{fontSize:12,fontWeight:800,color:b.color,letterSpacing:'.02em'}}>{b.label}</div>
-                  <div style={{fontSize:10,color:'#625650',marginTop:1}}>{b.hint}</div>
-                </div>
-                <div style={{padding:'12px 14px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  {b.companyField&&<div style={{gridColumn:'1/-1'}}>
-                    <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Company</label>
-                    <input value={partiesDraft[b.companyField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.companyField]:e.target.value}))} disabled={!canEdit} placeholder={b.label==='Surety Company'?'e.g. Liberty Mutual Surety':b.label==='General Contractor'?'e.g. Peltier Brothers Construction, LLC':''} style={{...inputS,fontSize:13,fontWeight:600,...(canEdit?{}:roInput)}}/>
-                  </div>}
-                  <div>
-                    <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>{b.label==='Bonding Agent'?'Agent Name':'Contact Name'}</label>
-                    <input value={partiesDraft[b.contactField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.contactField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                  </div>
-                  <div>
-                    <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Phone</label>
-                    <input value={partiesDraft[b.phoneField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.phoneField]:e.target.value}))} disabled={!canEdit} placeholder="(###) ###-####" style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                  </div>
-                  <div style={{gridColumn:'1/-1'}}>
-                    <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Email</label>
-                    <input type="email" value={partiesDraft[b.emailField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.emailField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                  </div>
-                  <div style={{gridColumn:'1/-1'}}>
-                    <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>Address</label>
-                    <input value={partiesDraft[b.addrField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.addrField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:6,gridColumn:'1/-1'}}>
-                    <div>
-                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>City</label>
-                      <input value={partiesDraft[b.cityField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.cityField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                    </div>
-                    <div>
-                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>State</label>
-                      <input value={partiesDraft[b.stateField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.stateField]:e.target.value}))} disabled={!canEdit} maxLength={2} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                    </div>
-                    <div>
-                      <label style={{display:'block',fontSize:10,color:'#625650',marginBottom:3,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>ZIP</label>
-                      <input value={partiesDraft[b.zipField]||''} onChange={e=>setPartiesDraft(d=>({...d,[b.zipField]:e.target.value}))} disabled={!canEdit} style={{...inputS,fontSize:12,...(canEdit?{}:roInput)}}/>
-                    </div>
-                  </div>
-                </div>
-              </div>)}
-            </div>;
-          })()}
-
-          {canEdit&&<div style={{marginTop:16,padding:14,background:'#F9F8F6',borderRadius:10,border:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-            <div style={{fontSize:11,color:'#625650',lineHeight:1.5,flex:1,minWidth:240}}>
-              Saved here → written to the same project_info_sheets row that the PIS portal uses. The contracts team and Command Center reads from this.
-            </div>
-            <button onClick={savePartiesDraft} disabled={partiesSaving} style={{...btnP,padding:'10px 20px',fontSize:13,opacity:partiesSaving?0.6:1,cursor:partiesSaving?'wait':'pointer'}}>{partiesSaving?'Saving…':'Save Parties'}</button>
           </div>}
         </div>:tab==='documents'?<div style={{padding:'4px 0'}}>
           {/* Documents Tab — project_attachments backed (Phase D2, 2026-04-29).
