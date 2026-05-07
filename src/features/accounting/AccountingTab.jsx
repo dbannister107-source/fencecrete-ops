@@ -364,6 +364,14 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
   const [appNotes, setAppNotes] = useState('');
   const [filing, setFiling] = useState(false);
   const [releasing, setReleasing] = useState(false);
+  // Release Retainage modal — when true, the pre-flight + combine-with-final
+  // modal is open. (Replaces the prior native window.confirm flow so we can
+  // surface the PIS-gate friendly error before the user clicks File and
+  // optionally bundle the final regular invoice in the same transaction.)
+  const [releaseModalOpen, setReleaseModalOpen] = useState(false);
+  const [releasePisOk, setReleasePisOk] = useState(null); // null = checking, true/false = result
+  const [releaseCombineFinal, setReleaseCombineFinal] = useState(false);
+  const [releaseFinalAmount, setReleaseFinalAmount] = useState('');
   // Mark Paid modal — when set, MarkPaidModal renders for that App.
   const [markPaidApp, setMarkPaidApp] = useState(null);
   // Drill-down modal — when set, DrillDownModal renders for that App.
@@ -568,28 +576,100 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
   };
 
   // ─── Release Retainage ───────────────────────────────────────────
-  const releaseRetainage = async () => {
+  // 2026-05-06 — Replaced native window.confirm with a proper modal that:
+  //   1. Runs a PIS pre-flight check (mirrors fn_enforce_pis_for_retainage_release
+  //      DB trigger) so the user sees a friendly error BEFORE clicking File.
+  //   2. Optionally bundles the FINAL regular invoice with the retainage
+  //      release into a single transaction — two separate invoice_applications
+  //      rows / two invoice_numbers / two invoice_entries postings.
+  // openReleaseModal opens the dialog and kicks off the pre-flight check.
+  const openReleaseModal = useCallback(async () => {
+    if (Number(liveRetainageHeld) <= 0 || releasing) return;
+    setReleaseModalOpen(true);
+    setReleaseCombineFinal(false);
+    setReleaseFinalAmount('');
+    setReleasePisOk(null);
+    setErr(null);
+    try {
+      const rows = await sbGet(
+        'contract_readiness_items',
+        `job_id=eq.${job.id}&item_key=eq.pis_submitted&select=checked_at,not_applicable`
+      );
+      const r = Array.isArray(rows) ? rows[0] : null;
+      const ok = !!(r && (r.checked_at != null || r.not_applicable === true));
+      setReleasePisOk(ok);
+    } catch (e) {
+      // If the check fetch fails, default to "unknown — let the DB trigger
+      // be the authoritative gate". Don't fail-open; show an info note.
+      setReleasePisOk(null);
+    }
+  }, [job?.id, liveRetainageHeld, releasing]);
+
+  const closeReleaseModal = useCallback(() => {
+    if (releasing) return;
+    setReleaseModalOpen(false);
+  }, [releasing]);
+
+  // Single point of File logic — handles BOTH the release-only case and the
+  // combined final + release case. Sequential inserts in client; the DB
+  // trigger architecture (alphabetical fire order, UNIQUE(job_id, app_number),
+  // in-transaction MAX visibility) keeps app_number monotonic without a lock.
+  const fileRelease = async () => {
     const held = Number(liveRetainageHeld) || 0;
     if (held <= 0 || releasing) return;
-    if (!window.confirm(`Release $${held.toLocaleString()} held retainage as a final invoice?`)) return;
+
+    // Final-amount validation when combining.
+    const finalAmt = Number(releaseFinalAmount) || 0;
+    if (releaseCombineFinal) {
+      if (finalAmt <= 0) {
+        setErr('Final regular invoice amount must be greater than $0 when combining.');
+        return;
+      }
+    }
 
     setReleasing(true);
     setErr(null);
+    let regularApp = null;
     try {
-      const created = await sbPost('invoice_applications', {
-        job_id: job.id,
-        invoice_date: invoiceDate || todayISO(),
-        is_retainage_release: true,
-        notes: 'Retainage release',
-      }, { throwOnError: true });
-      const app = Array.isArray(created) ? created[0] : created;
-      if (!app?.id) throw new Error('No app row returned from insert');
+      // ─── Step 1: file the regular App if combining ─────────────────
+      if (releaseCombineFinal) {
+        const created = await sbPost('invoice_applications', {
+          job_id:               job.id,
+          invoice_date:         invoiceDate || todayISO(),
+          billing_period:       (invoiceDate || todayISO()).slice(0, 7),
+          is_retainage_release: false,
+          notes:                'Final regular invoice (paired with retainage release)',
+        }, { throwOnError: true });
+        regularApp = Array.isArray(created) ? created[0] : created;
+        if (!regularApp?.id) throw new Error('No regular App row returned from insert');
 
-      // Header-only — set the totals manually since there are no application
-      // lines to drive the compute trigger. The on-file trigger picks up
-      // current_amount and posts it to invoice_entries; trg_set_retainage_held
-      // zeros jobs.retainage_held because is_retainage_release=true.
-      await sbPatch('invoice_applications', app.id, {
+        await sbPatch('invoice_applications', regularApp.id, {
+          current_amount:    finalAmt,
+          current_retainage: 0,
+          net_due:           finalAmt,
+          retainage_to_date: held, // unchanged at this point — release App below zeros it
+          status:            'filed',
+          filed_by:          currentUserEmail || 'unknown',
+        });
+      }
+
+      // ─── Step 2: file the retainage release App ────────────────────
+      // The DB BEFORE INSERT trigger fn_enforce_pis_for_retainage_release
+      // fires here and raises check_violation if PIS isn't on file. The
+      // pre-flight UI check is friendly UX; this is the security backstop.
+      const created2 = await sbPost('invoice_applications', {
+        job_id:               job.id,
+        invoice_date:         invoiceDate || todayISO(),
+        billing_period:       (invoiceDate || todayISO()).slice(0, 7),
+        is_retainage_release: true,
+        notes:                releaseCombineFinal
+          ? 'Retainage release (paired with final regular invoice above)'
+          : 'Retainage release',
+      }, { throwOnError: true });
+      const releaseApp = Array.isArray(created2) ? created2[0] : created2;
+      if (!releaseApp?.id) throw new Error('No release App row returned from insert');
+
+      await sbPatch('invoice_applications', releaseApp.id, {
         current_amount:    held,
         current_retainage: 0,
         net_due:           held,
@@ -599,9 +679,22 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
       });
 
       await loadAll();
-      setToast(`Retainage release filed: $${held.toLocaleString()} (App #${app.app_number})`);
+      const summary = releaseCombineFinal
+        ? `Filed App #${regularApp.app_number} ($${finalAmt.toLocaleString()} regular) + App #${releaseApp.app_number} ($${held.toLocaleString()} retainage release)`
+        : `Retainage release filed: $${held.toLocaleString()} (App #${releaseApp.app_number})`;
+      setToast(summary);
+      setReleaseModalOpen(false);
     } catch (e) {
-      setErr('Retainage release failed: ' + (e.message || String(e)));
+      const msg = e?.message || String(e);
+      // Specific recovery guidance when step 1 succeeded but step 2 (PIS gate
+      // or other) failed: the regular App is committed; user resolves the
+      // PIS issue and clicks Release Retainage again WITHOUT the combine
+      // checkbox to file just the release.
+      if (regularApp) {
+        setErr(`Final regular App #${regularApp.app_number} filed successfully, but the retainage release failed: ${msg}. Resolve the issue and click Release Retainage again (without the combine option) to file just the release.`);
+      } else {
+        setErr('Retainage release failed: ' + msg);
+      }
     }
     setReleasing(false);
   };
@@ -802,7 +895,7 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
           ledger={result.ledger}
           retainageHeld={liveRetainageHeld}
           releasing={releasing}
-          onReleaseRetainage={releaseRetainage}
+          onReleaseRetainage={openReleaseModal}
           onMarkPaid={(app) => setMarkPaidApp(app)}
           onRowClick={(app) => setDrillApp(app)}
           canEdit={canEdit}
@@ -833,6 +926,148 @@ export default function AccountingTab({ job, canEdit, currentUserEmail }) {
           }}
         />
       )}
+
+      {/* Release Retainage modal (2026-05-06) — replaces the prior native
+          window.confirm. Pre-flight PIS check at the top; optional combine-
+          with-final-invoice section drives a two-App transaction. */}
+      {releaseModalOpen && (() => {
+        const heldAmt = Number(liveRetainageHeld) || 0;
+        const finalAmt = Number(releaseFinalAmount) || 0;
+        const retPct = Number(job?.retainage_pct) || 0;
+        const adj = Number(job?.adj_contract_value) || 0;
+        const computedHold = retPct * adj;
+        const fileEnabled = releasePisOk === true && !releasing
+          && (!releaseCombineFinal || finalAmt > 0);
+        return (
+          <div onClick={closeReleaseModal} style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 400,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}>
+            <div onClick={(e) => e.stopPropagation()} style={{
+              background: '#FFF', borderRadius: 14, padding: 20,
+              width: 'min(560px, 96vw)', maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontFamily: 'Syne', fontSize: 18, fontWeight: 800 }}>
+                    Release Retainage — {job?.job_number}
+                  </div>
+                  <div style={{ fontSize: 11, color: COLOR.text2, marginTop: 2 }}>
+                    {(retPct * 100).toFixed(2)}% retainage held · ${heldAmt.toLocaleString()} ready to release
+                  </div>
+                </div>
+                <button onClick={closeReleaseModal} disabled={releasing}
+                        style={{ ...btnS, opacity: releasing ? 0.5 : 1 }}>Close</button>
+              </div>
+
+              {/* PIS pre-flight banner — green/red/loading depending on state */}
+              {releasePisOk === null && (
+                <div style={{
+                  padding: '10px 14px', background: COLOR.bgSoft, border: `1px solid ${COLOR.border}`,
+                  borderRadius: 8, fontSize: 12, color: COLOR.text2, marginBottom: 12,
+                }}>Checking PIS readiness…</div>
+              )}
+              {releasePisOk === true && (
+                <div style={{
+                  padding: '10px 14px', background: COLOR.successBg, border: `1px solid ${COLOR.success}`,
+                  borderRadius: 8, fontSize: 12, color: COLOR.success, fontWeight: 600, marginBottom: 12,
+                }}>✓ PIS check passed — retainage release is permitted.</div>
+              )}
+              {releasePisOk === false && (
+                <div style={{
+                  padding: '12px 14px', background: COLOR.dangerBg, border: `1px solid ${COLOR.danger}`,
+                  borderRadius: 8, fontSize: 12, color: '#7F1D1D', fontWeight: 600, marginBottom: 12, lineHeight: 1.6,
+                }}>
+                  <div style={{ marginBottom: 6 }}>🛑 Retainage release is blocked.</div>
+                  <div style={{ fontWeight: 500 }}>
+                    The Project Information Sheet (PIS) hasn't been marked complete on this job.
+                    Resolve by one of:
+                  </div>
+                  <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 20, fontWeight: 500 }}>
+                    <li>Customer submits the PIS via the portal link</li>
+                    <li>Amiee uploads / extracts the PIS data from SharePoint</li>
+                    <li>Amiee manually checks <b>PIS submitted</b> on the Contract Readiness card</li>
+                    <li>Amiee marks <b>PIS submitted</b> as N/A (residential / no-PIS-needed only)</li>
+                  </ul>
+                </div>
+              )}
+
+              {/* Combine-with-final section — only meaningful when PIS passes */}
+              <div style={{
+                padding: '12px 14px', background: COLOR.bgSoft, border: `1px solid ${COLOR.border}`,
+                borderRadius: 8, marginBottom: 12,
+                opacity: releasePisOk === true ? 1 : 0.55,
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={releaseCombineFinal}
+                    onChange={(e) => setReleaseCombineFinal(e.target.checked)}
+                    disabled={releasePisOk !== true}
+                    style={{ width: 16, height: 16, accentColor: COLOR.brand }}
+                  />
+                  Combine with final regular invoice
+                </label>
+                {releaseCombineFinal && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${COLOR.border}` }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: COLOR.text2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                      Final regular billing amount
+                    </label>
+                    <input
+                      type="number"
+                      value={releaseFinalAmount}
+                      onChange={(e) => setReleaseFinalAmount(e.target.value)}
+                      placeholder="0"
+                      style={{ ...inputS, width: '100%', marginTop: 4 }}
+                    />
+                    <div style={{ fontSize: 11, color: COLOR.text2, marginTop: 8, lineHeight: 1.5 }}>
+                      Two separate invoices will be filed in this transaction:<br/>
+                      <b>Line 1:</b> Final regular billing — ${finalAmt.toLocaleString()}<br/>
+                      <b>Line 2:</b> Retainage release — ${heldAmt.toLocaleString()} ({(retPct*100).toFixed(2)}% × ${adj.toLocaleString()})
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sanity note — current retainage % can drift from held */}
+              {Math.abs(heldAmt - computedHold) > 1 && retPct > 0 && (
+                <div style={{
+                  padding: '8px 12px', background: COLOR.warnBg, border: `1px solid ${COLOR.warn}`,
+                  borderRadius: 8, fontSize: 11, color: '#92400E', marginBottom: 12, lineHeight: 1.5,
+                }}>
+                  <b>Note:</b> retainage_held (${heldAmt.toLocaleString()}) differs from current %
+                  × adj contract (${computedHold.toLocaleString()}). Releasing the held amount
+                  as it stands. Mid-project retainage % changes don't retroactively recompute prior holds.
+                </div>
+              )}
+
+              {err && (
+                <div style={{
+                  padding: '10px 14px', background: COLOR.dangerBg, border: `1px solid ${COLOR.danger}`,
+                  borderRadius: 8, fontSize: 12, color: '#7F1D1D', marginBottom: 12, lineHeight: 1.5,
+                }}>{err}</div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={closeReleaseModal} disabled={releasing} style={btnS}>Cancel</button>
+                <button
+                  onClick={fileRelease}
+                  disabled={!fileEnabled}
+                  title={!fileEnabled ? (releasePisOk !== true ? 'PIS check must pass' : 'Enter a final amount > 0') : ''}
+                  style={{ ...btnP, opacity: fileEnabled ? 1 : 0.5, cursor: fileEnabled ? 'pointer' : 'not-allowed' }}
+                >
+                  {releasing
+                    ? 'Filing…'
+                    : releaseCombineFinal
+                      ? 'File Final + Release'
+                      : 'File Release'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Drill-down modal — opens on App ledger row click. Quick actions
           inside (Mark Paid) emit via onAction; we route to the existing
