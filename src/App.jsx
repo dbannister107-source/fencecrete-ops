@@ -5873,23 +5873,22 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
       <span style={{color:'#625650'}}>{label}</span>
       <span style={{color:'#1A1A1A',fontWeight:600,fontFamily:'Inter'}}>{val}</span>
     </div>;
-    const subtotalRow=(v)=><div style={{borderTop:'1px solid #E5E3E0',padding:'7px 12px',display:'flex',justifyContent:'space-between',fontSize:11,fontWeight:800,marginTop:'auto'}}>
-      <span style={{color:'#625650',textTransform:'uppercase',letterSpacing:0.4}}>Subtotal</span>
-      <span style={{color:'#8A261D',fontFamily:'Inter',fontSize:13}}>{v.toLocaleString()} LF</span>
-    </div>;
-    const renderLFCard=(title,bg,headerBg,headerColor,border,fields,subtotal)=><div style={{...cardBase,background:bg,border:`1px solid ${border}`}}>
+    // 2026-05-06 — Per-section subtotalRow REMOVED per CEO direction. Cards
+    // show fields verbatim; no derived "Subtotal: X LF" footer. The local
+    // precastSub/swSub/oneSub/grand sums above are still used by the
+    // anyData empty-state check.
+    const renderLFCard=(title,bg,headerBg,headerColor,border,fields)=><div style={{...cardBase,background:bg,border:`1px solid ${border}`}}>
       <div style={{...headerBase,background:headerBg,color:headerColor}}>{title}</div>
       <div style={{display:'flex',flexDirection:'column',flex:1}}>
         {fields.map(([label,field],i)=>fieldRow(label,fmtLF(n(s[field])),i%2===1,i))}
-        {subtotalRow(subtotal)}
       </div>
     </div>;
     return<div style={{marginTop:14,paddingTop:14,borderTop:'2px solid #8A261D'}}>
       <div style={{fontSize:12,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>PM Bill Sheet</div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12,alignItems:'stretch'}}>
-        {renderLFCard('Precast','#F9FAFB','#E5E7EB','#374151','#E5E7EB',precastFields,precastSub)}
-        {renderLFCard('Single Wythe','#EFF6FF','#DBEAFE','#1D4ED8','#BFDBFE',swFields,swSub)}
-        {renderLFCard('One Line Items','#F0FDF4','#DCFCE7','#15803D','#BBF7D0',oneFields,oneSub)}
+        {renderLFCard('Precast','#F9FAFB','#E5E7EB','#374151','#E5E7EB',precastFields)}
+        {renderLFCard('Single Wythe','#EFF6FF','#DBEAFE','#1D4ED8','#BFDBFE',swFields)}
+        {renderLFCard('One Line Items','#F0FDF4','#DCFCE7','#15803D','#BBF7D0',oneFields)}
         <div style={{...cardBase,background:'#FEFCE8',border:'1px solid #FDE68A'}}>
           <div style={{...headerBase,background:'#FEF9C3',color:'#A16207'}}>Pieces & $</div>
           <div style={{display:'flex',flexDirection:'column',flex:1}}>
@@ -5908,10 +5907,9 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
           </div>
         </div>
       </div>
-      <div style={{background:'#8A261D',color:'#FFF',padding:'12px 18px',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 1px 3px rgba(139,32,32,0.25)'}}>
-        <span style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:1}}>Total LF This Period</span>
-        <span style={{fontSize:22,fontWeight:900,fontFamily:'Inter'}}>{grand.toLocaleString()} LF</span>
-      </div>
+      {/* 2026-05-06 — AR-side "Total LF This Period" banner REMOVED per CEO
+          direction. Per-section cards above show the saved values exactly
+          as the PM submitted them. */}
     </div>;
   };
   const[resetConfirm,setResetConfirm]=useState(null);
@@ -6850,34 +6848,9 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
       const ok=window.confirm('⚠ This bill sheet has notes but none of the LF / labor fields have a value.\n\nAR will have to manually transcribe your notes into the structured fields. Please put the breakdown in the LF / labor sections instead — the Notes field is for unusual situations only.\n\nClick OK to submit anyway (only do this if there is genuinely no structured number to record), or Cancel to go fill in the LF/labor fields.');
       if(!ok)return;
     }
-    // T2.3 (2026-05-06) — Cycle-LF sanity check. Catches the most common PM
-    // data-entry error: typing CUMULATIVE LF in the cycle field. A bill sheet
-    // is supposed to reflect ONLY this month's installed work; if the value
-    // jumped >2x AND >500 LF over the prior reviewed cycle, that's almost
-    // certainly the cumulative confusion. Soft warning, cancellable.
-    try{
-      const totals=calcSectionLFs(form,job);
-      const newLf=n(totals.grand);
-      if(newLf>0){
-        const priorReviewed=await sbGet('pm_bill_submissions',
-          `job_id=eq.${job.id}&ar_reviewed=eq.true&billing_month=lt.${selMonth}&order=billing_month.desc&limit=1`);
-        const priorLf=Array.isArray(priorReviewed)&&priorReviewed[0]?n(priorReviewed[0].total_lf):0;
-        if(priorLf>0 && newLf>priorLf*2 && (newLf-priorLf)>500){
-          const pctJump=Math.round((newLf/priorLf - 1) * 100);
-          const ok=window.confirm(
-            `⚠ Total LF this cycle: ${newLf.toLocaleString()}\n`+
-            `Last reviewed cycle: ${priorLf.toLocaleString()} (${priorReviewed[0].billing_month})\n\n`+
-            `That's a ${pctJump}% jump.\n\n`+
-            `Bill sheets should reflect ONLY this month's installed work — not cumulative project totals. `+
-            `Are these CYCLE numbers, or did you accidentally enter cumulative LF?\n\n`+
-            `Click OK to submit anyway, or Cancel to fix.`);
-          if(!ok){setSaving(null);return;}
-        }
-      }
-    }catch(e){
-      // Soft check — never block submit on a fetch failure.
-      console.warn('[submitEntry] cycle-LF sanity check skipped:',e);
-    }
+    // 2026-05-06 — Cycle-LF jump warning REMOVED per CEO direction. PMs can
+    // now submit any LF values without percentage-based blockers. The
+    // notes-vs-LF check above stays (different concern, Virginia-requested).
     setSaving(job.id);
     try{
       // 2026-05-06 — Block edit-after-AR-review at the app layer (DB trigger
@@ -7268,11 +7241,10 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
         </div>
       )}
 
-      <div style={{marginTop:8,paddingTop:10,borderTop:'2px solid #8A261D',display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total LF This Period</span>
-        <span style={{fontFamily:'Inter',fontWeight:900,fontSize:v?.ipad?24:18,color:'#8A261D'}}>{totals.grand.toLocaleString()} LF</span>
-      </div>
-      {n(form[DEMO_FIELD])>0&&<div style={{fontSize:10,color:'#9E9B96',textAlign:'right',marginTop:2,fontStyle:'italic'}}>Demo not included in LF total ({n(form[DEMO_FIELD]).toLocaleString()} LF tracked separately)</div>}
+      {/* 2026-05-06 — Per-period rollup REMOVED per CEO direction. LF inputs
+          stand alone exactly as the PM types them; no derived total in the
+          editable form. The saved row's `total_lf` column is still computed
+          via calcSectionLFs in buildPayload for downstream rollups. */}
     </>;
   };
 
