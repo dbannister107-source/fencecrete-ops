@@ -4427,11 +4427,17 @@ function NewProjectForm({jobs,onClose,onSaved}){
       // new-project form doesn't break creation.
       Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
       body.fence_addons=syncFenceAddons(body);
-      // Filter out line items that have no meaningful data — user may add an empty row and not fill it
+      // Filter out line items that have no meaningful data — user may add an empty row and not fill it.
+      // Config-driven: per-piece checks quantity/rate, fixed-dollar checks amount,
+      // fence types check lf/rate. This is the post-2026-05-07 unification — the
+      // earlier filter still hardcoded the legacy `'Lump Sum / Other'` label and
+      // dropped Permit/Bonds/Insurance lines on submit (their value lives in
+      // `li.amount`, not `li.lf` or `li.rate`).
       const filled=f.lineItems.filter(li=>{
-        const lt=li.line_type;
-        if(lt==='Gate')return n(li.quantity)>0||n(li.rate)>0||(li.description||'').trim();
-        if(lt==='Lump Sum / Other')return n(li.amount)>0||n(li.rate)>0||(li.description||'').trim();
+        const cfg=NP_LINE_TYPE_CONFIG[li.line_type];
+        if(!cfg)return false;
+        if(cfg.ui==='per-piece')return n(li.quantity)>0||n(li.rate)>0||(li.description||'').trim();
+        if(cfg.ui==='fixed-dollar')return n(li.amount)>0||(li.description||'').trim();
         return n(li.lf)>0||n(li.rate)>0;
       });
       // STEP 1 — Insert the jobs row (sbPost throws on non-2xx with PostgREST error body extracted)
