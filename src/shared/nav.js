@@ -116,9 +116,10 @@ export const ROLE_META = {
   sales_rep:       { label:'Sales Rep',       c:'#1D4ED8', bg:'#DBEAFE' },
   pm:              { label:'PM',              c:'#854F0B', bg:'#FAEEDA' },
   production:      { label:'Production',      c:'#B45309', bg:'#FEF3C7' },
-  billing:         { label:'Billing',         c:'#065F46', bg:'#D1FAE5' },
-  admin_assistant: { label:'Admin Assistant', c:'#5B21B6', bg:'#EDE9FE' },
-  viewer:          { label:'Viewer',          c:'#625650', bg:'#F4F4F2' },
+  billing:            { label:'Billing',            c:'#065F46', bg:'#D1FAE5' },
+  production_manager: { label:'Production Manager', c:'#9A3412', bg:'#FFEDD5' },
+  admin_assistant:    { label:'Admin Assistant',    c:'#5B21B6', bg:'#EDE9FE' },
+  viewer:             { label:'Viewer',             c:'#625650', bg:'#F4F4F2' },
 };
 
 export const ROLE_NAV_GROUPS = {
@@ -127,9 +128,10 @@ export const ROLE_NAV_GROUPS = {
   sales_rep:       new Set(['HOME','SALES','CONTRACTS & PROJECTS','HELP']),
   pm:              new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FLEET & EQUIPMENT','HELP']),
   production:      new Set(['HOME','CONTRACTS & PROJECTS','PRODUCTION','FLEET & EQUIPMENT','HELP']),
-  billing:         new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FINANCE','ADMIN','HELP']),
-  admin_assistant: new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','HELP']),
-  viewer:          new Set(['HOME','CONTRACTS & PROJECTS','HELP']),
+  billing:            new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FINANCE','ADMIN','HELP']),
+  production_manager: new Set(['HOME','SALES','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','FLEET & EQUIPMENT','HELP']),
+  admin_assistant:    new Set(['HOME','CONTRACTS & PROJECTS','PROJECT MANAGEMENT','PRODUCTION','HELP']),
+  viewer:             new Set(['HOME','CONTRACTS & PROJECTS','HELP']),
 };
 
 // Helpers
