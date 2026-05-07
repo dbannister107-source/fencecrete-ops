@@ -265,12 +265,23 @@ END;
 $$;
 
 -- Test 10: retainage-release App resets jobs.retainage_held to 0
+--
+-- 2026-05-06 — Setup now seeds contract_readiness_items 'pis_submitted' as
+-- N/A so the PIS gate (fn_enforce_pis_for_retainage_release, BEFORE INSERT
+-- on invoice_applications) lets the release insert through. Whole file is
+-- BEGIN/ROLLBACK wrapped so the seed doesn't persist. The PIS gate itself
+-- is exercised by retainage_pis_gate.sql.
 DO $$
 DECLARE v_job_id uuid; v_held numeric;
 BEGIN
   SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
   UPDATE jobs SET retainage_pct = 10 WHERE id = v_job_id;
   DELETE FROM invoice_applications WHERE job_id = v_job_id;
+
+  -- Satisfy the retainage release PIS gate via N/A.
+  INSERT INTO contract_readiness_items (job_id, item_key, not_applicable, checked_by)
+       VALUES (v_job_id, 'pis_submitted', true, 'test-suite')
+  ON CONFLICT (job_id, item_key) DO UPDATE SET not_applicable = true;
 
   INSERT INTO invoice_applications (job_id, current_amount, current_retainage, retainage_to_date, status, filed_by)
        VALUES (v_job_id, 10000, 1000, 1000, 'filed', 'test-suite');

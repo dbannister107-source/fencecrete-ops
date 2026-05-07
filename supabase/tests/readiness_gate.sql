@@ -37,43 +37,44 @@ CREATE TEMP TABLE _test_results (
 );
 
 -- ─────────────────────────────────────────────────────────────────────
--- Test 1: customer_linked auto-check across all 3 cases
--- Regression target: 20260502_fix_customer_linked_gate.sql
+-- Test 1: v_contract_readiness.auto_checks shape is current
+-- Regression target: 20260506_readiness_gate_drop_customer_linked.sql
+--
+-- 2026-05-06 — customer_linked was REMOVED from auto_checks per CEO
+-- direction (Customer Master link is no longer a status-advance gate).
+-- The prior version of this test asserted on customer_linked; it kept
+-- "passing" via NULL semantics on a missing JSONB key, which was
+-- silent and misleading. Rewritten to assert the keys we DO expect
+-- and that customer_linked is NOT present.
 -- ─────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
   v_job_id      uuid;
-  v_co_id       uuid;
   v_auto_checks jsonb;
 BEGIN
   SELECT id INTO v_job_id FROM jobs WHERE status='contract_review' LIMIT 1;
   IF v_job_id IS NULL THEN RAISE EXCEPTION 'TEST 1 SETUP: no contract_review jobs to test against'; END IF;
-  SELECT id INTO v_co_id FROM companies LIMIT 1;
-  IF v_co_id  IS NULL THEN RAISE EXCEPTION 'TEST 1 SETUP: no companies in db'; END IF;
 
-  -- 1A: company_id NULL + is_residential FALSE -> customer_linked should be false
-  UPDATE jobs SET company_id = NULL, is_residential = FALSE WHERE id = v_job_id;
   SELECT auto_checks INTO v_auto_checks FROM v_contract_readiness WHERE job_id = v_job_id;
-  IF (v_auto_checks->>'customer_linked')::boolean THEN
-    RAISE EXCEPTION 'TEST 1A: customer_linked should be false when company_id NULL and not residential';
-  END IF;
-  INSERT INTO _test_results (test) VALUES ('1A: customer_linked=false when no company and not residential');
+  IF v_auto_checks IS NULL THEN RAISE EXCEPTION 'TEST 1 SETUP: auto_checks is NULL'; END IF;
 
-  -- 1B: company_id set -> customer_linked should be true
-  UPDATE jobs SET company_id = v_co_id, is_residential = FALSE WHERE id = v_job_id;
-  SELECT auto_checks INTO v_auto_checks FROM v_contract_readiness WHERE job_id = v_job_id;
-  IF NOT (v_auto_checks->>'customer_linked')::boolean THEN
-    RAISE EXCEPTION 'TEST 1B: customer_linked should be true when company_id set';
+  -- 1A: customer_linked must NOT be in the auto_checks JSON.
+  IF v_auto_checks ? 'customer_linked' THEN
+    RAISE EXCEPTION 'TEST 1A: customer_linked is back in auto_checks. The 2026-05-06 removal has regressed — see 20260506_readiness_gate_drop_customer_linked.sql.';
   END IF;
-  INSERT INTO _test_results (test) VALUES ('1B: customer_linked=true with company_id');
+  INSERT INTO _test_results (test) VALUES ('1A: customer_linked is NOT in auto_checks (correctly removed)');
 
-  -- 1C: company_id NULL + is_residential TRUE -> customer_linked should be true
-  UPDATE jobs SET company_id = NULL, is_residential = TRUE WHERE id = v_job_id;
-  SELECT auto_checks INTO v_auto_checks FROM v_contract_readiness WHERE job_id = v_job_id;
-  IF NOT (v_auto_checks->>'customer_linked')::boolean THEN
-    RAISE EXCEPTION 'TEST 1C: customer_linked should be true when is_residential';
+  -- 1B: the seven canonical auto-checks ARE present.
+  IF NOT (v_auto_checks ? 'style_set'
+       AND v_auto_checks ? 'color_set'
+       AND v_auto_checks ? 'height_set'
+       AND v_auto_checks ? 'total_lf_set'
+       AND v_auto_checks ? 'contract_value_set'
+       AND v_auto_checks ? 'line_items_entered'
+       AND v_auto_checks ? 'line_items_match_contract') THEN
+    RAISE EXCEPTION 'TEST 1B: expected 7 auto_checks keys (style_set, color_set, height_set, total_lf_set, contract_value_set, line_items_entered, line_items_match_contract), got: %', v_auto_checks;
   END IF;
-  INSERT INTO _test_results (test) VALUES ('1C: customer_linked=true with is_residential');
+  INSERT INTO _test_results (test) VALUES ('1B: all 7 canonical auto_checks keys present');
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────
