@@ -19937,18 +19937,21 @@ function MapPage({ jobs, onNav }) {
     { val: 'all', label: 'All', group: 'all' }
   ];
 
-  // 2026-05-06 — Fit the map page to the ACTUAL available area instead of
-  // hardcoding `calc(100vh - 80px)`. The old number assumed only the Topbar
-  // (~64px) and ignored the parent page-wrapper's padding (24px top + 24px
-  // bottom on desktop, 20+20 on tablet, 12+12 on mobile + bottom-nav buffer).
-  // The mismatch made the map ~32px taller than its container on desktop;
-  // Mapbox's wheel-zoom then ate scroll events, making the page feel locked.
-  // Using 100dvh so iOS Safari's dynamic chrome doesn't push the map past the
-  // viewport on mobile.
-  const mapPageHeight = isMobile
-    ? 'calc(100dvh - 88px - 72px)'   // topbar + bottom nav
-    : 'calc(100dvh - 112px)';        // topbar + 48px desktop/tablet padding
-  return <div style={{ display: 'flex', flexDirection: 'column', height: mapPageHeight, minHeight: 480, gap: 8 }}>
+  // 2026-05-07 — Reverted the 2026-05-06 fit-to-viewport model. That
+  // hardcoded the page wrapper to `calc(100dvh - 112px)` so the filter
+  // strip + map filled the screen exactly (Google-Maps style). The
+  // filter strip has since grown to 5+ wrapped rows of chips (TIME
+  // HORIZON, COLOR BY, SHOW STATUS, ADD-ONS, PM/Market/Crew/Product/
+  // Type, Size + Overdue + Unscheduled + Show Clusters + Capacity
+  // Heatmap toggles). With `flex: 1, minHeight: 0` on the Map+Side
+  // container, when the filter strip exceeded available space the
+  // map's flex share collapsed to 0px and Mapbox rendered nothing.
+  //
+  // New model: filter strip takes natural height; the Map+Side panel
+  // gets a stable fixed height (`min(720px, 75dvh)`); the parent page
+  // wrapper handles scrolling normally. The Capacity Heatmap section
+  // below the map is now reachable via normal page scroll.
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
     {/* Header bar with horizon slider */}
     <div style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div>
@@ -20182,8 +20185,9 @@ function MapPage({ jobs, onNav }) {
       }} style={{ ...btnS, padding: '4px 10px', fontSize: 11 }}>Clear</button>
     </div>}
 
-    {/* Map + Side panel */}
-    <div style={{ display: 'flex', flex: 1, gap: 12, minHeight: 0 }}>
+    {/* Map + Side panel — fixed height (was flex:1) so the map can't
+        collapse to 0px when the filter strip wraps to many rows. */}
+    <div style={{ display: 'flex', height: 'min(720px, 75dvh)', minHeight: 480, gap: 12 }}>
       <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E3E0', position: 'relative' }}>
         <div
           ref={mapContainerRef}
