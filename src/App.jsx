@@ -1581,7 +1581,7 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
   // Lump Sum kept as the stored fence_type value; UI label is "Misc. Lump
   // Sum" per David 2026-05-05. No data migration needed — display layer only.
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI (Wrought Iron)'],['Wood','Wood'],['Other','Other Fence'],['Gate','Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
+  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI Fence'],['Wood','Wood'],['Other','Other Fence'],['Gate','WI Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
   return<div>
     {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
     {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
@@ -2049,7 +2049,10 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[panelTaxLines,setPanelTaxLines]=useState([]);
   const fetchPanelTaxLines=useCallback(async()=>{
     if(!job?.job_number){setPanelTaxLines([]);return;}
-    const rows=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&fence_type=in.(PC,WI)&select=fence_type,lf,contract_rate,height,style,tax_basis_per_unit`);
+    // PC, WI, and Gate are taxable per the 2026-05-08 policy (WI Fence + WI Gate
+     // both get tax on the material portion only — same rule as Precast). Gate's
+     // tax_basis_per_unit is auto-derived by fn_jli_derive_split (66/34 split).
+    const rows=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&fence_type=in.(PC,WI,Gate)&select=fence_type,lf,contract_rate,height,style,tax_basis_per_unit`);
     setPanelTaxLines(Array.isArray(rows)?rows:[]);
   },[job?.job_number]);
   useEffect(()=>{fetchPanelTaxLines();},[fetchPanelTaxLines]);
@@ -2072,7 +2075,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
           const styleKey=(l.style||'').trim();
           const heightKey=String(l.height||'').replace(/['"]/g,'').trim();
           basis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
-        }else if(l.fence_type==='WI'){
+        }else if(l.fence_type==='WI'||l.fence_type==='Gate'){
           basis=n(l.contract_rate)*0.33;
         }
       }
@@ -4078,7 +4081,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                       const styleKey=(l.style||'').trim();
                       const heightKey=String(l.height||'').replace(/['"]/g,'').trim();
                       b=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
-                    }else if(ft==='WI'){
+                    }else if(ft==='WI'||ft==='Gate'){
                       b=n(l.contract_rate)*0.33;
                     }
                     fallbackBasisTotal+=llf*b;
@@ -4090,7 +4093,8 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               };
               const pc=aggregateByType('PC');
               const wi=aggregateByType('WI');
-              const totalTax=form.tax_exempt?0:(pc.tax+wi.tax);
+              const gate=aggregateByType('Gate');
+              const totalTax=form.tax_exempt?0:(pc.tax+wi.tax+gate.tax);
               const row=(label,val,bold)=><div key={label} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}}>
                 <span style={{color:bold?'#1A1A1A':'#625650',fontWeight:bold?700:500}}>{label}</span>
                 <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8A261D':'#1A1A1A'}}>{val}</span>
@@ -4110,14 +4114,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                   </>}
                   {wi.lf>0&&<>
                     {pc.lf>0&&<div style={{height:1,background:'#E5E3E0',margin:'6px 0'}}/>}
-                    {row('WI LF',`${wi.lf.toLocaleString()}`)}
-                    {row('WI Tax Basis',$(wi.basisTotal))}
-                    {row('WI Sales Tax',$(wi.tax))}
+                    {row('WI Fence LF',`${wi.lf.toLocaleString()}`)}
+                    {row('WI Fence Tax Basis',$(wi.basisTotal))}
+                    {row('WI Fence Sales Tax',$(wi.tax))}
                   </>}
-                  {pc.lf<=0&&wi.lf<=0&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
+                  {gate.lf>0&&<>
+                    {(pc.lf>0||wi.lf>0)&&<div style={{height:1,background:'#E5E3E0',margin:'6px 0'}}/>}
+                    {row('WI Gate Pieces',`${gate.lf.toLocaleString()}`)}
+                    {row('WI Gate Tax Basis',$(gate.basisTotal))}
+                    {row('WI Gate Sales Tax',$(gate.tax))}
+                  </>}
+                  {pc.lf<=0&&wi.lf<=0&&gate.lf<=0&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
                   <div style={{borderTop:'2px solid #8A261D',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
                     <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total Sales Tax</span>
-                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8A261D'}}>{$(pc.tax+wi.tax)}</span>
+                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8A261D'}}>{$(pc.tax+wi.tax+gate.tax)}</span>
                   </div>
                 </div>}
                 {form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px dashed #D1FAE5',borderRadius:10,padding:14,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
@@ -4207,21 +4217,25 @@ const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt=
 // (Lump Sum / Columns / Gate Controls / Other Fence). DB trigger
 // fn_jli_derive_split fills the auto-derivable categories on save (PC, Gate,
 // Permit, Bond); manual entries on SW/Wood/WI fence persist.
+// `label` is the user-facing display string (mirrors EditPanel TYPE_OPTS).
+// The keys ('Wrought Iron', 'Gate', etc) stay as the internal form-state
+// values — renaming them would touch ~50 lines of drainage / lineAgg /
+// derivedFenceType / submit-filter / toDBLineItem logic for no benefit.
 const NP_LINE_TYPE_CONFIG={
-  'Precast':       {fenceType:'PC',           category:'precast',      taxable:true,  ui:'fence',        color:true,  isProduced:true,  showLaborSplit:true,  drainage:true},
-  'Single Wythe':  {fenceType:'SW',           category:'sw',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true,  drainage:true},
-  'Wrought Iron':  {fenceType:'WI',           category:'wi',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
-  'Wood':          {fenceType:'Wood',         category:'wood',         taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
-  'Other Fence':   {fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false},
-  'Removal':       {fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false, removal:true},
-  'Gate':          {fenceType:'Gate',         category:'gate',         taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:true},
-  'Gate Controls': {fenceType:'Gate Controls',category:'gate_controls',taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
-  'Columns':       {fenceType:'Columns',      category:'columns',      taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
-  'Lump Sum':      {fenceType:'Lump Sum',     category:'lump_sum',     taxable:true,  ui:'fixed-dollar', isProduced:false, showLaborSplit:false},
-  'Permit':        {fenceType:'Permit',       category:'permit',       taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'P&P Bond':      {fenceType:'P&P Bond',     category:'pp_bond',      taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'Maint Bond':    {fenceType:'Maint Bond',   category:'maint_bond',   taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'Insurance':     {fenceType:'Insurance',    category:'insurance',    taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
+  'Precast':       {label:'Precast',       fenceType:'PC',           category:'precast',      taxable:true,  ui:'fence',        color:true,  isProduced:true,  showLaborSplit:true,  drainage:true},
+  'Single Wythe':  {label:'Single Wythe',  fenceType:'SW',           category:'sw',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true,  drainage:true},
+  'Wrought Iron':  {label:'WI Fence',      fenceType:'WI',           category:'wi',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
+  'Wood':          {label:'Wood',          fenceType:'Wood',         category:'wood',         taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
+  'Other Fence':   {label:'Other Fence',   fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false},
+  'Removal':       {label:'Removal',       fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false, removal:true},
+  'Gate':          {label:'WI Gate',       fenceType:'Gate',         category:'gate',         taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:true},
+  'Gate Controls': {label:'Gate Controls', fenceType:'Gate Controls',category:'gate_controls',taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
+  'Columns':       {label:'Columns',       fenceType:'Columns',      category:'columns',      taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
+  'Lump Sum':      {label:'Lump Sum',      fenceType:'Lump Sum',     category:'lump_sum',     taxable:true,  ui:'fixed-dollar', isProduced:false, showLaborSplit:false},
+  'Permit':        {label:'Permit',        fenceType:'Permit',       category:'permit',       taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
+  'P&P Bond':      {label:'P&P Bond',      fenceType:'P&P Bond',     category:'pp_bond',      taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
+  'Maint Bond':    {label:'Maint Bond',    fenceType:'Maint Bond',   category:'maint_bond',   taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
+  'Insurance':     {label:'Insurance',     fenceType:'Insurance',    category:'insurance',    taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
 };
 const LINE_TYPES=Object.keys(NP_LINE_TYPE_CONFIG);
 const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:'',labor_per_unit:'',tax_basis_per_unit:''});
@@ -4311,8 +4325,11 @@ function NewProjectForm({jobs,onClose,onSaved}){
   // Stamped onto the body in submit normalization so the DB matches what the
   // form displayed at the moment of save.
   const computedSalesTax=useMemo(()=>{
-    // HEIGHT_BASIS / STYLE_BASIS / TAX_RATE imported from shared/billing/heightBasis
-    let pcLF=0,pcHeight=null,pcStyle=null,wiContract=0;
+    // HEIGHT_BASIS / STYLE_BASIS / TAX_RATE imported from shared/billing/heightBasis.
+    // Per the 2026-05-08 policy: PC + WI Fence + WI Gate all get tax on the
+    // material portion only (33% basis for WI fence and gate, matching the
+    // trigger fn_jli_derive_split's wi_gate split).
+    let pcLF=0,pcHeight=null,pcStyle=null,wiContract=0,gateContract=0;
     f.lineItems.forEach(li=>{
       if(li.line_type==='Precast'){
         pcLF+=n(li.lf);
@@ -4320,12 +4337,15 @@ function NewProjectForm({jobs,onClose,onSaved}){
         if(!pcStyle&&li.style)pcStyle=String(li.style).trim();
       }else if(li.line_type==='Wrought Iron'){
         wiContract+=n(li.lf)*n(li.rate);
+      }else if(li.line_type==='Gate'){
+        gateContract+=n(li.quantity)*n(li.rate);
       }
     });
     const pcBasis=STYLE_BASIS[pcStyle]??HEIGHT_BASIS[pcHeight]??0;
     const pcTax=pcLF*pcBasis*TAX_RATE;
     const wiTax=wiContract*0.33*TAX_RATE;
-    return f.tax_exempt?0:Math.round((pcTax+wiTax)*100)/100;
+    const gateTax=gateContract*0.33*TAX_RATE;
+    return f.tax_exempt?0:Math.round((pcTax+wiTax+gateTax)*100)/100;
   },[f.lineItems,f.tax_exempt]);
   const stax=computedSalesTax;const cv=ncv+stax;const acv=cv;
   const totalLF=f.lineItems.reduce((s,li)=>{
@@ -4650,7 +4670,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
               <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                 <span style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,background:'#FDF4F4',padding:'3px 8px',borderRadius:4,border:'1px solid #8A261D30'}}>Line {idx+1}</span>
                 <select value={lt} onChange={e=>u('line_type',e.target.value)} style={{...inputS,width:220,fontWeight:700,fontSize:13}}>
-                  {LINE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                  {LINE_TYPES.map(t=><option key={t} value={t}>{NP_LINE_TYPE_CONFIG[t].label}</option>)}
                 </select>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -8254,7 +8274,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
       const sortIcon=(col)=>listSort.col!==col?'':(listSort.dir==='asc'?' ▲':' ▼');
       // Total width = sum of column widths, used for horizontal scroll on narrow desktop
       const totalW=COLS.reduce((s,c)=>s+c.w,0);
-      return <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh-260px)'}}>
+      return <div style={{...card,padding:0,overflow:'auto',maxHeight:'calc(100vh - 260px)'}}>
         <table style={{width:'100%',minWidth:totalW,borderCollapse:'separate',borderSpacing:0,fontSize:12}}>
           <thead style={{position:'sticky',top:0,background:'#F9F8F6',zIndex:2}}>
             <tr>
@@ -8302,7 +8322,7 @@ function ProductionPage({jobs,setJobs,onRefresh,onNav,refreshKey=0}){
           emptyMessage="No jobs in this stage"
           renderCard={j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} readiness={readinessByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>}
         />
-      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',flexDirection:'column',gap:3}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div>{col.jobs.length>0&&<div style={{fontFamily:'Inter',fontWeight:600,fontSize:10.5,color:col.color,opacity:0.78,letterSpacing:'0.2px'}} title={`${Math.round(col.lf||0).toLocaleString()} LF · ${$(col.tv||0)} combined adj contract value`}>{Math.round(col.lf||0).toLocaleString()} LF · {$k(col.tv||0)}</div>}</div><div style={{maxHeight:'calc(100vh-300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} readiness={readinessByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>)}</div></div>;})}</div>)}
+      : <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(colArr.length,7)},minmax(240px,1fr))`,gap:12,alignItems:'flex-start',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>{colArr.map(col=>{return<div key={col.key}><div style={{background:col.bg||'#FDF4F4',border:`1px solid ${col.color}30`,borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',flexDirection:'column',gap:3}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{fontFamily:'Inter',fontWeight:800,fontSize:14,color:col.color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{col.label}</div><span style={{background:'#FFF',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:800,color:col.color,border:`1px solid ${col.color}40`,flexShrink:0}}>{col.jobs.length}</span></div>{col.jobs.length>0&&<div style={{fontFamily:'Inter',fontWeight:600,fontSize:10.5,color:col.color,opacity:0.78,letterSpacing:'0.2px'}} title={`${Math.round(col.lf||0).toLocaleString()} LF · ${$(col.tv||0)} combined adj contract value`}>{Math.round(col.lf||0).toLocaleString()} LF · {$k(col.tv||0)}</div>}</div><div style={{maxHeight:'calc(100vh - 300px)',overflow:'auto'}}>{col.jobs.map(j=><ProdCard key={j.id} j={j} move={move} locked={!editUnlocked} compact={compactCards} billSub={prodSubByJob[j.id]} onViewBill={s=>setProdBillModal(s)} onQuickView={setQuickViewJob} onPrintOrder={onNav?()=>onNav('production_orders'):null} onCalcMaterials={onNav?()=>{try{localStorage.setItem('fc_matcalc_prejob',j.id);}catch(e){}onNav('material_calc');}:null} onAddToPlan={onNav?()=>{try{localStorage.setItem('fc_plan_addjob',j.id);}catch(e){}onNav('daily_report');}:null} inPlanDate={planJobIds.has(j.id)?'active plan':null} progressInfo={actualsByJob[j.id]} jobProgress={jobRemaining[j.id]} readiness={readinessByJob[j.id]} lineItems={lineItemsByJob[j.job_number]} onJobUpdated={onJobUpdated} styleFilter={styleF} colorFilter={colorF}/>)}</div></div>;})}</div>)}
     {quickViewJob&&<ProjectQuickView job={quickViewJob} onClose={()=>setQuickViewJob(null)} billSub={prodSubByJob[quickViewJob.id]}/>}
     {/* Bill Sheet Detail Modal */}
     {prodBillModal&&(()=>{const s=prodBillModal;return<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setProdBillModal(null)}>
