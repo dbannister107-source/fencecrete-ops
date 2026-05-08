@@ -206,7 +206,7 @@ export function MoneyInput({ value, onChange, disabled, style }) {
         autoFocus
         value={value ?? ''}
         onChange={(e) => {
-          const cleaned = e.target.value.replace(/[^0-9.\-]/g, '');
+          const cleaned = e.target.value.replace(/[^0-9.-]/g, '');
           onChange(cleaned);
         }}
         onBlur={() => setEditing(false)}

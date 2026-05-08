@@ -381,8 +381,6 @@ const colorOptionsFor = (current) => {
   if (current && isLegacyColor(current)) opts.push({ v: current, l: `${current} (legacy)`, legacy: true });
   return opts;
 };
-// Map NewProjectForm line-type labels → fence_type keys understood by the filter.
-const NP_LINE_TYPE_TO_FT = { 'Precast':'PC', 'Single Wythe':'SW', 'Wrought Iron':'WI', 'Wood':'Wood' };
 // Canonical style name (from `styles` table) → legacy name in `material_calc_styles`.
 // `null` means the canonical style has no material_calc row on purpose — the
 // Material Calculator should fall back to plant_config defaults and annotate.
@@ -1100,15 +1098,11 @@ function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
 const ALL_COLS=[{key:'status',label:'Status',w:130},{key:'market',label:'Location',w:110},{key:'job_number',label:'Project Code',w:100},{key:'included_on_billing_schedule',label:'Billing Sched.',w:100},{key:'included_on_lf_schedule',label:'LF Sched.',w:90},{key:'job_name',label:'Project Name',w:220},{key:'customer_name',label:'Customer',w:180},{key:'cust_number',label:'Cust #',w:80},{key:'fence_type',label:'Fence Type',w:100},{key:'primary_fence_type',label:'Primary Type',w:110},{key:'fence_addons',label:'Add-ons',w:140},{key:'documents_needed',label:'Docs Needed',w:140},{key:'file_location',label:'File Location',w:110},{key:'billing_method',label:'Billing Method',w:110},{key:'billing_date',label:'Billing Date',w:90},{key:'sales_rep',label:'Sales Rep',w:80},{key:'pm',label:'Project Manager',w:100},{key:'job_type',label:'Type',w:80},{key:'address',label:'Address',w:180},{key:'city',label:'City',w:100},{key:'state',label:'State',w:60},{key:'zip',label:'ZIP',w:70},{key:'height_precast',label:'Height - Precast',w:110},{key:'style',label:'Style - Precast',w:140},{key:'color',label:'Color - Precast',w:120},{key:'contract_rate_precast',label:'Rate - Precast',w:110},{key:'height_single_wythe',label:'Height - SW',w:90},{key:'contract_rate_single_wythe',label:'Rate - SW',w:90},{key:'style_single_wythe',label:'Style - SW',w:110},{key:'height_wrought_iron',label:'Height - WI',w:90},{key:'contract_rate_wrought_iron',label:'Rate - WI',w:90},{key:'lf_removal',label:'LF - Removal',w:100},{key:'height_removal',label:'Height - Removal',w:110},{key:'removal_material_type',label:'Removal Material',w:130},{key:'contract_rate_removal',label:'Rate - Removal',w:110},{key:'height_other',label:'Height - Other',w:100},{key:'other_material_type',label:'Other Material',w:120},{key:'contract_rate_other',label:'Rate - Other',w:100},{key:'number_of_gates',label:'# Gates',w:70},{key:'gate_height',label:'Gate Height',w:90},{key:'gate_description',label:'Gate Description',w:140},{key:'gate_rate',label:'Gate Rate',w:90},{key:'lump_sum_amount',label:'Lump Sum Amt',w:110},{key:'lump_sum_description',label:'Lump Sum Desc',w:150},{key:'total_lf_precast',label:'PC LF',w:80,tint:'#ECFDF5',tintHdr:'#D1FAE5'},{key:'lf_single_wythe',label:'SW LF',w:80},{key:'lf_wrought_iron',label:'WI LF',w:80},{key:'total_lf',label:'Total LF',w:90,tint:'#F9F8F6',tintHdr:'#F4F4F2'},{key:'average_height_installed',label:'Avg Height Installed',w:140},{key:'average_height_removed',label:'Avg Height Removed',w:140},{key:'net_contract_value',label:'Net Contract Value',w:140},{key:'sales_tax',label:'Sales Tax',w:90},{key:'contract_value',label:'Contract Value',w:120},{key:'change_orders',label:'Change Orders',w:120},{key:'adj_contract_value',label:'Adj. Contract Value',w:140},{key:'contract_value_recalculation',label:'CV Recalc',w:100},{key:'contract_value_recalc_diff',label:'CV Recalc Diff',w:110},{key:'ytd_invoiced',label:'YTD Invoiced',w:110},{key:'pct_billed',label:'% Billed',w:80},{key:'left_to_bill',label:'Left to Bill',w:110},{key:'last_billed',label:'Last Billed',w:100},{key:'contract_date',label:'Contract Date',w:110},{key:'contract_month',label:'Contract Month',w:120},{key:'ntp_issued_date',label:'NTP Issued',w:100},{key:'ntp_received_date',label:'NTP Received',w:110},{key:'ntp_received_by',label:'NTP Received By',w:130},{key:'est_start_date',label:'Install Date',w:120},{key:'start_month',label:'Start Month',w:100},{key:'contract_age',label:'Contract Age',w:100},{key:'active_entry_date',label:'Active Entry Date',w:130},{key:'complete_date',label:'Complete Date',w:110},{key:'complete_month',label:'Complete Month',w:120},{key:'aia_billing',label:'AIA',w:60},{key:'bonds',label:'Bonds',w:60},{key:'certified_payroll',label:'Cert Pay',w:60},{key:'ocip_ccip',label:'OCIP',w:60},{key:'third_party_billing',label:'3rd Party',w:60},{key:'notes',label:'Notes',w:220},{key:'sharepoint_folder',label:'📁',w:50},{key:'retainage_pct',label:'Retainage %',w:90},{key:'retainage_held',label:'Retainage Held',w:110},{key:'collected',label:'Collected',w:90}];
 const DEF_VIS=['job_number','job_name','sharepoint_folder','status','pm','sales_rep','primary_fence_type','style','color','total_lf','total_lf_precast','lf_single_wythe','lf_wrought_iron','number_of_gates','market','adj_contract_value','left_to_bill','pct_billed','contract_date','est_start_date','fence_addons','notes'];
 
-// Monthly billing cycle — maps the 10 LF fields on jobs to the cycle table columns,
-// plus the grouped layout for the review modal. Used by PMBillingPage (Start Cycle),
-// BillingPage (Monthly Cycles tab + review modal), and Dashboard (status card).
-// CYCLE_LF_MAP + CYCLE_LF_GROUPS removed 2026-05-04 (orphaned). Were defined
-// for the Monthly Cycles billing tab but the consumer was rewritten to read
-// from PM_BILL_LF_GROUPS instead. Restore from git if monthly-cycles UI
-// is ever brought back.
-const cycleStatus=(c)=>c.invoice_sent?'invoiced':c.accounting_approved?'approved':c.accounting_approved_by?'review':'pending';
-const CYCLE_STATUS_META={pending:{label:'Pending',c:'#625650',bg:'#F4F4F2'},review:{label:'In Review',c:'#B45309',bg:'#FEF3C7'},approved:{label:'Approved',c:'#065F46',bg:'#D1FAE5'},invoiced:{label:'Invoiced',c:'#1D4ED8',bg:'#DBEAFE'}};
+// Monthly billing cycle helpers. `cycleStatus` + `CYCLE_STATUS_META` +
+// `CYCLE_LF_MAP` + `CYCLE_LF_GROUPS` were all orphaned when the consumer
+// (Monthly Cycles billing tab) was rewritten to read from PM_BILL_LF_GROUPS
+// + the new Accounting tab. Restore from git if monthly-cycles UI is ever
+// brought back.
 const curBillingMonth=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;};
 const monthLabel=(ym)=>{if(!ym)return'';const[y,m]=ym.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});};
 // formatBillingDate(j, ym?) — Resolves a job's recurring monthly billing date
@@ -1140,15 +1134,9 @@ const formatBillingDate=(j,ym)=>{
 };
 const fmtPct1=(v)=>(Math.round(n(v)*1000)/10).toFixed(1)+'%';
 
-// PM Bill Sheet LF fields — written to pm_billing_entries by PMBillingPage. Surfaced
-// here as read-only context for the Billing page (table column group, modal, EditPanel).
-const PM_BILL_LF_GROUPS=[
-  {title:'Precast',fields:[['labor_post_only','Post Only'],['labor_post_panels','Post & Panels'],['labor_complete','Complete']]},
-  {title:'Single Wythe',fields:[['sw_foundation','SW Foundation'],['sw_columns','SW Columns'],['sw_panels','SW Panels'],['sw_complete','SW Complete']]},
-  // Demo (remove_existing) is intentionally placed last — it is tracked
-  // but excluded from any LF subtotal or grand total.
-  {title:'One Line Items',fields:[['wi_gates','WI Gates'],['wi_fencing','WI Fencing'],['wi_columns','WI Posts'],['line_bonds','Line Bonds'],['line_permits','Line Permits'],['gate_controls','Gate Controls'],['remove_existing','Demo']]},
-];
+// PM_BILL_LF_GROUPS removed 2026-05-08 — orphaned by the AccountingTab
+// migration; the Billing page no longer renders the LF column group it
+// powered. Restore from git history if needed.
 // Gates & Extras tab was removed 2026-04-30 — gate count, gate rate, and lump
 // sum amount are now entered as line items (Type=Gate via description prefix,
 // or via the Lump Sum / Permit / Bond dropdown options). Flat columns remain
@@ -1292,26 +1280,11 @@ function CustomerLookup({onSelect, placeholder='Search Customer Master…', disa
 
 /* ═══ LINE ITEMS EDITOR ═══ */
 const LINE_HEIGHT_OPTIONS=["4'","5'","6'","7'","8'","9'","10'","Ranch - 2 Rail","Ranch - 3 Rail","Ranch - 4 Rail"];
-// Type behavior groups (David spec, 2026-05-05):
-//   - Fence: PC / SW / WI / Wood / Other → full form (height, LF, rate, style, color, description)
-//   - Per-piece: Gate / Gate Controls / Columns → number-of-pieces × price + description
-//   - Fixed-dollar: Lump Sum (now labeled "Misc. Lump Sum") / Permit / P&P Bond / Maint Bond / Insurance → price + description only
-// FLAT_COST_TYPES (used by updateLine snap-default logic) is the union of
-// per-piece and fixed-dollar — both clear style/color/height/is_produced when
-// selected; the difference is whether lf is editable (per-piece keeps user
-// LF as quantity) or forced to 1 (fixed-dollar = single dollar amount).
-const PER_PIECE_TYPES_MAP={
-  'Gate':         {category:'gate',          taxable:true},
-  'Gate Controls':{category:'gate_controls', taxable:true},
-  'Columns':      {category:'columns',       taxable:true},
-};
-const FIXED_DOLLAR_TYPES_MAP={
-  'Lump Sum':     {category:'lump_sum',  taxable:true},
-  'Permit':       {category:'permit',    taxable:false},
-  'P&P Bond':     {category:'pp_bond',   taxable:false},
-  'Maint Bond':   {category:'maint_bond',taxable:false},
-  'Insurance':    {category:'insurance', taxable:false},
-};
+// PER_PIECE_TYPES_MAP + FIXED_DOLLAR_TYPES_MAP were retired 2026-05-08 —
+// the UnifiedLineItemsEditor refactor (2026-05-09) replaced them with
+// LINE_ITEM_TYPE_DEFAULTS below, which is the single source of truth used
+// by BOTH the EditPanel LineItemsEditor and the NewProjectForm scope tab.
+// Restore from git if a need surfaces.
 
 // Single source of truth for line-item type pickers used by BOTH the
 // EditPanel LineItemsEditor and the NewProjectForm fence section. Order
@@ -2773,8 +2746,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   // Map of CO id → array of its sub-line items (loaded from job_line_items where co_id matches).
   // Sub-lines are flat-cost items (lf=1, contract_rate=Amount), category derived from the CO context.
   const[coLines,setCOLines]=useState({});
-  // Per-CO edit state — opens an inline editor under the CO card.
-  const[editingCO,setEditingCO]=useState(null); // {id, lines:[...], dirty:false}
   const[latestPmLF,setLatestPmLF]=useState(null);
   const[salesOrigin,setSalesOrigin]=useState(null);
   // Loads CO list AND all sub-lines for the job in parallel, then groups lines by co_id.
@@ -2830,7 +2801,7 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
     if(isNew||!job?.job_number){setSalesOrigin(null);return;}
     sbGet('leads',`job_number=eq.${encodeURIComponent(job.job_number)}&limit=1`).then(d=>setSalesOrigin((d&&d[0])||null)).catch(()=>setSalesOrigin(null));
   },[job?.job_number,isNew]);
-  useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF(d&&d[0]||null));else setLatestPmLF(null);},[job?.id]);
+  useEffect(()=>{if(job?.id)sbGet('pm_billing_entries',`job_id=eq.${job.id}&order=billing_period.desc&limit=1`).then(d=>setLatestPmLF((d&&d[0])||null));else setLatestPmLF(null);},[job?.id]);
   const[coToast,setCOToast]=useState(null);
   const saveCO=async()=>{
     let pdfStoragePath=null;
@@ -2924,7 +2895,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   };
   const approvedTotal=coList.filter(c=>c.status==='approved'||c.status==='Approved').reduce((s,c)=>s+n(c.amount),0);
   const pendingTotal=coList.filter(c=>c.status==='pending'||c.status==='Pending').reduce((s,c)=>s+n(c.amount),0);
-  const coStatusC2={pending:['#B45309','#FEF3C7'],Pending:['#B45309','#FEF3C7'],approved:['#065F46','#D1FAE5'],Approved:['#065F46','#D1FAE5'],rejected:['#625650','#F4F4F2'],Rejected:['#625650','#F4F4F2']};
   const sec=SECS.find(s=>s.key===tab);const adjCV=n(form.adj_contract_value||form.contract_value);
   return(
     <div style={isMobile
@@ -3607,7 +3577,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               return<div style={{display:'flex',flexDirection:'column',gap:6}}>
                 {filtered.map(a=>{
                   const cat=DOC_CATEGORIES.find(c=>c.key===a.category)||DOC_CATEGORIES.find(c=>c.key==='other');
-                  const isImage=(a.mime_type||'').startsWith('image/');
                   return<div key={a.id} style={{display:'flex',gap:10,alignItems:'center',padding:'10px 12px',background:'#FFF',border:'1px solid #E5E3E0',borderRadius:8,transition:'border-color .12s'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#8A261D'} onMouseLeave={e=>e.currentTarget.style.borderColor='#E5E3E0'}>
                     <div style={{width:36,height:36,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
                       {a._thumbnail_url
@@ -4258,7 +4227,6 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               const pc=aggregateByType('PC');
               const wi=aggregateByType('WI');
               const gate=aggregateByType('Gate');
-              const totalTax=form.tax_exempt?0:(pc.tax+wi.tax+gate.tax);
               const row=(label,val,bold)=><div key={label} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}}>
                 <span style={{color:bold?'#1A1A1A':'#625650',fontWeight:bold?700:500}}>{label}</span>
                 <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8A261D':'#1A1A1A'}}>{val}</span>
@@ -4395,7 +4363,6 @@ const lineSubtotal=(li)=>{
 };
 function NewProjectForm({jobs,onClose,onSaved}){
   useCatalog(); // subscribe so style/color dropdowns re-render on hydration
-  const todayISO=new Date().toISOString().split('T')[0];
   const[sec,setSec]=useState('details');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
   const[leadMatch,setLeadMatch]=useState(null);
   const linkLeadToJob=async()=>{
@@ -5200,7 +5167,6 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const sendReminders=async()=>{setRemindSending(true);setShowRemindConfirm(false);try{const data=await sbFn('bill-sheet-reminder');setDashToast({msg:`Reminders sent! ${data.remindersSent||0} PMs notified, ${data.totalMissing||0} jobs missing. AR summary sent to david@fencecrete.com`,ok:true});}catch(e){console.error('[Reminders] Error:',e);setDashToast({msg:e.message||'Failed to send reminders',ok:false});}setRemindSending(false);};
   const active=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)),[jobs]);
   const closedJobs=useMemo(()=>jobs.filter(j=>j.status==='closed'),[jobs]);
-  const closedCV=closedJobs.reduce((s,j)=>s+n(j.adj_contract_value||j.contract_value),0);
   const allBillable=useMemo(()=>jobs.filter(j=>j.status!=='canceled'&&j.status!=='cancelled'&&j.status!=='lost'),[jobs]);
   // Real invoice_entries (excluding opening-balance migration rows) are the
   // ONLY accurate source of "billed in calendar year X". The last_billed field
@@ -5294,9 +5260,6 @@ function Dashboard({jobs,onNav,refreshKey=0}){
   const alerts=active.filter(j=>n(j.contract_age)>30&&n(j.ytd_invoiced)===0).sort((a,b)=>n(b.contract_age)-n(a.contract_age));
   const crit=alerts.filter(j=>n(j.contract_age)>=90);const warn=alerts.filter(j=>n(j.contract_age)>=60&&n(j.contract_age)<90);const watch=alerts.filter(j=>n(j.contract_age)>=30&&n(j.contract_age)<60);
   const top15=[...active].sort((a,b)=>n(b.left_to_bill)-n(a.left_to_bill)).slice(0,15);
-  const now=new Date();const compThisMonth=jobs.filter(j=>j.complete_date&&new Date(j.complete_date).getMonth()===now.getMonth()&&new Date(j.complete_date).getFullYear()===now.getFullYear()).length;
-  const largest=[...active].sort((a,b)=>n(b.adj_contract_value||b.contract_value)-n(a.adj_contract_value||a.contract_value))[0];
-  const oldestUnbilled=alerts[0];
   const[actLogs,setActLogs]=useState([]);useEffect(()=>{sbGet('activity_log','changed_by=not.in.(system_auto_fix,desktop)&order=created_at.desc&limit=10').then(d=>setActLogs(d||[]));},[]);
   // Capacity snapshot (mold + batch CY) for today — correct math: panels × cy × 1.4, mold capacity = molds × panels × 0.88
   const[capSnap,setCapSnap]=useState({panelsPlanned:0,panelCapacity:0,cyPlanned:0,cyCap:52.8});
@@ -5618,7 +5581,6 @@ function ProjectsPage({jobs,onRefresh,openJob,refreshKey=0,onNav}){
        - pageCanStatusOnly:  status editors (Max, Luis) — only 'status' col
        - pageCanInstallOnly: sales + PMs     — only 'est_start_date' col
      Users with none of the above don't see the edit-mode toggle at all. */
-  const pageEmail = (auth?.user?.email||'').toLowerCase().trim();
   const pageCanEdit = canEditProjects(auth?.profile);
   const pageCanStatusOnly = !pageCanEdit && canEditStatus(auth?.profile);
   const pageCanInstallOnly = !pageCanEdit && !pageCanStatusOnly && canEditInstallDate(auth?.profile);
@@ -5971,7 +5933,7 @@ function BillingPage({jobs,onRefresh,onNav,bumpRefresh}){
   const[billingTab,setBillingTab]=useState('submissions');
   const[toast,setToast]=useState(null);
   // ─── All Jobs tab state ───
-  const[bSearch,setBSearch]=useState('');const[bMktF,setBMktF]=useState(null);const[bPmF,setBPmF]=useState('');const[bStatusF,setBStatusF]=useState(null);const[billingF,setBillingF]=useState(null);const[showLfDetail,setShowLfDetail]=useState(false);
+  const[bSearch,setBSearch]=useState('');const[bMktF,setBMktF]=useState(null);const[bPmF,setBPmF]=useState('');const[bStatusF,setBStatusF]=useState(null);const[billingF,setBillingF]=useState(null);
   const[confirmFullJob,setConfirmFullJob]=useState(null);const[undoJob,setUndoJob]=useState(null);const[showRecent,setShowRecent]=useState(false);
   const[editId,setEditId]=useState(null);const[editField,setEditField]=useState(null);const[editVal,setEditVal]=useState('');
   const startEdit=(j,f)=>{setEditId(j.id);setEditField(f);setEditVal(j[f]??'');};
@@ -6396,7 +6358,6 @@ if(onRefresh)onRefresh();setArDetail(null);setArForm({ar_notes:'',ar_reviewed_by
   const[resetConfirm,setResetConfirm]=useState(null);
   const arUnreviewed=useMemo(()=>arSubs.filter(s=>!s.ar_reviewed),[arSubs]);
   const arReviewedCount=useMemo(()=>arSubs.filter(s=>s.ar_reviewed).length,[arSubs]);
-  const hasAnyReviewed=arReviewedCount>0;
   const resetMonth=async(pmFilter)=>{const toDelete=pmFilter?arUnreviewed.filter(s=>s.pm===pmFilter):arUnreviewed;if(!toDelete.length)return;let deleted=0;for(const s of toDelete){try{await sbDel('pm_bill_submissions',s.id);deleted++;}catch(e){console.error('Delete failed:',s.id,e);}}setResetConfirm(null);fetchArSubs();const preserved=pmFilter?arSubs.filter(s=>s.ar_reviewed&&s.pm===pmFilter).length:arReviewedCount;setToast(`Reset complete — ${deleted} submissions cleared${preserved>0?', '+preserved+' reviewed preserved':''}`);};
   const AR_LF_SECTIONS=[{title:'Precast',bg:'#FEF3C7',fields:[['Post Only','labor_post_only'],['Post+Panels','labor_post_panels'],['Complete','labor_complete']]},{title:'Single Wythe',bg:'#DBEAFE',fields:[['Foundation','sw_foundation'],['Columns','sw_columns'],['Panels','sw_panels'],['Complete','sw_complete']]},{title:'Wood',bg:'#FEF3C7',fields:[['Wood Fencing','wood_fencing']]},{title:'One Line Items',bg:'#FAEEDA',fields:[['WI Gates','wi_gates'],['WI Fencing','wi_fencing'],['WI Posts','wi_columns'],['Bonds','line_bonds'],['Permits','line_permits'],['Gate Ctrl','gate_controls'],['Demo','remove_existing'],['Mow Strip','mow_strip']]}];
   const thS={textAlign:'left',padding:'10px',borderBottom:'1px solid #E5E3E0',color:'#625650',fontSize:11,fontWeight:600,textTransform:'uppercase'};
@@ -7179,13 +7140,6 @@ function PMBillingPage({jobs,onRefresh,refreshKey=0}){
   const NO_BILL_ZERO_FIELDS=['labor_post_only','labor_post_panels','labor_complete','precast_other_lf','sw_foundation','sw_columns','sw_accent_columns','sw_large_columns','sw_panels','sw_complete','sw_other_lf','wi_gates','wi_fencing','wi_columns','one_line_other_lf','line_bonds','line_permits','remove_existing','gate_controls','lf_panels_washed','wood_fencing','mow_strip','pct_complete_pm','invoiced_amount'];
 
   const LF_FIELDS=['labor_post_only','labor_post_panels','labor_complete','sw_foundation','sw_columns','sw_accent_columns','sw_large_columns','sw_panels','sw_complete','sw_other_lf','wi_gates','wi_fencing','wi_columns','wood_fencing','line_bonds','line_permits','remove_existing','gate_controls'];
-  // Precast fields are entered as NUMBER OF POSTS and converted to LF
-  // using saved material calc data. Fields not listed here are entered
-  // directly in LF (or pieces with a 1:1 LF stand-in for Single Wythe
-  // until the proper formula is defined).
-  const PRECAST_POST_FIELDS=new Set(['labor_post_only','labor_post_panels','labor_complete']);
-  // Demo (remove_existing) is tracked but NEVER added to any LF subtotal.
-  const DEMO_FIELD='remove_existing';
   // Convert a Precast post count to LF for a given job. Uses the job's
   // saved material calc (posts + total LF) to derive LF-per-post; falls
   // back to 6 ft spacing when calc data is unavailable.
@@ -8602,7 +8556,6 @@ function ReportsPageInner({jobs,onNav,onOpenJob}){
   const moldsByCanonical=useMemo(()=>{const m={};physicalMolds.forEach(r=>{m[r.style_name]=n(r.total_molds);});return m;},[physicalMolds]);
   const cyByStyle=useMemo(()=>{const m={};calcStyles.forEach(s=>{m[s.style_name]=n(s.cy_per_panel);});return m;},[calcStyles]);
   const UTIL_RATE=n(plantCfg.mold_utilization_rate)||0.88;
-  const SCRAP=n(plantCfg.scrap_rate_warm)||0.03;
   const ACC=n(plantCfg.accessory_overhead_multiplier)||1.4;
   const dailyCapacityFor=(style)=>{const c=canonicalStyle(style);const molds=moldsByCanonical[c]||0;if(!molds)return 0;return Math.floor(molds*12*UTIL_RATE);};
   const sumJobMaterial=(j,group)=>{const keys=PLAN_PIECE_TYPES.filter(pt=>pt.group===group).map(pt=>'material_'+pt.key);return keys.reduce((s,k)=>s+n(j[k]),0);};
@@ -12396,7 +12349,7 @@ function ProductionPlanningPage({jobs,setJobs,onNav,refreshKey=0}){
   // Mold utilization grouped by physical mold set (for capacity bar + leadership view)
   const moldUsageByStyle=useMemo(()=>{
     const m={};planLines.forEach(l=>{const canonical=canonicalStyle(l.style||'—');if(!m[canonical]){const children=MOLD_CHILDREN[canonical]||[];const ppm=panelsPerMoldForStyle(canonical);m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),panelsPerMold:ppm,confirmed:ppm!=null};}m[canonical].panels+=linePanels(l);});
-    return Object.values(m).filter(x=>x.panels>0||x.capacity>0||!x.confirmed&&x.panels>0).sort((a,b)=>b.panels-a.panels);
+    return Object.values(m).filter(x=>x.panels>0||x.capacity>0||(!x.confirmed&&x.panels>0)).sort((a,b)=>b.panels-a.panels);
   },[planLines,moldCapacityPanels,moldsForStyle,panelsPerMoldForStyle]);
   // Leadership view tabulates panel-mold capacity per style. The 'All Styles'
   // mold_inventory rows are NOT panel molds — they're shared cap/post/rail
@@ -15592,7 +15545,7 @@ function PMReportPhotos({photos, jobNumber, onChange}){
             <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
               <img
                 src={url}
-                alt={`Photo ${i + 1}`}
+                alt={`Attachment ${i + 1}`}
                 style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 10, border: '1px solid #E5E3E0', display: 'block' }}
               />
             </a>
@@ -17844,7 +17797,7 @@ function DemandPlanningPage(){
                 return<tr key={r.leader.id} style={{borderBottom:'1px solid #F4F4F2',opacity:hasData?1:0.5}}>
                   <td style={{padding:'10px 12px',fontWeight:600}}>{r.leader.name}</td>
                   <td style={{padding:'10px 12px'}}>{r.leader.market}</td>
-                  <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.leader.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')||'—'}</td>
+                  <td style={{padding:'10px 12px',fontSize:11,color:'#625650'}}>{r.leader.role.replace('Crew Leader','').replace(/^[/\s-]+/,'')||'—'}</td>
                   <td style={{padding:'10px 12px',fontWeight:600}}>{r.reports}</td>
                   <td style={{padding:'10px 12px',fontWeight:600}}>{hasData?fmtLF(r.total_lf):<span style={{color:'#9E9B96'}}>—</span>}</td>
                   <td style={{padding:'10px 12px',fontWeight:700,color:hasData?(r.avg_lf_per_day>120?'#0F6E56':r.avg_lf_per_day<60?'#B45309':'#1A1A1A'):'#9E9B96'}}>{hasData?Math.round(r.avg_lf_per_day)+' LF/d':'—'}</td>
@@ -18322,7 +18275,7 @@ function CrewLeaderSelect({value,onChange,jobMarket,pmName,hasJob,style}){
       {filteredReal.map(cl=>{
         const isAssignedOutOfMarket=cl.id===value&&jobMarket&&cl.market!==jobMarket;
         const marketSuffix=showAll||isAssignedOutOfMarket?` (${cl.market})`:'';
-        return<option key={cl.id} value={cl.id}>{cl.name}{marketSuffix}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/,'')}`:''}</option>;
+        return<option key={cl.id} value={cl.id}>{cl.name}{marketSuffix}{cl.role&&cl.role!=='Crew Leader'?` · ${cl.role.replace('Crew Leader','').replace(/^[/\s-]+/,'')}`:''}</option>;
       })}
     </select>
     {assignedIsOutOfMarket&&<div style={{fontSize:11,color:'#1D4ED8',marginTop:4,fontStyle:'italic'}}>
@@ -18655,7 +18608,7 @@ function PMDailyReportPage({jobs}){
         <div style={{fontSize:11,color:'#625650',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>Photos ({detailRpt.photos.length})</div>
         <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
           {detailRpt.photos.map((url,i)=><a key={url||i} href={url} target="_blank" rel="noopener noreferrer" style={{display:'block',width:120,height:120}}>
-            <img src={url} alt={`Photo ${i+1}`} style={{width:120,height:120,objectFit:'cover',borderRadius:10,border:'1px solid #E5E3E0',cursor:'zoom-in'}}/>
+            <img src={url} alt={`Attachment ${i+1}`} style={{width:120,height:120,objectFit:'cover',borderRadius:10,border:'1px solid #E5E3E0',cursor:'zoom-in'}}/>
           </a>)}
         </div>
       </div>}
@@ -20734,7 +20687,7 @@ function MapPage({ jobs, onNav }) {
                   <select value={selected.crew_leader_id || ''} onChange={e => assignCrewLeader(selected.id, e.target.value)} style={{ ...inputS, width: '100%', fontSize: 13 }}>
                     <option value="">— Unassigned —</option>
                     {filtered.length === 0 && <option disabled>No crew leaders for {effectiveMarket||jobMarket}</option>}
-                    {filtered.map(cl => <option key={cl.id} value={cl.id}>{cl.name}{showAllCrewLeaders ? ` (${cl.market})` : ''}{cl.role && cl.role !== 'Crew Leader' ? ` · ${cl.role.replace('Crew Leader','').replace(/^[\/\s-]+/, '')}` : ''}</option>)}
+                    {filtered.map(cl => <option key={cl.id} value={cl.id}>{cl.name}{showAllCrewLeaders ? ` (${cl.market})` : ''}{cl.role && cl.role !== 'Crew Leader' ? ` · ${cl.role.replace('Crew Leader','').replace(/^[/\s-]+/, '')}` : ''}</option>)}
                   </select>
                 </>;
               })()}
