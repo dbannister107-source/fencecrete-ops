@@ -902,7 +902,7 @@ function LfBadges({job,size='sm'}){
     {g>0&&<span style={b}>{g} gates</span>}
   </span>;
 }
-function renderCell(j,k){const v=j[k];if(k==='sharepoint_folder'){const url=j.sharepoint_folder_url;const center={display:'block',textAlign:'center',width:'100%'};if(url)return<span title={getSharePointTooltip(url)} onClick={e=>{e.stopPropagation();window.open(url,'_blank','noopener');}} style={{...center,cursor:'pointer'}}>📁</span>;if((j.market||'')==='OOS')return<span title="Out of State markets coming soon" onClick={e=>e.stopPropagation()} style={{...center,cursor:'default',opacity:0.3}}>🚫</span>;/* 2026-05-06: removed the ➕ icon — Create-SharePoint-folder flow was retired Phase D6 (2026-04-30). Docs go in the Documents tab inside the project (open the row → Workflow → Documents). The ➕ was misleading — looked clickable, but clicking it just opened the project. */return<span title="No legacy folder. Documents go in the Documents tab inside the project." style={{...center,color:'#D1CEC9',cursor:'help'}}>—</span>;}if(k==='status')return<span style={statusPill(v)}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#625650',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf_precast'){const x=lfPC(j);return x>0?<span style={{fontWeight:700,color:'#065F46'}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_single_wythe'){const x=n(j.lf_single_wythe);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_wrought_iron'){const x=n(j.lf_wrought_iron);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_masonry'){const x=lfSW(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_wrought_iron'){const x=lfWI(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='number_of_gates'){const x=lfGates(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf'){const x=lfTotal(j);return x>0?<span style={{fontWeight:700}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8A261D',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#625650',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
+function renderCell(j,k){const v=j[k];if(k==='sharepoint_folder'){const url=j.sharepoint_folder_url;const center={display:'block',textAlign:'center',width:'100%'};if(url)return<span title={getSharePointTooltip(url)} onClick={e=>{e.stopPropagation();window.open(url,'_blank','noopener');}} style={{...center,cursor:'pointer'}}>📁</span>;if((j.market||'')==='OOS')return<span title="Out of State markets coming soon" onClick={e=>e.stopPropagation()} style={{...center,cursor:'default',opacity:0.3}}>🚫</span>;/* Phase 1 restore (2026-05-09): the ＋ icon launches the create-folder flow. Click sets a session sentinel and lets the row's natural onClick fire to open the project — the EditPanel mount effect then auto-launches the SharePoint modal. Sentinel is consumed once and cleared, so a subsequent normal row open does NOT re-trigger the modal. */return<span title="Create the SharePoint folder for this project (opens the project + launches the create modal)" onClick={()=>{try{sessionStorage.setItem('fc_open_sharepoint_modal',j.id);}catch{/* private browsing — modal won't auto-open but project still opens */}}} style={{...center,color:'#185FA5',fontWeight:800,cursor:'pointer',fontSize:18,lineHeight:1}}>＋</span>;}if(k==='status')return<span style={statusPill(v)}>{SS[v]||v}</span>;if(k==='market')return<span style={pill(MC[v]||'#625650',MB[v]||'#F4F4F2')}>{MS[v]||v||'—'}</span>;if(['adj_contract_value','contract_value','left_to_bill','ytd_invoiced','net_contract_value'].includes(k))return<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:k==='left_to_bill'?(n(v)>100000?'#991B1B':n(v)>50000?'#B45309':'#065F46'):'#1A1A1A'}}>{$(v)}</span>;if(k==='pct_billed')return<span>{fmtPct(v)}</span>;if(k==='total_lf_precast'){const x=lfPC(j);return x>0?<span style={{fontWeight:700,color:'#065F46'}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_single_wythe'){const x=n(j.lf_single_wythe);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='lf_wrought_iron'){const x=n(j.lf_wrought_iron);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_masonry'){const x=lfSW(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf_wrought_iron'){const x=lfWI(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='number_of_gates'){const x=lfGates(j);return x>0?<span>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='total_lf'){const x=lfTotal(j);return x>0?<span style={{fontWeight:700}}>{x.toLocaleString()}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(['contract_date','last_billed','est_start_date','active_entry_date','complete_date'].includes(k))return fD(v);if(['aia_billing','bonds','certified_payroll','ocip_ccip','third_party_billing'].includes(k))return v?<span style={{color:'#22c55e',fontWeight:700}}>✓</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_pct')return n(v)?<span style={{fontWeight:600}}>{n(v)}%</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='retainage_held')return n(v)?<span style={{fontFamily:'Inter',fontWeight:700,fontSize:12,color:'#991B1B'}}>{$(v)}</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='collected')return v?<span style={pill('#065F46','#D1FAE5')}>COLLECTED</span>:<span style={{color:'#9E9B96'}}>—</span>;if(k==='primary_fence_type'){const ptc={Precast:'#8A261D',Masonry:'#185FA5','Wrought Iron':'#374151'};return v?<span style={{display:'inline-block',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:700,background:ptc[v]||'#625650',color:'#FFF'}}>{v}</span>:<span style={{color:'#9E9B96'}}>—</span>;}if(k==='fence_addons'){const arr=Array.isArray(v)?v:[];return arr.length>0?<div style={{display:'flex',gap:3,flexWrap:'wrap'}}>{arr.map(a=><span key={a} style={{display:'inline-block',padding:'1px 6px',borderRadius:4,fontSize:10,fontWeight:600,background:'#F4F4F2',color:'#1A1A1A',border:'1px solid #E5E3E0'}}>{a}</span>)}</div>:<span style={{color:'#9E9B96'}}>—</span>;}return v||'—';}
 
 /* ═══ PROJECT QUICK VIEW ═══ */
 function ProjectQuickView({job,onClose,onNav,billSub,onCalcMaterials}){
@@ -2210,6 +2210,21 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   const[sharepointSource,setSharepointSource]=useState('template');
   const[sharepointSourceUrl,setSharepointSourceUrl]=useState('');
   const[sharepointFolderOptions,setSharepointFolderOptions]=useState([]);
+  // Auto-open the create-folder modal when the Projects list row's `+` icon
+  // launched the panel for that purpose. The list writes the job id to a
+  // session-scoped sentinel; we consume + clear it once on mount so a normal
+  // row open doesn't accidentally trigger the modal.
+  useEffect(()=>{
+    if(!job?.id||isNew)return;
+    try{
+      const target=sessionStorage.getItem('fc_open_sharepoint_modal');
+      if(target===job.id&&!form.sharepoint_folder_url){
+        sessionStorage.removeItem('fc_open_sharepoint_modal');
+        setShowSharepointModal(true);
+      }
+    }catch{/* sessionStorage may be unavailable in private browsing — ignore */}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[job?.id,isNew]);
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
 
   // Toggle / set a manual contract readiness item. Pass action='check' to
@@ -2972,11 +2987,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               ?{background:'#F0FDF4',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#065F46',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}
               :{background:'#065F46',border:'1.5px solid #065F46',borderRadius:8,padding:'8px 14px',color:'#FFF',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
           >{executed?'✓ Contract Executed — click to undo':'✓ Mark Contract Executed'}</button>;})()}
-          {/* SharePoint folder automation. Open is read-only and visible to
-              anyone for legacy folders; Create is RETIRED as of Phase D6
-              (2026-04-30) — new uploads go to the Documents tab instead.
-              The Create modal still works if reached via bookmark, but no
-              entry point launches it from the toolbar. */}
+          {/* SharePoint folder automation. Phase 1 restore (2026-05-09): the
+              Create modal entry point is back — Amiee asked for it. The
+              Documents tab is still the system of record going forward; the
+              SharePoint folder is for boilerplate template copy + legacy
+              interop. OOS market is unsupported by the edge function; we
+              hide the create button there. */}
           {!isNew&&(()=>{
             const folderUrl=form.sharepoint_folder_url;
             if(folderUrl){
@@ -2987,13 +3003,19 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               >📁 Open SharePoint Folder</button>;
             }
             if(!canEdit)return null;
-            // No SharePoint folder + new project → point user to the Documents
-            // tab. Clicking jumps the EditPanel to the Documents tab.
-            return <button
-              title="Upload project documents directly in the app — they're searchable, audited, and propagate via the spine"
-              onClick={()=>setTab('documents')}
-              style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
-            >📂 Use Documents Tab</button>;
+            const oosMarket=(form.market||'')==='OOS';
+            return <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
+              {!oosMarket&&<button
+                title="Create the SharePoint folder for this project from the master template"
+                onClick={()=>setShowSharepointModal(true)}
+                style={{background:'#FFF',border:'1px solid #185FA5',borderRadius:8,padding:'8px 14px',color:'#185FA5',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
+              >📁 + Create SharePoint Folder</button>}
+              <button
+                title="Upload project documents directly in the app — they're searchable, audited, and propagate via the spine"
+                onClick={()=>setTab('documents')}
+                style={{background:'#FFF',border:'1px solid #8A261D',borderRadius:8,padding:'8px 14px',color:'#8A261D',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}
+              >📂 Use Documents Tab</button>
+            </span>;
           })()}
           {canEdit
             ? <button onClick={handleSave} disabled={saving} style={{...btnP,background:isNew?'#065F46':'#8A261D'}}>{saving?'Saving...':isNew?'Create':'Save'}</button>
@@ -3444,7 +3466,20 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
               automatically — no application code needs to remember to emit. */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,gap:12,flexWrap:'wrap'}}>
             <div>
-              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A'}}>Project Documents</div>
+              <div style={{fontSize:13,fontWeight:800,color:'#1A1A1A',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                Project Documents
+                {/* Phase 1 (2026-05-09): hybrid SharePoint awareness. When the
+                    job has a SharePoint folder, surface a prominent link in the
+                    Documents tab header so users don't have to leave the tab
+                    to reach legacy files. */}
+                {job.sharepoint_folder_url&&<a
+                  href={job.sharepoint_folder_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={getSharePointTooltip(job.sharepoint_folder_url)}
+                  style={{padding:'3px 10px',borderRadius:6,background:'#EFF6FF',color:'#185FA5',border:'1px solid #BFDBFE',fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}
+                >📁 Open SharePoint Folder ↗</a>}
+              </div>
               <div style={{fontSize:11,color:'#625650',marginTop:2,maxWidth:520,lineHeight:1.4}}>
                 Single source of truth for all files attached to this project — contracts, change orders, permits, drawings, photos, insurance, and correspondence. Files are private; downloads use signed URLs that expire after 5 minutes.{job.sharepoint_folder_url?<><br/><span style={{color:'#B45309',fontWeight:600}}>Note: this project also has a SharePoint folder. New uploads go here; SharePoint remains accessible for legacy files.</span></>:null}
               </div>
@@ -4334,7 +4369,11 @@ function NewProjectForm({jobs,onClose,onSaved}){
   // remain valid columns in the DB; just no longer collected at create time.
   // Added `company_id` so the Customer Master lookup can populate the FK in
   // the same flow that fills customer_name/address/city/state/zip.
-  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',company_id:null,cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[createEmptyLineItem('PC')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
+  // create_sharepoint_folder defaults to true so the SharePoint folder fires
+  // automatically on save for the typical commercial project. The submit()
+  // path skips it when the market is OOS or when the user unchecks the box
+  // (e.g. residential one-offs that don't need a SharePoint folder).
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',company_id:null,cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[createEmptyLineItem('PC')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:'',create_sharepoint_folder:true});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
@@ -4519,6 +4558,9 @@ function NewProjectForm({jobs,onClose,onSaved}){
       body.drainage_bottom_count=drainageOn?(n(f.drainage_bottom_count)||0):0;
       body.drainage_top_count=drainageOn?(n(f.drainage_top_count)||0):0;
       delete body.lineItems;delete body.id;delete body.created_at;delete body.updated_at;
+      // create_sharepoint_folder is a UI-only flag (not a jobs column); strip
+      // it before insert so PostgREST doesn't error on an unknown column.
+      delete body.create_sharepoint_folder;
       // Sanitize empty-string date fields — PostgREST rejects '' for date columns.
       // (active_entry_date no longer collected at create time; left out of this list.)
       ['contract_date','est_start_date','billing_date','complete_date','last_billed'].forEach(k=>{if(body[k]==='')body[k]=null;});
@@ -4568,6 +4610,27 @@ function NewProjectForm({jobs,onClose,onSaved}){
       // STEP 3 — Post-save side effects
       fireAlert('new_job',jobRow);
       logAct(jobRow,'job_created','','',jobRow.job_number||jobRow.job_name);
+      // STEP 3a — SharePoint folder auto-create (Phase 1, 2026-05-09).
+      // Fire-and-forget: doesn't block the form close. Skipped for OOS
+      // (unsupported by the edge function) and when the user unchecks the
+      // box. Success/failure surface via the toast queue so users see the
+      // outcome without needing to keep the form open.
+      const wantsFolder=!!f.create_sharepoint_folder&&(f.market||'')!=='OOS';
+      if(wantsFolder){
+        __toastListeners.forEach(fn=>fn({id:Date.now(),type:'info',message:'📁 Creating SharePoint folder…'}));
+        sbFn('create-sharepoint-folder',{job_id:jobRow.id,source:'template'})
+          .then(data=>{
+            if(data&&data.success){
+              __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:`✓ SharePoint folder created — ${data.name||''}`}));
+              try{logEvent('sharepoint.folder_created',{entity_type:'job',entity_id:jobRow.id,event_category:'governance',payload:{job_number:jobRow.job_number,job_name:jobRow.job_name,customer_name:jobRow.customer_name,market:jobRow.market,folder_url:data.url,source:'template',via:'new_project_form'}});}catch{/* fire-and-forget */}
+            }else{
+              __toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:`⚠ SharePoint folder failed: ${(data&&data.error)||'unknown'}. Open the project to retry.`}));
+            }
+          })
+          .catch(err=>{
+            __toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:`⚠ SharePoint folder failed: ${err.message||'network error'}. Open the project to retry.`}));
+          });
+      }
       setSaving(false);
       // STEP 3b — Check for matching proposal lead (auto-link)
       try{
@@ -4689,6 +4752,16 @@ function NewProjectForm({jobs,onClose,onSaved}){
               <input type="checkbox" checked={!!f[k]} onChange={e=>set(k,e.target.checked)} style={{width:16,height:16,accentColor:'#8A261D'}}/>{l}
             </label>)}
           </div>
+          {/* Phase 1 (2026-05-09): SharePoint folder auto-create on save.
+              Defaults checked for AUS/CS/DFW/HOU/SA — the markets the
+              create-sharepoint-folder edge function supports. Hidden for
+              OOS (unsupported by the edge function). Failure of folder
+              creation does NOT block project save — fire-and-forget with
+              a follow-up toast. */}
+          {(f.market||'')!=='OOS'&&<label style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',marginTop:10,background:f.create_sharepoint_folder?'#EFF6FF':'#FFF',borderRadius:8,border:`1px solid ${f.create_sharepoint_folder?'#185FA5':'#E5E3E0'}`,cursor:'pointer',fontSize:13}}>
+            <input type="checkbox" checked={!!f.create_sharepoint_folder} onChange={e=>set('create_sharepoint_folder',e.target.checked)} style={{width:16,height:16,accentColor:'#185FA5'}}/>
+            <span style={{flex:1}}>📁 Create SharePoint folder on save <span style={{color:'#9E9B96',fontWeight:400}}>(copies the master template + boilerplate files; ~10 sec)</span></span>
+          </label>}
         </div>
       </div>}
       {sec==='fence'&&<div>
