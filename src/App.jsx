@@ -2034,23 +2034,52 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
   },[job?.job_number]);
   useEffect(()=>{fetchPanelBondLines();},[fetchPanelBondLines]);
 
-  // Sales tax single source of truth (2026-05-05 per David's E2 decision):
-  // bottom-of-Contract&Billing-tab calc is canonical. Top-of-tab `sales_tax`
-  // field reads from this; handleSave stamps `sales_tax_amount` from this.
-  // Formula must match the bottom Sales Tax breakdown's pcTax + wiTax line —
-  // mirror that one and only one place. tax_exempt forces 0 (matches the
-  // breakdown's "$0.00" treatment). Lookup tables imported from
-  // shared/billing/heightBasis so this memo + the Pricing editor agree.
+  // Sales-tax line-item source-of-truth (2026-05-08): the legacy
+  // `lf_wrought_iron / contract_rate_wrought_iron` aggregate columns are
+  // unreliable — `sync_job_aggregates_from_line_items` only refreshes the LF
+  // column, never the rate, so any job whose WI rate was changed after create
+  // (or imported with a NULL rate) silently loses its WI sales tax. The Koutny
+  // residential job 10157 was undercounting by $49.01 because of this exact
+  // pattern. We now read PC + WI line items directly. `tax_basis_per_unit` is
+  // the per-unit material portion (auto-derived for PC / Gate / Permit / Bond
+  // by `fn_jli_derive_split`; WI fence rows fall back to `rate × 0.33` to
+  // match the historical inline-breakdown heuristic when the trigger left it
+  // null). Refreshed after every line-items save via the LineItemsEditor
+  // onChange callback, plus a one-shot fetch on mount.
+  const[panelTaxLines,setPanelTaxLines]=useState([]);
+  const fetchPanelTaxLines=useCallback(async()=>{
+    if(!job?.job_number){setPanelTaxLines([]);return;}
+    const rows=await sbGet('job_line_items',`job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&fence_type=in.(PC,WI)&select=fence_type,lf,contract_rate,height,style,tax_basis_per_unit`);
+    setPanelTaxLines(Array.isArray(rows)?rows:[]);
+  },[job?.job_number]);
+  useEffect(()=>{fetchPanelTaxLines();},[fetchPanelTaxLines]);
+
+  // Sales tax single source of truth. Reads PC + WI line items directly.
+  // Per-line tax_basis_per_unit is the canonical material-portion value (set
+  // by fn_jli_derive_split for PC, manually entered or carried over for WI);
+  // when null, fall back to STYLE_BASIS/HEIGHT_BASIS for PC and rate × 0.33
+  // for WI so behavior matches the legacy heuristic on the happy path. Total
+  // tax = sum(lf × basis_per_unit) × TAX_RATE. handleSave stamps
+  // sales_tax_amount from this; the inline breakdown (Money → Contract →
+  // Sales Tax) reads the same per-line shape so the two surfaces never drift.
   const computedSalesTax=useMemo(()=>{
-    const styleKey=(form.style||'').trim();
-    const heightKey=String(form.height_precast||'').replace(/['"]/g,'').trim();
-    const pcBasis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
-    const pcLF=n(form.lf_precast||form.total_lf_precast);
-    const pcTax=pcLF*pcBasis*TAX_RATE;
-    const wiContract=n(form.lf_wrought_iron)*n(form.contract_rate_wrought_iron);
-    const wiTax=wiContract*0.33*TAX_RATE;
-    return form.tax_exempt?0:Math.round((pcTax+wiTax)*100)/100;
-  },[form.style,form.height_precast,form.lf_precast,form.total_lf_precast,form.lf_wrought_iron,form.contract_rate_wrought_iron,form.tax_exempt]);
+    if(form.tax_exempt)return 0;
+    const total=(panelTaxLines||[]).reduce((sum,l)=>{
+      const lf=n(l.lf);if(lf<=0)return sum;
+      let basis=n(l.tax_basis_per_unit);
+      if(basis<=0){
+        if(l.fence_type==='PC'){
+          const styleKey=(l.style||'').trim();
+          const heightKey=String(l.height||'').replace(/['"]/g,'').trim();
+          basis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
+        }else if(l.fence_type==='WI'){
+          basis=n(l.contract_rate)*0.33;
+        }
+      }
+      return sum+lf*basis;
+    },0);
+    return Math.round(total*TAX_RATE*100)/100;
+  },[panelTaxLines,form.tax_exempt]);
 
   // Contract Readiness — auto-checks computed from existing fields, manual
   // items stored in contract_readiness_items table. Refetched whenever the
@@ -3517,6 +3546,12 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             <div style={{fontSize:11,fontWeight:800,color:'#625650',textTransform:'uppercase',letterSpacing:0.5,paddingBottom:6,borderBottom:'2px solid #8A261D',marginBottom:10}}>Original Contract</div>
             <LineItemsEditor job={job} onChange={(summary)=>{
               if(summary&&typeof summary==='object')setForm(p=>({...p,...summary}));
+              // Refresh the EditPanel-side line-item caches that drive the
+              // Parties tab's bonded derivation and the Sales Tax breakdown.
+              // Without this, sales tax + bond derivation stays stale after
+              // edits until the panel is reopened.
+              fetchPanelBondLines();
+              fetchPanelTaxLines();
             }} registerSave={(fn)=>{lineItemsSaveRef.current=fn;}}/>
           </div>
 
@@ -4029,17 +4064,33 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                 as the computedSalesTax memo above, so the inline breakdown and the
                 top-of-tab summary can never drift. */}
             {(()=>{
-              const styleKey=(form.style||'').trim();
-              const heightKey=String(form.height_precast||'').replace(/['"]/g,'').trim();
-              const pcBasis=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
-              const pcLF=n(form.lf_precast||form.total_lf_precast);
-              const pcTax=pcLF*pcBasis*TAX_RATE;
-              const wiLF=n(form.lf_wrought_iron);
-              const wiRate=n(form.contract_rate_wrought_iron);
-              const wiContract=wiLF*wiRate;
-              const wiTaxBasis=wiContract*0.33;
-              const wiTax=wiTaxBasis*TAX_RATE;
-              const totalTax=form.tax_exempt?0:(pcTax+wiTax);
+              // Aggregate per-line tax by fence_type. Mirrors computedSalesTax
+              // (same fallback when tax_basis_per_unit is null) so the bottom
+              // breakdown can never disagree with the top-of-tab number.
+              const aggregateByType=(ft)=>{
+                let lf=0,basisTotal=0,fallbackBasisTotal=0;
+                (panelTaxLines||[]).forEach(l=>{
+                  if(l.fence_type!==ft)return;
+                  const llf=n(l.lf);if(llf<=0)return;
+                  let b=n(l.tax_basis_per_unit);
+                  if(b<=0){
+                    if(ft==='PC'){
+                      const styleKey=(l.style||'').trim();
+                      const heightKey=String(l.height||'').replace(/['"]/g,'').trim();
+                      b=STYLE_BASIS[styleKey]??HEIGHT_BASIS[heightKey]??0;
+                    }else if(ft==='WI'){
+                      b=n(l.contract_rate)*0.33;
+                    }
+                    fallbackBasisTotal+=llf*b;
+                  }
+                  lf+=llf;
+                  basisTotal+=llf*b;
+                });
+                return{lf,basisTotal,tax:basisTotal*TAX_RATE,usedFallback:fallbackBasisTotal>0};
+              };
+              const pc=aggregateByType('PC');
+              const wi=aggregateByType('WI');
+              const totalTax=form.tax_exempt?0:(pc.tax+wi.tax);
               const row=(label,val,bold)=><div key={label} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}}>
                 <span style={{color:bold?'#1A1A1A':'#625650',fontWeight:bold?700:500}}>{label}</span>
                 <span style={{fontFamily:'Inter',fontWeight:bold?800:600,color:bold?'#8A261D':'#1A1A1A'}}>{val}</span>
@@ -4052,21 +4103,21 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
                   {form.tax_exempt&&<span style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,background:'#D1FAE5',color:'#065F46',fontSize:10,fontWeight:800,letterSpacing:0.5}}>TAX EXEMPT</span>}
                 </label>
                 {!form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:16}}>
-                  {pcLF>0&&<>
-                    {row('PC Fence Tax Basis',pcBasis>0?`$${pcBasis.toFixed(2)}/LF`:'—')}
-                    {row('PC LF',`${pcLF.toLocaleString()} LF`)}
-                    {row('PC Sales Tax',$(pcTax))}
+                  {pc.lf>0&&<>
+                    {row('PC LF',`${pc.lf.toLocaleString()} LF`)}
+                    {row('PC Tax Basis',$(pc.basisTotal))}
+                    {row('PC Sales Tax',$(pc.tax))}
                   </>}
-                  {wiLF>0&&wiRate>0&&<>
-                    <div style={{height:1,background:'#E5E3E0',margin:'6px 0'}}/>
-                    {row('WI Contract Value',$(wiContract))}
-                    {row('WI Tax (33% basis)',$(wiTaxBasis))}
-                    {row('WI Sales Tax',$(wiTax))}
+                  {wi.lf>0&&<>
+                    {pc.lf>0&&<div style={{height:1,background:'#E5E3E0',margin:'6px 0'}}/>}
+                    {row('WI LF',`${wi.lf.toLocaleString()}`)}
+                    {row('WI Tax Basis',$(wi.basisTotal))}
+                    {row('WI Sales Tax',$(wi.tax))}
                   </>}
-                  {pcLF<=0&&(wiLF<=0||wiRate<=0)&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
+                  {pc.lf<=0&&wi.lf<=0&&<div style={{fontSize:11,color:'#9E9B96',fontStyle:'italic',padding:'4px 0'}}>No taxable line items on file</div>}
                   <div style={{borderTop:'2px solid #8A261D',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
                     <span style={{fontSize:12,fontWeight:800,color:'#1A1A1A',textTransform:'uppercase',letterSpacing:0.5}}>Total Sales Tax</span>
-                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8A261D'}}>{$(pcTax+wiTax)}</span>
+                    <span style={{fontFamily:'Inter',fontWeight:900,fontSize:16,color:'#8A261D'}}>{$(pc.tax+wi.tax)}</span>
                   </div>
                 </div>}
                 {form.tax_exempt&&<div style={{background:'#F9F8F6',border:'1px dashed #D1FAE5',borderRadius:10,padding:14,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
