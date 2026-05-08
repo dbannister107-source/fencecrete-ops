@@ -13432,42 +13432,13 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   const moldsForStyle=useCallback((style)=>{if(!style)return 0;const c=canonicalStyle(style);if(moldsByStyle[c])return moldsByStyle[c];const k=Object.keys(moldsByStyle).find(key=>key.toLowerCase().includes((c||'').toLowerCase())||(c||'').toLowerCase().includes(key.toLowerCase()));return k?moldsByStyle[k]:0;},[moldsByStyle]);
   // mold_capacity_panels = molds × panels × util_rate (uses parent's molds via canonicalStyle)
   const moldCapacityPanels=useCallback((style)=>{const molds=moldsForStyle(style);const ppm=panelsPerMoldForStyle(canonicalStyle(style));if(ppm==null)return 0;return Math.floor(molds*ppm*MOLD_UTIL_RATE);},[moldsForStyle,panelsPerMoldForStyle,MOLD_UTIL_RATE]);
-  // panels_per_day = molds × panels × 0.88 / 1.03 (scrap adjustment)
-  const panelsPerDayForStyle=useCallback((style)=>{const molds=moldsForStyle(style);const ppm=panelsPerMoldForStyle(canonicalStyle(style));if(ppm==null)return 0;return Math.floor((molds*ppm*MOLD_UTIL_RATE)/(1+SCRAP_RATE));},[moldsForStyle,panelsPerMoldForStyle,MOLD_UTIL_RATE,SCRAP_RATE]);
-  // CYD = panels × cy_per_panel × 1.4 (1.4 accessory multiplier covers posts/rails/caps)
-  const cyForLine=useCallback((l)=>{
-    const panels=sumGroup(l.planned,'PANELS');
-    const sRow=stylesByName[l.style]||{};
-    const cyPanel=n(sRow.cy_per_panel);
-    return panels*cyPanel*ACCESSORY_MULT;
-  },[stylesByName,ACCESSORY_MULT]);
-  // Physical molds owned = sum across non-child rows only (≈113 not 273)
-  const totalMoldsOwned=useMemo(()=>physicalMolds.reduce((s,r)=>s+n(r.total_molds),0)||n(plantCfg.total_molds),[physicalMolds,plantCfg]);
-  // Total panel capacity across physical mold sets only
-  const totalPanelCapacity=useMemo(()=>physicalMolds.reduce((s,r)=>{const ppm=panelsPerMoldForStyle(r.style_name);if(ppm==null)return s;return s+Math.floor(n(r.total_molds)*ppm*MOLD_UTIL_RATE);},0),[physicalMolds,panelsPerMoldForStyle,MOLD_UTIL_RATE]);
-  const dailyCyCap=n(plantCfg.daily_cy_capacity)||52.8;
-
-  // Mold utilization grouped by PHYSICAL mold set (canonical style) — combined planned panels across all child styles
-  const moldUsageByStyle=useMemo(()=>{
-    const m={};
-    planLines.forEach(l=>{
-      const canonical=canonicalStyle(l.style||'—');
-      if(!m[canonical]){
-        const children=MOLD_CHILDREN[canonical]||[];
-        const ppm=panelsPerMoldForStyle(canonical);
-        m[canonical]={style:canonical,label:children.length>0?`${canonical} / ${children.join(' / ')}`:canonical,panels:0,capacity:moldCapacityPanels(canonical),molds:moldsForStyle(canonical),panelsPerMold:ppm,confirmed:ppm!=null,childStyles:[...children,canonical],actualStyles:new Set()};
-      }
-      m[canonical].panels+=sumGroup(l.planned,'PANELS');
-      if(l.style)m[canonical].actualStyles.add(l.style);
-    });
-    return Object.values(m).filter(x=>x.panels>0||x.capacity>0).sort((a,b)=>b.panels-a.panels);
-  },[planLines,moldCapacityPanels,moldsForStyle,panelsPerMoldForStyle]);
-  const totalPanelsPlanned=useMemo(()=>planLines.reduce((s,l)=>s+sumGroup(l.planned,'PANELS'),0),[planLines]);
-  const totalCyPlanned=useMemo(()=>planLines.reduce((s,l)=>s+cyForLine(l),0),[planLines,cyForLine]);
+  // 2026-05-08 cleanup: panelsPerDayForStyle, totalMoldsOwned,
+  // totalPanelCapacity, dailyCyCap, moldUsageByStyle, totalPanelsPlanned,
+  // totalCyPlanned, prodOrderJobs, jobSearchResults all dead (referenced
+  // only by the savePlan + plan-tab JSX block that was dead in
+  // DailyReportPage). Live versions still in ProductionPlanningPage.
 
   const activeJobs=useMemo(()=>jobs.filter(j=>!CLOSED_SET.has(j.status)).sort((a,b)=>(a.job_name||'').localeCompare(b.job_name||'')),[jobs]);
-  const prodOrderJobs=useMemo(()=>jobs.filter(j=>j.material_calc_date&&['contract_review','production_queue','in_production','material_ready'].includes(j.status)).sort((a,b)=>(a.est_start_date||'9999').localeCompare(b.est_start_date||'9999')),[jobs]);
-  const jobSearchResults=jobSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(jobSearch.toLowerCase())).slice(0,8):[];
   const unplanSearchResults=unplanSearch.length>=2?activeJobs.filter(j=>`${j.job_number} ${j.job_name}`.toLowerCase().includes(unplanSearch.toLowerCase())).slice(0,8):[];
 
   // ─── MATERIAL GROUP TOTALS HELPER ───
@@ -13681,105 +13652,20 @@ function DailyReportPage({jobs,onNav,refreshKey=0}){
   useEffect(()=>{if(tab==='plan')loadCarryForward(planDate);},[tab,planDate,loadCarryForward]);
 
   // ─── PLAN BUILDER HELPERS ───
-  const addJobFromCarryForward=(cf)=>{
-    const j=jobs.find(x=>x.id===cf.job_id);if(!j)return;
-    if(planLines.some(l=>l.job_id===cf.job_id))return;
-    const line=buildPlanLine(j,null);
-    const planned={};PLAN_PIECE_KEYS.forEach(k=>{const rem=n(cf.remaining?.[k]);planned[k]=rem>0?String(rem):'0';});
-    line.planned=planned;
-    if(cf.remainingLf!=null)line.planned_lf=String(n(cf.remainingLf));
-    setPlanLines(prev=>[...prev,line]);
-    setCarryForward(prev=>prev.filter(c=>c.job_id!==cf.job_id));
-  };
-  // Refresh a plan line's material quantities to match current job record — clears stale flag
-  const updatePlanLineToLatest=(idx)=>{
-    setPlanLines(prev=>prev.map((l,i)=>{
-      if(i!==idx)return l;
-      const job=jobs.find(x=>x.id===l.job_id);if(!job)return l;
-      const gt=groupTotals(job);
-      const material={posts_line:n(job.material_posts_line),posts_corner:n(job.material_posts_corner),posts_stop:n(job.material_posts_stop),panels_regular:n(job.material_panels_regular),panels_half:n(job.material_panels_half),panels_bottom:n(job.material_panels_bottom),panels_top:n(job.material_panels_top),rails_regular:n(job.material_rails_regular),rails_top:n(job.material_rails_top),rails_bottom:n(job.material_rails_bottom),rails_center:n(job.material_rails_center),caps_line:n(job.material_caps_line),caps_stop:n(job.material_caps_stop)};
-      const planned={};PLAN_PIECE_KEYS.forEach(k=>{planned[k]=n(material[k])?String(n(material[k])):'';});
-      return{...l,material,material_totals:gt,post_height:n(job.material_post_height)||l.post_height,material_calc_date:job.material_calc_date||l.material_calc_date,planned,material_calc_date_at_plan:job.material_calc_date||l.material_calc_date_at_plan,quantities_stale:false};
-    }));
-    setToast({msg:'Plan line refreshed to latest material calc',ok:true});
-  };
-  const updatePlanPiece=(idx,pieceKey,val)=>setPlanLines(prev=>prev.map((l,i)=>i===idx?{...l,planned:{...l.planned,[pieceKey]:val}}:l));
+  // 2026-05-08 cleanup: dead duplicates of addJobFromCarryForward,
+  // updatePlanLineToLatest, updatePlanPiece, updatePlanLine, removePlanLine,
+  // movePlanLine, savePlan, removeActualsLine removed. The live copies are
+  // in ProductionPlanningPage; DailyReportPage's JSX never invoked these.
   const addJobToPlan=(j)=>{
     setPlanLines(prev=>prev.some(l=>l.job_id===j.id)?prev:[...prev,buildPlanLine(j,null)]);
     setShowAddPicker(false);setJobSearch('');
   };
   // Pick up job from kanban handoff via localStorage
   useEffect(()=>{if(tab==='plan'&&jobs.length>0){try{const preId=localStorage.getItem('fc_plan_addjob');if(preId){const j=jobs.find(x=>x.id===preId);if(j)addJobToPlan(j);localStorage.removeItem('fc_plan_addjob');}}catch(e){}}},[tab,jobs]);
-  const updatePlanLine=(idx,field,val)=>setPlanLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
-  const removePlanLine=(idx)=>setPlanLines(prev=>prev.filter((_,i)=>i!==idx));
-  const movePlanLine=(idx,dir)=>setPlanLines(prev=>{const n2=[...prev];const target=idx+dir;if(target<0||target>=n2.length)return n2;[n2[idx],n2[target]]=[n2[target],n2[idx]];return n2;});
-
-  // Sum all piece totals for a single line (today's run total)
-  const lineDailyTotal=(l)=>PLAN_PIECE_KEYS.reduce((s,k)=>s+n(l.planned?.[k]),0);
-  const lineIsPartial=(l)=>PLAN_PIECE_KEYS.some(k=>{const full=n(l.material?.[k]);const today=n(l.planned?.[k]);return full>0&&today<full;});
-  const linePanels=(l)=>sumGroup(l.planned,'PANELS');
-  const linePosts=(l)=>sumGroup(l.planned,'POSTS');
-  const lineRails=(l)=>sumGroup(l.planned,'RAILS');
-  const lineCaps=(l)=>sumGroup(l.planned,'POST CAPS');
-  const planTotals=useMemo(()=>{let pcs=0,lf=0;planLines.forEach(l=>{pcs+=lineDailyTotal(l);lf+=n(l.planned_lf);});return{pcs,lf,count:planLines.length};},[planLines]);
-
-  const savePlan=async()=>{
-    setSavingPlan(true);
-    try{
-      let curId=planId;
-      if(curId){
-        await sbPatch('production_plans', curId, {plan_notes:planNotes||null,updated_at:new Date().toISOString()});
-        await sbDelWhere('production_plan_lines', `plan_id=eq.${curId}`);
-      }else{
-        const saved=await sbPost('production_plans', {plan_date:planDate,created_by:'Max',plan_notes:planNotes||null}, { throwOnError: true });
-        curId=saved[0].id;setPlanId(curId);
-      }
-      if(planLines.length>0){
-        const lineRows=planLines.map((l,i)=>{
-          const jobForLine=jobs.find(x=>x.id===l.job_id);
-          const calcAtPlan=l.material_calc_date_at_plan||jobForLine?.material_calc_date||l.material_calc_date||null;
-          const pieceCols={};PLAN_PIECE_KEYS.forEach(k=>{pieceCols['planned_'+k]=n(l.planned?.[k])||0;});
-          const aggCols={planned_posts:linePosts(l),planned_panels:linePanels(l),planned_rails:lineRails(l),planned_caps:lineCaps(l)};
-          // Shift mapping: UI 'both' → null, '1' → 1, '2' → 2. DB column is `shift` (integer, nullable).
-          const shiftVal=l.shift_assignment==='1'?1:l.shift_assignment==='2'?2:null;
-          return{plan_id:curId,sort_order:i,job_id:l.job_id,job_number:l.job_number,job_name:l.job_name,style:l.style||null,color:l.color||null,height:l.height||null,planned_pieces:lineDailyTotal(l),...pieceCols,...aggCols,planned_post_height:n(l.post_height)||0,planned_lf:n(l.planned_lf)||0,is_partial_run:lineIsPartial(l),partial_run_reason:l.partial_run_reason||null,notes:l.notes||null,material_calc_date_at_plan:calcAtPlan,quantities_stale:false,shift:shiftVal};
-        });
-        const OPTIONAL_PLAN_COLS=[...PLAN_PIECE_KEYS.map(k=>'planned_'+k),'planned_post_height','material_calc_date_at_plan','quantities_stale','shift'];
-        // eslint-disable-next-line no-restricted-syntax -- retry-on-missing-column loop reads response.text() to detect schema drift; sbPost would obscure the body inspection. See comment a few lines below.
-        let res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(lineRows)});
-        let attempts=0;let currentRows=lineRows;
-        while(!res2.ok&&attempts<15){
-          const errTxt=await res2.text();
-          const missingCol=OPTIONAL_PLAN_COLS.find(c=>errTxt.includes(`'${c}'`)||errTxt.includes(`"${c}"`)||errTxt.includes(` ${c} `));
-          if(!missingCol){throw new Error(errTxt);}
-          console.warn(`Retrying production_plan_lines POST without column "${missingCol}"`);
-          currentRows=currentRows.map(r=>{const c={...r};delete c[missingCol];return c;});
-          // eslint-disable-next-line no-restricted-syntax -- same retry-on-missing-column pattern as above
-          res2=await fetch(`${SB}/rest/v1/production_plan_lines`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'},body:JSON.stringify(currentRows)});
-          attempts++;
-        }
-        if(!res2.ok)throw new Error(await res2.text());
-      }
-      // Auto-advance production_queue jobs → in_production
-      const today2=new Date().toISOString().split('T')[0];
-      for(const l of planLines){
-        const j=jobs.find(x=>x.id===l.job_id);
-        if(j&&j.status==='production_queue'){
-          try{await sbPatch('jobs', j.id, {status:'in_production',production_start_date:j.production_start_date||today2});
-            /* Spine handles status-change notifications via trg_jobs_status_changed_emit on the PATCH above. */
-          }catch(e){console.error('Auto-advance failed:',j.job_number,e);}
-        }
-      }
-      setToast({msg:`Plan saved for ${planDate}`,ok:true});
-      sbFn('production-plan-notification', {plan_date:planDate,plan_notes:planNotes,lines:planLines,totals:planTotals}).catch(e=>console.error('Plan notification failed:',e));
-    }catch(e){console.error('Save plan error:',e);setToast({msg:'Save failed: '+e.message,ok:false});}
-    setSavingPlan(false);
-  };
 
   // ─── ACTUALS HELPERS ───
   const updateActualsLine=(idx,field,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,[field]:val}:l));
   const updateActualsPiece=(idx,key,val)=>setActualsLines(prev=>prev.map((l,i)=>i===idx?{...l,actual:{...l.actual,[key]:val}}:l));
-  const removeActualsLine=(idx)=>setActualsLines(prev=>prev.filter((_,i)=>i!==idx));
   // Confirmed remove: PATCH job status back to production_queue, log the removal with reason, then drop the line from local state.
   // If the PATCH fails, do NOT remove the line — show an error toast and revert to the default Remove button.
   // If the production_removals log POST fails, still complete the removal but log to console — don't block Luis.
