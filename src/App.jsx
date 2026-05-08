@@ -2707,6 +2707,23 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
       toast.success('✓ SharePoint folder created');
       setShowSharepointModal(false);
       if(onRefresh)onRefresh();
+      // Phase 2 (2026-05-09): scaffold the boilerplate set into the in-app
+      // Documents tab. Fire-and-forget — the SharePoint folder is already
+      // saved at this point, so a scaffold failure doesn't reverse anything.
+      // Only fires when source='template' since 'existing' (copy from another
+      // project) implies the user already has a populated folder set.
+      if(sharepointSource==='template'){
+        sbFn('scaffold-project-documents',{job_id:job.id})
+          .then(s=>{
+            if(s&&s.success){
+              const n=(s.attached||[]).length;
+              if(n>0)toast.success(`📂 ${n} boilerplate file${n===1?'':'s'} added to Documents`);
+            }else if(s){
+              toast.error?.(`Documents scaffold failed: ${s.error||'unknown'}`);
+            }
+          })
+          .catch(err=>{toast.error?.(`Documents scaffold failed: ${err.message||'network error'}`);});
+      }
     }catch(e){
       setSharepointError(e.message||'Folder creation failed');
     }
@@ -4623,6 +4640,26 @@ function NewProjectForm({jobs,onClose,onSaved}){
             if(data&&data.success){
               __toastListeners.forEach(fn=>fn({id:Date.now(),type:'success',message:`✓ SharePoint folder created — ${data.name||''}`}));
               try{logEvent('sharepoint.folder_created',{entity_type:'job',entity_id:jobRow.id,event_category:'governance',payload:{job_number:jobRow.job_number,job_name:jobRow.job_name,customer_name:jobRow.customer_name,market:jobRow.market,folder_url:data.url,source:'template',via:'new_project_form'}});}catch{/* fire-and-forget */}
+              // Phase 2 (2026-05-09): chain scaffold-project-documents to copy
+              // the boilerplate set into the in-app Documents tab. Doesn't
+              // depend on the new SharePoint folder being ready (walks the
+              // canonical TEMPLATE folder), but we run it AFTER folder
+              // creation succeeds so users see one toast sequence:
+              // creating → created → boilerplate added.
+              __toastListeners.forEach(fn=>fn({id:Date.now()+1,type:'info',message:'📂 Adding boilerplate files to Documents…'}));
+              sbFn('scaffold-project-documents',{job_id:jobRow.id})
+                .then(s=>{
+                  if(s&&s.success){
+                    const n=(s.attached||[]).length;
+                    if(n>0)__toastListeners.forEach(fn=>fn({id:Date.now()+2,type:'success',message:`✓ ${n} boilerplate file${n===1?'':'s'} added to Documents`}));
+                    else __toastListeners.forEach(fn=>fn({id:Date.now()+2,type:'info',message:'Boilerplate scaffold: nothing new to add.'}));
+                  }else{
+                    __toastListeners.forEach(fn=>fn({id:Date.now()+2,type:'error',message:`⚠ Boilerplate scaffold failed: ${(s&&s.error)||'unknown'}. Files can be uploaded manually in the Documents tab.`}));
+                  }
+                })
+                .catch(err=>{
+                  __toastListeners.forEach(fn=>fn({id:Date.now()+2,type:'error',message:`⚠ Boilerplate scaffold failed: ${err.message||'network error'}. Files can be uploaded manually.`}));
+                });
             }else{
               __toastListeners.forEach(fn=>fn({id:Date.now(),type:'error',message:`⚠ SharePoint folder failed: ${(data&&data.error)||'unknown'}. Open the project to retry.`}));
             }
