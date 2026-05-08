@@ -2947,7 +2947,22 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
             </div>
           </div>
         </div>
-        <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {/* Persistent close affordance — anchored at the top-right of the
+              header so it's always reachable even when the action toolbar
+              grows crowded (Mark Executed + SharePoint + Save + Update
+              Status + the original Close button were pushing Close offscreen
+              on narrow panel widths after Phase 1 SharePoint restore). The
+              text "Close" button further down the toolbar stays for desktop
+              muscle memory; this ✕ is the always-visible escape. */}
+          <button
+            onClick={onClose}
+            title="Close"
+            aria-label="Close edit panel"
+            style={{width:32,height:32,borderRadius:8,border:'1px solid #E5E3E0',background:'#FFF',color:'#625650',fontSize:18,fontWeight:700,cursor:'pointer',display:'inline-flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,flexShrink:0}}
+            onMouseEnter={e=>{e.currentTarget.style.background='#F4F4F2';e.currentTarget.style.color='#1A1A1A';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#625650';}}
+          >×</button>
           {/* Old truncated header span was the source of "PATCH jobs failed
               (40…)" UX. Replaced by the full-width banner rendered below the
               header (see the saveErr block further down). Removed here. */}
