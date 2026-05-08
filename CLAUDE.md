@@ -156,6 +156,20 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
+### Recently shipped (2026-05-09) — SharePoint folder creation entry points restored (Phase 1) ✅ Complete
+
+**The ＋ icon is back.** Phase D6 (2026-04-30) retired the SharePoint create-folder UI but left the proven `create-sharepoint-folder` edge function (v3) and the create modal intact. Amiee asked for the entry point back; restored without reversing the Phase D6 architecture (Documents tab is still system of record, SharePoint is for boilerplate template copy + legacy interop).
+
+**Four entry paths now wired up:**
+- **Projects list folder column** — `＋` (blue plus) on jobs without a folder. Click writes job id to `sessionStorage['fc_open_sharepoint_modal']` and lets the row's natural onClick open the project. The EditPanel mount-effect consumes the sentinel and auto-launches the create modal.
+- **EditPanel toolbar** — `📁 + Create SharePoint Folder` button next to `📂 Use Documents Tab` when no folder exists, market != OOS, user has edit permission. Click → `setShowSharepointModal(true)`.
+- **Documents tab header** — `📁 Open SharePoint Folder ↗` chip when `sharepoint_folder_url` exists, so legacy files are reachable without leaving the tab.
+- **NewProjectForm** — `Create SharePoint folder on save` checkbox in the Project Requirements card. Defaults checked for AUS / CS / DFW / HOU / SA (the markets the edge function supports). Hidden for OOS. On submit, fires the edge function fire-and-forget with toast queue feedback ("Creating…" → "✓ created" or "⚠ failed — open project to retry"). Folder failure does NOT block project save.
+
+**Phase 2 (mirroring SharePoint boilerplate files into `project_attachments` so the in-app Documents tab gets the same starter set) deferred — needs the SharePoint template's folder structure listing first.** When David provides it, the work is a new `scaffold-project-documents` edge function (~3-4 hours) that walks the new folder, downloads each file, uploads to Supabase Storage, and inserts categorized rows.
+
+Single commit: `d2061d9`. App.jsx only. No DB / trigger / RLS changes.
+
 ### Recently shipped (2026-05-09) — UnifiedLineItemsEditor: single source of truth ✅ Complete
 
 **Status: shipped, verified live, closed out.** The line-item experience is now driven by ONE component (`UnifiedLineItemsEditor`) used by both `NewProjectForm` and `EditPanel.LineItemsEditor`. Future drift between create + edit is structurally impossible.
