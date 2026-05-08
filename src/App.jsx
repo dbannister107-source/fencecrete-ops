@@ -4365,9 +4365,22 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 
 /* ═══ NEW PROJECT FORM ═══ */
 // 2026-05-05 (later) per David: Requirements folded into Details (info) tab
-// to match the EditPanel reorganization. NP_SECS shrinks 6 → 5 sections.
-const NP_SECS=['info','fence','contract','schedule','review'];
-const NP_LABELS={info:'Details & Requirements',fence:'Fence & Dimensions',contract:'Contract & Billing',schedule:'Schedule',review:'Review & Submit'};
+// to match the EditPanel reorganization.
+// 2026-05-08: full layout parity with EditPanel — NP_SECS is now
+// shaped as {key,label,group} objects matching the EditPanel SECS array,
+// so NewProjectForm renders the same 2-level group/tab nav. Linear wizard
+// (Prev/Next + Review tab) is retired in favor of an always-visible
+// "Create Project" button in the header toolbar; missing-fields validation
+// banner pins to the top of the body so it's visible from any tab.
+// Workflow group (documents/tasks/history), accounting, and PIS are
+// intentionally absent — those tabs require a saved jobs.id to function.
+const NP_SECS=[
+  {key:'details',label:'Details & Requirements',group:'Setup'},
+  {key:'dates',label:'Dates',group:'Setup'},
+  {key:'contract',label:'Contract',group:'Money'},
+  {key:'scope',label:'Scope',group:'Money'},
+];
+const NP_GROUPS=['Setup','Money'];
 const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt==='SA')return'Ray Garcia';if(mkt==='HOU'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
 // NewProjectForm helpers — line items now use the same DB-shaped row format
 // as EditPanel (fence_type / lf / contract_rate / line_value / description /
@@ -4383,7 +4396,7 @@ const lineSubtotal=(li)=>{
 function NewProjectForm({jobs,onClose,onSaved}){
   useCatalog(); // subscribe so style/color dropdowns re-render on hydration
   const todayISO=new Date().toISOString().split('T')[0];
-  const[sec,setSec]=useState('info');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
+  const[sec,setSec]=useState('details');const[saving,setSaving]=useState(false);const[saveErr,setSaveErr]=useState(null);
   const[leadMatch,setLeadMatch]=useState(null);
   const linkLeadToJob=async()=>{
     if(!leadMatch)return;
@@ -4718,23 +4731,69 @@ function NewProjectForm({jobs,onClose,onSaved}){
       // Do NOT call onSaved — keep the form open so the user can fix and retry
     }
   };
-  const secIdx=NP_SECS.indexOf(sec)+1;
   const grd='repeat(auto-fill,minmax(220px,1fr))';
   const rateHint=(field)=>avgRates[field]?`Avg ${f.market}: $${avgRates[field].toFixed(2)}/LF`:'';
   return(<div style={{position:'fixed',inset:0,background:'#F4F4F2',zIndex:250,display:'flex',flexDirection:'column'}}>
-    {/* Header */}
-    <div style={{padding:'12px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
-      <div><div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#8A261D'}}>New Project</div><div style={{fontSize:11,color:'#9E9B96'}}>Section {secIdx} of {NP_SECS.length} — {NP_LABELS[sec]}</div></div>
-      <div style={{display:'flex',gap:8}}><button onClick={onClose} style={btnS}>Cancel</button></div>
+    {/* Header — mirrors EditPanel: title block on the left, persistent
+        action toolbar on the right with always-visible Create + ✕ Close.
+        The ✕ + Create remain reachable from any tab regardless of
+        validation state (Create disables when required fields missing). */}
+    <div style={{padding:'12px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,gap:12}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontFamily:'Syne',fontSize:18,fontWeight:900,color:'#8A261D'}}>New Project</div>
+        <div style={{fontSize:11,color:'#9E9B96',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.job_name||'Untitled'}{f.job_number?` · #${f.job_number}`:''}{f.customer_name?` · ${f.customer_name}`:''}</div>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>
+        <button onClick={submit} disabled={saving||missing.length>0} title={missing.length>0?`Missing: ${missing.join(', ')}`:'Create the project'} style={{...btnP,background:'#065F46',padding:'8px 18px',opacity:saving||missing.length>0?0.5:1,cursor:saving||missing.length>0?'not-allowed':'pointer'}}>{saving?'Creating...':'Create Project'}</button>
+        <button
+          onClick={onClose}
+          title="Close"
+          aria-label="Close new project form"
+          style={{width:32,height:32,borderRadius:8,border:'1px solid #E5E3E0',background:'#FFF',color:'#625650',fontSize:18,fontWeight:700,cursor:'pointer',display:'inline-flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,flexShrink:0}}
+          onMouseEnter={e=>{e.currentTarget.style.background='#F4F4F2';e.currentTarget.style.color='#1A1A1A';}}
+          onMouseLeave={e=>{e.currentTarget.style.background='#FFF';e.currentTarget.style.color='#625650';}}
+        >×</button>
+      </div>
     </div>
-    {/* Progress bar */}
-    <div style={{height:3,background:'#E5E3E0',flexShrink:0}}><div style={{height:'100%',background:'#8A261D',width:`${secIdx/NP_SECS.length*100}%`,transition:'width .3s'}}/></div>
-    {/* Section tabs */}
-    <div style={{display:'flex',gap:4,padding:'10px 24px',background:'#FFF',borderBottom:'1px solid #E5E3E0',flexShrink:0,flexWrap:'wrap'}}>{NP_SECS.map(s=><button key={s} onClick={()=>setSec(s)} style={{padding:'6px 14px',borderRadius:8,border:sec===s?'1px solid #8A261D':'1px solid #E5E3E0',background:sec===s?'#8A261D':'#FFF',color:sec===s?'#fff':'#625650',fontSize:12,fontWeight:600,cursor:'pointer'}}>{NP_LABELS[s]}</button>)}</div>
+    {/* 2-level tab nav — mirrors EditPanel (Setup / Money group pills →
+        tabs filtered to the active group). Switching groups jumps to the
+        first tab of the new group so the user always lands on something
+        coherent. Workflow group is intentionally absent — Documents /
+        Tasks / History tabs require a saved jobs.id. */}
+    {(()=>{
+      const activeSec=NP_SECS.find(s=>s.key===sec);
+      const activeGroup=activeSec?activeSec.group:'Setup';
+      const tabsInGroup=NP_SECS.filter(s=>s.group===activeGroup);
+      return<>
+        <div style={{display:'flex',gap:6,padding:'10px 20px 4px',background:'#F9F8F6',borderBottom:'1px solid #F4F4F2',flexShrink:0,flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          {NP_GROUPS.map(g=><button key={g} onClick={()=>{const first=NP_SECS.find(s=>s.group===g);if(first)setSec(first.key);}} style={{padding:'6px 14px',borderRadius:6,border:'1px solid '+(activeGroup===g?'#1A1A1A':'#E5E3E0'),background:activeGroup===g?'#1A1A1A':'#FFF',color:activeGroup===g?'#FFF':'#625650',fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{g}</button>)}
+        </div>
+        <div style={{display:'flex',flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch',gap:4,padding:'8px 20px 10px',borderBottom:'1px solid #E5E3E0',flexShrink:0}}>
+          {tabsInGroup.map(s=><button key={s.key} onClick={()=>setSec(s.key)} style={{padding:'4px 10px',borderRadius:6,border:sec===s.key?'1px solid #8A261D':'1px solid #E5E3E0',background:sec===s.key?'#FDF4F4':'transparent',color:sec===s.key?'#8A261D':'#625650',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{s.label}</button>)}
+        </div>
+      </>;
+    })()}
     {/* Body */}
     <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
-      {/* Sticky Contract Summary — visible on fence & contract sections */}
-      {(sec==='fence'||sec==='contract')&&<div style={{position:'sticky',top:0,zIndex:5,marginBottom:16,background:'#1A1A1A',borderRadius:10,padding:'12px 20px',color:'#fff',display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',boxShadow:'0 4px 12px rgba(0,0,0,.15)'}}>
+      {/* Always-visible validation + error banners — replace the wizard's
+          dedicated Review tab. Pinned at the top of the body so users see
+          missing-fields and save-failure feedback regardless of which tab
+          they're on. The Create Project button in the header disables in
+          lockstep with the missing-fields list. */}
+      {missing.length>0&&<div style={{marginBottom:14,background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#92400E',display:'flex',alignItems:'center',gap:10}}>
+        <span style={{fontSize:14}}>⚠</span>
+        <span style={{flex:1}}>Required before create: <b>{missing.join(', ')}</b></span>
+        <span style={{fontSize:11,color:'#92400E',opacity:0.75}}>Fill on the Details tab</span>
+      </div>}
+      {saveErr&&<div style={{marginBottom:14,background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:800,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>⚠ Save failed</div>
+          <div style={{fontSize:13,color:'#991B1B',fontWeight:600,lineHeight:1.5,wordBreak:'break-word'}}>{saveErr}</div>
+        </div>
+        <button onClick={()=>setSaveErr(null)} title="Dismiss" style={{background:'none',border:'none',color:'#991B1B',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
+      </div>}
+      {/* Sticky Contract Summary — visible on Money group tabs (Scope + Contract) */}
+      {(sec==='scope'||sec==='contract')&&<div style={{position:'sticky',top:0,zIndex:5,marginBottom:16,background:'#1A1A1A',borderRadius:10,padding:'12px 20px',color:'#fff',display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',boxShadow:'0 4px 12px rgba(0,0,0,.15)'}}>
         <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Net Contract</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{$(ncv)}</div></div>
         <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Sales Tax</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{stax?$(stax):'Exempt'}</div></div>
         <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Contract Value</div><div style={{fontFamily:'Inter',fontWeight:800,fontSize:18}}>{$(cv)}</div></div>
@@ -4742,7 +4801,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
         <div style={{marginLeft:'auto'}}><div style={{fontSize:9,color:'#10B981',textTransform:'uppercase',fontWeight:700}}>Adj Contract Value</div><div style={{fontFamily:'Inter',fontWeight:900,fontSize:22,color:'#10B981'}}>{$(acv)}</div></div>
         <div><div style={{fontSize:9,color:'#9E9B96',textTransform:'uppercase',fontWeight:600}}>Total LF</div><div style={{fontFamily:'Inter',fontWeight:700,fontSize:14}}>{totalLF.toLocaleString()}</div></div>
       </div>}
-      {sec==='info'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+      {sec==='details'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
             {fLbl('Job Code')}
@@ -4816,7 +4875,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
           </label>}
         </div>
       </div>}
-      {sec==='fence'&&<div>
+      {sec==='scope'&&<div>
         <div style={{marginBottom:14,fontSize:12,color:'#625650'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
         {/* Shared with EditPanel.LineItemsEditor (2026-05-09 unification) — same
             14 types, same field set, same labels. Drainage panel renders via
@@ -4910,7 +4969,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
       </div>}
       {/* 2026-05-05 (later): standalone Requirements section retired — checkboxes
           live on the Details & Requirements tab (info section) above. */}
-      {sec==='schedule'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
+      {sec==='dates'&&<div style={{display:'grid',gridTemplateColumns:grd,gap:12}}>
         <div>{fLbl('Install Date')}<input type="date" value={f.est_start_date} onChange={e=>set('est_start_date',e.target.value)} style={inputS}/></div>
         {/* 2026-05-05 per David: Active Entry Date retired from the create form.
             Column remains valid in the DB; populated by status-change automation
@@ -4932,30 +4991,17 @@ function NewProjectForm({jobs,onClose,onSaved}){
         })()}</div></div>
         <div>{fLbl('Override Rate (LF/day)')}<input type="number" step="1" placeholder="auto" value={f.install_rate_override||''} onChange={e=>set('install_rate_override',e.target.value?parseFloat(e.target.value):null)} style={inputS} title="Per-job override. Leave blank to use the style category default. Saving recomputes duration & complete date."/></div>
       </div>}
-      {/* JobDiagnostic intentionally omitted here — NewProjectForm creates a job; there is no jobs.id to diagnose until after first save. EditPanel renders the diagnostic on its History tab. */}
-      {sec==='review'&&<div>
-        {missing.length>0&&<div style={{background:'#FEE2E2',border:'1px solid #991B1B30',borderRadius:8,padding:'10px 14px',fontSize:12,fontWeight:600,color:'#991B1B',marginBottom:16}}>Missing required fields: {missing.join(', ')}</div>}
-        {saveErr&&<div style={{background:'#FEE2E2',border:'1px solid #DC2626',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
-          <div>
-            <div style={{fontSize:12,fontWeight:800,color:'#991B1B',textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>⚠ Save failed</div>
-            <div style={{fontSize:13,color:'#991B1B',fontWeight:600,lineHeight:1.5,wordBreak:'break-word'}}>{saveErr}</div>
-          </div>
-          <button onClick={()=>setSaveErr(null)} style={{background:'none',border:'none',color:'#991B1B',fontSize:18,cursor:'pointer',padding:0,lineHeight:1,flexShrink:0}}>×</button>
-        </div>}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {[{t:'Job Info',items:[['Job Code',f.job_number],['Job Name',f.job_name],['Customer',f.customer_name],['Market',f.market],['PM',f.pm],['Sales Rep',f.sales_rep],['Status',SL[f.status]||f.status]]},{t:'Fence',items:[['Type',derivedFenceType],['Line Items',f.lineItems.length],['Total LF',totalLF.toLocaleString()],['Gates',lineAgg.number_of_gates||'0']]},{t:'Contract',items:[['Net Value',$(ncv)],['Sales Tax',stax?$(stax):'Exempt'],['Contract Value',$(cv)],['Adj Contract Value',$(acv)],['Left to Bill',$(acv)],['Billing Method',f.billing_method],['Retainage',n(f.retainage_pct)+'%']]},{t:'Schedule',items:[['Est Start',fD(f.est_start_date)],['Contract Date',fD(f.contract_date)]]}].map(g=><div key={g.t} style={{...card,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:'#8A261D',textTransform:'uppercase',marginBottom:8}}>{g.t}</div>
-            {g.items.map(([l,v])=><div key={l} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:12,borderBottom:'1px solid #F4F4F2'}}><span style={{color:'#625650'}}>{l}</span><span style={{fontWeight:600,color:v?'#1A1A1A':'#991B1B'}}>{v||'Missing'}</span></div>)}
-          </div>)}
-        </div>
-        <div style={{display:'flex',gap:8,marginTop:20}}><button onClick={()=>setSec('schedule')} style={btnS}>← Go Back</button><button onClick={submit} disabled={saving||missing.length>0} style={{...btnP,flex:1,padding:'14px 0',fontSize:16,opacity:saving||missing.length>0?0.5:1}}>{saving?'Creating...':'Create Project'}</button></div>
-      </div>}
+      {/* 2026-05-08 layout-parity refactor: linear-wizard Review tab
+          retired. Validation + save-error banners moved to top-of-body so
+          they're visible from any tab; the always-visible "Create Project"
+          button in the header toolbar replaces the wizard's final-step CTA.
+          The contract summary tile that used to summarize on Review now
+          renders sticky on Money group tabs (Scope + Contract) — same role,
+          live updating, no extra navigation step.
+          JobDiagnostic intentionally omitted — NewProjectForm creates a job;
+          there's no jobs.id to diagnose until after first save. EditPanel
+          renders the diagnostic on its History tab. */}
     </div>
-    {/* Bottom nav for non-review sections */}
-    {sec!=='review'&&<div style={{padding:'12px 24px',background:'#FFF',borderTop:'1px solid #E5E3E0',display:'flex',justifyContent:'space-between',flexShrink:0}}>
-      <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i>0)setSec(NP_SECS[i-1]);}} disabled={sec==='info'} style={{...btnS,opacity:sec==='info'?0.3:1}}>← Previous</button>
-      <button onClick={()=>{const i=NP_SECS.indexOf(sec);if(i<NP_SECS.length-1)setSec(NP_SECS[i+1]);}} style={btnP}>Next →</button>
-    </div>}
     {leadMatch&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
       <div style={{background:'#FFF',borderRadius:16,padding:24,width:'min(480px,96vw)',maxWidth:'96vw'}}>
         <div style={{fontFamily:'Syne',fontSize:20,fontWeight:900,marginBottom:4}}>🔗 Matching Proposal Found</div>
