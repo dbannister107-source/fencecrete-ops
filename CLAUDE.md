@@ -156,9 +156,26 @@ All REST / Storage / Edge-function calls go through helpers exported from `src/s
 - **Proposal Intelligence Phase 2:** 1,162 proposals ingested. **959 still tagged `pending`** — Amiee tagging sprint is the unlock for everything downstream.
 - **Demand Planning v1:** Recently shipped. Co-Pilot home + drift detection working.
 
+### Recently shipped (2026-05-09) — UnifiedLineItemsEditor: single source of truth ✅ Complete
+
+**Status: shipped, verified live, closed out.** The line-item experience is now driven by ONE component (`UnifiedLineItemsEditor`) used by both `NewProjectForm` and `EditPanel.LineItemsEditor`. Future drift between create + edit is structurally impossible.
+
+**Single source of truth:**
+- `LINE_ITEM_TYPE_OPTS` — 14 types (PC, SW, WI, Wood, Other, Removal, Gate, Gate Controls, Columns, Lump Sum, Permit, P&P Bond, Maint Bond, Insurance) in fixed order, labels match across both surfaces.
+- `LINE_ITEM_TYPE_DEFAULTS` — per-type behavior (ui mode, category, taxable, defaultProduced) — replaces `NP_LINE_TYPE_CONFIG` + `PER_PIECE_TYPES_MAP` + `FIXED_DOLLAR_TYPES_MAP`.
+- `UnifiedLineItemsEditor` — controlled component with patch-based onChange; renders all 14 types in 3 rows (Type/Height/LF/Rate/LineValue/Labor/TaxBasis · Style/Color/Produced · Description). Confirm-delete UX, Save Lines button, line numbering, type-specific Description placeholders, canonical Style/Color pickers w/ legacy markings — all owned by this one component.
+
+**NewProjectForm internal data shape migrated** from UI-shape (`line_type`, `rate`, `quantity`, `amount`, `material_type`) to DB-shape (`fence_type`, `lf`, `contract_rate`, `description`, `line_value`) — same row format as EditPanel + DB. Drainage panel renders via `renderExtraBelow` slot since drainage state is parent-owned (job-level metadata).
+
+**Removal round-trips cleanly.** Lines stamp `fence_type='Removal'` directly (no more `'Other'` + `REMOVAL:` description prefix). Material type carries in the description field; the shared component renders it as a "Material Type" free-text input when fence_type='Removal' instead of the Style dropdown. Verified on live deploy: same behavior in EditPanel after save.
+
+**Verified live 2026-05-09:** opened DEMO-002 in EditPanel → all 3 line items render with the new component, same 14-type dropdown, type-change side effects propagate correctly (Permit → Removal clears Style and shows Material Type input), dirty tracking works, Save Lines button enables on dirty, no data corruption.
+
+**Net diff:** +437 / −455 lines (−18 net) across `src/App.jsx`. No new files. No DB / trigger / RLS changes. Single commit: `654465c`.
+
 ### Recently shipped (2026-05-07) — NewProjectForm ↔ EditPanel parity + residential fixes ✅ Complete
 
-**Status: shipped, verified live, closed out.** Unifying create + edit experiences for line items is finished — no follow-up work planned in this area.
+**Status: shipped, verified live, closed out.** First-pass unification — drift recurred a few days later, prompting the 2026-05-09 shared-component extract above.
 
 **Setup (NewProjectForm) and edit (EditPanel `LineItemsEditor`) now expose the same line-item options.** Previously create had 8 types and edit had 13, with different field shapes and a stale `'Lump Sum / Other'` label.
 
