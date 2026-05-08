@@ -1312,11 +1312,291 @@ const FIXED_DOLLAR_TYPES_MAP={
   'Maint Bond':   {category:'maint_bond',taxable:false},
   'Insurance':    {category:'insurance', taxable:false},
 };
+
+// Single source of truth for line-item type pickers used by BOTH the
+// EditPanel LineItemsEditor and the NewProjectForm fence section. Order
+// + labels match across the two surfaces (2026-05-09 unification).
+//
+// `Removal` is a first-class fence_type now (UI-only sentinel that carries
+// material type via the description field; no DB schema change). Lump Sum's
+// label dropped the "Misc." prefix per David. PC / SW / WI / Gate keep
+// their disambiguating parentheticals so the dropdown reads naturally
+// alongside the new "WI Fence" / "WI Gate" labels.
+const LINE_ITEM_TYPE_OPTS=[
+  ['PC',           'PC (Precast)'],
+  ['SW',           'SW (Single Wythe)'],
+  ['WI',           'WI Fence'],
+  ['Wood',         'Wood'],
+  ['Other',        'Other Fence'],
+  ['Removal',      'Removal'],
+  ['Gate',         'WI Gate'],
+  ['Gate Controls','Gate Controls'],
+  ['Columns',      'Columns'],
+  ['Lump Sum',     'Lump Sum'],
+  ['Permit',       'Permit'],
+  ['P&P Bond',     'P&P Bond'],
+  ['Maint Bond',   'Maint Bond'],
+  ['Insurance',    'Insurance'],
+];
+
+// Default category / taxable / fence-vs-non-fence behaviour per fence_type.
+// Mirrors the lookups used by fn_jli_derive_split. PC / fence types are
+// taxable=true (sales tax computed via tax_basis_per_unit per req #2).
+// Removal carries material type in the description field — fence_type stored
+// as 'Removal' (no DB constraint blocks this; verified 2026-05-09).
+const LINE_ITEM_TYPE_DEFAULTS={
+  'PC':           {category:'precast',     taxable:true,  ui:'fence',        defaultProduced:true},
+  'SW':           {category:'sw',          taxable:true,  ui:'fence',        defaultProduced:false},
+  'WI':           {category:'wi',          taxable:true,  ui:'fence',        defaultProduced:false},
+  'Wood':         {category:'wood',        taxable:true,  ui:'fence',        defaultProduced:false},
+  'Other':        {category:null,          taxable:true,  ui:'fence',        defaultProduced:false},
+  'Removal':      {category:null,          taxable:true,  ui:'fence-removal',defaultProduced:false},
+  'Gate':         {category:'gate',        taxable:true,  ui:'per-piece',    defaultProduced:false},
+  'Gate Controls':{category:'gate_controls',taxable:true, ui:'per-piece',    defaultProduced:false},
+  'Columns':      {category:'columns',     taxable:true,  ui:'per-piece',    defaultProduced:false},
+  'Lump Sum':     {category:'lump_sum',    taxable:true,  ui:'fixed-dollar', defaultProduced:false},
+  'Permit':       {category:'permit',      taxable:false, ui:'fixed-dollar', defaultProduced:false},
+  'P&P Bond':     {category:'pp_bond',     taxable:false, ui:'fixed-dollar', defaultProduced:false},
+  'Maint Bond':   {category:'maint_bond',  taxable:false, ui:'fixed-dollar', defaultProduced:false},
+  'Insurance':    {category:'insurance',   taxable:false, ui:'fixed-dollar', defaultProduced:false},
+};
+
+// Empty line item shape used by both surfaces. Matches the DB job_line_items
+// row shape (minus id/job_id/job_number/line_number which the parents fill).
+const createEmptyLineItem=(fence_type='PC')=>{
+  const cfg=LINE_ITEM_TYPE_DEFAULTS[fence_type]||LINE_ITEM_TYPE_DEFAULTS.PC;
+  return{
+    fence_type,
+    lf:0,
+    height:'',
+    style:'',
+    color:'',
+    contract_rate:0,
+    line_value:0,
+    description:'',
+    is_produced:cfg.defaultProduced,
+    labor_per_unit:null,
+    tax_basis_per_unit:null,
+    category:cfg.category,
+    taxable:cfg.taxable,
+  };
+};
+
+// Shared, controlled line-item editor used by both EditPanel.LineItemsEditor
+// and NewProjectForm. Lives single-source-of-truth: any future change to the
+// per-line render appears identically on both surfaces.
+//
+// API:
+//   lines               — controlled array; parent owns persistence
+//   onLineChange(i,p)   — `p` is a partial-line patch object
+//   onLineAdd()         — parent appends an empty line (using createEmptyLineItem
+//                          plus its own metadata, e.g. _new flag for EditPanel)
+//   onLineRemove(i)     — parent decides DB-DELETE vs splice
+//   saveButton          — {onClick, disabled, saving, label} | null  (edit chrome)
+//   errMsg / toast      — banners (edit chrome)
+//   renderExtraBelow    — (line, idx) => ReactNode  (drainage panel slot)
+//   rateHints           — {pc, sw, wi, gate} placeholder strings
+//   headerLabel         — defaults to "Fence Line Items"
+//   showHeader          — false in create mode (Section header drives chrome)
+function UnifiedLineItemsEditor({
+  lines,
+  onLineChange,
+  onLineAdd,
+  onLineRemove,
+  saveButton=null,
+  errMsg='',
+  toast='',
+  renderExtraBelow=null,
+  rateHints={},
+  headerLabel='Fence Line Items',
+  showHeader=true,
+}){
+  useCatalog();
+  const v=useViewport();
+  const[confirmDelIdx,setConfirmDelIdx]=useState(null);
+  // Reset confirm prompt if line list shrinks below the index (e.g. parent
+  // removed a different row while a confirm was open).
+  useEffect(()=>{if(confirmDelIdx!=null&&confirmDelIdx>=lines.length)setConfirmDelIdx(null);},[lines.length,confirmDelIdx]);
+  const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
+  const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
+  const cellStyle=(w)=>v.mobile?{width:'100%',flexShrink:0}:{width:w,flexShrink:0};
+  const rowStyle=v.mobile
+    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
+    :{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12};
+  const row2Style=v.mobile
+    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
+    :{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12};
+  // Patch helper: handles type-change side effects (clearing fields, defaulting
+  // lf/category/taxable/is_produced) so callers don't need to duplicate that
+  // logic. For all other fields, just propagates the single-key patch.
+  const onFieldChange=(idx,field,value)=>{
+    if(field==='fence_type'){
+      const cfg=LINE_ITEM_TYPE_DEFAULTS[value]||LINE_ITEM_TYPE_DEFAULTS.PC;
+      const prev=lines[idx]||{};
+      const patch={
+        fence_type:value,
+        category:cfg.category,
+        taxable:cfg.taxable,
+        is_produced:cfg.defaultProduced,
+      };
+      // Clear style/color/height when leaving fence types
+      if(cfg.ui!=='fence'&&cfg.ui!=='fence-removal'){
+        patch.style=''; patch.color=''; patch.height='';
+      }
+      // Default lf=1 for fixed-dollar (single dollar amount); for per-piece,
+      // keep user lf if set, otherwise default to 1 so display isn't "0 × $X = $0".
+      if(cfg.ui==='fixed-dollar'){
+        patch.lf=1;
+      }else if(cfg.ui==='per-piece'){
+        if(!n(prev.lf))patch.lf=1;
+      }
+      // Recompute line_value if lf or rate carried over
+      const lf2=n(patch.lf!==undefined?patch.lf:prev.lf);
+      const r2=n(prev.contract_rate);
+      patch.line_value=Math.round(lf2*r2*100)/100;
+      onLineChange(idx,patch);
+      return;
+    }
+    if(field==='lf'||field==='contract_rate'){
+      const prev=lines[idx]||{};
+      const lf=field==='lf'?n(value):n(prev.lf);
+      const r=field==='contract_rate'?n(value):n(prev.contract_rate);
+      onLineChange(idx,{[field]:value,line_value:Math.round(lf*r*100)/100});
+      return;
+    }
+    onLineChange(idx,{[field]:value});
+  };
+  const requestRemove=(idx)=>setConfirmDelIdx(idx);
+  const cancelRemove=()=>setConfirmDelIdx(null);
+  const confirmRemove=(idx)=>{setConfirmDelIdx(null);onLineRemove(idx);};
+  return<div>
+    {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
+    {errMsg&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{errMsg}</div>}
+    {showHeader&&<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+      <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>{headerLabel} ({lines.length})</div>
+      {saveButton&&<button onClick={saveButton.onClick} disabled={saveButton.disabled} style={{...btnP,padding:v.mobile?'12px 18px':'6px 14px',fontSize:v.mobile?14:12,minHeight:v.mobile?44:undefined,opacity:saveButton.disabled?0.5:1}}>{saveButton.saving?'Saving…':(saveButton.label||'Save Lines')}</button>}
+    </div>}
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {lines.map((l,idx)=>{
+        const cfg=LINE_ITEM_TYPE_DEFAULTS[l.fence_type]||LINE_ITEM_TYPE_DEFAULTS.PC;
+        const isPC=l.fence_type==='PC';
+        const isRemoval=l.fence_type==='Removal';
+        const isPerPiece=cfg.ui==='per-piece';
+        const isFixedDollar=cfg.ui==='fixed-dollar';
+        const isFence=cfg.ui==='fence'||cfg.ui==='fence-removal';
+        const isNonFence=!isFence;
+        const showSplit=!['Lump Sum','Columns','Gate Controls','Other'].includes(l.fence_type);
+        const descPlaceholder=
+          isRemoval?'e.g. wood, chain link, vinyl':
+          l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':
+          l.fence_type==='Gate Controls'?'e.g. Keypad + sliding motor':
+          l.fence_type==='Columns'?'e.g. 8x8 columns at corners':
+          l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':
+          l.fence_type==='Permit'?'e.g. City of Sugar Land permit':
+          l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':
+          l.fence_type==='Maint Bond'?'e.g. 2-year maintenance bond':
+          l.fence_type==='Insurance'?'e.g. Builders Risk':
+          'Optional notes for this line';
+        const ratePlaceholder=
+          l.fence_type==='PC'?(rateHints.pc||'0.00'):
+          l.fence_type==='SW'?(rateHints.sw||'0.00'):
+          l.fence_type==='WI'?(rateHints.wi||'0.00'):
+          l.fence_type==='Gate'?(rateHints.gate||'0.00'):
+          '0.00';
+        return<div key={l.id||l._key||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.05)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F4F4F2',padding:'14px 20px',borderBottom:'1px solid #E5E3E0'}}>
+            <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{idx+1}</span>
+            {confirmDelIdx===idx
+              ? <span style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <span style={{fontSize:12,color:'#991B1B',fontWeight:700}}>Delete this line?</span>
+                  <button onClick={()=>confirmRemove(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>Yes</button>
+                  <button onClick={cancelRemove} style={{background:'#FFF',color:'#625650',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>No</button>
+                </span>
+              : <button onClick={()=>requestRemove(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
+          </div>
+          <div style={{padding:20}}>
+            {/* Row 1: Type · Height · LF/Pieces · Rate/Price · Line Value · Labor · Tax Basis */}
+            <div style={rowStyle}>
+              <div style={cellStyle(120)}>
+                <label style={fieldLabel}>Type</label>
+                <select value={l.fence_type||'PC'} onChange={e=>onFieldChange(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
+                  {LINE_ITEM_TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
+                </select>
+              </div>
+              {!isNonFence&&<div style={cellStyle(140)}>
+                <label style={fieldLabel}>Height</label>
+                <select value={l.height||''} onChange={e=>onFieldChange(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
+                  <option value="">—</option>
+                  {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
+                  {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
+                </select>
+              </div>}
+              {!isFixedDollar&&<div style={cellStyle(140)}>
+                <label style={fieldLabel}>{isPerPiece?'Number of Pieces':'LF'}</label>
+                <input type="number" min="0" value={l.lf||''} onChange={e=>onFieldChange(idx,'lf',e.target.value)} placeholder={isPerPiece?'1':'0'} style={{...inp,width:'100%'}}/>
+              </div>}
+              <div style={cellStyle(130)}>
+                <label style={fieldLabel}>{isFixedDollar?'Price ($)':isPerPiece?'Price / Piece ($)':'Rate ($/LF)'}</label>
+                <input type="number" min="0" value={l.contract_rate||''} onChange={e=>onFieldChange(idx,'contract_rate',e.target.value)} placeholder={ratePlaceholder} style={{...inp,width:'100%'}}/>
+              </div>
+              <div style={cellStyle(150)}>
+                <label style={fieldLabel}>Line Value</label>
+                <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
+              </div>
+              {showSplit&&<>
+                <div style={cellStyle(120)}>
+                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Manual entry for SW/Wood/WI fence.">Labor / Unit</label>
+                  <input type="number" min="0" step="0.01" value={l.labor_per_unit==null?'':l.labor_per_unit} onChange={e=>onFieldChange(idx,'labor_per_unit',e.target.value===''?null:Number(e.target.value))} placeholder="auto on save" style={{...inp,width:'100%',textAlign:'right'}}/>
+                </div>
+                <div style={cellStyle(120)}>
+                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Sales tax computed on tax_basis × qty only.">Tax Basis / Unit</label>
+                  <input type="number" min="0" step="0.01" value={l.tax_basis_per_unit==null?'':l.tax_basis_per_unit} onChange={e=>onFieldChange(idx,'tax_basis_per_unit',e.target.value===''?null:Number(e.target.value))} placeholder="auto on save" style={{...inp,width:'100%',textAlign:'right'}}/>
+                </div>
+              </>}
+            </div>
+            {/* Row 2: Style/Material Type · Color · Produced — fence types only */}
+            {isFence&&<div style={row2Style}>
+              <div style={{flex:'2 1 220px',minWidth:200}}>
+                <label style={fieldLabel}>{isRemoval?'Material Type':'Style'}</label>
+                {isRemoval
+                  ? <input value={l.style||''} onChange={e=>onFieldChange(idx,'style',e.target.value)} placeholder="e.g. wood, chain link, vinyl" style={{...inp,width:'100%'}}/>
+                  : <select value={l.style||''} onChange={e=>onFieldChange(idx,'style',e.target.value)}
+                      style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
+                      <option value="">—</option>
+                      {styleOptionsFor(l.style,l.fence_type).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
+                    </select>}
+              </div>
+              {!isRemoval&&<div style={{flex:'2 1 200px',minWidth:180}}>
+                <label style={fieldLabel}>Color</label>
+                <select value={l.color||''} onChange={e=>onFieldChange(idx,'color',e.target.value)}
+                  style={{...inp,width:'100%',minWidth:160,...(l.color&&isLegacyColor(l.color)?{fontStyle:'italic'}:{})}}>
+                  <option value="">—</option>
+                  {colorOptionsFor(l.color).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
+                </select>
+              </div>}
+              {isPC&&<div style={{flex:'1 1 140px',minWidth:140,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <label style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',fontSize:14,fontWeight:700,color:'#1A1A1A',minHeight:44,boxSizing:'border-box'}}>
+                  <input type="checkbox" checked={l.is_produced!==false} onChange={e=>onFieldChange(idx,'is_produced',e.target.checked)} style={{width:24,height:24,accentColor:'#8A261D',margin:0,flexShrink:0}}/>
+                  Produced
+                </label>
+              </div>}
+            </div>}
+            {/* Row 3: Description — always visible */}
+            <div>
+              <label style={fieldLabel}>Description</label>
+              <input value={l.description||''} onChange={e=>onFieldChange(idx,'description',e.target.value)} placeholder={descPlaceholder} style={{...inp,width:'100%'}}/>
+            </div>
+          </div>
+          {renderExtraBelow&&renderExtraBelow(l,idx)}
+        </div>;
+      })}
+    </div>
+    <button onClick={onLineAdd} style={{marginTop:12,width:'100%',padding:'12px',border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line Item</button>
+  </div>;
+}
+
 function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirtyChange}){
   useCatalog(); // subscribe so dropdowns re-render when canonical catalogs hydrate
-  // 2026-05-05 (mobile pass): useViewport drives Row 1 + Row 2 stacking on
-  // narrow screens. Below 768px, each line card's fields stack vertically
-  // at full width instead of cramming 6 fixed-width fields into a wrapped flex.
   const v=useViewport();
   const[lines,setLines]=useState([]);
   const[loading,setLoading]=useState(true);
@@ -1324,19 +1604,10 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
   const[saving,setSaving]=useState(false);
   const[err,setErr]=useState('');
   const[toast,setToast]=useState('');
-  const[confirmDel,setConfirmDel]=useState(null);
-  /* Style and color options come from the canonical `styles` / `colors`
-     lookup tables via the CatalogContext. Options are filtered by the line's
-     fence_type; if the row carries a legacy value not in the canonical list
-     it's surfaced as a "(legacy)" option so users don't silently lose it. */
   const loadLines=useCallback(async()=>{
     if(!job?.job_number){setLines([]);setLoading(false);return;}
     setLoading(true);
     try{
-      // Scope: when coId is set we're editing a Change Order's sub-lines and
-      // pull only rows with that co_id. When coId is null/absent we're on the
-      // main contract — exclude any sub-line rows that belong to a CO so they
-      // don't leak into the main contract editor.
       const filter=coId
         ? `co_id=eq.${coId}&order=line_number.asc`
         : `job_number=eq.${encodeURIComponent(job.job_number)}&co_id=is.null&order=line_number.asc`;
@@ -1347,46 +1618,24 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
     setLoading(false);
   },[job?.job_number,coId]);
   useEffect(()=>{loadLines();},[loadLines]);
-
-  // Combined map for non-fence types — used by updateLine to set taxable +
-  // category + clear non-applicable fields when the user switches type.
-  const FLAT_COST_TYPES={...PER_PIECE_TYPES_MAP,...FIXED_DOLLAR_TYPES_MAP};
-  const updateLine=(idx,field,val)=>{setLines(prev=>prev.map((l,i)=>{if(i!==idx)return l;const next={...l,[field]:val,_touched:true};
-    // If user switches Type to a non-fence type, snap defaults: clear
-    // style/color/height/is_produced; set taxable + category for A3. The
-    // difference between per-piece (Gate / Columns / Gate Controls) and
-    // fixed-dollar (Permit / Bonds / Insurance / Misc Lump Sum) is whether
-    // lf is editable as a quantity (per-piece keeps the current lf unless
-    // it's 0, then defaults to 1) or forced to 1 (fixed-dollar = single
-    // dollar amount).
-    if(field==='fence_type'&&FLAT_COST_TYPES[val]){
-      next.height=''; next.style=''; next.color='';
-      next.is_produced=false;
-      next.taxable=FLAT_COST_TYPES[val].taxable;
-      next.category=FLAT_COST_TYPES[val].category;
-      if(FIXED_DOLLAR_TYPES_MAP[val]){
-        next.lf=1;
-      }else if(PER_PIECE_TYPES_MAP[val]){
-        // Keep existing lf if user already had one; otherwise default to 1
-        // so they don't see "0 pieces × $X = $0" by default.
-        if(!n(next.lf))next.lf=1;
-      }
-      const lf2=n(next.lf),r2=n(next.contract_rate); next.line_value=Math.round(lf2*r2*100)/100;
-    }
-    // If user switches AWAY from a non-fence type, clear category and taxable
-    // so the next pick (PC/SW/WI/etc) gets correct defaults.
-    else if(field==='fence_type'&&FLAT_COST_TYPES[l.fence_type]){
-      next.category=null; next.taxable=true; next.is_produced=true;
-    }
-    if(field==='lf'||field==='contract_rate'){const lf=n(next.lf),r=n(next.contract_rate);next.line_value=Math.round(lf*r*100)/100;}
-    // 2026-05-05 (P1 #6): when fence_type / height / style change AND the
-    // line doesn't already have a manual pricing link, attempt auto-link
-    // to the unambiguous matching pricing row. Skip when user has already
-    // chosen a link explicitly (don't clobber explicit selections).
-    //
-    return next;
-  }));setDirty(true);};
-  const addLine=()=>{const nextNum=lines.length+1;setLines(prev=>[...prev,{job_id:job?.id||null,job_number:job?.job_number||'',co_id:coId||null,line_number:nextNum,fence_type:'PC',lf:0,height:'',style:'',color:'',contract_rate:0,line_value:0,description:'',is_produced:true,_new:true,_touched:true}]);setDirty(true);};
+  // Patch-based update — shared component (UnifiedLineItemsEditor) computes
+  // the per-line patch (including fence_type-change side effects), wrapper
+  // just merges and stamps the _touched flag for selective save.
+  const handleLineChange=(idx,patch)=>{
+    setLines(prev=>prev.map((l,i)=>i===idx?{...l,...patch,_touched:true}:l));
+    setDirty(true);
+  };
+  const handleLineAdd=()=>{
+    setLines(prev=>[...prev,{
+      job_id:job?.id||null,
+      job_number:job?.job_number||'',
+      co_id:coId||null,
+      line_number:prev.length+1,
+      ...createEmptyLineItem('PC'),
+      _new:true,_touched:true,
+    }]);
+    setDirty(true);
+  };
   /* Recompute job header rollups from the ACTUAL surviving line_items rows
      in the database. Used by both removeLine and saveAll so the two code
      paths can never disagree. Fetches fresh, sums by fence_type, writes the
@@ -1467,26 +1716,20 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
     if(l._new){
       // Unsaved row — just drop it locally and renumber the remaining unsaved ones in state.
       setLines(prev=>prev.filter((_,i)=>i!==idx).map((x,i)=>x._new?{...x,line_number:i+1}:x));
-      setDirty(true);setConfirmDel(null);return;
+      setDirty(true);return;
     }
     try{
       await sbDel('job_line_items',l.id);
-      // Compute the surviving lines in their new order, then renumber + recompute rollup.
       const survivors=lines.filter((_,i)=>i!==idx);
       await compactLineNumbers(survivors);
-      // CO mode: skip job-header recompute (sub-lines roll up to the CO
-      // amount via DB trigger, not to job header). Just reload our scope.
       if(coId){
         await loadLines();
-        setConfirmDel(null);setToast('Line removed — change order updated');
+        setToast('Line removed — change order updated');
         if(onCoLinesChanged)onCoLinesChanged();
       }else{
         const fresh=await recomputeJobFromLines();
         setLines((fresh?.lines||[]).map(x=>({...x,_existing:true})));
-        setConfirmDel(null);setToast('Line removed — totals updated');
-        // Push recomputed totals up to parent EditPanel form state so the
-        // Totals tab + handleSave use the fresh values, not the stale ones
-        // loaded when the panel opened. See bug history at line 1145.
+        setToast('Line removed — totals updated');
         if(onChange)onChange(fresh?.summary||null);
       }
     }
@@ -1563,31 +1806,10 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
   useEffect(()=>{
     if(typeof onDirtyChangeRef.current==='function')onDirtyChangeRef.current(dirty);
   },[dirty]);
-  const fieldLabel={display:'block',fontSize:11,color:'#625650',marginBottom:6,textTransform:'uppercase',fontWeight:700,letterSpacing:0.4};
-  const inp={...inputS,padding:'10px 12px',fontSize:15,minHeight:44,lineHeight:1.3};
-  // Mobile-aware cell wrapper: full-width stacked cells on phones,
-  // fixed-width flex cells on tablet/desktop. Used inside Row 1 + Row 2
-  // of each line card.
-  const cellStyle=(w)=>v.mobile?{width:'100%',flexShrink:0}:{width:w,flexShrink:0};
-  // Row container: column flex on mobile, wrap-flex on desktop.
-  const rowStyle=v.mobile
-    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
-    :{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12};
-  // Row 2 (Style/Color/Produced) — same column-on-mobile treatment, but the
-  // desktop pattern aligns to flex-end so the Produced checkbox sits flush.
-  const row2Style=v.mobile
-    ?{display:'flex',flexDirection:'column',gap:10,marginBottom:12}
-    :{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12};
   if(loading)return<div style={{padding:20,color:'#9E9B96',fontSize:12}}>Loading line items…</div>;
-  // Lump Sum kept as the stored fence_type value; UI label is "Misc. Lump
-  // Sum" per David 2026-05-05. No data migration needed — display layer only.
-  const TYPE_OPTS=[['PC','PC (Precast)'],['SW','SW (Single Wythe)'],['WI','WI Fence'],['Wood','Wood'],['Other','Other Fence'],['Gate','WI Gate'],['Gate Controls','Gate Controls'],['Lump Sum','Misc. Lump Sum'],['Columns','Columns'],['Permit','Permit'],['P&P Bond','P&P Bond'],['Maint Bond','Maint Bond'],['Insurance','Insurance']];
   return<div>
-    {toast&&<div style={{background:'#D1FAE5',color:'#065F46',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{toast}</div>}
-    {err&&<div style={{background:'#FEE2E2',color:'#991B1B',padding:'6px 10px',borderRadius:6,fontSize:11,marginBottom:8}}>{err}</div>}
-    {/* Loud banner when there are unsaved line edits. The old hint on line ~973
-        was small italic text at the bottom that was easy to miss. This makes
-        the unsaved state unmissable at the top of the panel. */}
+    {/* Loud banner when there are unsaved line edits — kept outside the shared
+        component because it's specific to the edit-mode lifecycle. */}
     {dirty&&<div style={{background:'#FEF3C7',border:'2px solid #F59E0B',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
       <div style={{fontSize:13,color:'#92400E',fontWeight:700,display:'flex',alignItems:'center',gap:8}}>
         <span style={{fontSize:18}}>⚠️</span>
@@ -1595,147 +1817,22 @@ function LineItemsEditor({job,coId,onChange,onCoLinesChanged,registerSave,onDirt
       </div>
       <button onClick={saveAll} disabled={saving} style={{...btnP,padding:v.mobile?'12px 18px':'6px 14px',fontSize:v.mobile?14:12,minHeight:v.mobile?44:undefined,background:'#B45309',opacity:saving?0.5:1,whiteSpace:'nowrap'}}>{saving?'Saving…':'Save Lines Now'}</button>
     </div>}
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-      <div style={{fontSize:12,color:'#625650',fontWeight:800,textTransform:'uppercase',letterSpacing:0.5}}>{coId?`Change Order Line Items (${lines.length})`:`Fence Line Items (${lines.length})`}</div>
-      <button onClick={saveAll} disabled={!dirty||saving} style={{...btnP,padding:v.mobile?'12px 18px':'6px 14px',fontSize:v.mobile?14:12,minHeight:v.mobile?44:undefined,opacity:(!dirty||saving)?0.5:1}}>{saving?'Saving…':'Save Lines'}</button>
-    </div>
-    <div style={{display:'flex',flexDirection:'column',gap:10}}>
-      {lines.map((l,idx)=>{
-        const isPC=l.fence_type==='PC';
-        const isPerPiece=!!PER_PIECE_TYPES_MAP[l.fence_type];
-        const isFixedDollar=!!FIXED_DOLLAR_TYPES_MAP[l.fence_type];
-        const isNonFence=isPerPiece||isFixedDollar;
-        // Type-specific placeholder copy for the Description field. David
-        // (2026-05-05) specified that Insurance and Misc. Lump Sum show only
-        // Price + Description; Gate Controls (and the rest of the per-piece
-        // family) show Number of Pieces + Price + Description.
-        const descPlaceholder=
-          l.fence_type==='Gate'?'e.g. 6ft Double WI Gate':
-          l.fence_type==='Gate Controls'?'e.g. Keypad + sliding motor':
-          l.fence_type==='Columns'?'e.g. 8x8 columns at corners':
-          l.fence_type==='Lump Sum'?'e.g. Mobilization / Delivery':
-          l.fence_type==='Permit'?'e.g. City of Sugar Land permit':
-          l.fence_type==='P&P Bond'?'e.g. P&P bond — Travelers':
-          l.fence_type==='Maint Bond'?'e.g. 2-year maintenance bond':
-          l.fence_type==='Insurance'?'e.g. Builders Risk':
-          'Optional notes for this line';
-        return<div key={l.id||'new'+idx} style={{background:'#FFF',border:'1px solid #E5E3E0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.05)'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#F4F4F2',padding:'14px 20px',borderBottom:'1px solid #E5E3E0'}}>
-            <span style={{fontSize:16,fontWeight:800,color:'#1A1A1A',letterSpacing:0.3}}>Line #{idx+1}</span>
-            {confirmDel===idx
-              ? <span style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <span style={{fontSize:12,color:'#991B1B',fontWeight:700}}>Delete this line?</span>
-                  <button onClick={()=>removeLine(idx)} style={{background:'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>Yes</button>
-                  <button onClick={()=>setConfirmDel(null)} style={{background:'#FFF',color:'#625650',border:'1px solid #E5E3E0',borderRadius:6,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>No</button>
-                </span>
-              : <button onClick={()=>setConfirmDel(idx)} title="Delete line" style={{background:'#FEE2E2',color:'#DC2626',border:'1px solid #FCA5A5',borderRadius:8,width:32,height:32,fontSize:18,fontWeight:800,cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
-          </div>
-          <div style={{padding:20}}>
-            {/* Row 1: Type, [Height for fence], [LF/Number of Pieces — depends on type], Rate/Price, Line Value */}
-            <div style={rowStyle}>
-              <div style={cellStyle(120)}><label style={fieldLabel}>Type</label>
-                <select value={l.fence_type||'PC'} onChange={e=>updateLine(idx,'fence_type',e.target.value)} style={{...inp,width:'100%'}}>
-                  {TYPE_OPTS.map(([v,lab])=><option key={v} value={v}>{lab}</option>)}
-                </select>
-              </div>
-              {!isNonFence&&<div style={cellStyle(140)}><label style={fieldLabel}>Height</label>
-                <select value={l.height||''} onChange={e=>updateLine(idx,'height',e.target.value)} style={{...inp,width:'100%'}}>
-                  <option value="">—</option>
-                  {LINE_HEIGHT_OPTIONS.map(h=><option key={h} value={h}>{h}</option>)}
-                  {l.height&&!LINE_HEIGHT_OPTIONS.includes(l.height)&&<option value={l.height}>{l.height}</option>}
-                </select>
-              </div>}
-              {/* LF / Number of Pieces — fence shows "LF"; per-piece shows "Number of Pieces"; fixed-dollar hides this field entirely (lf is forced to 1). */}
-              {!isFixedDollar&&<div style={cellStyle(140)}><label style={fieldLabel}>{isPerPiece?'Number of Pieces':'LF'}</label>
-                <input type="number" min="0" value={l.lf||''} onChange={e=>updateLine(idx,'lf',e.target.value)} placeholder={isPerPiece?'1':'0'} style={{...inp,width:'100%'}}/>
-              </div>}
-              <div style={cellStyle(130)}><label style={fieldLabel}>{isFixedDollar?'Price ($)':isPerPiece?'Price / Piece ($)':'Rate ($/LF)'}</label>
-                <input type="number" min="0" value={l.contract_rate||''} onChange={e=>updateLine(idx,'contract_rate',e.target.value)} placeholder="0.00" style={{...inp,width:'100%'}}/>
-              </div>
-              <div style={cellStyle(150)}><label style={fieldLabel}>Line Value</label>
-                <div style={{...inp,width:'100%',background:'#F9F8F6',color:'#1A1A1A',fontFamily:'Inter',fontWeight:800,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{$(l.line_value)}</div>
-              </div>
-              {/* Labor + Tax Basis split. Auto-derived by trg_jli_derive_split
-                  for precast / wi_gate / permit / bond. SW / Wood / WI fence /
-                  site_work / null categories: trigger leaves null and Amiee
-                  enters manually here. Manual entries on those categories
-                  persist (trigger doesn't touch them). For precast, manual
-                  edits stick until the next unit_price/category/height/style
-                  change re-fires the trigger and re-derives. */}
-              {/* Hide labor/tax_basis cells for line types where the split
-                  is meaningless (Lump Sum, Columns, Gate Controls, Other).
-                  Show for: PC/SW/WI/Wood (fence — split applies), Gate
-                  (66/34 auto), Permit/Bonds/Insurance (100/0 auto). The
-                  trigger fills the auto-derived ones on save; SW/Wood/WI
-                  rows accept manual entry. */}
-              {!['Lump Sum','Columns','Gate Controls','Other'].includes(l.fence_type)&&<>
-                <div style={cellStyle(120)}>
-                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Manual entry for SW/Wood/WI fence.">
-                    Labor / Unit
-                  </label>
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={l.labor_per_unit==null?'':l.labor_per_unit}
-                    onChange={e=>updateLine(idx,'labor_per_unit',e.target.value===''?null:Number(e.target.value))}
-                    placeholder="auto on save"
-                    style={{...inp,width:'100%',textAlign:'right'}}
-                  />
-                </div>
-                <div style={cellStyle(120)}>
-                  <label style={fieldLabel} title="Auto-derives for precast/gate/permit/bond on save. Sales tax computed on tax_basis × qty only.">
-                    Tax Basis / Unit
-                  </label>
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={l.tax_basis_per_unit==null?'':l.tax_basis_per_unit}
-                    onChange={e=>updateLine(idx,'tax_basis_per_unit',e.target.value===''?null:Number(e.target.value))}
-                    placeholder="auto on save"
-                    style={{...inp,width:'100%',textAlign:'right'}}
-                  />
-                </div>
-              </>}
-            </div>
-            {/* Row 2: Style, Color, Produced — only on fence types */}
-            {!isNonFence&&<div style={row2Style}>
-              <div style={{flex:'2 1 220px',minWidth:200}}><label style={fieldLabel}>Style</label>
-                <select value={l.style||''} onChange={e=>updateLine(idx,'style',e.target.value)}
-                  style={{...inp,width:'100%',minWidth:180,...(l.style&&!isCanonicalStyle(l.style)?{fontStyle:'italic'}:{})}}>
-                  <option value="">—</option>
-                  {styleOptionsFor(l.style,l.fence_type).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
-                </select>
-              </div>
-              <div style={{flex:'2 1 200px',minWidth:180}}><label style={fieldLabel}>Color</label>
-                <select value={l.color||''} onChange={e=>updateLine(idx,'color',e.target.value)}
-                  style={{...inp,width:'100%',minWidth:160,...(l.color&&isLegacyColor(l.color)?{fontStyle:'italic'}:{})}}>
-                  <option value="">—</option>
-                  {colorOptionsFor(l.color).map(o=><option key={o.v} value={o.v} style={o.legacy?{fontStyle:'italic',color:'#9E9B96'}:undefined}>{o.l}</option>)}
-                </select>
-              </div>
-              {isPC&&<div style={{flex:'1 1 140px',minWidth:140,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                <label style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8,cursor:'pointer',fontSize:14,fontWeight:700,color:'#1A1A1A',minHeight:44,boxSizing:'border-box'}}>
-                  <input type="checkbox" checked={l.is_produced!==false} onChange={e=>updateLine(idx,'is_produced',e.target.checked)} style={{width:24,height:24,accentColor:'#8A261D',margin:0,flexShrink:0}}/>
-                  Produced
-                </label>
-              </div>}
-            </div>}
-            {/* Row 3: Description — always visible across every type */}
-            <div>
-              <label style={fieldLabel}>Description</label>
-              <input value={l.description||''} onChange={e=>updateLine(idx,'description',e.target.value)} placeholder={descPlaceholder} style={{...inp,width:'100%'}}/>
-            </div>
-          </div>
-        </div>;
-      })}
-      {lines.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:12,border:'1px dashed #E5E3E0',borderRadius:10,background:'#F9F8F6'}}>No line items — click "+ Add Line" to create one</div>}
-    </div>
-    <button onClick={addLine} style={{width:'100%',padding:'10px',marginTop:10,border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>+ Add Line</button>
+    <UnifiedLineItemsEditor
+      lines={lines}
+      onLineChange={handleLineChange}
+      onLineAdd={handleLineAdd}
+      onLineRemove={removeLine}
+      saveButton={{onClick:saveAll,disabled:!dirty||saving,saving}}
+      errMsg={err}
+      toast={toast}
+      headerLabel={coId?'Change Order Line Items':'Fence Line Items'}
+    />
+    {lines.length===0&&<div style={{padding:24,textAlign:'center',color:'#9E9B96',fontSize:12,border:'1px dashed #E5E3E0',borderRadius:10,background:'#F9F8F6',marginTop:10}}>No line items — click "+ Add Line Item" above to create one</div>}
     {/* Bottom Save Lines button — mirrors the top-of-panel one. Visible
         directly under the last line item so PMs adding lines bottom-up
-        don't have to scroll back to the top header to save. Disabled
-        when there's nothing dirty (matches the top button's behavior). */}
+        don't have to scroll back to the top header to save. */}
     {lines.length>0&&<button onClick={saveAll} disabled={!dirty||saving} style={{width:'100%',padding:v.mobile?'16px':'14px',minHeight:v.mobile?52:undefined,marginTop:10,border:'none',background:dirty&&!saving?'#8A261D':'#9E9B96',color:'#FFF',borderRadius:10,fontSize:v.mobile?15:14,fontWeight:800,cursor:(!dirty||saving)?'not-allowed':'pointer',opacity:(!dirty||saving)?0.7:1,letterSpacing:0.3}}>{saving?'Saving…':dirty?'💾 Save Lines':'Save Lines (no unsaved changes)'}</button>}
     {lines.length>0&&<div style={{marginTop:12,padding:'12px 14px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:10,display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
-      {/* PC LF (produced) is a main-contract concept — hide on CO sub-line scope */}
       {!coId&&<span style={{background:'#D1FAE5',color:'#065F46',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:800}}>PC LF (produced): {totals.pc_produced.toLocaleString()}</span>}
       <span style={{marginLeft:coId?'0':'auto',fontSize:13,fontWeight:800,color:'#1A1A1A'}}>{coId?'CO Total Pieces:':'Total LF:'} {totals.total.toLocaleString()}</span>
       <span style={{marginLeft:coId?'auto':'0',fontFamily:'Inter',fontSize:14,fontWeight:900,color:'#8A261D'}}>{coId?'CO Total Value:':'Total Value:'} {$(totals.value)}</span>
@@ -4205,46 +4302,16 @@ function EditPanel({job,onClose,onSaved,isNew,onDuplicate,onNav,onRefresh}){
 const NP_SECS=['info','fence','contract','schedule','review'];
 const NP_LABELS={info:'Details & Requirements',fence:'Fence & Dimensions',contract:'Contract & Billing',schedule:'Schedule',review:'Review & Submit'};
 const AUTO_PM=(mkt,ft)=>{if(mkt==='AUS'||mkt==='DFW')return'Doug Monroe';if(mkt==='SA')return'Ray Garcia';if(mkt==='HOU'){if(ft&&(ft.includes('SW')||ft.includes('Wythe')))return'Rafael Anaya Jr.';return'Manuel Salazar';}return'';};
-// 14 line types — labels & fence_type mappings mirror EditPanel's TYPE_OPTS
-// (App.jsx:1584). 13 of them match EditPanel exactly; "Removal" is kept as
-// a NewProjectForm convenience (it stamps a fence_type='Other' row with a
-// REMOVAL: <material_type> description prefix, which EditPanel surfaces as
-// an "Other" line). UI mode drives field layout:
-//   fence       → LF + Height + Style/MaterialType + (Color when applicable) + Rate
-//   per-piece   → Quantity + Price/Piece + Description
-//   fixed-dollar→ Price ($) + Description (no LF)
-// showLaborSplit hides Labor/TaxBasis on the same types EditPanel does
-// (Lump Sum / Columns / Gate Controls / Other Fence). DB trigger
-// fn_jli_derive_split fills the auto-derivable categories on save (PC, Gate,
-// Permit, Bond); manual entries on SW/Wood/WI fence persist.
-// `label` is the user-facing display string (mirrors EditPanel TYPE_OPTS).
-// The keys ('Wrought Iron', 'Gate', etc) stay as the internal form-state
-// values — renaming them would touch ~50 lines of drainage / lineAgg /
-// derivedFenceType / submit-filter / toDBLineItem logic for no benefit.
-const NP_LINE_TYPE_CONFIG={
-  'Precast':       {label:'Precast',       fenceType:'PC',           category:'precast',      taxable:true,  ui:'fence',        color:true,  isProduced:true,  showLaborSplit:true,  drainage:true},
-  'Single Wythe':  {label:'Single Wythe',  fenceType:'SW',           category:'sw',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true,  drainage:true},
-  'Wrought Iron':  {label:'WI Fence',      fenceType:'WI',           category:'wi',           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
-  'Wood':          {label:'Wood',          fenceType:'Wood',         category:'wood',         taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:true},
-  'Other Fence':   {label:'Other Fence',   fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false},
-  'Removal':       {label:'Removal',       fenceType:'Other',        category:null,           taxable:true,  ui:'fence',        color:false, isProduced:false, showLaborSplit:false, removal:true},
-  'Gate':          {label:'WI Gate',       fenceType:'Gate',         category:'gate',         taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:true},
-  'Gate Controls': {label:'Gate Controls', fenceType:'Gate Controls',category:'gate_controls',taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
-  'Columns':       {label:'Columns',       fenceType:'Columns',      category:'columns',      taxable:true,  ui:'per-piece',    isProduced:false, showLaborSplit:false},
-  'Lump Sum':      {label:'Lump Sum',      fenceType:'Lump Sum',     category:'lump_sum',     taxable:true,  ui:'fixed-dollar', isProduced:false, showLaborSplit:false},
-  'Permit':        {label:'Permit',        fenceType:'Permit',       category:'permit',       taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'P&P Bond':      {label:'P&P Bond',      fenceType:'P&P Bond',     category:'pp_bond',      taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'Maint Bond':    {label:'Maint Bond',    fenceType:'Maint Bond',   category:'maint_bond',   taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-  'Insurance':     {label:'Insurance',     fenceType:'Insurance',    category:'insurance',    taxable:false, ui:'fixed-dollar', isProduced:false, showLaborSplit:true},
-};
-const LINE_TYPES=Object.keys(NP_LINE_TYPE_CONFIG);
-const emptyLineItem=(line_type='Precast')=>({line_type,lf:'',height:'',style:'',color:'',rate:'',quantity:'',description:'',material_type:'',amount:'',labor_per_unit:'',tax_basis_per_unit:''});
+// NewProjectForm helpers — line items now use the same DB-shaped row format
+// as EditPanel (fence_type / lf / contract_rate / line_value / description /
+// labor_per_unit / tax_basis_per_unit / category / taxable / is_produced).
+// All per-type behavior reads from the shared LINE_ITEM_TYPE_DEFAULTS map at
+// the top of this file. The dropdown options + render layout live inside
+// UnifiedLineItemsEditor, which both surfaces consume.
 const lineSubtotal=(li)=>{
-  const cfg=NP_LINE_TYPE_CONFIG[li.line_type];
-  if(!cfg)return 0;
-  if(cfg.ui==='per-piece')return n(li.quantity)*n(li.rate);
-  if(cfg.ui==='fixed-dollar')return n(li.amount);
-  return n(li.lf)*n(li.rate);
+  // fixed-dollar lines store their dollar amount in contract_rate (lf = 1).
+  // fence + per-piece compute as lf × contract_rate.
+  return n(li.lf)*n(li.contract_rate);
 };
 function NewProjectForm({jobs,onClose,onSaved}){
   useCatalog(); // subscribe so style/color dropdowns re-render on hydration
@@ -4267,7 +4334,7 @@ function NewProjectForm({jobs,onClose,onSaved}){
   // remain valid columns in the DB; just no longer collected at create time.
   // Added `company_id` so the Customer Master lookup can populate the FK in
   // the same flow that fills customer_name/address/city/state/zip.
-  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',company_id:null,cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[emptyLineItem('Precast')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
+  const emptyF=()=>({job_number:'',job_name:'',customer_name:'',company_id:null,cust_number:'',status:'contract_review',market:'',job_type:'Commercial',sales_rep:'',pm:'',address:'',city:'',state:'TX',zip:'',notes:'',fence_type:'PC',lineItems:[createEmptyLineItem('PC')],contract_date:'',billing_method:'Progress',billing_date:'',billing_trigger:null,billing_day_of_month:null,sales_tax:'',retainage_pct:0,aia_billing:false,bonds:false,certified_payroll:false,ocip_ccip:false,third_party_billing:false,included_on_billing_schedule:false,included_on_lf_schedule:false,est_start_date:'',drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});
   const[f,setF]=useState(emptyF);
   const[avgRates,setAvgRates]=useState({});
   const[jnLoading,setJnLoading]=useState(false);
@@ -4281,10 +4348,13 @@ function NewProjectForm({jobs,onClose,onSaved}){
     if(mode==='auto'&&f.market){genJobNum(f.market);}
     else if(mode==='manual'){setF(p=>({...p,job_number:''}));}
   };
-  // Line item helpers
-  const addLineItem=()=>setF(p=>({...p,lineItems:[...p.lineItems,emptyLineItem('Precast')]}));
+  // Line item helpers — patch-based updates so UnifiedLineItemsEditor can send
+  // multi-field side effects (e.g. type change clears style/color/height +
+  // resets lf to 1 for fixed-dollar). Empty line shape comes from the shared
+  // createEmptyLineItem so create + edit start lines identically.
+  const addLineItem=()=>setF(p=>({...p,lineItems:[...p.lineItems,createEmptyLineItem('PC')]}));
   const removeLineItem=(idx)=>setF(p=>({...p,lineItems:p.lineItems.length<=1?p.lineItems:p.lineItems.filter((_,i)=>i!==idx)}));
-  const updateLineItem=(idx,key,val)=>setF(p=>({...p,lineItems:p.lineItems.map((l,i)=>i===idx?{...l,[key]:val}:l)}));
+  const updateLineItem=(idx,patch)=>setF(p=>({...p,lineItems:p.lineItems.map((l,i)=>i===idx?{...l,...patch}:l)}));
   // Fetch avg rates when market changes
   useEffect(()=>{if(!f.market)return;const mj=jobs.filter(j=>j.market===f.market);const avg=(field)=>{const valid=mj.filter(j=>n(j[field])>0);return valid.length?Math.round(valid.reduce((s,j)=>s+n(j[field]),0)/valid.length*100)/100:0;};setAvgRates({contract_rate_precast:avg('contract_rate_precast'),contract_rate_single_wythe:avg('contract_rate_single_wythe'),contract_rate_wrought_iron:avg('contract_rate_wrought_iron'),gate_rate:avg('gate_rate')});},[f.market,jobs]);
   // Drainage eligibility — canonical line-item style resolves via
@@ -4303,7 +4373,8 @@ function NewProjectForm({jobs,onClose,onSaved}){
     return drainageEligibleSet.has(canonical);
   },[drainageEligibleSet]);
   const drainageEligibleLineIdx=useMemo(()=>{
-    for(let i=0;i<f.lineItems.length;i++){const li=f.lineItems[i];const cfg=NP_LINE_TYPE_CONFIG[li.line_type];if(cfg?.drainage&&isStyleDrainageEligible(li.style))return i;}
+    // Drainage applies to PC and SW fence types per the spec.
+    for(let i=0;i<f.lineItems.length;i++){const li=f.lineItems[i];if((li.fence_type==='PC'||li.fence_type==='SW')&&isStyleDrainageEligible(li.style))return i;}
     return -1;
   },[f.lineItems,isStyleDrainageEligible]);
   // When no line qualifies (user switched from "Rock" to "Vertical Wood", or
@@ -4325,20 +4396,19 @@ function NewProjectForm({jobs,onClose,onSaved}){
   // Stamped onto the body in submit normalization so the DB matches what the
   // form displayed at the moment of save.
   const computedSalesTax=useMemo(()=>{
-    // HEIGHT_BASIS / STYLE_BASIS / TAX_RATE imported from shared/billing/heightBasis.
-    // Per the 2026-05-08 policy: PC + WI Fence + WI Gate all get tax on the
-    // material portion only (33% basis for WI fence and gate, matching the
-    // trigger fn_jli_derive_split's wi_gate split).
+    // PC + WI Fence + WI Gate all get tax on the material portion (33% basis
+    // for WI/Gate, matching fn_jli_derive_split). Lines now use DB-shape
+    // fence_type codes; Gate's `lf` carries the piece count.
     let pcLF=0,pcHeight=null,pcStyle=null,wiContract=0,gateContract=0;
     f.lineItems.forEach(li=>{
-      if(li.line_type==='Precast'){
+      if(li.fence_type==='PC'){
         pcLF+=n(li.lf);
         if(!pcHeight&&li.height)pcHeight=String(li.height).replace(/['"]/g,'').trim();
         if(!pcStyle&&li.style)pcStyle=String(li.style).trim();
-      }else if(li.line_type==='Wrought Iron'){
-        wiContract+=n(li.lf)*n(li.rate);
-      }else if(li.line_type==='Gate'){
-        gateContract+=n(li.quantity)*n(li.rate);
+      }else if(li.fence_type==='WI'){
+        wiContract+=n(li.lf)*n(li.contract_rate);
+      }else if(li.fence_type==='Gate'){
+        gateContract+=n(li.lf)*n(li.contract_rate);
       }
     });
     const pcBasis=STYLE_BASIS[pcStyle]??HEIGHT_BASIS[pcHeight]??0;
@@ -4348,9 +4418,11 @@ function NewProjectForm({jobs,onClose,onSaved}){
     return f.tax_exempt?0:Math.round((pcTax+wiTax+gateTax)*100)/100;
   },[f.lineItems,f.tax_exempt]);
   const stax=computedSalesTax;const cv=ncv+stax;const acv=cv;
+  // Total LF = sum of fence-flavored lines only (excludes per-piece + fixed-dollar).
   const totalLF=f.lineItems.reduce((s,li)=>{
-    const cfg=NP_LINE_TYPE_CONFIG[li.line_type];
-    return cfg?.ui==='fence'?s+n(li.lf):s;
+    const cfg=LINE_ITEM_TYPE_DEFAULTS[li.fence_type];
+    const isFence=cfg&&(cfg.ui==='fence'||cfg.ui==='fence-removal');
+    return isFence?s+n(li.lf):s;
   },0);
   // Derive legacy aggregate fields from line items for back-compat with existing jobs-table schema
   // Roll up line items into the legacy job-header aggregate columns so the
@@ -4361,101 +4433,65 @@ function NewProjectForm({jobs,onClose,onSaved}){
   // snapshots and Lump Sum description that the trigger leaves alone).
   const lineAgg=useMemo(()=>{
     const a={lf_precast:0,height_precast:null,style:null,color:null,contract_rate_precast:null,lf_single_wythe:0,height_single_wythe:null,style_single_wythe:null,contract_rate_single_wythe:null,lf_wrought_iron:0,height_wrought_iron:null,contract_rate_wrought_iron:null,lf_removal:0,height_removal:null,removal_material_type:null,contract_rate_removal:null,lf_other:0,contract_rate_other:null,number_of_gates:0,gate_height:null,gate_description:null,gate_rate:null,gate_controls_qty:0,lump_sum_amount:0,lump_sum_description:null};
+    // Lines now use DB-shape fence_type codes (post-2026-05-09 unification).
+    // Removal lines carry the material type in the description field.
     f.lineItems.forEach(li=>{
-      const lt=li.line_type;
-      if(lt==='Precast'){a.lf_precast+=n(li.lf);if(a.height_precast==null)a.height_precast=li.height||null;if(a.style==null)a.style=li.style||null;if(a.color==null)a.color=li.color||null;if(a.contract_rate_precast==null)a.contract_rate_precast=n(li.rate)||null;}
-      else if(lt==='Single Wythe'){a.lf_single_wythe+=n(li.lf);if(a.height_single_wythe==null)a.height_single_wythe=li.height||null;if(a.style_single_wythe==null)a.style_single_wythe=li.style||null;if(a.contract_rate_single_wythe==null)a.contract_rate_single_wythe=n(li.rate)||null;}
-      else if(lt==='Wrought Iron'){a.lf_wrought_iron+=n(li.lf);if(a.height_wrought_iron==null)a.height_wrought_iron=li.height||null;if(a.contract_rate_wrought_iron==null)a.contract_rate_wrought_iron=n(li.rate)||null;}
-      else if(lt==='Wood'||lt==='Other Fence'){a.lf_other+=n(li.lf);if(a.contract_rate_other==null)a.contract_rate_other=n(li.rate)||null;}
-      else if(lt==='Removal'){a.lf_removal+=n(li.lf);if(a.height_removal==null)a.height_removal=li.height||null;if(a.removal_material_type==null)a.removal_material_type=li.material_type||null;if(a.contract_rate_removal==null)a.contract_rate_removal=n(li.rate)||null;}
-      else if(lt==='Gate'){a.number_of_gates+=n(li.quantity);if(a.gate_height==null)a.gate_height=li.height||null;if(a.gate_description==null)a.gate_description=li.description||null;if(a.gate_rate==null)a.gate_rate=n(li.rate)||null;}
-      // Gate Controls roll up the count of control sets into jobs.gate_controls_qty
-      // (existing column). The dollar amount lives on the line item itself —
-      // not aggregated into a job-level total because the cost is sometimes
-      // bundled into the LF rate (Laura's pattern) so a separate roll-up
-      // would double-count. Subtotal is captured via lineSubtotal → contract_value.
-      else if(lt==='Gate Controls'){a.gate_controls_qty+=n(li.quantity);}
-      else if(lt==='Lump Sum'){a.lump_sum_amount+=n(li.amount);if(a.lump_sum_description==null)a.lump_sum_description=li.description||null;}
-      // Permit / P&P Bond / Maint Bond / Insurance / Columns: the DB trigger
-      // sync_job_aggregates_from_line_items handles permit_amount /
-      // pp_bond_amount / maint_bond_amount based on fence_type after the line
-      // items are inserted. Insurance / Columns are line-item-only dollars
-      // with no header column, so nothing to roll up here.
+      const ft=li.fence_type;
+      if(ft==='PC'){a.lf_precast+=n(li.lf);if(a.height_precast==null)a.height_precast=li.height||null;if(a.style==null)a.style=li.style||null;if(a.color==null)a.color=li.color||null;if(a.contract_rate_precast==null)a.contract_rate_precast=n(li.contract_rate)||null;}
+      else if(ft==='SW'){a.lf_single_wythe+=n(li.lf);if(a.height_single_wythe==null)a.height_single_wythe=li.height||null;if(a.style_single_wythe==null)a.style_single_wythe=li.style||null;if(a.contract_rate_single_wythe==null)a.contract_rate_single_wythe=n(li.contract_rate)||null;}
+      else if(ft==='WI'){a.lf_wrought_iron+=n(li.lf);if(a.height_wrought_iron==null)a.height_wrought_iron=li.height||null;if(a.contract_rate_wrought_iron==null)a.contract_rate_wrought_iron=n(li.contract_rate)||null;}
+      else if(ft==='Wood'||ft==='Other'){a.lf_other+=n(li.lf);if(a.contract_rate_other==null)a.contract_rate_other=n(li.contract_rate)||null;}
+      else if(ft==='Removal'){a.lf_removal+=n(li.lf);if(a.height_removal==null)a.height_removal=li.height||null;if(a.removal_material_type==null)a.removal_material_type=li.description||null;if(a.contract_rate_removal==null)a.contract_rate_removal=n(li.contract_rate)||null;}
+      else if(ft==='Gate'){a.number_of_gates+=n(li.lf);if(a.gate_height==null)a.gate_height=li.height||null;if(a.gate_description==null)a.gate_description=li.description||null;if(a.gate_rate==null)a.gate_rate=n(li.contract_rate)||null;}
+      else if(ft==='Gate Controls'){a.gate_controls_qty+=n(li.lf);}
+      else if(ft==='Lump Sum'){a.lump_sum_amount+=n(li.contract_rate);if(a.lump_sum_description==null)a.lump_sum_description=li.description||null;}
+      // Permit / P&P Bond / Maint Bond / Insurance / Columns: DB trigger
+      // sync_job_aggregates_from_line_items rolls up permit_amount /
+      // pp_bond_amount / maint_bond_amount after the line items insert.
     });
     return a;
   },[f.lineItems]);
-  // Derive the legacy combo fence_type string ("PC/SW", "PC/WI/Gates", etc)
-  // from line item types. Only fence-flavored types contribute (per-piece /
-  // fixed-dollar lines aren't fences); Gate is always rendered as 'Gates'
-  // for backward-compat with existing readers of the combo string.
+  // Legacy combo fence_type string for the jobs.fence_type column.
+  // Reads fence types directly from line items.
   const derivedFenceType=useMemo(()=>{
     const types=new Set();
     f.lineItems.forEach(l=>{
-      const cfg=NP_LINE_TYPE_CONFIG[l.line_type];
-      if(cfg?.ui==='fence'&&cfg.fenceType!=='Other')types.add(cfg.fenceType);
-      if(l.line_type==='Gate')types.add('Gates');
+      const cfg=LINE_ITEM_TYPE_DEFAULTS[l.fence_type];
+      if(!cfg)return;
+      const isFence=cfg.ui==='fence'||cfg.ui==='fence-removal';
+      if(isFence&&l.fence_type!=='Other'&&l.fence_type!=='Removal')types.add(l.fence_type);
+      if(l.fence_type==='Gate')types.add('Gates');
     });
     return[...types].join('/')||f.fence_type||'PC';
   },[f.lineItems,f.fence_type]);
-  // Map a UI line item to the job_line_items DB row shape. Mirrors the EditPanel
-  // LineItemsEditor save body (App.jsx:1508) so create + edit insert
-  // structurally identical rows. labor_per_unit and tax_basis_per_unit pass
-  // through; the DB trigger fn_jli_derive_split fills them on save for
-  // PC / Gate / Permit / Bond when blank, manual entries persist on SW/Wood/WI.
+  // Map a UI line item to the job_line_items DB row shape. Lines already use
+  // DB-shape fence_type codes, so this is mostly a passthrough — we just
+  // attach job_id / job_number / line_number / line_value and stamp
+  // category + taxable from the shared LINE_ITEM_TYPE_DEFAULTS map.
   const toDBLineItem=(li,idx,jobRow)=>{
-    const cfg=NP_LINE_TYPE_CONFIG[li.line_type];
+    const cfg=LINE_ITEM_TYPE_DEFAULTS[li.fence_type];
     if(!cfg)return null;
     const labor   =li.labor_per_unit===''   ||li.labor_per_unit==null   ?null:n(li.labor_per_unit);
     const taxBasis=li.tax_basis_per_unit===''||li.tax_basis_per_unit==null?null:n(li.tax_basis_per_unit);
-    const base={
+    const lf=cfg.ui==='fixed-dollar'?1:n(li.lf);
+    const cr=n(li.contract_rate);
+    return{
       job_id:jobRow.id,
       job_number:jobRow.job_number,
       line_number:idx+1,
-      fence_type:cfg.fenceType,
+      fence_type:li.fence_type,
       category:cfg.category,
       taxable:cfg.taxable,
-      is_produced:!!cfg.isProduced,
+      is_produced:li.is_produced!==undefined?!!li.is_produced:!!cfg.defaultProduced,
+      lf,
+      height:cfg.ui!=='fence'&&cfg.ui!=='fence-removal'&&cfg.ui!=='per-piece'?null:(li.height?String(li.height):null),
+      style:cfg.ui==='fence'?(li.style||null):null,
+      color:(cfg.ui==='fence'&&li.fence_type==='PC')?(li.color||null):null,
+      contract_rate:cr,
+      line_value:Math.round(lf*cr*100)/100,
+      description:li.description||null,
       labor_per_unit:labor,
       tax_basis_per_unit:taxBasis,
-    };
-    if(cfg.ui==='fence'){
-      // Removal: stamp REMOVAL: <material_type> description prefix and skip
-      // style (style dropdown is replaced by a Material Type free-text input
-      // for this type — see render block below).
-      const desc=cfg.removal
-        ?`REMOVAL: ${li.material_type||''}`.trim()
-        :(li.description||null);
-      return{...base,
-        lf:n(li.lf),
-        height:li.height?String(li.height):null,
-        style:cfg.removal?null:(li.style||null),
-        color:cfg.color?(li.color||null):null,
-        contract_rate:n(li.rate),
-        description:desc,
-      };
-    }
-    if(cfg.ui==='per-piece'){
-      // Gate keeps its `GATE: <desc>` description prefix for back-compat with
-      // the gate-count rule in sync_job_aggregates_from_line_items (which now
-      // also matches fence_type='Gate' directly, but the prefix is harmless
-      // and other reports still scan for it).
-      const desc=li.line_type==='Gate'
-        ?`GATE: ${li.description||''}`.trim()
-        :(li.description||null);
-      return{...base,
-        lf:n(li.quantity)||1,
-        height:li.height?String(li.height):null,
-        style:null,color:null,
-        contract_rate:n(li.rate),
-        description:desc,
-      };
-    }
-    // fixed-dollar: Lump Sum / Permit / Bonds / Insurance — lf=1, contract_rate=amount.
-    return{...base,
-      lf:1,
-      height:null,style:null,color:null,
-      contract_rate:n(li.amount),
-      description:li.description||null,
     };
   };
   const missing=[];if(!f.job_name)missing.push('Job Name');if(!f.customer_name)missing.push('Customer Name');if(!f.market)missing.push('Market');
@@ -4498,18 +4534,16 @@ function NewProjectForm({jobs,onClose,onSaved}){
       // new-project form doesn't break creation.
       Object.keys(body).forEach(k=>{if(body[k]==='')body[k]=null;});
       body.fence_addons=syncFenceAddons(body);
-      // Filter out line items that have no meaningful data — user may add an empty row and not fill it.
-      // Config-driven: per-piece checks quantity/rate, fixed-dollar checks amount,
-      // fence types check lf/rate. This is the post-2026-05-07 unification — the
-      // earlier filter still hardcoded the legacy `'Lump Sum / Other'` label and
-      // dropped Permit/Bonds/Insurance lines on submit (their value lives in
-      // `li.amount`, not `li.lf` or `li.rate`).
+      // Filter out line items with no meaningful data (user added an empty row
+      // and didn't fill it). Lines now use the unified DB shape so we just
+      // check lf + contract_rate; fixed-dollar lines have lf=1 always so the
+      // contract_rate check is what matters there.
       const filled=f.lineItems.filter(li=>{
-        const cfg=NP_LINE_TYPE_CONFIG[li.line_type];
+        const cfg=LINE_ITEM_TYPE_DEFAULTS[li.fence_type];
         if(!cfg)return false;
-        if(cfg.ui==='per-piece')return n(li.quantity)>0||n(li.rate)>0||(li.description||'').trim();
-        if(cfg.ui==='fixed-dollar')return n(li.amount)>0||(li.description||'').trim();
-        return n(li.lf)>0||n(li.rate)>0;
+        // Fixed-dollar: contract_rate is the dollar amount (lf=1).
+        if(cfg.ui==='fixed-dollar')return n(li.contract_rate)>0||(li.description||'').trim();
+        return n(li.lf)>0||n(li.contract_rate)>0;
       });
       // STEP 1 — Insert the jobs row (sbPost throws on non-2xx with PostgREST error body extracted)
       const saved=await sbPost('jobs', body, { throwOnError: true });
@@ -4659,104 +4693,56 @@ function NewProjectForm({jobs,onClose,onSaved}){
       </div>}
       {sec==='fence'&&<div>
         <div style={{marginBottom:14,fontSize:12,color:'#625650'}}>Add one or more line items to build the contract. Each line represents a discrete scope — LF of fence, gates, removal, or lump sum.</div>
-        {f.lineItems.map((li,idx)=>{
-          const sub=lineSubtotal(li);
-          const u=(k,v)=>updateLineItem(idx,k,v);
-          const lt=li.line_type;
-          const cfg=NP_LINE_TYPE_CONFIG[lt];
-          const isLFType=cfg?.ui==='fence';
-          return<div key={idx} style={{background:'#FAFAFA',border:'1px solid #E5E3E0',borderRadius:10,padding:14,marginBottom:10}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,fontWeight:800,color:'#8A261D',textTransform:'uppercase',letterSpacing:0.5,background:'#FDF4F4',padding:'3px 8px',borderRadius:4,border:'1px solid #8A261D30'}}>Line {idx+1}</span>
-                <select value={lt} onChange={e=>u('line_type',e.target.value)} style={{...inputS,width:220,fontWeight:700,fontSize:13}}>
-                  {LINE_TYPES.map(t=><option key={t} value={t}>{NP_LINE_TYPE_CONFIG[t].label}</option>)}
-                </select>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontFamily:'Inter',fontWeight:800,fontSize:16,color:'#8A261D'}}>{$(sub)}</span>
-                {f.lineItems.length>1&&<button onClick={()=>removeLineItem(idx)} style={{background:'none',border:'1px solid #DC2626',borderRadius:6,padding:'4px 10px',color:'#DC2626',fontSize:11,fontWeight:700,cursor:'pointer'}}>× Remove</button>}
-              </div>
-            </div>
-            {/* Field grid — three UI modes share one grid; cfg.ui drives which
-                inputs appear. Mirrors EditPanel's LineItemsEditor (App.jsx:1635)
-                so create + edit feel identical for the same line type. */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
-              {cfg?.ui==='fence'&&<>
-                <div>{fLbl('LF')}<input type="number" value={li.lf} onChange={e=>u('lf',e.target.value)} style={inputS}/></div>
-                <div>{fLbl('Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>
-                {cfg.removal
-                  ?<div>{fLbl('Material Type')}<input value={li.material_type} onChange={e=>u('material_type',e.target.value)} placeholder="e.g. wood, chain link" style={inputS}/></div>
-                  :<div>{fLbl('Style')}<select value={li.style||''} onChange={e=>u('style',e.target.value)} style={inputS}><option value="">— Select —</option>{stylesForFenceType(cfg.fenceType).map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select></div>}
-                {cfg.color&&<div>{fLbl('Color')}<select value={li.color||''} onChange={e=>u('color',e.target.value)} style={inputS}><option value="">— Select —</option>{COLOR_CATALOG.map(c=><option key={c.name} value={c.name}>{c.name}</option>)}</select></div>}
-                <div>{fLbl('Rate ($/LF)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Precast'?rateHint('contract_rate_precast'):lt==='Single Wythe'?rateHint('contract_rate_single_wythe'):lt==='Wrought Iron'?rateHint('contract_rate_wrought_iron'):''} style={inputS}/></div>
-              </>}
-              {cfg?.ui==='per-piece'&&<>
-                <div>{fLbl(lt==='Gate Controls'?'Quantity (control sets)':'Quantity (pieces)')}<input type="number" value={li.quantity} onChange={e=>u('quantity',e.target.value)} placeholder="1" style={inputS}/></div>
-                {lt==='Gate'&&<div>{fLbl('Gate Height (ft)')}<input type="number" value={li.height} onChange={e=>u('height',e.target.value)} style={inputS}/></div>}
-                <div>{fLbl(lt==='Gate'?'Rate ($) each':'Price / Piece ($)')}<input type="number" value={li.rate} onChange={e=>u('rate',e.target.value)} placeholder={lt==='Gate'?rateHint('gate_rate'):''} style={inputS}/></div>
-                <div style={{gridColumn:'1/-1'}}>{fLbl('Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} placeholder={lt==='Gate'?'e.g. 16ft Sliding Gate':lt==='Gate Controls'?'e.g. operator + keypad':lt==='Columns'?'e.g. accent columns × 4':''} style={inputS}/></div>
-              </>}
-              {cfg?.ui==='fixed-dollar'&&<>
-                <div>{fLbl('Price ($)')}<input type="number" value={li.amount} onChange={e=>u('amount',e.target.value)} style={inputS}/></div>
-                <div style={{gridColumn:'1/-1'}}>{fLbl('Description')}<input value={li.description} onChange={e=>u('description',e.target.value)} placeholder={lt==='Permit'?'e.g. building permit':lt==='Lump Sum'?'e.g. signage allowance':lt==='Insurance'?'e.g. policy + period':''} style={inputS}/></div>
-              </>}
-              {/* Labor / Tax Basis split inputs — visible for the same types
-                  EditPanel shows them on (PC/SW/WI/Wood/Gate/Permit/Bonds/
-                  Insurance). DB trigger fn_jli_derive_split fills these on
-                  save for PC/Gate/Permit/Bond when blank; manual entries on
-                  SW/Wood/WI fence persist (this is the residential bug fix
-                  — those rows used to land in the DB with NULL split). */}
-              {cfg?.showLaborSplit&&<>
-                <div>
-                  <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}} title="Auto-derives for precast/gate/permit/bond on save. Manual entry for SW/Wood/WI fence.">Labor / Unit</label>
-                  <input type="number" min="0" step="0.01" value={li.labor_per_unit} onChange={e=>u('labor_per_unit',e.target.value)} placeholder="auto on save" style={{...inputS,textAlign:'right'}}/>
-                </div>
-                <div>
-                  <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}} title="Auto-derives for precast/gate/permit/bond on save. Sales tax computed on tax_basis × qty only.">Tax Basis / Unit</label>
-                  <input type="number" min="0" step="0.01" value={li.tax_basis_per_unit} onChange={e=>u('tax_basis_per_unit',e.target.value)} placeholder="auto on save" style={{...inputS,textAlign:'right'}}/>
-                </div>
-              </>}
-            </div>
-            {/* Drainage panels block — renders inline on the first precast/SW
-                line whose style is drainage-eligible. Single job-level record
-                (one set of drainage_* columns on `jobs`), so only one line
-                shows the UI even if multiple eligible lines exist. */}
-            {idx===drainageEligibleLineIdx&&<div style={{marginTop:10,padding:'10px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
-              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#1A1A1A',cursor:'pointer'}}>
-                <input type="checkbox" checked={!!f.drainage_needed} onChange={e=>{const c=e.target.checked;setDrainagePatch(c?{drainage_needed:true}:{drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
-                This fence needs drainage panels
-              </label>
-              {f.drainage_needed&&<>
-                <div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
-                  <div>
-                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Drainage Style</label>
-                    <div style={{display:'flex',gap:12,alignItems:'center',minHeight:36}}>
-                      {['Diamond','Bottled'].map(opt=><label key={opt} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,cursor:'pointer'}}>
-                        <input type="radio" name="np_drainage_style" value={opt} checked={f.drainage_style===opt} onChange={()=>setDrainagePatch({drainage_style:opt})} style={{accentColor:'#8A261D'}}/>
-                        {opt}
-                      </label>)}
+        {/* Shared with EditPanel.LineItemsEditor (2026-05-09 unification) — same
+            14 types, same field set, same labels. Drainage panel renders via
+            the renderExtraBelow slot since drainage state lives on the parent
+            form (it's job-level metadata, not line-item state). */}
+        <UnifiedLineItemsEditor
+          lines={f.lineItems}
+          onLineChange={updateLineItem}
+          onLineAdd={addLineItem}
+          onLineRemove={removeLineItem}
+          showHeader={false}
+          rateHints={{
+            pc:rateHint('contract_rate_precast'),
+            sw:rateHint('contract_rate_single_wythe'),
+            wi:rateHint('contract_rate_wrought_iron'),
+            gate:rateHint('gate_rate'),
+          }}
+          renderExtraBelow={(li,idx)=>(
+            idx===drainageEligibleLineIdx
+              ? <div style={{margin:'0 20px 16px',padding:'10px 12px',background:'#F9F8F6',border:'1px solid #E5E3E0',borderRadius:8}}>
+                  <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#1A1A1A',cursor:'pointer'}}>
+                    <input type="checkbox" checked={!!f.drainage_needed} onChange={e=>{const c=e.target.checked;setDrainagePatch(c?{drainage_needed:true}:{drainage_needed:false,drainage_style:'',drainage_bottom_count:'',drainage_top_count:''});}} style={{width:16,height:16,accentColor:'#8A261D'}}/>
+                    This fence needs drainage panels
+                  </label>
+                  {f.drainage_needed&&<>
+                    <div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+                      <div>
+                        <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>Drainage Style</label>
+                        <div style={{display:'flex',gap:12,alignItems:'center',minHeight:36}}>
+                          {['Diamond','Bottled'].map(opt=><label key={opt} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,cursor:'pointer'}}>
+                            <input type="radio" name="np_drainage_style" value={opt} checked={f.drainage_style===opt} onChange={()=>setDrainagePatch({drainage_style:opt})} style={{accentColor:'#8A261D'}}/>
+                            {opt}
+                          </label>)}
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Bottom of Fence (panels)</label>
+                        <input type="number" min="0" value={f.drainage_bottom_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_bottom_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_bottom_count:String(nn)});}} placeholder="0" style={inputS}/>
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Top of Fence (panels)</label>
+                        <input type="number" min="0" value={f.drainage_top_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_top_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_top_count:String(nn)});}} placeholder="0" style={inputS}/>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Bottom of Fence (panels)</label>
-                    <input type="number" min="0" value={f.drainage_bottom_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_bottom_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_bottom_count:String(nn)});}} placeholder="0" style={inputS}/>
-                  </div>
-                  <div>
-                    <label style={{display:'block',fontSize:11,color:'#625650',marginBottom:4,textTransform:'uppercase',fontWeight:600}}>At Top of Fence (panels)</label>
-                    <input type="number" min="0" value={f.drainage_top_count} onChange={e=>{const v=e.target.value;if(v===''){setDrainagePatch({drainage_top_count:''});return;}const nn=parseInt(v,10);if(!isNaN(nn)&&nn>=0)setDrainagePatch({drainage_top_count:String(nn)});}} placeholder="0" style={inputS}/>
-                  </div>
+                    {!f.drainage_style&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Pick Diamond or Bottled</div>}
+                    {f.drainage_style&&!n(f.drainage_bottom_count)&&!n(f.drainage_top_count)&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Enter at least one count</div>}
+                  </>}
                 </div>
-                {!f.drainage_style&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Pick Diamond or Bottled</div>}
-                {f.drainage_style&&!n(f.drainage_bottom_count)&&!n(f.drainage_top_count)&&<div style={{marginTop:8,fontSize:11,color:'#B45309',fontWeight:600}}>⚠ Enter at least one count</div>}
-              </>}
-            </div>}
-            {cfg?.ui==='fence'&&n(li.lf)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.lf).toLocaleString()} LF × ${n(li.rate)}/LF = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
-            {cfg?.ui==='per-piece'&&n(li.quantity)>0&&n(li.rate)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>{n(li.quantity)} × {$(n(li.rate))} = <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
-            {cfg?.ui==='fixed-dollar'&&n(li.amount)>0&&<div style={{marginTop:8,textAlign:'right',fontSize:11,color:'#625650'}}>Lump sum: <b style={{color:'#8A261D'}}>{$(sub)}</b></div>}
-          </div>;
-        })}
-        <button onClick={addLineItem} style={{width:'100%',padding:'12px',border:'1px dashed #8A261D',background:'#FDF4F4',color:'#8A261D',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',marginTop:6}}>+ Add Line Item</button>
+              : null
+          )}
+        />
       </div>}
       {sec==='contract'&&<div>
         <div style={{display:'grid',gridTemplateColumns:grd,gap:12,marginBottom:20}}>
